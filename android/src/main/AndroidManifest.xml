@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.flutter_patcher.flutter_patcher">
+  <!-- 宿主 App 必须自行声明 INTERNET 权限以允许补丁下载 / checkUpdate 发起 HTTP 请求 -->
+</manifest>

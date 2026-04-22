@@ -1,0 +1,25 @@
+name: flutter_patcher
+description: Android libapp.so hotfix plugin with circuit breaker and Ed25519 signature verification.
+version: 0.1.0
+homepage:
+
+environment:
+  sdk: ^3.10.7
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  plugin_platform_interface: ^2.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.flutter_patcher.flutter_patcher
+        pluginClass: FlutterPatcherPlugin
