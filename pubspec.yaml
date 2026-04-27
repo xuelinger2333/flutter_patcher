@@ -11,6 +11,10 @@ dependencies:
   flutter:
     sdk: flutter
   plugin_platform_interface: ^2.0.2
+  # `dart run flutter_patcher:pack` CLI 依赖 —— 运行时 app 里都会被 tree-shake 掉
+  archive: ^3.4.10
+  args: ^2.4.0
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

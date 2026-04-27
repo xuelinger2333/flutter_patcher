@@ -22,10 +22,16 @@ import io.flutter.plugin.common.MethodChannel.Result
  * - saveConfig(publicKeyBase64, maxCrashCount, strictSignature,
  *              loaderFieldCandidates, loaderFallbackHeuristic)
  * - markBooting()               — Dart init 最开头调用，补写一次「启动中」
- * - reportBootSuccess()         — Dart 首帧后调用，清熔断
+ * - reportBootSuccess()         — Dart 首帧 + verifyAfter 秒后调用，清熔断
+ * - reportDartBootError(Map)    — 引导阶段 Dart 未捕获异常上报，等同一次真崩溃
  * - applyPatch(Map) -> Map{ok, error, message}
  * - rollback()
  * - currentVersion() -> String?
+ * - lastBootDiagnostic() -> Map? — 上次冷启动补丁加载诊断（见 BootDiagnosticStore）
+ * - cacheDir() -> String — 插件可写的临时目录，供 Dart applyPatchBytes 内部 staging 使用
+ * - appVersionCode() -> Long — 当前宿主 APK versionCode，A3 便捷查询
+ * - blacklist() -> List<Map> — 已知"装上就出事"的补丁本地黑名单
+ * - clearBlacklist() — 清空黑名单（仅调试 / 显式恢复用）
  */
 class FlutterPatcherPlugin :
     FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler {
@@ -83,9 +89,18 @@ class FlutterPatcherPlugin :
                 CrashGuard(appContext).markBootSuccess()
                 result.success(null)
             }
+            "reportDartBootError" -> handleReportDartBootError(call, result)
             "applyPatch" -> handleApplyPatch(call, result)
             "rollback" -> handleRollback(result)
             "currentVersion" -> handleCurrentVersion(result)
+            "lastBootDiagnostic" -> handleLastBootDiagnostic(result)
+            "cacheDir" -> result.success(appContext.cacheDir.absolutePath)
+            "appVersionCode" -> result.success(PatcherConfig.currentVersionCode(appContext))
+            "blacklist" -> result.success(BlacklistStore.entries(appContext))
+            "clearBlacklist" -> {
+                BlacklistStore.clear(appContext)
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }
@@ -144,5 +159,48 @@ class FlutterPatcherPlugin :
     private fun handleCurrentVersion(result: Result) {
         val v = PatchManager(appContext).currentVersion()
         result.success(if (v.isEmpty()) null else v)
+    }
+
+    private fun handleLastBootDiagnostic(result: Result) {
+        // null 表示从未 record 过（首次安装 / pm clear 后第一次启动且尚未到首帧）
+        result.success(BootDiagnosticStore.read(appContext))
+    }
+
+    /**
+     * Dart 侧 PlatformDispatcher.onError / FlutterError.onError 在「未 verified」窗口
+     * 抓到的未捕获异常 ⇒ 等同 ApplicationExitInfo.REASON_CRASH 处理：crash_count += 1，
+     * 达阈值则 onTrip 回调里走完整的"加黑名单 + 记诊断 + 删补丁"链路。
+     *
+     * 与 attachPatcher 里 shouldLoadPatch 的 onTrip 逻辑保持一致，让用户在 DiagCard
+     * 上看到 status=DROPPED_CIRCUIT_BREAKER 而不是上一次的 status=PATCHED 残影。
+     */
+    private fun handleReportDartBootError(call: MethodCall, result: Result) {
+        val message = call.argument<String>("message")
+        val patchManager = PatchManager(appContext)
+        val crashedMeta = patchManager.currentMeta()
+        val appVc = PatcherConfig.currentVersionCode(appContext)
+
+        CrashGuard(appContext).reportDartBootError(message) { crashCount ->
+            if (crashedMeta != null) {
+                BlacklistStore.add(
+                    appContext,
+                    crashedMeta.first,
+                    crashedMeta.second,
+                    BlacklistStore.REASON_BOOT_CRASH,
+                )
+            }
+            BootDiagnosticStore.record(
+                context = appContext,
+                status = BootDiagnosticStore.DROPPED_CIRCUIT_BREAKER,
+                patchVersion = crashedMeta?.first,
+                appVersionCode = appVc,
+                crashCount = crashCount,
+                message = if (crashedMeta != null)
+                    "$crashCount Dart boot failure(s); blacklisted (version=${crashedMeta.first}); ${message ?: ""}"
+                else
+                    "$crashCount Dart boot failure(s); ${message ?: ""}",
+            )
+        }
+        result.success(null)
     }
 }

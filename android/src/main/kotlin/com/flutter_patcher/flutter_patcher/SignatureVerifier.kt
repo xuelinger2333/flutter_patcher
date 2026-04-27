@@ -95,6 +95,48 @@ internal object SignatureVerifier {
     }
 
     /**
+     * [verify] 的细粒度结果。调用方据此可区分"被丢弃的具体原因"用于诊断上报，
+     * 见 [BootDiagnosticStore.DROPPED_MD5_MISMATCH] / [BootDiagnosticStore.DROPPED_SIGNATURE_INVALID]。
+     */
+    enum class VerifyResult { OK, MD5_MISMATCH, SIGNATURE_INVALID }
+
+    /**
+     * 完整校验（细粒度版本）：MD5 + 可选 Ed25519。返回失败原因分类。
+     *
+     * 注意：[expectedMd5] 为空时归为 [VerifyResult.MD5_MISMATCH]（理论上调用方
+     * 应在调用前已校验 meta 完整性并归类为 META_CORRUPTED，此处兜底返回最接近
+     * 的语义）。
+     */
+    fun verifyDetailed(
+        file: File,
+        expectedMd5: String,
+        signatureBase64: String,
+        publicKeyBase64: String,
+        strictSignature: Boolean = true
+    ): VerifyResult {
+        if (expectedMd5.isEmpty()) {
+            Log.e(TAG, "expected md5 is empty, reject")
+            return VerifyResult.MD5_MISMATCH
+        }
+        val actualMd5 = md5(file)
+        if (!actualMd5.equals(expectedMd5, ignoreCase = true)) {
+            Log.e(TAG, "md5 mismatch: expected=$expectedMd5, actual=$actualMd5")
+            return VerifyResult.MD5_MISMATCH
+        }
+        return if (verifySignatureOnly(
+                actualMd5.lowercase(),
+                signatureBase64,
+                publicKeyBase64,
+                strictSignature
+            )
+        ) {
+            VerifyResult.OK
+        } else {
+            VerifyResult.SIGNATURE_INVALID
+        }
+    }
+
+    /**
      * 完整校验：MD5 + 可选 Ed25519。
      *
      * @param file             已下载的补丁文件
@@ -110,23 +152,9 @@ internal object SignatureVerifier {
         signatureBase64: String,
         publicKeyBase64: String,
         strictSignature: Boolean = true
-    ): Boolean {
-        if (expectedMd5.isEmpty()) {
-            Log.e(TAG, "expected md5 is empty, reject")
-            return false
-        }
-        val actualMd5 = md5(file)
-        if (!actualMd5.equals(expectedMd5, ignoreCase = true)) {
-            Log.e(TAG, "md5 mismatch: expected=$expectedMd5, actual=$actualMd5")
-            return false
-        }
-        return verifySignatureOnly(
-            actualMd5.lowercase(),
-            signatureBase64,
-            publicKeyBase64,
-            strictSignature
-        )
-    }
+    ): Boolean = verifyDetailed(
+        file, expectedMd5, signatureBase64, publicKeyBase64, strictSignature
+    ) == VerifyResult.OK
 
     private fun verifyEd25519(
         md5Hex: String,

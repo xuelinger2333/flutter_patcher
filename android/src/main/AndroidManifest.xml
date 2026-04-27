@@ -1,4 +1,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
   package="com.flutter_patcher.flutter_patcher">
   <!-- 宿主 App 必须自行声明 INTERNET 权限以允许补丁下载 / checkUpdate 发起 HTTP 请求 -->
+
+  <application>
+    <!--
+      自动初始化：在 ContentProvider.onCreate 阶段（早于 Application.onCreate /
+      任何 FlutterActivity.onCreate）完成熔断检查 + FlutterLoader 反射替换，宿主
+      无需接入 Application。
+
+      需要关掉的极少数场景（如在 Application.attachBaseContext 预热 FlutterEngine）
+      可在宿主 Manifest 里用 tools:node="remove" 移除本 provider，然后显式调
+      FlutterPatcherApplication.attachPatcher(base)。详见 README。
+    -->
+    <provider
+      android:name="com.flutter_patcher.flutter_patcher.FlutterPatcherAutoInitProvider"
+      android:authorities="${applicationId}.flutter_patcher.autoinit"
+      android:exported="false"
+      android:initOrder="100" />
+  </application>
 </manifest>

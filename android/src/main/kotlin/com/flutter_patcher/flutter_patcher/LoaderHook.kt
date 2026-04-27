@@ -43,14 +43,22 @@ internal object LoaderHook {
     /**
      * 用带补丁路径的自定义 FlutterLoader 替换默认实现。
      *
-     * @param context 用于读 PatcherConfig 中的 Dart 侧覆盖配置
-     * @param patchSoPath 补丁 libapp.so 的绝对路径
+     * @param context        用于读 PatcherConfig 中的 Dart 侧覆盖配置
+     * @param patchSoPath    补丁 libapp.so 的绝对路径
+     * @param attemptedFields 可选 out 参数：调用前传入空 MutableList，方法返回后
+     *   会包含本次按顺序尝试过的字段候选名（无论成功失败）。供
+     *   [BootDiagnosticStore.HOOK_INSTALL_FAILED] 上报使用。
      * @return 是否成功注入
      */
-    fun install(context: Context, patchSoPath: String): Boolean {
+    fun install(
+        context: Context,
+        patchSoPath: String,
+        attemptedFields: MutableList<String>? = null,
+    ): Boolean {
         return try {
             val injector = FlutterInjector.instance()
             val candidates = buildCandidates(context)
+            attemptedFields?.addAll(candidates)
             val heuristic = PatcherConfig.loaderFallbackHeuristic(context)
             val field = findLoaderField(injector.javaClass, candidates, heuristic)
                 ?: throw IllegalStateException(

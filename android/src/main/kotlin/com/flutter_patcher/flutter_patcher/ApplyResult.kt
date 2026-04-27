@@ -31,6 +31,7 @@ internal data class ApplyResult(
  * applyPatch 可能的失败原因。调用方（Dart 业务层）按需要做不同处理：
  *
  * - [INVALID_ARGS]：服务端下发的 JSON 缺字段 → 告警服务端
+ * - [BLACKLISTED]：(version, md5) 已在本地黑名单 → 服务端告警，下架补丁
  * - [BSDIFF_DISABLED]：本宿主未编译 bsdiff native 模块 → 服务端停止对此客户端下发 bsdiff
  * - [NETWORK]：下载失败（重试后依然失败）→ 稍后重试
  * - [MD5_MISMATCH]：下载文件 md5 不匹配 → CDN 脏数据或服务端 md5 算错，检查后重试
@@ -44,6 +45,7 @@ internal data class ApplyResult(
  */
 internal object ApplyErrorCode {
     const val INVALID_ARGS = "INVALID_ARGS"
+    const val BLACKLISTED = "BLACKLISTED"
     const val BSDIFF_DISABLED = "BSDIFF_DISABLED"
     const val NETWORK = "NETWORK"
     const val MD5_MISMATCH = "MD5_MISMATCH"

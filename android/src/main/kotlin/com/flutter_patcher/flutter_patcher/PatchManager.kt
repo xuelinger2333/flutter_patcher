@@ -60,10 +60,31 @@ internal class PatchManager(
 
     // ==================== 启动路径 ====================
 
-    fun getValidPatchPath(): String? {
+    /**
+     * 启动时校验本地补丁是否可用。
+     *
+     * @param onDrop 可选回调：每次"补丁在盘上但被丢弃"时触发，携带分类原因 +
+     *   被丢弃的版本号 + 上下文 extras。专为 [BootDiagnosticStore] 上报使用，
+     *   不影响主流程。补丁文件本身缺失（首次安装 / pm clear）**不会** 触发，
+     *   该场景由调用方按 NO_PATCH 兜底。
+     */
+    fun getValidPatchPath(
+        onDrop: ((status: String, version: String?, extras: Map<String, Any?>) -> Unit)? = null
+    ): String? {
         if (!patchFile.exists() || !metaFile.exists()) return null
 
-        val meta = readMeta() ?: return null
+        val meta = readMeta()
+        if (meta == null) {
+            Log.e(TAG, "meta.json unparseable, drop patch")
+            onDrop?.invoke(
+                BootDiagnosticStore.DROPPED_META_CORRUPTED,
+                null,
+                mapOf("message" to "meta.json missing or unparseable")
+            )
+            deletePatch()
+            return null
+        }
+        val version = meta.optString("version", "").ifEmpty { null }
 
         // versionCode 兼容性校验：宿主 APK 升级 / 安装时包名冲突场景下，旧补丁
         // 与当前 Flutter engine & Dart kernel 可能不兼容，直接丢弃避免启动崩溃。
@@ -78,6 +99,15 @@ internal class PatchManager(
             patchVc != currentVc
         ) {
             Log.w(TAG, "versionCode mismatch: patch=$patchVc current=$currentVc, drop patch")
+            onDrop?.invoke(
+                BootDiagnosticStore.DROPPED_VERSION_CODE_MISMATCH,
+                version,
+                mapOf(
+                    "patchTargetVersionCode" to patchVc,
+                    "appVersionCode" to currentVc,
+                    "message" to "patch built for vc=$patchVc, app is vc=$currentVc"
+                )
+            )
             deletePatch()
             return null
         }
@@ -90,11 +120,36 @@ internal class PatchManager(
 
         if (expectedMd5.isEmpty()) {
             Log.e(TAG, "meta.effectiveMd5 missing, drop patch")
+            onDrop?.invoke(
+                BootDiagnosticStore.DROPPED_META_CORRUPTED,
+                version,
+                mapOf("message" to "meta.effectiveMd5 missing")
+            )
             deletePatch()
             return null
         }
-        if (!SignatureVerifier.verify(patchFile, expectedMd5, signature, publicKey, strictSignature)) {
-            Log.e(TAG, "verify failed, drop patch")
+        val verifyResult = SignatureVerifier.verifyDetailed(
+            patchFile, expectedMd5, signature, publicKey, strictSignature
+        )
+        if (verifyResult != SignatureVerifier.VerifyResult.OK) {
+            Log.e(TAG, "verify failed: $verifyResult, drop patch")
+            val status = when (verifyResult) {
+                SignatureVerifier.VerifyResult.MD5_MISMATCH ->
+                    BootDiagnosticStore.DROPPED_MD5_MISMATCH
+                SignatureVerifier.VerifyResult.SIGNATURE_INVALID ->
+                    BootDiagnosticStore.DROPPED_SIGNATURE_INVALID
+                SignatureVerifier.VerifyResult.OK -> error("unreachable")
+            }
+            // effectiveMd5 透传给 attachPatcher 的 onDrop，便于把这个补丁加入黑名单
+            // （见 FlutterPatcherApplication.attachPatcher 的 onDrop 分支）。
+            onDrop?.invoke(
+                status,
+                version,
+                mapOf(
+                    "effectiveMd5" to expectedMd5,
+                    "message" to "SignatureVerifier returned $verifyResult",
+                )
+            )
             deletePatch()
             return null
         }
@@ -103,6 +158,18 @@ internal class PatchManager(
     }
 
     fun currentVersion(): String = readMeta()?.optString("version", "") ?: ""
+
+    /**
+     * 当前补丁元信息快照。返回 (version, effectiveMd5) 二元组，或 null（无补丁 / meta 损坏）。
+     * 供 [BlacklistStore] 在丢弃补丁前读取双键。
+     */
+    fun currentMeta(): Pair<String, String>? {
+        val meta = readMeta() ?: return null
+        val version = meta.optString("version", "")
+        val md5 = meta.optString("effectiveMd5", "")
+        if (version.isEmpty() || md5.isEmpty()) return null
+        return version to md5
+    }
 
     // ==================== 安装 ====================
 
@@ -133,6 +200,16 @@ internal class PatchManager(
             return ApplyResult.failure(
                 ApplyErrorCode.BSDIFF_DISABLED,
                 "bsdiff native module not built; integrate upstream sources per README"
+            )
+        }
+        // 黑名单查询前置：在下载之前拦截，避免对已知坏补丁浪费流量。
+        // 服务端再下发同一份 (version, md5) 也立即拒绝。
+        if (BlacklistStore.contains(context, version, md5)) {
+            Log.w(TAG, "applyPatch: (version=$version, md5=$md5) is blacklisted, reject")
+            return ApplyResult.failure(
+                ApplyErrorCode.BLACKLISTED,
+                "patch (version=$version, md5=$md5) was previously blacklisted; " +
+                    "call FlutterPatcher.clearBlacklist() to reset (debug only)"
             )
         }
         if (version == currentVersion()) {
@@ -289,54 +366,89 @@ internal class PatchManager(
     // ==================== 内部 ====================
 
     /**
-     * GET [url] 流式写入 [dest]，可选 [onBytes] 接收字节级进度。
+     * 把 [url] 指向的字节流写入 [dest]，可选 [onBytes] 接收字节级进度。
      *
-     * 用 JDK 自带 `HttpURLConnection`（Android minSdk 24+ 保证可用），避免与
-     * 宿主工程引入的 okhttp 版本冲突。不做跨协议（HTTP<->HTTPS）重定向：
-     * 生产环境下补丁 URL 建议直接给 HTTPS。
+     * 支持：
+     * - `http://` / `https://`：JDK `HttpURLConnection`，minSdk 24+ 自带，不与
+     *   宿主工程的 okhttp 版本冲突。不做跨协议重定向：生产环境补丁 URL 直接给 HTTPS。
+     * - `file://`：从设备本地路径直读。**主要用于 demo / 本地联调**（用 `adb push`
+     *   把手工打好的补丁推到 app 的 external files dir 后，用 file:// 加载）。
+     *   生产环境不会用到，但也不会绕过任何校验（md5 / 签名照样跑）。
      */
     private fun downloadTo(
         url: String,
         dest: File,
         onBytes: ((received: Long, total: Long) -> Unit)? = null
     ) {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val parsed = URL(url)
+        when (parsed.protocol?.lowercase()) {
+            "http", "https" -> downloadHttp(parsed, dest, onBytes)
+            "file" -> copyFromFile(parsed, dest, onBytes)
+            else -> throw RuntimeException("unsupported URL scheme: ${parsed.protocol}")
+        }
+    }
+
+    private fun downloadHttp(
+        url: URL,
+        dest: File,
+        onBytes: ((received: Long, total: Long) -> Unit)?
+    ) {
+        val conn = url.openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = CONNECT_TIMEOUT_MS
             conn.readTimeout = READ_TIMEOUT_MS
             conn.requestMethod = "GET"
-            // 同协议重定向默认打开；跨协议重定向 JDK 不自动处理，通常也不需要
             val code = conn.responseCode
             if (code !in 200..299) throw RuntimeException("HTTP $code")
 
             val total = conn.contentLengthLong   // -1 表示服务端未发 Content-Length
-            var received = 0L
-            var lastEmit = 0L
-
-            conn.inputStream.use { input ->
-                dest.outputStream().use { output ->
-                    val buf = ByteArray(8192)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n <= 0) break
-                        output.write(buf, 0, n)
-                        received += n
-                        if (onBytes != null) {
-                            val now = SystemClock.uptimeMillis()
-                            if (now - lastEmit >= PROGRESS_EMIT_INTERVAL_MS) {
-                                onBytes(received, total)
-                                lastEmit = now
-                            }
-                        }
-                    }
-                    output.fd.sync()
-                }
-            }
-            // 结尾再发一次，保证 UI 能刷到 100%
-            onBytes?.invoke(received, total)
+            streamToFile(conn.inputStream, dest, total, onBytes)
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun copyFromFile(
+        url: URL,
+        dest: File,
+        onBytes: ((received: Long, total: Long) -> Unit)?
+    ) {
+        // URL.path 对 Unix-like 路径直接给 /data/.../foo
+        val src = File(url.path)
+        if (!src.exists()) throw RuntimeException("file not found: ${src.absolutePath}")
+        if (!src.canRead()) throw RuntimeException("file not readable: ${src.absolutePath}")
+        streamToFile(src.inputStream(), dest, src.length(), onBytes)
+    }
+
+    private fun streamToFile(
+        input: java.io.InputStream,
+        dest: File,
+        total: Long,
+        onBytes: ((received: Long, total: Long) -> Unit)?
+    ) {
+        var received = 0L
+        var lastEmit = 0L
+        input.use { ins ->
+            dest.outputStream().use { output ->
+                val buf = ByteArray(8192)
+                while (true) {
+                    val n = ins.read(buf)
+                    if (n <= 0) break
+                    output.write(buf, 0, n)
+                    received += n
+                    if (onBytes != null) {
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastEmit >= PROGRESS_EMIT_INTERVAL_MS) {
+                            onBytes(received, total)
+                            lastEmit = now
+                        }
+                    }
+                }
+                output.fd.sync()
+            }
+        }
+        // 结尾再发一次，保证 UI 能刷到 100%
+        onBytes?.invoke(received, total)
     }
 
     /**

@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 注意：这里 **没有** 设置 android:name —— flutter_patcher 通过自动初始化
+         ContentProvider 在 Activity 之前挂上补丁加载，宿主无需接入 Application。
+         要走显式方式或关闭自动初始化，见 README「自动初始化」章节。 -->
     <application
         android:label="flutter_patcher_example"
-        android:name="com.flutter_patcher.flutter_patcher.FlutterPatcherApplication"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

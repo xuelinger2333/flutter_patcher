@@ -210,6 +210,11 @@ enum PatchApplyError {
   /// → 告警服务端，无法自动恢复。
   invalidArgs,
 
+  /// (version, md5) 在本地黑名单中（曾导致启动崩溃 / md5 不匹配 / 签名不通过）。
+  /// → **告警服务端立即下架该补丁**；不要自动重试。如需调试覆盖，调用
+  /// [FlutterPatcher.clearBlacklist]。
+  blacklisted,
+
   /// 服务端下发了 bsdiff 模式的补丁，但当前宿主未编译 bsdiff native 模块。
   /// → 告警服务端，针对此客户端切回 full 模式。
   bsdiffDisabled,
@@ -246,6 +251,8 @@ PatchApplyError _parseApplyError(String? code) {
   switch (code) {
     case 'INVALID_ARGS':
       return PatchApplyError.invalidArgs;
+    case 'BLACKLISTED':
+      return PatchApplyError.blacklisted;
     case 'BSDIFF_DISABLED':
       return PatchApplyError.bsdiffDisabled;
     case 'NETWORK':

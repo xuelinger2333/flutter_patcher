@@ -12,6 +12,10 @@
 # 但宿主如果自定义了激进的规则可能误伤，显式 keep 做兜底 ----
 -keep class com.flutter_patcher.flutter_patcher.FlutterPatcherApplication { *; }
 
+# ---- 自动初始化 ContentProvider：由插件 Manifest 的 <provider> 声明，R8 通常
+# 自动保留，显式 keep 兜底 ----
+-keep class com.flutter_patcher.flutter_patcher.FlutterPatcherAutoInitProvider { *; }
+
 # ---- Flutter Plugin：被 GeneratedPluginRegistrant 反射注册 ----
 -keep class com.flutter_patcher.flutter_patcher.FlutterPatcherPlugin { *; }
 
@@ -22,3 +26,11 @@
     <init>(...);
     public void ensureInitializationComplete(android.content.Context, java.lang.String[]);
 }
+
+# ---- Flutter Engine 反射目标：LoaderHook 反射 FlutterInjector.flutterLoader 字段
+# 把它换成 PatchedFlutterLoader。R8 默认会混淆字段名和类型名，导致：
+#   - getDeclaredField("flutterLoader") 找不到字段（原始名字已被混淆）
+#   - 类型匹配 FlutterLoader 也找不到（类名被混淆）
+# 这两个类很小，keep 掉的体积代价几乎为 0 ----
+-keep class io.flutter.FlutterInjector { *; }
+-keep class io.flutter.embedding.engine.loader.FlutterLoader { *; }

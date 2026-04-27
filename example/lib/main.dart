@@ -1,173 +1,89 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_patcher/flutter_patcher.dart';
 
-/// Example for flutter_patcher.
-///
-/// 演示：
-///  1. 在 main() 里调 FlutterPatcher.init，下发公钥 + 熔断阈值，并在首帧后清熔断
-///  2. 点「Check update」→ 用 mock 数据模拟 checkUpdate 的响应
-///  3. 点「Apply patch」→ 把 mock 得到的 PatchInfo 交给 applyPatch
-///  4. 点「Rollback」→ 手动回滚到 APK 内置版本
-///
-/// 注：mock 的 patchUrl 指向一个不存在的地址，applyPatch 会返回 false —— 这是正常
-/// 的，真实联调时把 URL 换成真正的 .so 下载地址即可。
+import 'diag_card.dart';
+import 'log_panel.dart';
+
+/// flutter_patcher 最小演示：
+///  - "Apply patch"：从 APK 内置 asset 读红色 libapp.so，装成热更补丁
+///  - 冷启动 app → 按钮变红（补丁生效）
+///  - "Rollback" + 冷启动 → 回到蓝色（APK 内置版本）
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await FlutterPatcher.init(
-    // 真实项目请换成自己的 Ed25519 公钥（X.509 DER Base64），留空则跳过签名校验
-    publicKeyBase64: '',
-    maxCrashCount: 2,
-  );
+  await FlutterPatcher.init();
   runApp(const MyApp());
 }
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'flutter_patcher example',
+    // APK 内置的 .so 是蓝色主题，补丁包里的 .so 是红色主题，切换补丁就能看到颜色变化
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+      useMaterial3: true,
+    ),
+    home: const Demo(),
+  );
 }
 
-class _MyAppState extends State<MyApp> {
-  final _logs = <String>[];
-  String? _currentVersion;
-  PatchInfo? _pending;
-
+class Demo extends StatefulWidget {
+  const Demo({super.key});
   @override
-  void initState() {
-    super.initState();
-    _refreshVersion();
-  }
+  State<Demo> createState() => _DemoState();
+}
 
-  Future<void> _refreshVersion() async {
-    final v = await FlutterPatcher.currentVersion;
-    if (!mounted) return;
-    setState(() => _currentVersion = v);
-  }
+class _DemoState extends State<Demo> {
+  final _log = LogController();
 
-  void _log(String msg) {
-    setState(() => _logs.insert(0, msg));
-  }
-
-  // ---- Mock checkUpdate ----
-  // 真实项目你会用自己的 HTTP/gRPC/配置中心拉元信息，然后直接 new PatchInfo(...)
-  // —— 插件不绑定任何后端协议。
-  Future<void> _onCheckUpdate() async {
-    _log('checkUpdate: using mock PatchInfo');
-    final mock = const PatchInfo(
-      version: '1.0.1-h1',
-      patchUrl: 'https://example.com/not-a-real-patch/libapp.so',
-      md5: '00000000000000000000000000000000',
-      targetVersionCode: 1,
+  /// 读 APK 内置的 libapp_preload.so → 交给 applyPatchBytes 落盘。
+  /// 下次冷启动 Flutter Engine 会用这份 .so 代替 APK 内置的版本。
+  Future<void> _apply() async {
+    _log.log('loading bundled asset...');
+    final bytes = (await rootBundle.load(
+      'assets/libapp_preload.so',
+    )).buffer.asUint8List();
+    final result = await FlutterPatcher.applyPatchBytes(
+      bytes,
+      version: 'bundled-1',
+      onProgress: (p) => _log.log('  [${p.phase.name}]'),
     );
-    setState(() => _pending = mock);
-    _log('mock patch available: ${mock.version}');
+    _log.log(
+      result.ok
+          ? '✅ APPLIED — force-stop the app and reopen to see the new theme'
+          : '❌ failed: ${result.error?.name} / ${result.message}',
+    );
+    DiagCard.refresh();
   }
 
-  Future<void> _onApplyPatch() async {
-    final info = _pending;
-    if (info == null) {
-      _log('no pending patch, click "Check update" first');
-      return;
-    }
-    _log('applyPatch ${info.version} ...');
-
-    // 订阅进度（在 applyPatch 调用前订阅）
-    final sub = FlutterPatcher.applyProgress.listen((p) {
-      switch (p.phase) {
-        case PatchApplyPhase.downloading:
-          final pct = p.fraction;
-          _log(pct != null
-              ? 'downloading ${(pct * 100).toStringAsFixed(1)}% (${p.bytesReceived}/${p.totalBytes})'
-              : 'downloading ${p.bytesReceived} bytes');
-          break;
-        case PatchApplyPhase.verifying:
-          _log('verifying md5 + signature...');
-          break;
-        case PatchApplyPhase.bsdiffMerging:
-          _log('bsdiff merging...');
-          break;
-        case PatchApplyPhase.finalizing:
-          _log('finalizing (rename + write meta)...');
-          break;
-      }
-    });
-
-    try {
-      final result = await FlutterPatcher.applyPatch(info);
-      if (result.ok) {
-        _log('applyPatch ok, restart to take effect');
-        await _refreshVersion();
-      } else {
-        _log('applyPatch failed: ${result.error?.name} / ${result.message}');
-      }
-    } finally {
-      await sub.cancel();
-    }
-  }
-
-  Future<void> _onRollback() async {
+  Future<void> _rollback() async {
     await FlutterPatcher.rollback();
-    _log('rollback done (takes effect on next cold start)');
-    await _refreshVersion();
+    _log.log('🔄 ROLLED BACK — force-stop the app and reopen to revert');
+    DiagCard.refresh();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'flutter_patcher example',
-      home: Scaffold(
-        appBar: AppBar(title: const Text('flutter_patcher example')),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('current patch version: ${_currentVersion ?? '(none)'}'),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton(
-                    onPressed: _onCheckUpdate,
-                    child: const Text('Check update (mock)'),
-                  ),
-                  FilledButton(
-                    onPressed: _onApplyPatch,
-                    child: const Text('Apply patch'),
-                  ),
-                  OutlinedButton(
-                    onPressed: _onRollback,
-                    child: const Text('Rollback'),
-                  ),
-                ],
-              ),
-              const Divider(height: 32),
-              const Text('Logs:'),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade400),
-                  ),
-                  child: ListView.builder(
-                    itemCount: _logs.length,
-                    itemBuilder: (_, i) => Text(
-                      _logs[i],
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('flutter_patcher example (BASE)')),
+    body: SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const DiagCard(),
+            const SizedBox(height: 12),
+            FilledButton(onPressed: _apply, child: const Text('Apply patch')),
+            const SizedBox(height: 8),
+            OutlinedButton(onPressed: _rollback, child: const Text('Rollback')),
+            const SizedBox(height: 16),
+            Expanded(child: LogPanel(controller: _log)),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }

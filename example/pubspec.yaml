@@ -35,6 +35,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # tools/mock_server.dart 算 md5 用，仅 dev 工具脚本依赖，不进 release apk
+  crypto: ^3.0.3
+
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -53,10 +56,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  # Demo 用："红按钮"版本的 libapp.so 预先 cp 到这里（pack 出来的 dist/libapp_patched.so
+  # → assets/libapp_preload.so），由 example main.dart 读取并应用，用于演示补丁。
+  assets:
+    - assets/libapp_preload.so
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
