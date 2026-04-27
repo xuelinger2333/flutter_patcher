@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// 本地补丁黑名单条目，与原生侧 [BlacklistStore] 的 JSON 结构一一对应。
+/// 本地补丁黑名单条目，与原生侧 `BlacklistStore` 的 JSON 结构一一对应。
 ///
 /// 业务侧通常用法：
 /// ```dart

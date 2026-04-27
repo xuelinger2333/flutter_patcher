@@ -30,6 +30,10 @@ export 'src/patch_info.dart';
 ///   1. 标记「启动中」（与原生 attachBaseContext 的标记互相兜底）
 ///   2. 下发配置到原生 SharedPreferences（公钥、熔断阈值、loader 字段候选名）
 ///   3. 注册首帧回调，渲染完毕后清零熔断计数
+///
+/// {@category Architecture}
+/// {@category API-reference}
+/// {@category Crash-guard}
 class FlutterPatcher {
   FlutterPatcher._();
 
@@ -416,7 +420,7 @@ class FlutterPatcher {
   /// - 单元测试 / 真机调试时希望让某 (version, md5) 重新可装
   /// - 业务上线后确认服务端已修复，给设备一次"再试一次"的机会
   ///
-  /// 不接受按条目精准移除：黑名单条目数量上限 50（见 [BlacklistStore.MAX_ENTRIES]），
+  /// 不接受按条目精准移除：黑名单条目数量上限 50（见原生 `BlacklistStore.MAX_ENTRIES`），
   /// 全量清空成本极低；按条移除反而易给上层"我能选择性放行某个有问题补丁"的错觉。
   static Future<void> clearBlacklist() async {
     if (_notAndroidGuard('clearBlacklist')) return;

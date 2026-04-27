@@ -1,0 +1,18 @@
+dartdoc:
+  categories:
+    "Architecture":
+      markdown: doc/architecture.md
+      name: Architecture
+    "API-reference":
+      markdown: doc/api-reference.md
+      name: API reference
+    "Crash-guard":
+      markdown: doc/crash-guard.md
+      name: Crash guard
+  categoryOrder:
+    - "Architecture"
+    - "API-reference"
+    - "Crash-guard"
+  showUndocumentedCategories: true
+  ignore:
+    - broken-link

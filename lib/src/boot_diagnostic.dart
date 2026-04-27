@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 /// 下次冷启动可能因 versionCode 不匹配、签名失败、熔断器触发、反射注入失败
 /// 等原因被原生侧丢弃 —— 这些事件**仅写 logcat**，业务侧拿不到。
 ///
-/// 本枚举与原生侧 [BootDiagnosticStore] 的字符串常量一一对应，结构化暴露给
+/// 本枚举与原生侧 `BootDiagnosticStore` 的字符串常量一一对应，结构化暴露给
 /// Dart 业务做监控上报、用户提示。
 enum PatchBootStatus {
   /// 当前未安装补丁，使用 APK 内置 libapp.so。属于正常状态。

@@ -1,0 +1,33 @@
+# Build outputs and binary artifacts (huge, must not enter the published tarball)
+example/build/
+example/.dart_tool/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+example/ios/
+example/macos/
+example/windows/
+example/linux/
+example/web/
+example/android/.gradle/
+example/android/build/
+example/android/app/build/
+example/android/local.properties
+
+# Pre-built demo APKs / .so artifacts under repo root
+dist/
+
+# Local test fixtures used during development (the example bundles its own under example/assets)
+example/tools/
+
+# IDE and editor metadata
+.idea/
+.vscode/
+*.iml
+
+# Workspace scratch space (per global rules)
+plan/
+temp/
+
+# OS junk
+.DS_Store
+Thumbs.db

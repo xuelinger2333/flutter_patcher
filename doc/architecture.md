@@ -24,7 +24,7 @@
 
 **用户设备冷启动时：** 插件在 `Application.attachBaseContext` 阶段完成熔断检查 → 补丁校验（versionCode + MD5 + 可选签名）→ 反射替换 `FlutterLoader` → 引导 Engine 加载补丁 `.so`。首帧渲染 + 前台存活 5 秒后标记为 verified，清除熔断计数。
 
-**补丁出问题时：** 用户最多经历一次白屏。下次冷启动插件检测到上次启动失败，自动回滚到 APK 内置版本，并将该补丁加入本地黑名单防止循环下载。完整流程见 [crash-guard.md](crash-guard.md)。
+**补丁出问题时：** 用户最多经历一次白屏。下次冷启动插件检测到上次启动失败，自动回滚到 APK 内置版本，并将该补丁加入本地黑名单防止循环下载。完整流程见 [Crash guard](https://pub.dev/documentation/flutter_patcher/latest/topics/Crash-guard-topic.html)。
 
 ---
 
