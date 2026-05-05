@@ -14,7 +14,7 @@ class BlacklistEntry {
   /// 入黑补丁的 version（与 PatchInfo.version 对应）。
   final String version;
 
-  /// 入黑补丁的 md5（小写 hex；full 模式是文件 md5，bsdiff 模式是合成后的 md5）。
+  /// 入黑补丁的 md5（小写 hex；bsdiff 模式下是差分文件 md5）。
   final String md5;
 
   /// 入黑原因分类（原生常量，跨边界用字符串而非 enum 保留前向兼容）。
@@ -22,7 +22,6 @@ class BlacklistEntry {
   /// - `BOOT_CRASH`：连续启动失败触发熔断
   /// - `MD5_MISMATCH`：本地文件 md5 校验失败
   /// - `SIGNATURE_INVALID`：Ed25519 签名校验失败
-  /// - `META_CORRUPTED`：meta.json 损坏（仅当能拼出双键时才入）
   final String reason;
 
   /// 入黑时间。

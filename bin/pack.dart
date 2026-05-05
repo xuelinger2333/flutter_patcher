@@ -30,7 +30,8 @@ Future<int> main(List<String> argv) async {
     )
     ..addOption(
       'target-version-code',
-      help: 'Host APK versionCode the patch is built for (integer). '
+      help:
+          'Host APK versionCode the patch is built for (integer). '
           'Runtime will reject the patch if it doesn\'t match.',
     )
     ..addOption(
@@ -110,7 +111,7 @@ Future<int> main(List<String> argv) async {
 
   // ---- write output .so ----
   outDir.createSync(recursive: true);
-  final outSoPath = '${outDir.path}/libapp_patched.so';
+  final outSoPath = '${outDir.path}/libapp.so';
   File(outSoPath).writeAsBytesSync(soBytes);
 
   // ---- compute md5 ----
@@ -124,6 +125,7 @@ Future<int> main(List<String> argv) async {
     'version': version,
     'md5': md5Digest,
     'targetVersionCode': targetVersionCode,
+    'abi': abi,
     'mode': 'full',
   };
   final manifestPath = '${outDir.path}/manifest.json';

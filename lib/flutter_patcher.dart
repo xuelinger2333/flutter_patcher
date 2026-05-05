@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io' show File, HttpClient, HttpHeaders, Platform;
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
@@ -9,6 +7,7 @@ import 'package:flutter/widgets.dart';
 
 import 'src/blacklist.dart';
 import 'src/boot_diagnostic.dart';
+import 'src/io_stub.dart' if (dart.library.io) 'src/io.dart' as platform_io;
 import 'src/patch_info.dart';
 import 'src/patcher_channel.dart';
 
@@ -51,11 +50,11 @@ class FlutterPatcher {
   /// 非 Android 平台一次性 warning，避免跨平台项目静默看不出问题。
   /// 返回 true 表示"当前平台不支持，调用方应立即返回"。
   static bool _notAndroidGuard(String method) {
-    if (Platform.isAndroid) return false;
+    if (platform_io.isAndroid) return false;
     if (!_nonAndroidWarned) {
       _nonAndroidWarned = true;
       debugPrint(
-        '[FlutterPatcher] WARNING: $method called on ${Platform.operatingSystem}. '
+        '[FlutterPatcher] WARNING: $method called on ${platform_io.operatingSystem}. '
         'This plugin only supports Android; all calls are no-ops. '
         'See README > 已知限制与合规.',
       );
@@ -63,8 +62,9 @@ class FlutterPatcher {
     return true;
   }
 
-  static const EventChannel _eventChannel =
-      EventChannel('flutter_patcher/events');
+  static const EventChannel _eventChannel = EventChannel(
+    'flutter_patcher/events',
+  );
   static Stream<PatchApplyProgress>? _progressStream;
 
   /// [applyPatch] 过程中的阶段 / 进度事件流（广播）。
@@ -91,9 +91,9 @@ class FlutterPatcher {
   /// ```
   static Stream<PatchApplyProgress> get applyProgress {
     if (_notAndroidGuard('applyProgress')) return const Stream.empty();
-    return _progressStream ??= _eventChannel
-        .receiveBroadcastStream()
-        .map((raw) => PatchApplyProgress.fromNative(raw));
+    return _progressStream ??= _eventChannel.receiveBroadcastStream().map(
+      (raw) => PatchApplyProgress.fromNative(raw),
+    );
   }
 
   /// 启动时调用。幂等。
@@ -223,30 +223,18 @@ class FlutterPatcher {
       return PatchCheckResult.none();
     }
 
-    final uri = Uri.parse(url);
-    final client = HttpClient();
-    client.connectionTimeout = timeout;
     try {
-      final req = await client.getUrl(uri).timeout(timeout);
-      headers?.forEach(req.headers.set);
-      req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      final resp = await req.close().timeout(timeout);
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        throw PatcherException('HTTP ${resp.statusCode}');
-      }
-      final body = await resp.transform(utf8.decoder).join();
-      final decoded = jsonDecode(body);
-      if (decoded is! Map) {
-        throw PatcherException('Invalid JSON: expected object');
-      }
-      return PatchCheckResult.fromJson(Map<String, dynamic>.from(decoded));
+      final decoded = await platform_io.getJson(
+        url,
+        headers: headers,
+        timeout: timeout,
+      );
+      return PatchCheckResult.fromJson(decoded);
     } on PatcherException {
       rethrow;
     } catch (e, s) {
       _log('checkUpdate failed: $e', s);
       throw PatcherException(e.toString());
-    } finally {
-      client.close(force: true);
     }
   }
 
@@ -277,7 +265,7 @@ class FlutterPatcher {
     if (_notAndroidGuard('applyPatch')) {
       return PatchApplyResult.failure(
         PatchApplyError.unknown,
-        'not supported on ${Platform.operatingSystem}',
+        'not supported on ${platform_io.operatingSystem}',
       );
     }
     StreamSubscription<PatchApplyProgress>? sub;
@@ -324,7 +312,7 @@ class FlutterPatcher {
     if (_notAndroidGuard('applyPatchBytes')) {
       return PatchApplyResult.failure(
         PatchApplyError.unknown,
-        'not supported on ${Platform.operatingSystem}',
+        'not supported on ${platform_io.operatingSystem}',
       );
     }
     final dir = _cachedStagingDir ??= (await PatcherChannel.cacheDir()) ?? '';
@@ -334,16 +322,14 @@ class FlutterPatcher {
         'native cacheDir unavailable',
       );
     }
-    final staged = File(
-      '$dir/flutter_patcher_staged_${DateTime.now().microsecondsSinceEpoch}.so',
-    );
+    String? stagedPath;
     try {
-      await staged.writeAsBytes(bytes, flush: true);
+      stagedPath = await platform_io.stagePatchBytes(dir, bytes);
       final md5Hex = crypto.md5.convert(bytes).toString();
       return await applyPatch(
         PatchInfo(
           version: version,
-          patchUrl: 'file://${staged.path}',
+          patchUrl: 'file://$stagedPath',
           md5: md5Hex,
           signature: signature,
           targetVersionCode: targetVersionCode,
@@ -355,7 +341,9 @@ class FlutterPatcher {
       return PatchApplyResult.failure(PatchApplyError.unknown, e.toString());
     } finally {
       try {
-        if (await staged.exists()) await staged.delete();
+        if (stagedPath != null) {
+          await platform_io.deleteFileIfExists(stagedPath);
+        }
       } catch (_) {
         // staging 文件清理失败不阻塞主流程；下次 staging 用新时间戳避免冲突。
       }
@@ -387,6 +375,16 @@ class FlutterPatcher {
       return await PatcherChannel.appVersionCode();
     } catch (_) {
       return null;
+    }
+  }
+
+  /// 当前设备 ABI，用于服务端按 ABI 下发对应的 libapp.so。
+  static Future<String> get deviceAbi async {
+    if (_notAndroidGuard('deviceAbi')) return '';
+    try {
+      return await PatcherChannel.deviceAbi() ?? '';
+    } catch (_) {
+      return '';
     }
   }
 

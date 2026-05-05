@@ -86,6 +86,11 @@ class PatcherChannel {
     return v;
   }
 
+  /// 当前设备首选 ABI，供服务端按 ABI 分发补丁。
+  static Future<String?> deviceAbi() async {
+    return channel.invokeMethod<String>('deviceAbi');
+  }
+
   /// 已知"装上就出事"的补丁本地黑名单。原生侧返回 List<Map>，由调用方
   /// 用 `BlacklistEntry.fromNative` 反序列化。
   static Future<List<dynamic>?> blacklist() async {

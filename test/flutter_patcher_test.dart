@@ -98,6 +98,12 @@ void main() {
       expect(r.patch, isNull);
     });
 
+    test('has_update=false yields none() with null patch', () {
+      final r = PatchCheckResult.fromJson({'has_update': false});
+      expect(r.hasUpdate, isFalse);
+      expect(r.patch, isNull);
+    });
+
     test('parses nested patch map when hasUpdate=true', () {
       final r = PatchCheckResult.fromJson({
         'hasUpdate': true,
@@ -109,6 +115,21 @@ void main() {
       });
       expect(r.hasUpdate, isTrue);
       expect(r.patch?.version, 'v3');
+    });
+
+    test('parses documented flat snake_case check-update response', () {
+      final r = PatchCheckResult.fromJson({
+        'has_update': true,
+        'version': '1.0.0-h2',
+        'patch_url': 'https://example.com/arm64-v8a/libapp.so',
+        'md5': '0123456789abcdef0123456789abcdef',
+        'target_version_code': 100,
+      });
+
+      expect(r.hasUpdate, isTrue);
+      expect(r.patch?.version, '1.0.0-h2');
+      expect(r.patch?.patchUrl, 'https://example.com/arm64-v8a/libapp.so');
+      expect(r.patch?.targetVersionCode, 100);
     });
   });
 }

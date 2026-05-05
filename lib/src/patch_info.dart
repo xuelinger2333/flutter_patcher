@@ -110,17 +110,18 @@ class PatchInfo {
 
   /// 序列化成传给原生侧 MethodChannel 的 Map。只含插件实际需要的字段。
   Map<String, dynamic> toJson() => {
-        'version': version,
-        'patchUrl': patchUrl,
-        'md5': md5,
-        'signature': signature,
-        if (targetVersionCode != null) 'targetVersionCode': targetVersionCode,
-        'mode': mode.name,
-        'targetMd5': targetMd5,
-      };
+    'version': version,
+    'patchUrl': patchUrl,
+    'md5': md5,
+    'signature': signature,
+    if (targetVersionCode != null) 'targetVersionCode': targetVersionCode,
+    'mode': mode.name,
+    'targetMd5': targetMd5,
+  };
 
   @override
-  String toString() => 'PatchInfo('
+  String toString() =>
+      'PatchInfo('
       'version=$version, mode=${mode.name}, url=$patchUrl, '
       'md5=$md5, sig=${signature.isEmpty ? 'none' : '***'})';
 }
@@ -299,13 +300,9 @@ class PatchApplyResult {
 
   const PatchApplyResult._({required this.ok, this.error, this.message});
 
-  factory PatchApplyResult.success() =>
-      const PatchApplyResult._(ok: true);
+  factory PatchApplyResult.success() => const PatchApplyResult._(ok: true);
 
-  factory PatchApplyResult.failure(
-    PatchApplyError error, [
-    String? message,
-  ]) =>
+  factory PatchApplyResult.failure(PatchApplyError error, [String? message]) =>
       PatchApplyResult._(ok: false, error: error, message: message);
 
   /// 从原生返回的 Map 反序列化。非预期结构一律归到 [PatchApplyError.unknown]。
@@ -344,13 +341,13 @@ class PatchCheckResult {
       const PatchCheckResult(hasUpdate: false, patch: null);
 
   factory PatchCheckResult.fromJson(Map<String, dynamic> json) {
-    final hasUpdate = json['hasUpdate'] == true;
+    final hasUpdate = json['hasUpdate'] == true || json['has_update'] == true;
     if (!hasUpdate) return PatchCheckResult.none();
     final patchJson = json['patch'];
-    if (patchJson is! Map) return PatchCheckResult.none();
+    final patchMap = patchJson is Map ? patchJson : json;
     return PatchCheckResult(
       hasUpdate: true,
-      patch: PatchInfo.fromJson(Map<String, dynamic>.from(patchJson)),
+      patch: PatchInfo.fromJson(Map<String, dynamic>.from(patchMap)),
     );
   }
 }

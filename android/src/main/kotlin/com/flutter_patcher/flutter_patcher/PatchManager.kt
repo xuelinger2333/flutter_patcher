@@ -52,6 +52,8 @@ internal class PatchManager(
 
         /** 下载进度节流，避免频繁跨线程发事件淹没 UI。 */
         private const val PROGRESS_EMIT_INTERVAL_MS = 200L
+
+        private val APPLY_LOCK = Any()
     }
 
     private val patchDir = File(context.filesDir, PatcherConfig.PATCH_DIR)
@@ -140,13 +142,13 @@ internal class PatchManager(
                     BootDiagnosticStore.DROPPED_SIGNATURE_INVALID
                 SignatureVerifier.VerifyResult.OK -> error("unreachable")
             }
-            // effectiveMd5 透传给 attachPatcher 的 onDrop，便于把这个补丁加入黑名单
-            // （见 FlutterPatcherApplication.attachPatcher 的 onDrop 分支）。
+            // 黑名单使用 downloadMd5：它与 applyPatch 入参 md5 保持一致，确保 bsdiff
+            // 崩溃后再次下发同一差分包时也能在下载前命中黑名单。
             onDrop?.invoke(
                 status,
                 version,
                 mapOf(
-                    "effectiveMd5" to expectedMd5,
+                    "blacklistMd5" to meta.optString("downloadMd5", expectedMd5),
                     "message" to "SignatureVerifier returned $verifyResult",
                 )
             )
@@ -160,20 +162,20 @@ internal class PatchManager(
     fun currentVersion(): String = readMeta()?.optString("version", "") ?: ""
 
     /**
-     * 当前补丁元信息快照。返回 (version, effectiveMd5) 二元组，或 null（无补丁 / meta 损坏）。
+     * 当前补丁元信息快照。返回 (version, downloadMd5) 二元组，或 null（无补丁 / meta 损坏）。
      * 供 [BlacklistStore] 在丢弃补丁前读取双键。
      */
     fun currentMeta(): Pair<String, String>? {
         val meta = readMeta() ?: return null
         val version = meta.optString("version", "")
-        val md5 = meta.optString("effectiveMd5", "")
+        val md5 = meta.optString("downloadMd5", meta.optString("effectiveMd5", ""))
         if (version.isEmpty() || md5.isEmpty()) return null
         return version to md5
     }
 
     // ==================== 安装 ====================
 
-    fun applyPatch(info: Map<String, Any?>): ApplyResult {
+    fun applyPatch(info: Map<String, Any?>): ApplyResult = synchronized(APPLY_LOCK) {
         val version = (info["version"] as? String).orEmpty()
         val url = (info["patchUrl"] as? String).orEmpty()
         val md5 = (info["md5"] as? String).orEmpty()

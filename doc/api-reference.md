@@ -1,32 +1,55 @@
-# API 参考
+# API Reference
 
-> `package:flutter_patcher/flutter_patcher.dart` 的完整公开 API。
-> 所有操作通过 `FlutterPatcher` 静态类调用。非 Android 平台一律 no-op（首次调用打印 warning，返回安全默认值，不抛异常）。
+`flutter_patcher` 的公开 API 都通过 `FlutterPatcher` 静态类调用。
+
+目前插件仅在 Android 平台执行补丁逻辑。
+在 iOS、Web、macOS、Windows、Linux 等非 Android 平台调用这些 API 时，不会执行补丁操作，也不会抛出异常；插件会在首次调用时打印 warning，并返回安全默认值。
 
 ---
 
 ## 初始化
 
+在 `runApp()` 之前调用：
+
+```dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await FlutterPatcher.init();
+
+  runApp(const MyApp());
+}
+```
+
+大多数项目无需传参。`init()` 会准备补丁加载、崩溃保护和启动状态记录。重复调用是安全的。
+
+如需开启签名校验、调整熔断阈值或兼容特殊 Flutter 版本，可以覆盖默认参数：
+
 ```dart
 await FlutterPatcher.init(
-  publicKeyBase64: 'MFkwEwYH...==',   // Ed25519 公钥，空字符串跳过签名校验
-  maxCrashCount: 1,                    // 连续崩溃几次后熔断，默认 1（fail-fast）
-  strictSignature: true,               // API < 33 遇到带签名补丁时：true 拒绝，false 跳过验签
-  loaderFieldCandidates: ['flutterLoader'],  // FlutterInjector 内 loader 字段名候选
-  loaderFallbackHeuristic: false,      // 候选名都失败后是否启发式扫描兜底
-  verifyAfter: const Duration(seconds: 5),   // Dart 错误钩子守护窗口，默认 5 秒
+  publicKeyBase64: 'MFkwEwYH...==',
+  maxCrashCount: 1,
+  strictSignature: true,
+  loaderFieldCandidates: ['flutterLoader'],
+  loaderFallbackHeuristic: false,
+  verifyAfter: const Duration(seconds: 5),
 );
 ```
 
-必须在 `runApp()` 之前调用。内部完成：读取本地补丁元数据、启动熔断器、安装 Dart 错误钩子、注册首帧回调。重复调用幂等。
-
-大多数项目只需要 `init()` 无参调用，参数按需覆盖即可。
+| 参数                        | 说明                         |
+| ------------------------- | -------------------------- |
+| `publicKeyBase64`         | Ed25519 公钥。`PatchInfo.signature` 为空时跳过签名校验；补丁带签名但未配置公钥会拒绝应用 |
+| `maxCrashCount`           | 连续崩溃多少次后熔断补丁，默认 `1`        |
+| `strictSignature`         | API < 33 遇到带签名补丁时是否拒绝应用    |
+| `loaderFieldCandidates`   | FlutterLoader 字段名候选，一般无需修改 |
+| `loaderFallbackHeuristic` | 候选字段失败后是否启用兜底扫描            |
+| `verifyAfter`             | 启动后用于判断补丁稳定的保护窗口           |
 
 ---
 
 ## 检查更新
 
-如果你使用插件内置的 check-update 协议（JSON 格式见 [Architecture](https://pub.dev/documentation/flutter_patcher/latest/topics/Architecture-topic.html)），可以用 `checkUpdate`：
+如果你使用插件内置的 check-update 协议，可以直接调用 `checkUpdate`：
 
 ```dart
 try {
@@ -35,29 +58,36 @@ try {
     headers: {'Authorization': 'Bearer $token'},
     timeout: const Duration(seconds: 10),
   );
+
   if (check.hasUpdate) {
     await FlutterPatcher.applyPatch(check.patch!);
   }
 } on PatcherException catch (e) {
-  // 网络失败或 JSON 解析错误
   log.warning('check update failed: ${e.message}');
 }
 ```
 
-**`PatchCheckResult`** 字段：
+`checkUpdate` 返回 `PatchCheckResult`：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `hasUpdate` | `bool` | 是否有新补丁 |
-| `patch` | `PatchInfo?` | 新补丁信息，`hasUpdate == false` 时为 null |
+| 字段          | 类型           | 说明                |
+| ----------- | ------------ | ----------------- |
+| `hasUpdate` | `bool`       | 是否有可用补丁           |
+| `patch`     | `PatchInfo?` | 补丁信息。无更新时为 `null` |
 
-如果你用自己的协议，跳过 `checkUpdate`，直接构造 `PatchInfo` 传给 `applyPatch`。
+如果你的服务端已有自己的更新协议，可以跳过 `checkUpdate`，直接构造 `PatchInfo` 后调用 `applyPatch`。
 
 ---
 
 ## 应用补丁
 
-### 方式一：给 URL，插件下载（推荐）
+补丁有两种应用方式：
+
+* `applyPatch`：传入补丁 URL，由插件负责下载，推荐大多数场景使用。
+* `applyPatchBytes`：传入内存中的补丁字节，适合自定义下载、asset 加载或 isolate 场景。
+
+补丁应用成功后，会在 **下次冷启动** 生效；不会在当前进程内立即替换代码。
+
+### 方式一：插件下载补丁
 
 ```dart
 final result = await FlutterPatcher.applyPatch(
@@ -65,136 +95,172 @@ final result = await FlutterPatcher.applyPatch(
     version: '1.0.0-h1',
     patchUrl: 'https://cdn.example.com/libapp.so',
     md5: '0123456789abcdef0123456789abcdef',
-    // 可选字段
-    signature: '',           // Ed25519 签名，空字符串跳过
-    targetVersionCode: 100,  // null 时自动绑定当前 APK versionCode
-    mode: PatchMode.full,    // 或 PatchMode.bsdiff
-    targetMd5: '',           // bsdiff 模式必填：合成后 .so 的预期 MD5
+    targetVersionCode: 100,
   ),
   onProgress: (p) {
     print('${p.phase.name}: ${p.fraction ?? "..."}');
   },
 );
+
+if (result.ok) {
+  showRestartHint();
+}
 ```
 
-### 方式二：字节已在内存
+`targetVersionCode` 表示补丁适用的宿主 APK `versionCode`，不是补丁版本号。
+例如线上 APK 的 `versionCode` 是 `100`，那么面向这个 APK 的补丁也应填写 `targetVersionCode: 100`。
+
+如果线上同时存在多个 APK 版本，需要为不同 `versionCode` 分别构建和下发补丁。
+
+### 方式二：传入补丁字节
 
 ```dart
+final bytes = await loadPatchFromYourSource();
+
 final result = await FlutterPatcher.applyPatchBytes(
   bytes,
   version: '1.0.0-h1',
-  signature: '',         // 可选
-  targetVersionCode: 100, // 可选
+  targetVersionCode: 100,
   onProgress: (p) => print(p.phase.name),
 );
 ```
 
-内部自动算 MD5、处理临时文件，再走 `applyPatch` 主流程。
+`applyPatchBytes` 会自动计算 MD5、处理临时文件，然后复用 `applyPatch` 的主流程。
 
-### 结果处理
+---
 
-两个方法都返回 **`PatchApplyResult`**：
+## 处理应用结果
+
+`applyPatch` 和 `applyPatchBytes` 都返回 `PatchApplyResult`。
 
 ```dart
 if (result.ok) {
-  // 补丁已落盘，下次冷启动生效
+  // 补丁已保存，下次冷启动生效
   showRestartHint();
 } else {
   switch (result.error!) {
     case PatchApplyError.blacklisted:
-      // 该补丁曾导致崩溃，通知服务端下架
+      // 该补丁曾导致崩溃，不应继续下发
       break;
+
     case PatchApplyError.network:
     case PatchApplyError.ioError:
-      // 可重试（建议指数退避，最多 3 次）
+      // 可稍后重试
       break;
+
     case PatchApplyError.md5Mismatch:
-      // CDN 脏数据或服务端 MD5 计算错误
+      // CDN 文件或服务端 MD5 可能不一致
       break;
+
     case PatchApplyError.signatureInvalid:
-      // 可能被篡改，上报安全事件
+      // 补丁签名无效，应上报安全事件
       break;
+
     default:
-      log.warning('patch: ${result.error?.name} / ${result.message}');
+      log.warning('patch failed: ${result.error?.name} / ${result.message}');
   }
 }
 ```
 
-`result.message` 是给开发者看的诊断描述，不要直接展示给用户。同版本补丁重复调用幂等返回 `ok=true`。
+`result.message` 面向开发者排查问题，不建议直接展示给用户。
 
-### 全部错误码
-
-| 错误码 | 含义 | 建议处理 |
-|---|---|---|
-| `invalidArgs` | 缺必填字段或格式错误 | 告警服务端 |
-| `blacklisted` | (version, md5) 命中本地黑名单 | 告警服务端下架，不重试 |
-| `network` | 下载失败 | 稍后重试 |
-| `md5Mismatch` | 下载文件 MD5 与传入值不符 | 检查 CDN / 服务端 |
-| `signatureInvalid` | Ed25519 签名失败 | 上报安全事件，不重试 |
-| `ioError` | 磁盘满 / 权限 / rename 失败 | 稍后重试 |
-| `bsdiffDisabled` | 收到 bsdiff 补丁但未编译 native 模块 | 切回 full 模式（bsdiff 配置见 [Architecture](https://pub.dev/documentation/flutter_patcher/latest/topics/Architecture-topic.html)） |
-| `bsdiffApplyFailed` | bsdiff 合成失败 | 检查 APK 版本是否匹配 |
-| `targetMd5Mismatch` | 合成后 .so 的 MD5 与 `targetMd5` 不符 | 同上 |
-| `unknown` | 未分类异常 | 查看 `result.message` |
-
-### 进度监听
-
-除了 `onProgress` 回调，也可以通过全局广播流监听：
-
-```dart
-FlutterPatcher.applyProgress.listen((p) {
-  // p.phase: downloading / verifying / bsdiffMerging / finalizing
-  // p.bytesReceived / p.totalBytes: 仅 downloading 阶段有意义
-  // p.fraction: 0.0~1.0 的下载进度，非下载阶段或 totalBytes 未知时返回 null
-});
-```
+同一个补丁重复应用是安全的；如果补丁已经存在，会返回 `ok = true`。
 
 ---
 
-## 回滚
+## 错误码
+
+| 错误码                 | 含义                              | 建议处理                 |
+| ------------------- | ------------------------------- | -------------------- |
+| `invalidArgs`       | 参数缺失或格式错误                       | 检查服务端下发内容            |
+| `blacklisted`       | 补丁命中本地黑名单                       | 停止下发该补丁              |
+| `network`           | 下载失败                            | 稍后重试                 |
+| `md5Mismatch`       | 下载文件 MD5 不匹配                    | 检查 CDN 或服务端 MD5      |
+| `signatureInvalid`  | 签名校验失败                          | 上报安全事件，不重试           |
+| `ioError`           | 文件写入、rename 或权限失败               | 稍后重试                 |
+| `bsdiffDisabled`    | 收到 bsdiff 补丁，但未启用 native bsdiff | 改用 full 补丁或启用 bsdiff |
+| `bsdiffApplyFailed` | bsdiff 合成失败                     | 检查目标 APK 是否匹配        |
+| `targetMd5Mismatch` | 合成后的 `.so` MD5 不匹配              | 检查差分包和基准版本           |
+| `unknown`           | 未分类异常                           | 查看 `result.message`  |
+
+---
+
+## 监听进度
+
+除了 `onProgress`，也可以监听全局广播流：
+
+```dart
+FlutterPatcher.applyProgress.listen((p) {
+  print('${p.phase.name}: ${p.fraction}');
+});
+```
+
+| 字段              | 说明                                                          |
+| --------------- | ----------------------------------------------------------- |
+| `phase`         | 当前阶段：`downloading`、`verifying`、`bsdiffMerging`、`finalizing` |
+| `bytesReceived` | 已下载字节数，仅下载阶段有意义                                             |
+| `totalBytes`    | 总字节数，服务端未返回时为 `-1`                                           |
+| `fraction`      | 下载进度，范围 `0.0 ~ 1.0`；未知时为 `null`                             |
+
+---
+
+## 回滚补丁
 
 ```dart
 await FlutterPatcher.rollback();
 ```
 
-删除当前补丁，下次冷启动回到 APK 内置版本。手动回滚不入黑名单。
+回滚会删除当前补丁。下次冷启动时，应用会回到 APK 内置版本。
+
+手动回滚不会把补丁加入黑名单。
 
 ---
 
-## 主动上报启动成功
+## 主动确认启动成功
 
 ```dart
 await FlutterPatcher.reportBootSuccess();
 ```
 
-通常由 `init()` 在首帧渲染时自动调用，不需要手动干预。仅在你想 **抢在首帧之前** 用自定义判定（比如 `main()` 里跑一段轻量自检）确认补丁可信时才显式调用。首帧后再调用是 no-op。
+通常不需要手动调用。`init()` 会在首帧渲染后自动确认本次启动成功。
+
+只有当你希望在首帧之前用自定义逻辑确认补丁可用时，才需要显式调用：
+
+```dart
+await runLightweightSelfCheck();
+await FlutterPatcher.reportBootSuccess();
+```
+
+首帧之后再次调用是 no-op。
 
 ---
 
 ## 查询状态
 
 ```dart
-// 当前 APK 的 versionCode（API 28+ 用 longVersionCode）
 final int? code = await FlutterPatcher.appVersionCode;
-
-// 当前已生效或已就绪的补丁版本，无补丁返回 null
-final String? ver = await FlutterPatcher.currentVersion;
-
-// 当前设备 ABI，用于拼进 check-update 请求
+final String? version = await FlutterPatcher.currentVersion;
 final String abi = await FlutterPatcher.deviceAbi;
 ```
 
+| API              | 说明                                                  |
+| ---------------- | --------------------------------------------------- |
+| `appVersionCode` | 当前 APK 的 `versionCode`。API 28+ 使用 `longVersionCode` |
+| `currentVersion` | 当前已生效或已就绪的补丁版本。无补丁时为 `null`                         |
+| `deviceAbi`      | 当前设备 ABI，可用于 check-update 请求                        |
+
 ---
 
-## 上次启动诊断
+## 启动诊断
 
-每次冷启动后，原生侧会记录补丁加载结果。通过 `lastBootDiagnostic` 读取并上报：
+每次冷启动后，原生侧会记录一次补丁加载结果。可以通过 `lastBootDiagnostic` 读取并上报：
 
 ```dart
 final diag = await FlutterPatcher.lastBootDiagnostic;
+
 if (diag != null && !diag.isHealthy) {
   analytics.report('patch_dropped', {
-    'status': diag.status.name,       // 见下表
+    'status': diag.status.name,
     'patch_version': diag.patchVersion,
     'crash_count': diag.crashCount,
     'message': diag.message,
@@ -202,134 +268,172 @@ if (diag != null && !diag.isHealthy) {
 }
 ```
 
-**`PatchBootDiagnostic`** 字段：
+`PatchBootDiagnostic` 字段：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `status` | `PatchBootStatus` | 结果分类，见下表 |
-| `recordedAt` | `DateTime` | 这条诊断对应的冷启动时间 |
-| `patchVersion` | `String?` | 涉及的补丁版本（meta 损坏时可能为 null） |
-| `patchTargetVersionCode` | `int?` | versionCode 不匹配时：补丁声明的 target |
-| `appVersionCode` | `int?` | 当前 APK 的 versionCode |
-| `crashCount` | `int?` | 熔断触发时的累计崩溃次数 |
-| `attemptedLoaderFields` | `List<String>?` | `hookInstallFailed` 时尝试过的字段名 |
-| `message` | `String?` | 给开发者看的诊断描述 |
-| `isHealthy` | `bool` | `patched` 或 `noPatch` 时为 true |
+| 字段                       | 类型                | 说明                              |
+| ------------------------ | ----------------- | ------------------------------- |
+| `status`                 | `PatchBootStatus` | 启动结果                            |
+| `recordedAt`             | `DateTime`        | 诊断记录时间                          |
+| `patchVersion`           | `String?`         | 涉及的补丁版本                         |
+| `patchTargetVersionCode` | `int?`            | 补丁声明的目标 `versionCode`           |
+| `appVersionCode`         | `int?`            | 当前 APK 的 `versionCode`          |
+| `crashCount`             | `int?`            | 当前累计崩溃次数                        |
+| `attemptedLoaderFields`  | `List<String>?`   | hook 失败时尝试过的字段名                 |
+| `message`                | `String?`         | 开发者诊断信息                         |
+| `isHealthy`              | `bool`            | `patched` 或 `noPatch` 时为 `true` |
 
-**`PatchBootStatus` 取值：**
+`PatchBootStatus` 取值：
 
-| 值 | 含义 | 处置 |
-|---|---|---|
-| `patched` | 补丁加载成功 | 正常 |
-| `noPatch` | 无补丁，使用内置版本 | 正常 |
-| `droppedVersionCodeMismatch` | APK 升级后旧补丁失效 | 常见，通常无需告警 |
-| `droppedCircuitBreaker` | 连续崩溃达熔断阈值 | **强告警**，通知服务端下架 |
-| `droppedSignatureInvalid` | 签名校验失败 | **告警**，可能被篡改 |
-| `droppedMd5Mismatch` | 本地 .so 与 meta 记录不一致 | 上报 |
-| `droppedMetaCorrupted` | meta.json 损坏 | 上报 |
-| `hookInstallFailed` | 反射替换 FlutterLoader 失败 | 需调整 `loaderFieldCandidates` |
-| `unknown` | 未分类异常 | 查看 `message` |
+| 值                            | 含义                    | 建议处理                                   |
+| ---------------------------- | --------------------- | -------------------------------------- |
+| `patched`                    | 补丁加载成功                | 正常                                     |
+| `noPatch`                    | 无补丁，使用 APK 内置版本       | 正常                                     |
+| `droppedVersionCodeMismatch` | APK 已升级，旧补丁失效         | 通常无需告警                                 |
+| `droppedCircuitBreaker`      | 补丁导致连续崩溃，已熔断          | 强告警，停止下发该补丁                            |
+| `droppedSignatureInvalid`    | 签名校验失败                | 告警，检查补丁来源                              |
+| `droppedMd5Mismatch`         | 本地文件与记录的 MD5 不一致      | 上报并排查                                  |
+| `droppedMetaCorrupted`       | 补丁元数据损坏               | 上报并排查                                  |
+| `hookInstallFailed`          | FlutterLoader hook 失败 | 检查 Flutter 版本或 `loaderFieldCandidates` |
+| `unknown`                    | 未分类异常                 | 查看 `message`                           |
 
-`example/lib/diag_card.dart` 将这些字段做成了可视化卡片，真机调试时直接看屏幕即可。
+调试时可以参考 `example/lib/diag_card.dart`，在真机上直接查看诊断结果。
 
 ---
 
 ## 黑名单
 
+当某个补丁导致启动崩溃或校验失败时，插件会将其加入本地黑名单，避免反复应用同一个问题补丁。
+
 ```dart
-// 查看当前黑名单（按入黑时间从旧到新）
 final entries = await FlutterPatcher.blacklist;
+
 for (final e in entries) {
   print('${e.version} / ${e.md5} / ${e.reason} / ${e.blacklistedAt}');
 }
+```
 
-// 清空黑名单（仅调试用）
+调试时可以清空黑名单：
+
+```dart
 await FlutterPatcher.clearBlacklist();
 ```
 
-**`BlacklistEntry`** 字段：
+`BlacklistEntry` 字段：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `version` | `String` | 入黑补丁的 version |
-| `md5` | `String` | 入黑补丁的 MD5（小写 hex） |
-| `reason` | `String` | 入黑原因：`BOOT_CRASH` / `MD5_MISMATCH` / `SIGNATURE_INVALID` / `META_CORRUPTED` |
-| `blacklistedAt` | `DateTime` | 入黑时间 |
+| 字段              | 类型         | 说明     |
+| --------------- | ---------- | ------ |
+| `version`       | `String`   | 补丁版本   |
+| `md5`           | `String`   | 补丁文件 MD5；bsdiff 模式下为差分文件 MD5 |
+| `reason`        | `String`   | 入黑原因   |
+| `blacklistedAt` | `DateTime` | 入黑时间   |
 
-黑名单机制的详细设计见 [Crash protection](https://pub.dev/documentation/flutter_patcher/latest/topics/Crash-protection-topic.html)。
+常见 `reason`：
+
+| 值                   | 说明       |
+| ------------------- | -------- |
+| `BOOT_CRASH`        | 补丁导致启动崩溃 |
+| `MD5_MISMATCH`      | MD5 校验失败 |
+| `SIGNATURE_INVALID` | 签名校验失败   |
 
 ---
 
-## PatchInfo 构造
+## PatchInfo
 
-除了直接构造，`PatchInfo` 也支持从 JSON 反序列化（兼容驼峰和下划线命名）：
+`PatchInfo` 描述一个可应用的补丁。
 
 ```dart
-// 从服务端 JSON 构造
-final patch = PatchInfo.fromJson(json);
+final patch = PatchInfo(
+  version: '1.0.0-h1',
+  patchUrl: 'https://cdn.example.com/libapp.so',
+  md5: '0123456789abcdef0123456789abcdef',
+  targetVersionCode: 100,
+);
+```
 
-// 序列化（传给原生 MethodChannel）
+也可以从服务端 JSON 构造：
+
+```dart
+final patch = PatchInfo.fromJson(json);
 final map = patch.toJson();
 ```
 
-**`PatchInfo`** 完整字段：
+`fromJson` 同时兼容驼峰和下划线字段名，未知字段会保留在 `raw` 中。
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `version` | `String` | ✅ | 补丁版本号，自定义字符串 |
-| `patchUrl` | `String` | ✅ | 下载地址 |
-| `md5` | `String` | ✅ | 补丁文件的 MD5（小写 hex，32 字符）。bsdiff 模式下是差分文件的 MD5 |
-| `signature` | `String` | | Ed25519 签名（Base64），空字符串跳过验签 |
-| `targetVersionCode` | `int?` | 推荐 | 绑定的宿主 APK versionCode，null 时自动抓取 |
-| `mode` | `PatchMode` | | `PatchMode.full`（默认）或 `PatchMode.bsdiff` |
-| `targetMd5` | `String` | bsdiff 必填 | 合成后 .so 的预期 MD5 |
-| `raw` | `Map<String, dynamic>` | | `fromJson` 时保留的原始 JSON |
+| 字段                  | 类型                     | 必填        | 说明                        |
+| ------------------- | ---------------------- | --------- | ------------------------- |
+| `version`           | `String`               | 是         | 补丁版本标识，自定义字符串             |
+| `patchUrl`          | `String`               | 是         | 补丁下载地址                    |
+| `md5`               | `String`               | 是         | 补丁文件 MD5，小写 32 位 hex      |
+| `signature`         | `String`               | 否         | Ed25519 签名，Base64。为空时跳过验签 |
+| `targetVersionCode` | `int?`                 | 推荐        | 补丁适用的宿主 APK `versionCode` |
+| `mode`              | `PatchMode`            | 否         | 补丁模式，默认 `PatchMode.full`  |
+| `targetMd5`         | `String`               | bsdiff 必填 | bsdiff 合成后 `.so` 的预期 MD5  |
+| `raw`               | `Map<String, dynamic>` | 否         | `fromJson` 保留的原始字段        |
 
-**`PatchMode`** 取值：
+`PatchMode` 取值：
 
-| 值 | 说明 |
-|---|---|
-| `full` | 完整 `libapp.so`，直接替换（默认） |
-| `bsdiff` | 差分包，端侧合成。需启用 native bsdiff 模块，否则报 `bsdiffDisabled` |
+| 值                  | 说明                              |
+| ------------------ | ------------------------------- |
+| `PatchMode.full`   | 完整 `libapp.so`，直接替换，默认模式        |
+| `PatchMode.bsdiff` | 差分补丁，端侧合成。需要启用 native bsdiff 模块 |
 
 ---
 
-## 异常
+## 异常行为
 
-只有 `checkUpdate` 会抛异常（网络失败或 JSON 解析错误），类型为 **`PatcherException`**，包含 `message` 字段。
+只有 `checkUpdate` 会抛出 `PatcherException`，通常表示网络失败或响应 JSON 无法解析。
 
-其他所有 API 通过返回值报告结果，不抛异常。
+其他 API 不抛异常，而是通过返回值报告结果。
+
+```dart
+try {
+  final check = await FlutterPatcher.checkUpdate(url);
+} on PatcherException catch (e) {
+  log.warning(e.message);
+}
+```
 
 ---
 
 ## pack CLI
 
-仓库自带的打包工具，从 `flutter build apk --release` 产物提取 `libapp.so` 并生成补丁元数据。
+`flutter_patcher:pack` 用于从 release APK 中提取 `libapp.so`，并生成补丁元数据。
 
 ```bash
 dart run flutter_patcher:pack \
-    --apk build/app/outputs/flutter-apk/app-release.apk \
-    --version 1.0.0-h1 \
-    --target-version-code 100
+  --apk build/app/outputs/flutter-apk/app-release.apk \
+  --version 1.0.0-h1 \
+  --target-version-code 100
 ```
 
-| 参数 | 说明 |
-|---|---|
-| `--apk <path>` | 必填，release APK 路径 |
-| `--version <string>` | 必填，补丁版本标识（自定义字符串） |
-| `--target-version-code <int>` | 必填，宿主 APK versionCode |
-| `--abi <string>` | 可选，不传时按 `arm64-v8a` > `armeabi-v7a` > `x86_64` 优先取 |
-| `--out <dir>` | 可选，默认 `dist/` |
+| 参数                            | 说明                                             |
+| ----------------------------- | ---------------------------------------------- |
+| `--apk <path>`                | 必填，release APK 路径                              |
+| `--version <string>`          | 必填，补丁版本标识                                      |
+| `--target-version-code <int>` | 必填，补丁适用的宿主 APK `versionCode`                   |
+| `--abi <string>`              | 可选，默认按 `arm64-v8a`、`armeabi-v7a`、`x86_64` 顺序选择 |
+| `--out <dir>`                 | 可选，输出目录，默认 `dist/`                             |
 
-产物：
+`--target-version-code` 绑定的是用户设备上已安装的基准 APK。
 
-```
+例如：
+
+* 线上 APK 的 `versionCode` 是 `100`
+* 你要为该版本发布补丁 `1.0.0-h1`
+* 那么 `--target-version-code` 应填写 `100`
+
+如果 APK 升级到新的 `versionCode`，旧补丁会自动失效。
+如果线上同时存在多个 `versionCode`，请分别为每个基准版本构建补丁。
+
+构建产物：
+
+```text
 dist/
-├── libapp.so          # 补丁内容，上传到 CDN
-└── manifest.json      # 元数据（version、md5、target_version_code、abi）
+├── libapp.so
+└── manifest.json
 ```
 
-`--target-version-code` 必填，是因为补丁与宿主 APK 强绑定，APK 升级后旧补丁会自动失效。绑定原理见 [Architecture - versionCode 强绑定](https://pub.dev/documentation/flutter_patcher/latest/topics/Architecture-topic.html)。
+将 `libapp.so` 和 `manifest.json` 上传到 CDN 后，即可通过你的更新接口下发。
 
 ---
 
@@ -337,34 +441,34 @@ dist/
 
 ### 性能影响
 
-| 指标 | 影响 |
-|---|---|
-| APK 体积增量 | 约 80–120 KB（插件 native 代码 + Kotlin） |
-| 启动耗时增量 | 约 5–15 ms（反射替换 + SharedPreferences commit，profile 模式实测） |
-| 运行时内存 | 无额外占用（补丁加载后与原始 libapp.so 行为一致） |
-| 补丁文件大小 | 全量替换与原 libapp.so 同等大小（通常 5–15 MB）；启用 bsdiff 后降至数十 KB |
+| 指标       | 影响                                |
+| -------- | --------------------------------- |
+| APK 体积增量 | 约 80–120 KB                       |
+| 启动耗时增量   | 约 5–15 ms                         |
+| 运行时内存    | 补丁加载后无额外常驻占用                      |
+| 补丁文件大小   | full 模式通常 5–15 MB；bsdiff 可降至数十 KB |
 
-> 以上数据基于 Pixel 6 / Flutter 3.24 测量，不同设备和 Flutter 版本可能有差异。
+> 以上数据基于 Pixel 6 / Flutter 3.24 测量。实际结果会受设备、Flutter 版本和构建配置影响。
 
 ### 支持范围
 
-| 维度 | 要求 |
-|---|---|
-| 平台 | 仅 Android |
-| Android minSdk | 24（Android 7.0） |
-| Flutter | 3.19 ~ 3.38 |
-| ABI | `armeabi-v7a` / `arm64-v8a` / `x86_64` |
-| NDK | 27.0.12077973+ |
-| AGP | 8.11.1+ |
-| Kotlin | 2.2.20+ |
-| Java / JVM | 17 |
+| 维度             | 要求                                     |
+| -------------- | -------------------------------------- |
+| 平台             | Android                                |
+| Android minSdk | 24                                     |
+| Flutter        | 3.19 ~ 3.38                            |
+| ABI            | `armeabi-v7a` / `arm64-v8a` / `x86_64` |
+| NDK            | 27.0.12077973+                         |
+| AGP            | 8.11.1+                                |
+| Kotlin         | 2.2.20+                                |
+| Java / JVM     | 17                                     |
 
-非 Android 平台调用所有 API 为 no-op（首次调用打印 warning，返回安全默认值，不抛异常）。
+非 Android 平台调用 API 时会 no-op：首次调用打印 warning，随后返回安全默认值，不抛异常。
 
 ---
 
-## 版本兼容说明
+## 版本兼容
 
-- 0.x 阶段 API 可能调整，建议 `pubspec.yaml` 固定版本号
-- `PatchBootStatus` 和黑名单 `reason` 的字符串保持前向兼容；新增值时旧版本 SDK 归到 `unknown`
-- `PatchInfo.fromJson` 兼容驼峰与下划线命名，未识别字段保留在 `raw` 不影响解析
+* `0.x` 阶段 API 仍可能调整，建议在 `pubspec.yaml` 中固定版本号。
+* `PatchBootStatus` 和黑名单 `reason` 保持前向兼容；新增值在旧版本 SDK 中会归为 `unknown`。
+* `PatchInfo.fromJson` 兼容驼峰和下划线字段名，未知字段会保留在 `raw` 中，不影响解析。
