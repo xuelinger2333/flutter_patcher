@@ -1,16 +1,32 @@
-# flutter_patcher_example
+# flutter_patcher example
 
-Demonstrates how to use the flutter_patcher plugin.
+This example demonstrates the local hot-patch flow without a server.
 
-## Getting Started
+## Run
 
-This project is a starting point for a Flutter application.
+```bash
+flutter build apk --release
+flutter install
+```
 
-A few resources to get you started if this is your first Flutter project:
+Open the app, tap **Apply patch**, then cold-start the app again. The bundled
+`assets/libapp_preload.so` is installed through `FlutterPatcher.applyPatchBytes`
+and takes effect on the next cold start.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Tap **Rollback** and cold-start again to return to the APK-bundled `libapp.so`.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Mock server
+
+The repository also includes a small HTTP mock server for testing
+`checkUpdate -> applyPatch`:
+
+```bash
+dart run flutter_patcher:pack \
+  --apk path/to/app-release.apk \
+  --version dev-1 \
+  --target-version-code 1
+
+dart run example/tools/mock_server.dart dist 8080
+```
+
+The mock server reads `dist/libapp.so`, matching the pack CLI output.

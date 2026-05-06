@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipFile
@@ -49,16 +50,68 @@ internal class PatchManager(
 
         private const val MODE_FULL = "full"
         private const val MODE_BSDIFF = "bsdiff"
+        private val MD5_HEX = Regex("^[0-9a-fA-F]{32}$")
 
         /** 下载进度节流，避免频繁跨线程发事件淹没 UI。 */
         private const val PROGRESS_EMIT_INTERVAL_MS = 200L
 
         private val APPLY_LOCK = Any()
+
+        internal fun validatePatchArgs(
+            version: String,
+            url: String,
+            md5: String,
+            mode: String,
+            targetMd5: String,
+            targetVersionCode: Long?,
+            currentVersionCode: Long
+        ): ApplyResult? {
+            if (version.isBlank() || url.isBlank() || md5.isBlank()) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.INVALID_ARGS,
+                    "missing version/url/md5"
+                )
+            }
+            if (!MD5_HEX.matches(md5)) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.INVALID_ARGS,
+                    "md5 must be 32 hex chars"
+                )
+            }
+            if (mode != MODE_FULL && mode != MODE_BSDIFF) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.INVALID_ARGS,
+                    "unsupported mode: $mode"
+                )
+            }
+            if (mode == MODE_BSDIFF && !MD5_HEX.matches(targetMd5)) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.INVALID_ARGS,
+                    "bsdiff mode requires targetMd5 as 32 hex chars"
+                )
+            }
+            if (targetVersionCode != null) {
+                if (currentVersionCode == PatcherConfig.INVALID_VERSION_CODE) {
+                    return ApplyResult.failure(
+                        ApplyErrorCode.IO_ERROR,
+                        "cannot resolve current app versionCode"
+                    )
+                }
+                if (targetVersionCode != currentVersionCode) {
+                    return ApplyResult.failure(
+                        ApplyErrorCode.INVALID_ARGS,
+                        "targetVersionCode=$targetVersionCode does not match current=$currentVersionCode"
+                    )
+                }
+            }
+            return null
+        }
     }
 
     private val patchDir = File(context.filesDir, PatcherConfig.PATCH_DIR)
     private val patchFile = File(patchDir, PatcherConfig.PATCH_FILENAME)
     private val metaFile = File(patchDir, PatcherConfig.META_FILENAME)
+    private val installMarkerFile = File(patchDir, "installing")
 
     // ==================== 启动路径 ====================
 
@@ -73,6 +126,16 @@ internal class PatchManager(
     fun getValidPatchPath(
         onDrop: ((status: String, version: String?, extras: Map<String, Any?>) -> Unit)? = null
     ): String? {
+        if (installMarkerFile.exists()) {
+            Log.w(TAG, "previous patch install was interrupted, drop patch dir")
+            onDrop?.invoke(
+                BootDiagnosticStore.DROPPED_META_CORRUPTED,
+                null,
+                mapOf("message" to "patch install interrupted")
+            )
+            deletePatch()
+            return null
+        }
         if (!patchFile.exists() || !metaFile.exists()) return null
 
         val meta = readMeta()
@@ -182,26 +245,39 @@ internal class PatchManager(
         val signature = (info["signature"] as? String).orEmpty()
         val mode = ((info["mode"] as? String) ?: MODE_FULL).lowercase()
         val targetMd5 = (info["targetMd5"] as? String).orEmpty()
-
-        if (version.isEmpty() || url.isEmpty() || md5.isEmpty()) {
-            Log.w(TAG, "applyPatch: missing version/url/md5")
+        val hasTargetVersionCode = info.containsKey("targetVersionCode")
+        val serverTargetVc = (info["targetVersionCode"] as? Number)?.toLong()
+        if (hasTargetVersionCode && serverTargetVc == null) {
             return ApplyResult.failure(
                 ApplyErrorCode.INVALID_ARGS,
-                "missing version/url/md5"
+                "targetVersionCode must be a number"
             )
         }
-        if (mode == MODE_BSDIFF && targetMd5.isEmpty()) {
-            Log.w(TAG, "bsdiff mode requires targetMd5")
-            return ApplyResult.failure(
-                ApplyErrorCode.INVALID_ARGS,
-                "bsdiff mode requires targetMd5"
-            )
+        val currentVc = PatcherConfig.currentVersionCode(context)
+
+        validatePatchArgs(
+            version = version,
+            url = url,
+            md5 = md5,
+            mode = mode,
+            targetMd5 = targetMd5,
+            targetVersionCode = serverTargetVc,
+            currentVersionCode = currentVc
+        )?.let {
+            Log.w(TAG, "applyPatch: ${it.message}")
+            return it
         }
         if (mode == MODE_BSDIFF && !BsDiffBridge.isAvailable()) {
             Log.w(TAG, "bsdiff module not built, rejecting diff patch (see README)")
             return ApplyResult.failure(
                 ApplyErrorCode.BSDIFF_DISABLED,
                 "bsdiff native module not built; integrate upstream sources per README"
+            )
+        }
+        if (serverTargetVc == null && currentVc == PatcherConfig.INVALID_VERSION_CODE) {
+            return ApplyResult.failure(
+                ApplyErrorCode.IO_ERROR,
+                "cannot resolve current app versionCode"
             )
         }
         // 黑名单查询前置：在下载之前拦截，避免对已知坏补丁浪费流量。
@@ -304,20 +380,11 @@ internal class PatchManager(
                     effectiveMd5 = md5
                 }
 
-                progress?.invoke(Phase.FINALIZING, 0L, 0L)
-                if (!finalSo.renameTo(patchFile)) {
-                    Log.e(TAG, "rename failed")
-                    finalSo.delete()
-                    return ApplyResult.failure(
-                        ApplyErrorCode.IO_ERROR,
-                        "rename to ${patchFile.absolutePath} failed"
-                    )
-                }
-
                 // targetVersionCode：优先取服务端下发；否则以当下宿主 APK 的
                 // versionCode 兜底写入。启动时会强校验此字段 == 当前 APK versionCode。
-                val serverTargetVc = (info["targetVersionCode"] as? Number)?.toLong()
-                val targetVersionCode = serverTargetVc ?: PatcherConfig.currentVersionCode(context)
+                val targetVersionCode = serverTargetVc ?: currentVc
+
+                val targetVersionCode = serverTargetVc ?: currentVc
 
                 val meta = JSONObject().apply {
                     put("version", version)
@@ -328,7 +395,8 @@ internal class PatchManager(
                     put(PatcherConfig.META_KEY_TARGET_VERSION_CODE, targetVersionCode)
                     put("installed_at", System.currentTimeMillis())
                 }
-                metaFile.writeText(meta.toString())
+                progress?.invoke(Phase.FINALIZING, 0L, 0L)
+                finalizePatch(finalSo, meta)?.let { return it }
 
                 CrashGuard(context).reset()
 
@@ -363,6 +431,76 @@ internal class PatchManager(
         deletePatch()
         CrashGuard(context).reset()
         Log.d(TAG, "rolled back to built-in version")
+    }
+
+    private fun finalizePatch(finalSo: File, meta: JSONObject): ApplyResult? {
+        val pendingSo = File(patchDir, "${PatcherConfig.PATCH_FILENAME}.pending")
+        val pendingMeta = File(patchDir, "${PatcherConfig.META_FILENAME}.pending")
+        var touchedFinal = false
+        var committed = false
+        return try {
+            pendingSo.delete()
+            pendingMeta.delete()
+            installMarkerFile.delete()
+
+            if (!finalSo.renameTo(pendingSo)) {
+                finalSo.delete()
+                return ApplyResult.failure(
+                    ApplyErrorCode.IO_ERROR,
+                    "rename to ${pendingSo.absolutePath} failed"
+                )
+            }
+            writeTextSync(pendingMeta, meta.toString())
+            writeTextSync(installMarkerFile, "installing")
+
+            if (patchFile.exists() && !patchFile.delete()) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.IO_ERROR,
+                    "delete ${patchFile.absolutePath} failed"
+                )
+            }
+            touchedFinal = true
+            if (!pendingSo.renameTo(patchFile)) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.IO_ERROR,
+                    "rename to ${patchFile.absolutePath} failed"
+                )
+            }
+
+            if (metaFile.exists() && !metaFile.delete()) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.IO_ERROR,
+                    "delete ${metaFile.absolutePath} failed"
+                )
+            }
+            if (!pendingMeta.renameTo(metaFile)) {
+                return ApplyResult.failure(
+                    ApplyErrorCode.IO_ERROR,
+                    "rename to ${metaFile.absolutePath} failed"
+                )
+            }
+
+            committed = true
+            installMarkerFile.delete()
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "finalize patch failed", e)
+            ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message ?: e.javaClass.simpleName)
+        } finally {
+            pendingSo.delete()
+            pendingMeta.delete()
+            installMarkerFile.delete()
+            if (touchedFinal && !committed) {
+                deletePatch()
+            }
+        }
+    }
+
+    private fun writeTextSync(file: File, text: String) {
+        FileOutputStream(file).use { output ->
+            output.write(text.toByteArray(Charsets.UTF_8))
+            output.fd.sync()
+        }
     }
 
     // ==================== 内部 ====================

@@ -31,12 +31,29 @@ open class FlutterPatcherApplication : FlutterApplication() {
     companion object {
         private const val TAG = "FlutterPatcher/App"
 
+        @Volatile
+        private var attachAttempted = false
+
+        @Volatile
+        private var attachResult = false
+
         /**
          * 在 Application.attachBaseContext(base) 中、super 调用之后调用。
          * 返回补丁是否成功注入。
          */
         @JvmStatic
+        @Synchronized
         fun attachPatcher(context: Context): Boolean {
+            if (attachAttempted) {
+                Log.d(TAG, "attachPatcher already ran in this process, result=$attachResult")
+                return attachResult
+            }
+            attachAttempted = true
+            attachResult = doAttachPatcher(context)
+            return attachResult
+        }
+
+        private fun doAttachPatcher(context: Context): Boolean {
             // 本次启动是否已往 BootDiagnosticStore 写过精准 status。
             // 用于在收尾阶段判断要不要兜底成 NO_PATCH（避免覆盖更精准的 reason）。
             var diagRecorded = false

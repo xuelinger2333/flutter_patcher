@@ -8,7 +8,7 @@
 //   dart run flutter_patcher:pack \
 //       --apk path/to/app-release.apk \
 //       --version dev-1 --target-version-code 1
-//   # 产出 dist/libapp_patched.so + dist/manifest.json
+//   # 产出 dist/libapp.so + dist/manifest.json
 //   dart run example/tools/mock_server.dart dist 8080
 //
 // 暴露的两个端点（监听 0.0.0.0，手机同 Wi-Fi 可直连）：
@@ -33,7 +33,7 @@ Future<void> main(List<String> args) async {
   }
   final distDir = args[0];
   final port = args.length > 1 ? int.parse(args[1]) : 8080;
-  final soFile = File('$distDir/libapp_patched.so');
+  final soFile = File('$distDir/libapp.so');
   if (!soFile.existsSync()) {
     stderr.writeln('not found: ${soFile.path}');
     exit(66);

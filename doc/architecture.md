@@ -410,7 +410,7 @@ class MyApp : FlutterApplication() {
 
 `flutter_patcher` 需要在 Android 启动早期引导 Flutter Engine 加载补丁 `.so`。
 
-当前版本适配 Flutter `3.19 ~ 3.38`。如果未来 Flutter 修改了 loader 内部结构，可能需要通过 `loaderFieldCandidates` 临时指定字段名：
+当前 pubspec 允许 Flutter `>=3.3.0`；loader hook 已验证 Flutter `3.19 ~ 3.38`。如果未来 Flutter 修改了 loader 内部结构，可能需要通过 `loaderFieldCandidates` 临时指定字段名：
 
 ```dart
 await FlutterPatcher.init(

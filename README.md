@@ -75,7 +75,7 @@ Android 端 Flutter 热更新插件。
 |---|---|
 | 平台 | Android only |
 | Android minSdk | 24 |
-| Flutter | 3.19 ~ 3.38 |
+| Flutter | `>=3.3.0`；loader hook verified on 3.19 ~ 3.38 |
 | ABI | `armeabi-v7a` / `arm64-v8a` / `x86_64` |
 | NDK | 27.0.12077973+ |
 | AGP | 8.11.1+ |
