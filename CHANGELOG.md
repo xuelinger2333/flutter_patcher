@@ -1,43 +1,82 @@
+> Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
+
 ## 0.1.1+1
 
 ### Fixed
 
-- README 安装片段中的版本号修正为 `^0.1.1`（仅文档，不影响代码）。
+- Corrected the README install snippet version pin to `^0.1.1`
+  (docs-only, no code change).
+- Translated CHANGELOG to English so pub.dev's pana check no longer
+  flags it for non-ASCII content. Chinese version preserved as
+  `CHANGELOG-zh.md`.
 
 ## 0.1.1
 
 ### Changed
 
-- **`PatchInfo.md5` 改为可选字段**。空字符串表示调用方明确选择跳过下载完整性校验，仅靠 HTTPS 防篡改。空 md5 时签名校验也会一并跳过（Ed25519 输入即 md5 hex）。`toJson` 在 md5 为空时不输出 `md5` 键。
-- **`validatePatchArgs`**：md5 空串现在合法；非空时仍强制 32 位 hex。
-- **黑名单**：调用方未下发 md5 时，下载前置黑名单检查退化为仅 version 维度（新增 `BlacklistStore.containsByVersion`）。入黑时仍写入下载后实际计算的 md5 作为条目记录。
-- **meta.json 写入**：`effectiveMd5` 始终使用下载后实际计算的 md5（之前为下发 md5）。
-- **依赖约束放宽**：Dart SDK 约束从 `^3.10.7` 放宽为 `>=3.0.0 <4.0.0`，运行时依赖改为下限 + 宽上限；`archive` 允许 3.x 和 4.x，以减少宿主项目依赖冲突。
+- **`PatchInfo.md5` is now optional.** An empty string means the caller
+  explicitly opts out of download integrity verification and relies on
+  HTTPS only. When `md5` is empty the Ed25519 signature check is also
+  skipped (the signature input is the md5 hex, so no md5 means no
+  signature input). `toJson` omits the `md5` key when it is empty.
+- **`validatePatchArgs`**: blank `md5` is now accepted; non-blank `md5`
+  is still required to be 32 lowercase hex chars.
+- **Blacklist**: when the caller does not provide `md5`, the download
+  pre-check falls back to version-only matching via the new
+  `BlacklistStore.containsByVersion`. Blacklist entries are still
+  recorded with the actual md5 computed after download.
+- **`meta.json`**: `effectiveMd5` now always stores the md5 computed
+  after download (previously it stored the server-declared md5). Boot
+  checks and blacklist entries key on this stable hash.
+- **Dependency constraints relaxed**: Dart SDK constraint changed from
+  `^3.10.7` to `>=3.0.0 <4.0.0`; runtime dependencies switched to a
+  lower bound plus an open upper bound; `archive` now supports both
+  3.x and 4.x to reduce host-project conflicts.
 
 ## 0.1.0
 
-首次公开发布（Android-only beta）。
+First public release (Android-only beta).
 
-### 核心能力
+### Core features
 
-- **冷启动热更新**：在 `Application.attachBaseContext` 早于 Dart 引擎反射替换 `FlutterLoader.findAppBundlePath`，实现 `libapp.so` 整包替换。
-- **签名校验**：内置 Ed25519（X.509 SubjectPublicKeyInfo）+ MD5 双重校验，支持 `strictSignature` 严格模式防止低版本设备降级绕过。
-- **崩溃熔断 / 自动回滚**：基于 `ApplicationExitInfo` 的 `REASON_CRASH` 计数 + Dart 层 `PlatformDispatcher.onError` 钩子，达到 `maxCrashCount`（默认 1，fail-fast）后自动删补丁、入黑名单、回退 APK 内置版本。
-- **首帧 verify 清熔断**：补丁加载后，前台连续存活 `verifyAfter`（默认 5s）才视为 verified 并清零熔断计数。
-- **本地黑名单**：自动入黑名单的补丁不会再次安装，避免反复崩溃。可通过 `FlutterPatcher.blacklist` / `clearBlacklist` 查询/清空。
-- **进度事件流**：`FlutterPatcher.applyProgress` 暴露 `downloading` / `verifying` / `finalizing` 阶段事件。
-- **CLI 打包工具**：`dart run flutter_patcher:pack` 从 release APK 提取 `libapp.so` 并生成补丁 manifest。
+- **Cold-start hot updates**: replaces `FlutterLoader.findAppBundlePath`
+  via reflection inside `Application.attachBaseContext`, before the
+  Dart engine starts, enabling whole-file `libapp.so` replacement.
+- **Signature verification**: built-in Ed25519 (X.509 SubjectPublicKey
+  Info) plus MD5 dual verification, with `strictSignature` mode that
+  prevents downgrade bypass on older devices.
+- **Crash circuit breaker / auto rollback**: counts `REASON_CRASH`
+  events from `ApplicationExitInfo` and hooks
+  `PlatformDispatcher.onError` on the Dart side. Once `maxCrashCount`
+  (default 1, fail-fast) is reached, the patch is deleted, added to
+  the blacklist, and the host falls back to the bundled APK version.
+- **First-frame verify clears the breaker**: after the patch loads,
+  the app must stay alive in the foreground for `verifyAfter`
+  (default 5s) before being marked verified, which resets the crash
+  counter.
+- **Local blacklist**: auto-blacklisted patches will never be
+  reinstalled, preventing crash loops. Inspect or clear via
+  `FlutterPatcher.blacklist` / `clearBlacklist`.
+- **Progress event stream**: `FlutterPatcher.applyProgress` exposes
+  `downloading` / `verifying` / `finalizing` phase events.
+- **CLI packaging tool**: `dart run flutter_patcher:pack` extracts
+  `libapp.so` from a release APK and produces the patch manifest.
 
-### 已知限制
+### Known limitations
 
-- **仅 Android**。iOS / Web / 桌面平台调用所有 API 为 no-op（首次调用打印 warning）。
-- **Ed25519 严格模式需 Android API 33+**。低于 API 33 的设备在 `strictSignature: true`（默认）时会拒绝带签名的补丁。
-- **仅支持 full 模式补丁**。差分补丁能力未随 0.1.0 发布，避免暴露未验证路径。
-- 不支持 Dart AOT 之外的代码热更新（不替换 `flutter_assets`、`isolate_snapshot_data` 等）。
+- **Android only**. On iOS / Web / desktop, all APIs are no-ops (the
+  first call prints a warning).
+- **Strict Ed25519 mode requires Android API 33+**. Below API 33 with
+  `strictSignature: true` (the default), signed patches are rejected.
+- **Only full-mode patches are supported**. Differential patching is
+  not shipped in 0.1.0 to avoid exposing an unverified path.
+- Hot updates only cover Dart AOT code; assets such as
+  `flutter_assets` and `isolate_snapshot_data` are not replaced.
 
-### 文档
+### Documentation
 
-- 仓库 README：使用场景、5 分钟 demo、接入步骤
-- `docs/architecture.md`：原生 + Dart 双层架构与启动时序
-- `docs/api-reference.md`：完整 API 参考
-- `docs/crash-protection.md`：熔断器与回滚策略说明
+- Repository README: use cases, 5-minute demo, integration steps.
+- `doc/architecture.md`: native + Dart layered architecture and
+  startup sequence.
+- `doc/api-reference.md`: full API reference.
+- `doc/crash-protection.md`: breaker and rollback strategy.
