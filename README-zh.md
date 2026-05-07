@@ -111,7 +111,7 @@ Example 内置了一份预编译的红色主题补丁。
 
 ```yaml
 dependencies:
-  flutter_patcher: ^0.1.0+1
+  flutter_patcher: ^0.1.1
 ```
 或使用 Git 依赖：
 

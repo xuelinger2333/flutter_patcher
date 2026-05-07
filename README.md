@@ -111,7 +111,7 @@ The example bundles a precompiled red-theme patch.
 
 ```yaml
 dependencies:
-  flutter_patcher: ^0.1.0+1
+  flutter_patcher: ^0.1.1
 ```
 
 Or as a Git dependency:
