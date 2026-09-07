@@ -1,0 +1,30 @@
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 99.0.0 (107.0.0 available)
+  analyzer 12.1.0 (14.3.0 available)
+  lints 5.1.1 (6.1.0 available)
+  package_config 2.2.0 (3.0.0 available)
+  test 1.31.1 (1.32.0 available)
+  test_api 0.7.12 (0.7.14 available)
+  test_core 0.6.18 (0.6.20 available)
+No dependencies would change in `/root/.flutter_patcher/wp2-development/flutter_patcher_cli`.
+7 packages have newer versions incompatible with dependency constraints.
+Try `dart pub outdated` for more information.
+flutter_patcher doctor [options]
+
+-h, --help
+    --json                      Print a structured diagnostic report.
+    --offline                   Use verified local caches only.
+    --flutter-sdk               Select the Flutter SDK; defaults to Flutter on PATH.
+    --cache-dir                 Managed directory under ~/.flutter_patcher or .dart_tool/flutter_patcher.
+    --artifacts-url             Maintainer/test override for the release download base.
+                                (defaults to "https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download")
+    --supported-versions-url    Maintainer/test override for the support table.
+                                (defaults to "https://api.github.com/repos/xuelinger2333/flutter_patcher_artifacts/contents/supported_versions.txt")
+    --public-key                Optional signing public key file to check.
+    --private-key               Optional signing private key file to check.
+    --baseline-store            Optional file:// or HTTPS baseline store to probe.
+    --baseline                  Optional extracted baseline directory for file-presence checks.
+    --version-code              Optional versionCode for a file-store release sidecar check.
+    --flavor                    Flavor used in the release sidecar filename.
+    --apk                       Optional existing APK whose engine should be checked.

@@ -1,0 +1,22 @@
+{
+  "builder_repo_commit": "8518c2dfd962139c2283c9244e4ae09cf4143d22",
+  "dart_sdk_commit": "60a57cd42d64dc03e9f07aa60a2e250755c1ef28",
+  "dart_version": "3.13.2",
+  "engine_commit": "a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+  "files": [
+    {
+      "name": "flutter_patcher_tools-3.47.2.dill",
+      "role": "tools",
+      "sha256": "e54739c58a817e3194edd698b125a5b68e930105a5870d96961f7754ba509895",
+      "size": 37039112
+    }
+  ],
+  "flutter_version": "3.47.2",
+  "patches": [
+    {
+      "file": "0001-dart2bytecode-tfa.patch",
+      "sha256": "4ece08aa40cd06d6b6ffd90ccd3ba7516f72e360fff19876e506815a7774c056"
+    }
+  ],
+  "schema": 1
+}

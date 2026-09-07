@@ -1,0 +1,17 @@
+name: flutter_patcher_cli
+description: Version-aware Flutter Patcher development toolchain and diagnostics.
+version: 2.0.0-dev.1
+publish_to: none
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+executables:
+  flutter_patcher: flutter_patcher
+dependencies:
+  args: ^2.7.0
+  archive: ^4.0.0
+  crypto: ^3.0.6
+  path: ^1.9.0
+  yaml: ^3.1.3
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^5.0.0

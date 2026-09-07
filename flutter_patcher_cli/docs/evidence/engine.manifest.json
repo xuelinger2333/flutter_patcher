@@ -1,0 +1,53 @@
+{
+  "build_id": "d3e60508-1354-4022-a0d4-d3259c043013",
+  "builder_repo_commit": "8518c2dfd962139c2283c9244e4ae09cf4143d22",
+  "built_at": "2026-09-07T17:58:04Z",
+  "depot_tools_rev": "8be1125f74ccca1e2a0823d6f92bcec92f0fd65b",
+  "engine_commit": "a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+  "engine_stamp": "a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+  "files": [
+    {
+      "abi": "arm64-v8a",
+      "contents": [
+        {
+          "name": "lib/arm64-v8a/libflutter.so",
+          "sha256": "48ad521ae7a4bee35c164a4fdf647d77ee2f385d60544698920a7aaced535011",
+          "size": 11908208
+        }
+      ],
+      "maven": "io.flutter:arm64_v8a_release:1.0.0-a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+      "name": "libflutter-arm64_v8a-release.jar",
+      "role": "engine",
+      "sha256": "fbc4ac7992387637a6c7ad73e6f0e3f1c887a8b9671ba1a9a8b381e72ba1feca",
+      "size": 11908360
+    },
+    {
+      "maven": "io.flutter:flutter_embedding_release:1.0.0-a804b261645ef8c13eb3d5c44a5c2fb0340c5539",
+      "name": "flutter_embedding_release.jar",
+      "role": "embedding",
+      "sha256": "79d51115c9154ae201a35d8f91c1bb8acab880e67895f1f697c889f8e1149bff",
+      "size": 1584072
+    },
+    {
+      "host_arch": "x64",
+      "host_os": "linux",
+      "name": "gen_snapshot-linux-x64",
+      "role": "gen_snapshot",
+      "sha256": "cd2d3459ab33e07a3510928a9c5c6d32403cbace1c122cef6aadc131d80d5fcc",
+      "size": 6295056
+    }
+  ],
+  "flutter_version": "3.47.2",
+  "patches": [
+    {
+      "file": "0001-dyn-module-factory-allocate-finalize.patch",
+      "sha256": "a91ce3bc7f9b4c4f4af19418d8beabc0a4b80c8ddff49550bff1578f0420c83c"
+    }
+  ],
+  "schema": 1,
+  "verify": {
+    "device": "skipped",
+    "device_reason": "no_android_device",
+    "snapshot": "passed"
+  }
+}

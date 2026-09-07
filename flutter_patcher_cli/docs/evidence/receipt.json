@@ -1,0 +1,23 @@
+{
+  "sdk_file_count_excluding_git": 17572,
+  "sdk_before_inventory_sha256": "dbdc113d891d1ad7abbe88c5104125349c1cf62a175e60f4dc6fead18d63a90e",
+  "sdk_after_inventory_sha256": "dbdc113d891d1ad7abbe88c5104125349c1cf62a175e60f4dc6fead18d63a90e",
+  "sdk_inventory_equal": true,
+  "tested_source_sha256": {
+    "pubspec.yaml": "5993b1e1d873b8ee3d7a29d49af56a7248ad07eac20d870e3b675d80e7edbeb3",
+    "pubspec.lock": "d0c718e8d120c9bf2b744f98e744ab8f00a4f16fc0f7076e35a39d183ee1bb05",
+    "analysis_options.yaml": "69d5fc7c4dc082613882215d52d18b02b1688b833d674ce9b281f45821626b7d",
+    "bin/flutter_patcher.dart": "8640e676c3b880d2a4b042cc8858dfb3528a9f8605611f8544efc9e12934ee48",
+    "lib/src/cli.dart": "19c2e1c7675092ac379d669de45c08cedfde2d34279861c82440364de771868c",
+    "lib/src/core.dart": "fbe1c08079c9d037dafde244252f212e23673bbad74b0e1a8d043acb3506a83a",
+    "lib/src/sdk/artifacts.dart": "a1180f9e9817fe4f1544efb0bf8faff7786d1187bd944b70705a0c2faf2adc9a",
+    "lib/src/sdk/environment.dart": "6f24ffe45bdadaeaa42cc19fa1e64a2b4f7c0739a40888d4a3554cfb62fabab9",
+    "test/artifacts_test.dart": "6d9dde6925ba5687c570c5e5ad935cf1437da642945c860f529dbcd7b255fc5c",
+    "test/cli_test.dart": "ae939397b4d7264743d777acbf4131f9777086e484770c8569f46a978f44cd24",
+    "test/sdk_readiness_test.dart": "18cfe05faf127931a18a1ae0c9a546a1235656f5068ecc8c9f6b1b63bc425a5a",
+    "test/yaml_cache_test.dart": "4fd71e4f374d17e3c8884a07b15f151dea9730511ee75b149bc14cfad9d432e5"
+  },
+  "offline_network_isolation": "unshare -n",
+  "installed_help_sha256": "ac75089d862f95632811a31dff7f64c13608fd9ced090c480733ebaa61c7e44b",
+  "installed_help_evidence_note": "installed-help.txt trims trailing whitespace for Git; installed_help_sha256 records original server stdout."
+}

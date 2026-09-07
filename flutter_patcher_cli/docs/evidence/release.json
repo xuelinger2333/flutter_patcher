@@ -1,0 +1,37 @@
+{
+  "url": "https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/tag/flutter-3.47.2",
+  "tag": "flutter-3.47.2",
+  "draft": false,
+  "assets": [
+    {
+      "name": "engine.manifest.json",
+      "size": 1771,
+      "digest": "sha256:89469cf90671ab8347cbcb907e26dc8eb84e35948c8541e0638a97d995d9e6df"
+    },
+    {
+      "name": "flutter_embedding_release.jar",
+      "size": 1584072,
+      "digest": "sha256:79d51115c9154ae201a35d8f91c1bb8acab880e67895f1f697c889f8e1149bff"
+    },
+    {
+      "name": "flutter_patcher_tools-3.47.2.dill",
+      "size": 37039112,
+      "digest": "sha256:e54739c58a817e3194edd698b125a5b68e930105a5870d96961f7754ba509895"
+    },
+    {
+      "name": "gen_snapshot-linux-x64",
+      "size": 6295056,
+      "digest": "sha256:cd2d3459ab33e07a3510928a9c5c6d32403cbace1c122cef6aadc131d80d5fcc"
+    },
+    {
+      "name": "libflutter-arm64_v8a-release.jar",
+      "size": 11908360,
+      "digest": "sha256:fbc4ac7992387637a6c7ad73e6f0e3f1c887a8b9671ba1a9a8b381e72ba1feca"
+    },
+    {
+      "name": "tools.manifest.json",
+      "size": 646,
+      "digest": "sha256:0d31df2519b9c4fb8a7d3252cda7c8cf38506fee71a660ada8e6c7f8b5821889"
+    }
+  ]
+}

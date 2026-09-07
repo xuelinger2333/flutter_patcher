@@ -1,4 +1,5 @@
 # Build outputs and binary artifacts (huge, must not enter the published tarball)
+flutter_patcher_cli/
 build/
 .dart_tool/
 doc/api/
