@@ -12,7 +12,11 @@ class BaselineArchive {
   final String zstd;
   final int maxBytes;
   BaselineArchive({this.zstd = 'zstd', this.maxBytes = 1024 * 1024 * 1024});
-  static final names = [...baselineFiles, 'baseline.manifest.json']..sort();
+  static final names = [
+    ...baselineFiles,
+    ...buildBaselineFiles,
+    'baseline.manifest.json'
+  ]..sort();
 
   Future<void> codec(String input, String output, {bool decode = false}) async {
     await rejectLinks(output);
@@ -46,14 +50,15 @@ class BaselineArchive {
   }
 
   Future<void> pack(String root, String output) async {
-    await verifyBaseline(root);
+    final manifest = await verifyBaseline(root);
     final raw = '$output.tar';
     await rejectLinks(raw);
     valid(!await File(raw).exists(), 'Archive staging already exists.');
     final sink = File(raw).openWrite();
     var total = 1024;
     try {
-      for (final name in names) {
+      for (final name in [...payloadFiles(manifest), 'baseline.manifest.json']
+        ..sort()) {
         final file = File(p.join(root, name));
         final size = await file.length();
         total += 512 + ((size + 511) ~/ 512) * 512;
@@ -166,7 +171,8 @@ class BaselineArchive {
             pad.length == (512 - size % 512) % 512 && pad.every((b) => b == 0),
             'Invalid tar padding.');
       }
-      valid(seen.length == names.length, 'Missing baseline archive entries.');
+      valid(seen.containsAll([...baselineFiles, 'baseline.manifest.json']),
+          'Missing baseline archive entries.');
     } on Failure {
       rethrow;
     } catch (_) {
@@ -174,6 +180,8 @@ class BaselineArchive {
     } finally {
       await input.close();
     }
-    await verifyBaseline(output);
+    final manifest = await verifyBaseline(output);
+    valid(seen.length == payloadFiles(manifest).length + 1,
+        'Unexpected baseline schema entries.');
   }
 }

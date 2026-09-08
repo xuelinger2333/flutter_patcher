@@ -15,7 +15,7 @@ void main() {
     expect(version.stdout, contains('2.0.0-dev.1'));
   });
   test('later work packages fail explicitly', () async {
-    for (final command in ['build', 'patch', 'publish', 'keys']) {
+    for (final command in ['patch', 'publish', 'keys']) {
       final result = await cli([command]);
       expect(result.exitCode, 2);
       expect(result.stderr, contains('COMMAND_NOT_IMPLEMENTED'));

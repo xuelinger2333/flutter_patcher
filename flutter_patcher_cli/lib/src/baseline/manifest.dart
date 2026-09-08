@@ -14,6 +14,9 @@ const baselineFiles = <String>[
   'allocate_finalized.json',
   'libapp.so',
 ];
+const buildBaselineFiles = ['compiler_interface.json', 'build_receipt.json'];
+List<String> payloadFiles(Map<String, dynamic> m) =>
+    [...baselineFiles, if (m['schema'] == 2) ...buildBaselineFiles];
 final baselineHash = RegExp(r'^[0-9a-f]{64}$');
 final _commit = RegExp(r'^[0-9a-f]{40}$');
 final _version = RegExp(r'^\d+\.\d+\.\d+$');
@@ -23,7 +26,7 @@ List<String> manifestDifferences(
       for (final k in {...a.keys, ...b.keys}.toList()..sort())
         if (canonical(a[k]) != canonical(b[k]))
           if (k == 'files' && a[k] is Map && b[k] is Map) ...[
-            for (final name in baselineFiles)
+            for (final name in {...baselineFiles, ...buildBaselineFiles})
               if (canonical(a[k][name]) != canonical(b[k][name])) 'files.$name'
           ] else
             k,
@@ -75,12 +78,16 @@ String fingerprint(
 
 void validateMetadata(Map<String, dynamic> m) {
   valid(
-      m['schema'] == 1 &&
+      m['schema'] is int &&
+          [1, 2].contains(m['schema']) &&
           _version.hasMatch('${m['flutter_version']}') &&
           _commit.hasMatch('${m['engine_commit']}') &&
           RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
               .hasMatch('${m['build_id']}'),
       'Invalid baseline schema/version/engine/build_id.');
+  if (m['schema'] == 2) {
+    valid(m['runtime_bootstrap'] is bool, 'Missing bootstrap status.');
+  }
   final platform = m['platform'];
   valid(
       platform is Map &&
@@ -152,7 +159,7 @@ Future<Map<String, dynamic>> createManifest(
   validateMetadata(metadata);
   final files = <String, dynamic>{};
   var total = 0;
-  for (final name in baselineFiles) {
+  for (final name in payloadFiles(metadata)) {
     final path = p.join(root, name);
     await rejectLinks(path);
     valid(await File(path).exists() && await File(path).length() > 0,
@@ -166,6 +173,31 @@ Future<Map<String, dynamic>> createManifest(
   }
   await validateDetails(
       root, files['dynamic_interface.yaml']['sha256'] as String);
+  if (metadata['schema'] == 2) {
+    final compiler =
+        await baselineObject(p.join(root, 'compiler_interface.json'));
+    valid(
+        compiler.isNotEmpty &&
+            compiler.values.every((v) =>
+                v is List &&
+                v.every((r) => r is Map && r.values.every((x) => x is String))),
+        'Malformed compiler interface dump.');
+    final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
+    valid(
+        receipt['runtime_bootstrap'] == metadata['runtime_bootstrap'] &&
+            receipt['fingerprint'] ==
+                fingerprint(
+                    files['app.dill']['sha256'] as String,
+                    metadata['engine_commit'] as String,
+                    files['dynamic_interface.yaml']['sha256'] as String,
+                    metadata['flutter_version'] as String) &&
+            receipt['app_only'] == true &&
+            receipt['interface_sha256'] ==
+                files['dynamic_interface.yaml']['sha256'] &&
+            receipt['libapp_sha256'] == files['libapp.so']['sha256'] &&
+            baselineHash.hasMatch('${receipt['apk_sha256']}'),
+        'Build receipt binding differs.');
+  }
   final packages = await baselineObject(p.join(root, 'package_config.json'));
   valid(packages['configVersion'] == 2 && packages['packages'] is List,
       'Invalid package configuration.');
@@ -198,7 +230,9 @@ Future<Map<String, dynamic>> createManifest(
           classes.toSet().length == classes.length,
       'Invalid/duplicate allocation class identity.');
   return {
-    'schema': 1,
+    'schema': metadata['schema'],
+    if (metadata['schema'] == 2)
+      'runtime_bootstrap': metadata['runtime_bootstrap'],
     'flutter_version': metadata['flutter_version'],
     'engine_commit': metadata['engine_commit'],
     'build_id': metadata['build_id'],

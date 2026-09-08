@@ -10,6 +10,7 @@ import 'baseline/command.dart';
 import 'baseline/manifest.dart';
 import 'baseline/repository.dart';
 import 'baseline/store.dart';
+import 'build/command.dart';
 
 const releaseBase =
     'https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download';
@@ -51,6 +52,12 @@ ArgParser environmentOptions() => ArgParser()
       help: 'Optional existing APK whose engine should be checked.');
 
 ArgParser parser() {
+  final build = environmentOptions()
+    ..addOption('project',
+        help: 'Application source directory; builds use an isolated copy.')
+    ..addOption('target', defaultsTo: 'lib/main.dart')
+    ..addOption('out', help: 'New APK/report output directory.')
+    ..addOption('strategy', defaultsTo: 'so', allowed: ['so', 'bytecode']);
   final doctor = environmentOptions();
   final interfaces = environmentOptions()
     ..addOption('dill', help: 'Unannotated baseline app.dill.')
@@ -67,6 +74,7 @@ ArgParser parser() {
     ..addFlag('help', abbr: 'h', negatable: false)
     ..addFlag('version', negatable: false)
     ..addCommand('doctor', doctor)
+    ..addCommand('build', build)
     ..addCommand('baseline', baselineOptions())
     ..addCommand('interface', interfaces);
 }
@@ -76,7 +84,7 @@ Future<int> runCli(List<String> arguments) async {
   ArgResults parsed;
   try {
     if (arguments.isNotEmpty &&
-        ['build', 'patch', 'publish', 'keys'].contains(arguments.first)) {
+        ['patch', 'publish', 'keys'].contains(arguments.first)) {
       throw Failure('COMMAND_NOT_IMPLEMENTED',
           '${arguments.first} belongs to a later implementation step; WP-2 provides doctor.');
     }
@@ -89,12 +97,15 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android --strategy bytecode [options]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
       stdout.writeln(args.commands[parsed.command!.name]!.usage);
       return 0;
+    }
+    if (parsed.command!.name == 'build') {
+      return await buildCommand(parsed.command!);
     }
     require(parsed.rest.isEmpty && parsed.command!.rest.isEmpty, 'USAGE_ERROR',
         'Unexpected positional arguments.');
@@ -270,8 +281,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     }
     final uri = args['baseline-store'] as String?;
     if (uri == null) {
-      pending('baseline_store',
-          'No baseline store supplied.');
+      pending('baseline_store', 'No baseline store supplied.');
     } else {
       await check(
           'baseline_store',
@@ -282,11 +292,12 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     }
     final baseline = args['baseline'] as String?;
     if (baseline == null) {
-      pending('baseline_files',
-          'No extracted baseline supplied.');
+      pending('baseline_files', 'No extracted baseline supplied.');
     } else {
       await check('baseline_files', () async {
         final m = await verifyBaseline(baseline, sdkRoot: sdk.root);
+        require(m['runtime_bootstrap'] != false, 'BASELINE_NOT_RELEASE',
+            'Pipeline validation baseline is not a runtime-enabled release.');
         require(
             m['flutter_version'] == sdk.version &&
                 m['engine_commit'] == sdk.engine &&

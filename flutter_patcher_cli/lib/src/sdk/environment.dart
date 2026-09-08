@@ -189,6 +189,10 @@ class EnvironmentBuilder {
       await File(store.file(sdk, 'engine', row['name'] as String)).copy(jar);
       final pom = p.join(folder, '$name-$version.pom');
       await rejectLinks(pom);
+      if (row['role'] == 'embedding') {
+        await embeddingPom(pom, version, Downloads(offline: offline));
+        continue;
+      }
       await File(pom).writeAsString(
           '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
           '<groupId>io.flutter</groupId><artifactId>$name</artifactId><version>$version</version>'
@@ -388,6 +392,41 @@ class EnvironmentBuilder {
         'ENGINE_ARTIFACT_MISMATCH',
         'gen_snapshot did not produce arm64 AOT ELF.');
   }
+}
+
+/// Preserve upstream transitive dependencies; an empty POM breaks Kotlin hosts.
+Future<void> embeddingPom(
+    String path, String version, Downloads downloads) async {
+  bool valid(String text) =>
+      !text.contains('<!DOCTYPE') &&
+      text.contains('<artifactId>flutter_embedding_release</artifactId>') &&
+      text.contains('<groupId>io.flutter</groupId>') &&
+      text.contains('<version>$version</version>') &&
+      text.contains('<dependencies>') &&
+      text.contains('<dependency>');
+  await rejectLinks(path);
+  final receipt = '$path.sha256';
+  await rejectLinks(receipt);
+  if (await File(path).exists() &&
+      await File(receipt).exists() &&
+      (await File(receipt).readAsString()).trim() == await hashFile(path) &&
+      valid(await File(path).readAsString())) {
+    return;
+  }
+  final staged = temporaryName(path);
+  await downloads.fetch(
+      Uri.parse('https://storage.googleapis.com/download.flutter.io/io/flutter/'
+          'flutter_embedding_release/$version/flutter_embedding_release-$version.pom'),
+      staged,
+      missingCode: 'EMBEDDING_POM_UNAVAILABLE',
+      maxBytes: 1024 * 1024);
+  require(valid(await File(staged).readAsString()), 'ARTIFACT_INVALID',
+      'Invalid upstream embedding POM.');
+  if (await File(path).exists()) {
+    await File(path).rename(temporaryName('$path.retired'));
+  }
+  await File(staged).rename(path);
+  await File(receipt).writeAsString('${await hashFile(path)}\n');
 }
 
 Future<void> verifyApk(String apk, Map<String, dynamic> engine) async {

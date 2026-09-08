@@ -22,6 +22,8 @@ Map<String, dynamic> sidecar(Map<String, dynamic> m) => {
       'engine_commit': m['engine_commit'],
       'build_id': m['build_id'],
       'libapp_sha256': (m['files'] as Map)['libapp.so']['sha256'],
+      if (m['schema'] == 2) 'baseline_schema': 2,
+      if (m['schema'] == 2) 'runtime_bootstrap': m['runtime_bootstrap'],
     };
 
 class BaselineRepository {
@@ -99,7 +101,8 @@ class BaselineRepository {
     final staging = await work(), payload = p.join(staging, 'baseline');
     await Directory(payload).create();
     var inputBytes = 0;
-    for (final name in baselineFiles) {
+    validateMetadata(metadata);
+    for (final name in payloadFiles(metadata)) {
       await rejectLinks(p.join(input, name));
       valid(await File(p.join(input, name)).exists(), 'Missing $name');
       inputBytes += await File(p.join(input, name)).length();
@@ -188,6 +191,8 @@ class BaselineRepository {
     final root = await fetch(link['fingerprint'] as String, sdkRoot: sdkRoot);
     final manifest = await verifyBaseline(root,
         expected: link['fingerprint'] as String, sdkRoot: sdkRoot);
+    require(manifest['runtime_bootstrap'] != false, 'BASELINE_NOT_RELEASE',
+        'Pipeline validation baseline has no runtime bootstrap and is not a release.');
     valid(canonical(link) == canonical(sidecar(manifest)),
         'Release sidecar binding mismatch.');
     return link;
