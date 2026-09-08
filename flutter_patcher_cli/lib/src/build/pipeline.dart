@@ -4,6 +4,7 @@ import 'package:yaml/yaml.dart';
 import '../core.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/environment.dart';
+import '../sdk/package_inputs.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
 import 'workspace.dart';
@@ -316,7 +317,8 @@ class BuildPipeline {
         'runtime_bootstrap': !request.pipelineValidationOnly,
         'interface_sha256': await hashFile(iface),
         'fingerprint': identity,
-        'public_key': request.pipelineValidationOnly ? null : request.publicKey
+        'public_key': request.pipelineValidationOnly ? null : request.publicKey,
+        'package_inputs': await packageInputs(packages, application: package)
       };
       await writeObject(p.join(baseline, 'build_receipt.json'), receipt);
       await workspace.verifyOriginals();

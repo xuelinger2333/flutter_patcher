@@ -97,10 +97,12 @@ class Commands {
 
   Future<String> run(String executable, List<String> args,
       {String? cwd,
+      List<int>? inputBytes,
       String code = 'TOOL_FAILED',
       Duration timeout = const Duration(minutes: 15),
       Map<String, String>? extraEnvironment}) async {
     final result = await runResult(executable, args,
+        inputBytes: inputBytes,
         cwd: cwd,
         code: code,
         timeout: timeout,
@@ -117,6 +119,7 @@ class Commands {
 
   Future<CommandResult> runResult(String executable, List<String> args,
       {String? cwd,
+      List<int>? inputBytes,
       String code = 'TOOL_FAILED',
       Duration timeout = const Duration(minutes: 15),
       Map<String, String>? extraEnvironment}) async {
@@ -129,11 +132,14 @@ class Commands {
     } on ProcessException catch (error) {
       throw Failure(code, 'Cannot start $executable: ${error.message}');
     }
+    if (inputBytes != null) process.stdin.add(inputBytes);
+    final inputClosed = process.stdin.close();
     final output = process.stdout.transform(utf8.decoder).join();
     final diagnostic = process.stderr.transform(utf8.decoder).join();
     int result;
     try {
       result = await process.exitCode.timeout(timeout);
+      await inputClosed;
     } on TimeoutException {
       process.kill(ProcessSignal.sigkill);
       throw Failure(code,

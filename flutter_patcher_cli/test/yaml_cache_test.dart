@@ -11,6 +11,7 @@ class FakeCompiler extends Commands {
   @override
   Future<String> run(String executable, List<String> args,
       {String? cwd,
+      List<int>? inputBytes,
       String code = 'TOOL_FAILED',
       Duration timeout = const Duration(minutes: 15),
       Map<String, String>? extraEnvironment}) async {
