@@ -42,6 +42,9 @@ internal class CrashGuard(private val context: Context) {
 
     private val sp = PatcherConfig.prefs(context)
 
+    internal fun previousSessionCrashed(loading: Boolean, pid: Int): Boolean =
+        classifyPreviousSession(loading, pid).isCrash
+
     /**
      * 启动开始时综合判断是否加载补丁。
      *

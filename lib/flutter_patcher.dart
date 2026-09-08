@@ -14,6 +14,7 @@ import 'src/patcher_channel.dart';
 export 'src/blacklist.dart';
 export 'src/boot_diagnostic.dart';
 export 'src/patch_info.dart';
+export 'src/patch_bootstrap.dart';
 
 /// Android-only Flutter hot-update entrypoint.
 ///
@@ -234,6 +235,7 @@ class FlutterPatcher {
     Uint8List bytes, {
     required String version,
     String signature = '',
+    String? strategy,
     int? targetVersionCode,
     void Function(PatchApplyProgress)? onProgress,
   }) async {
@@ -260,6 +262,10 @@ class FlutterPatcher {
           patchUrl: 'file://$stagedPath',
           md5: md5Hex,
           signature: signature,
+          strategy: strategy,
+          sha256: strategy == 'bytecode'
+              ? crypto.sha256.convert(bytes).toString()
+              : null,
           targetVersionCode: targetVersionCode,
         ),
         onProgress: onProgress,

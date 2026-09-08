@@ -36,6 +36,12 @@ enum PatchBootStatus {
   /// Loader injection failed; this launch used the APK built-in version.
   hookInstallFailed,
 
+  /// The device cannot perform mandatory bytecode signature verification.
+  bytecodeUnsupported,
+
+  /// A bytecode startup failed but has not yet reached the crash threshold.
+  bytecodeBootFailed,
+
   /// Unclassified startup failure.
   unknown,
 }
@@ -58,6 +64,10 @@ PatchBootStatus _parseStatus(String? raw) {
       return PatchBootStatus.droppedCircuitBreaker;
     case 'HOOK_INSTALL_FAILED':
       return PatchBootStatus.hookInstallFailed;
+    case 'BYTECODE_UNSUPPORTED':
+      return PatchBootStatus.bytecodeUnsupported;
+    case 'BYTECODE_BOOT_FAILED':
+      return PatchBootStatus.bytecodeBootFailed;
     default:
       return PatchBootStatus.unknown;
   }

@@ -4,6 +4,9 @@ bool get isAndroid => false;
 
 String get operatingSystem => 'unsupported';
 
+Future<Uint8List> readPatchFile(String path) =>
+    throw UnsupportedError('Bytecode patches require Android');
+
 Future<Map<String, dynamic>> getJson(
   String url, {
   Map<String, String>? headers,

@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../build/runtime_package.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 import '../core.dart';
@@ -124,13 +125,16 @@ class PatchPipeline {
           ],
           cwd: project);
       final config = p.join(project, '.dart_tool/package_config.json');
-      final roots = await packageRoots(config);
       final oldRoots =
           await packageRoots(p.join(baseline, 'package_config.json'));
       final pubspec =
           loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
               as Map;
       final app = pubspec['name'] as String;
+      if (!req.validationOnly) {
+        await installRuntimePackage(config, app, req.target.substring(4));
+      }
+      final roots = await packageRoots(config);
       final packageState = await packageInputs(config, application: app);
       final oldState = receipt['package_inputs'];
       require(

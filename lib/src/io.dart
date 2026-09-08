@@ -6,6 +6,22 @@ bool get isAndroid => Platform.isAndroid;
 
 String get operatingSystem => Platform.operatingSystem;
 
+/// Bound allocation by the actual open file, never by its FPTC header.
+Future<Uint8List> readPatchFile(String path) async {
+  final file = await File(path).open();
+  try {
+    final length = await file.length();
+    if (length < 146 || length > 320 * 1024 * 1024) {
+      throw const FormatException('Patch size');
+    }
+    final bytes = await file.read(length);
+    if (bytes.length != length) throw const FormatException('Patch truncated');
+    return bytes;
+  } finally {
+    await file.close();
+  }
+}
+
 Future<Map<String, dynamic>> getJson(
   String url, {
   Map<String, String>? headers,

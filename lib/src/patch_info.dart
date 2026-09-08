@@ -14,6 +14,12 @@ class PatchInfo {
   /// points to `patch.zip`.
   final String patchUrl;
 
+  /// `bytecode` installs a signed FPTC envelope; null preserves legacy behavior.
+  final String? strategy;
+  final String? sha256;
+  final String? fingerprint;
+  final int? patchSeq;
+
   /// MD5 of the patch payload, lower-case hex.
   ///
   /// For a lib-only patch this is the MD5 of `libapp.so`. For an asset patch
@@ -42,6 +48,10 @@ class PatchInfo {
   const PatchInfo({
     required this.version,
     required this.patchUrl,
+    this.strategy,
+    this.sha256,
+    this.fingerprint,
+    this.patchSeq,
     this.md5 = '',
     this.signature = '',
     this.targetVersionCode,
@@ -63,6 +73,10 @@ class PatchInfo {
     return PatchInfo(
       version: (json['version'] ?? '') as String,
       patchUrl: (json['patchUrl'] ?? json['patch_url'] ?? '') as String,
+      strategy: json['strategy'] as String?,
+      sha256: json['sha256'] as String?,
+      fingerprint: json['fingerprint'] as String?,
+      patchSeq: json['patch_seq'] as int?,
       md5: (json['md5'] ?? '') as String,
       signature: (json['signature'] ?? '') as String,
       targetVersionCode: parsedVc,
@@ -74,6 +88,10 @@ class PatchInfo {
   Map<String, dynamic> toJson() => {
         'version': version,
         'patchUrl': patchUrl,
+        if (strategy != null) 'strategy': strategy,
+        if (sha256 != null) 'sha256': sha256,
+        if (fingerprint != null) 'fingerprint': fingerprint,
+        if (patchSeq != null) 'patch_seq': patchSeq,
         if (md5.isNotEmpty) 'md5': md5,
         'signature': signature,
         if (targetVersionCode != null) 'targetVersionCode': targetVersionCode,

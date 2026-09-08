@@ -10,6 +10,7 @@ import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
 import 'workspace.dart';
 import 'bootstrap.dart';
+import 'runtime_package.dart';
 import 'outputs.dart';
 
 class BuildRequest {
@@ -130,6 +131,8 @@ class BuildPipeline {
                 .exists(),
             'BUILD_BOOTSTRAP_UNAVAILABLE',
             'WP-8 PatchBootstrap is not implemented; formal release build is unavailable.');
+        await installRuntimePackage(
+            packages, package, request.target.substring(4));
       }
       final platform = environment.sdkInput(sdk, managed,
           'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill');
@@ -138,7 +141,9 @@ class BuildPipeline {
       final baseline = p.join(work, 'baseline');
       await Directory(baseline).create();
       final analysis = p.join(work, 'analysis.dill');
-      final entry = 'package:$package/${request.target.substring(4)}';
+      final entry = request.pipelineValidationOnly
+          ? 'package:$package/${request.target.substring(4)}'
+          : 'package:dynamic_modules/host.dart';
       Future<void> compile(String output,
           {String? iface, String? dump, bool linked = false}) async {
         if (!linked) {
@@ -210,6 +215,16 @@ class BuildPipeline {
           ['gen-protocol-interface', '--dill', analysis, '--out', protocol]);
       final iface = p.join(baseline, 'dynamic_interface.yaml');
       phase = 'interface';
+      final privates = p.join(work, 'platform-privates.yaml');
+      if (!request.pipelineValidationOnly) {
+        await call([
+          'gen-platform-privates',
+          '--platform',
+          platform,
+          '--out',
+          privates
+        ]);
+      }
       await call([
         'merge-interface',
         '--dill',
@@ -221,7 +236,11 @@ class BuildPipeline {
         '--protocol',
         protocol,
         '--mode',
-        'lean',
+        request.pipelineValidationOnly ? 'lean' : 'whole',
+        if (!request.pipelineValidationOnly) ...[
+          '--platform-privates',
+          privates
+        ],
         '--out-iface',
         iface,
         '--out-trim-iface',

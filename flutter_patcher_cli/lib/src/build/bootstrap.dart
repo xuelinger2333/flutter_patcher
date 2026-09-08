@@ -18,9 +18,11 @@ String bootstrapSource(
   require(bytes.length == 32, 'BUILD_CONFIG_INVALID',
       'Public key must contain 32 bytes.');
   return "import 'package:flutter_patcher/flutter_patcher.dart';\n"
+      "import 'package:dynamic_modules/dynamic_modules.dart';\n"
+      "import 'package:dynamic_modules/host.dart' as host;\n"
       'import ${jsonEncode('package:$package/$entry').replaceAll(r'$', r'\$')} as app;\n'
       'const _fingerprint = ${jsonEncode(fingerprint)};\n'
       'const _publicKey = ${jsonEncode(key)};\n'
-      'Future<void> main() => PatchBootstrap.run(original: app.main,\n'
-      '  fingerprint: _fingerprint, publicKeyBase64: _publicKey);\n';
+      'Future<void> main() { host.retainRuntime(); return PatchBootstrap.run(original: app.main,\n'
+      '  fingerprint: _fingerprint, publicKeyBase64: _publicKey, loadModule: loadModule); }\n';
 }

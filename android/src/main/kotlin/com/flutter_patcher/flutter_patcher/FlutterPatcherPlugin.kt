@@ -6,6 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.renderer.FlutterRenderer
+import io.flutter.embedding.engine.renderer.FlutterUiDisplayListener
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -47,6 +49,18 @@ class FlutterPatcherPlugin :
     private lateinit var channel: MethodChannel
     private lateinit var eventChannel: EventChannel
     private lateinit var appContext: Context
+    private lateinit var bytecode: BytecodePatchManager
+    private var renderer: FlutterRenderer? = null
+    private val firstFrame = object : FlutterUiDisplayListener {
+        override fun onFlutterUiDisplayed() {
+            val token = bytecode.frameToken ?: return
+            Thread {
+                try { bytecode.firstFrame(token) }
+                catch (error: Exception) { Log.w(TAG, "Cannot persist bytecode first frame", error) }
+            }.start()
+        }
+        override fun onFlutterUiNoLongerDisplayed() {}
+    }
     private val main = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -54,6 +68,9 @@ class FlutterPatcherPlugin :
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
+        bytecode = BytecodePatchManager(appContext)
+        renderer = binding.textureRegistry as? FlutterRenderer
+        renderer?.addIsDisplayingFlutterUiListener(firstFrame)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL)
         channel.setMethodCallHandler(this)
         eventChannel = EventChannel(binding.binaryMessenger, EVENT_CHANNEL)
@@ -82,16 +99,42 @@ class FlutterPatcherPlugin :
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
+            "bootPayload" -> {
+                bytecode.announceBootstrap()
+                bytecodeCall(result) {
+                    try {
+                        bytecode.bootPayload(call.argument<String>("fingerprint") ?: "",
+                            call.argument<String>("publicKeyBase64") ?: "")
+                    } catch (error: Exception) {
+                        BootDiagnosticStore.record(appContext, BootDiagnosticStore.UNKNOWN,
+                            message = "Bytecode boot payload rejected: ${error.message}")
+                        null
+                    }
+                }
+            }
             "saveConfig" -> handleSaveConfig(call, result)
             "markBooting" -> {
+                if (bytecode.bootstrapped) {
+                    bytecodeCall(result) { bytecode.markBooting(call.argument<String>("attempt")) }
+                    return
+                }
                 CrashGuard(appContext).markBooting()
                 result.success(null)
             }
             "reportBootSuccess" -> {
+                if (bytecode.bootstrapped) {
+                    bytecodeCall(result) { bytecode.success(call.argument<String>("attempt")); null }
+                    return
+                }
                 CrashGuard(appContext).markBootSuccess()
                 result.success(null)
             }
-            "reportDartBootError" -> handleReportDartBootError(call, result)
+            "reportDartBootError" -> if (bytecode.bootstrapped) {
+                // A user's init() inside a whole module owns its FlutterError
+                // hook; bind that existing RPC to the currently armed attempt.
+                val token = call.argument<String>("attempt") ?: bytecode.frameToken
+                bytecodeCall(result) { bytecode.error(token, call.argument<String>("message"), call.argument<Boolean>("quarantine") == true); null }
+            } else handleReportDartBootError(call, result)
             "applyPatch" -> handleApplyPatch(call, result)
             "rollback" -> handleRollback(result)
             "currentVersion" -> handleCurrentVersion(result)
@@ -99,22 +142,35 @@ class FlutterPatcherPlugin :
             "cacheDir" -> result.success(appContext.cacheDir.absolutePath)
             "appVersionCode" -> result.success(PatcherConfig.currentVersionCode(appContext))
             "deviceAbi" -> result.success(Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
-            "blacklist" -> result.success(BlacklistStore.entries(appContext))
+            "blacklist" -> bytecodeCall(result) { BlacklistStore.entries(appContext) + bytecode.blacklist() }
             "clearBlacklist" -> {
                 BlacklistStore.clear(appContext)
-                result.success(null)
+                bytecodeCall(result) { bytecode.clearBlacklist(); null }
             }
             else -> result.notImplemented()
         }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        renderer?.removeIsDisplayingFlutterUiListener(firstFrame)
+        renderer = null
         channel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         eventSink = null
     }
 
     // ==================== handlers ====================
+
+    private fun bytecodeCall(result: Result, operation: () -> Any?) {
+        Thread {
+            try {
+                val value = operation()
+                main.post { result.success(value) }
+            } catch (error: Exception) {
+                main.post { result.error("BYTECODE_REJECTED", error.message, null) }
+            }
+        }.start()
+    }
 
     private fun handleSaveConfig(call: MethodCall, result: Result) {
         val pk = call.argument<String>("publicKeyBase64") ?: ""
@@ -139,7 +195,10 @@ class FlutterPatcherPlugin :
                 emitProgress(phase, received, total)
             }
             val applyResult = try {
-                PatchManager(appContext, progress).applyPatch(args)
+                if (args["strategy"] == "bytecode") bytecode.apply(args, progress)
+                else if (args["strategy"] != null && args["strategy"] != "legacy")
+                    ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, "Unknown patch strategy")
+                else PatchManager(appContext, progress).applyPatch(args)
             } catch (e: Exception) {
                 Log.e(TAG, "applyPatch error", e)
                 ApplyResult.failure(ApplyErrorCode.UNKNOWN, e.message ?: e.javaClass.simpleName)
@@ -152,6 +211,7 @@ class FlutterPatcherPlugin :
         Thread {
             try {
                 PatchManager(appContext).rollback()
+                bytecode.rollback()
             } catch (e: Exception) {
                 Log.e(TAG, "rollback error", e)
             }
@@ -160,6 +220,10 @@ class FlutterPatcherPlugin :
     }
 
     private fun handleCurrentVersion(result: Result) {
+        if (bytecode.bootstrapped) {
+            bytecodeCall(result) { bytecode.currentVersion() }
+            return
+        }
         val v = PatchManager(appContext).currentVersion()
         result.success(if (v.isEmpty()) null else v)
     }
