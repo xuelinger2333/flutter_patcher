@@ -6,6 +6,10 @@ import 'core.dart';
 import 'sdk/artifacts.dart';
 import 'sdk/environment.dart';
 import 'interfaces/pipeline.dart';
+import 'baseline/command.dart';
+import 'baseline/manifest.dart';
+import 'baseline/repository.dart';
+import 'baseline/store.dart';
 
 const releaseBase =
     'https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download';
@@ -37,11 +41,11 @@ ArgParser environmentOptions() => ArgParser()
   ..addOption('private-key',
       help: 'Optional signing private key file to check.')
   ..addOption('baseline-store',
-      help: 'Optional file:// or HTTPS baseline store to probe.')
+      help: 'Optional file://, s3:// or HTTPS baseline store to probe.')
   ..addOption('baseline',
-      help: 'Optional extracted baseline directory for file-presence checks.')
+      help: 'Optional extracted baseline directory for full integrity checks.')
   ..addOption('version-code',
-      help: 'Optional versionCode for a file-store release sidecar check.')
+      help: 'Optional versionCode for a release sidecar binding check.')
   ..addOption('flavor', help: 'Flavor used in the release sidecar filename.')
   ..addOption('apk',
       help: 'Optional existing APK whose engine should be checked.');
@@ -63,6 +67,7 @@ ArgParser parser() {
     ..addFlag('help', abbr: 'h', negatable: false)
     ..addFlag('version', negatable: false)
     ..addCommand('doctor', doctor)
+    ..addCommand('baseline', baselineOptions())
     ..addCommand('interface', interfaces);
 }
 
@@ -84,7 +89,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher doctor [options]\nflutter_patcher interface [options]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
@@ -93,6 +98,9 @@ Future<int> runCli(List<String> arguments) async {
     }
     require(parsed.rest.isEmpty && parsed.command!.rest.isEmpty, 'USAGE_ERROR',
         'Unexpected positional arguments.');
+    if (parsed.command!.name == 'baseline') {
+      return await baselineCommand(parsed.command!);
+    }
     return await doctor(parsed.command!,
         generateInterface: parsed.command!.name == 'interface');
   } on FormatException catch (error) {
@@ -263,35 +271,35 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     final uri = args['baseline-store'] as String?;
     if (uri == null) {
       pending('baseline_store',
-          'No baseline store supplied (WP-4 integration pending).');
+          'No baseline store supplied.');
     } else {
       await check(
           'baseline_store',
-          () => probeStore(Uri.parse(uri), downloads.offline),
-          'Configured store is reachable; archive read/write semantics are not verified');
+          () => BaselineStore.open(Uri.parse(uri), commands,
+                  offline: downloads.offline)
+              .probe(),
+          'Configured baseline store is reachable; write authorization is checked during save');
     }
     final baseline = args['baseline'] as String?;
     if (baseline == null) {
       pending('baseline_files',
-          'No extracted baseline supplied (WP-4 integration pending).');
+          'No extracted baseline supplied.');
     } else {
       await check('baseline_files', () async {
-        for (final name in [
-          'app.dill',
-          'dynamic_interface.yaml',
-          'package_config.json',
-          'libapp.so'
-        ]) {
-          require(await File(p.join(baseline, name)).exists(),
-              'BASELINE_NOT_FOUND', 'Baseline file missing: $name');
-        }
-      }, 'Required baseline files exist; fingerprint/archive validation belongs to WP-4');
+        final m = await verifyBaseline(baseline, sdkRoot: sdk.root);
+        require(
+            m['flutter_version'] == sdk.version &&
+                m['engine_commit'] == sdk.engine &&
+                m['build_id'] == engine['build_id'],
+            'BASELINE_FINGERPRINT_MISMATCH',
+            'Baseline differs from selected Flutter/engine build.');
+      }, 'Baseline manifest, files, interface detail, fingerprint and SDK/engine binding verified');
     }
     final versionCode = args['version-code'] as String?,
         flavor = args['flavor'] as String?;
     if (versionCode == null || flavor == null || uri == null) {
       pending('release_baseline',
-          'Supply file:// store, --version-code and --flavor for a sidecar presence check.');
+          'Supply baseline store, --version-code and --flavor to verify release binding.');
     } else {
       await check('release_baseline', () async {
         require(
@@ -299,20 +307,19 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
                 RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(flavor),
             'CONFIG_INVALID',
             'Invalid versionCode/flavor.');
-        final storeUri = Uri.parse(uri);
-        require(storeUri.scheme == 'file', 'BASELINE_STORE_UNSUPPORTED',
-            'Release-sidecar checks currently support file:// stores.');
-        final sidecar = File(p.join(storeUri.toFilePath(),
-            'release-$flavor-$versionCode-arm64-v8a.json'));
-        require(await sidecar.exists(), 'BASELINE_NOT_FOUND',
-            'Release sidecar is missing: ${sidecar.path}');
-        final data = await readObject(sidecar.path);
+        final repository = BaselineRepository(
+            p.join(cache, 'baselines'),
+            BaselineStore.open(Uri.parse(uri), commands,
+                offline: downloads.offline));
+        final data = await repository.verifyRelease(flavor, versionCode,
+            sdkRoot: sdk.root);
         require(
-            data['fingerprint'] is String &&
-                hex64.hasMatch(data['fingerprint']),
-            'BASELINE_NOT_FOUND',
-            'Sidecar fingerprint is missing/invalid.');
-      }, 'VersionCode/flavor sidecar exists; full baseline binding awaits WP-4');
+            data['flutter_version'] == sdk.version &&
+                data['engine_commit'] == sdk.engine &&
+                data['build_id'] == engine['build_id'],
+            'BASELINE_FINGERPRINT_MISMATCH',
+            'Release baseline differs from selected engine build.');
+      }, 'Release sidecar is bound to a verified baseline and selected engine build');
     }
     final apk = args['apk'] as String?;
     if (apk == null) {

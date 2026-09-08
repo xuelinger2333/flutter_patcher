@@ -72,10 +72,11 @@ class InterfacePipeline {
           'extract-surface',
           'merge-interface',
           'resolve-interface-hints',
-          'trim-interface'
+          'trim-interface',
+          '--out-details'
         ].every(usage.contains),
         'TOOLS_VERSION_UNSUPPORTED',
-        'Cached tool lacks WP-3. Run doctor --refresh-tools after updated tools are published.');
+        'Cached tool lacks required interface/detail capabilities. Run doctor --refresh-tools after updated tools are published.');
     final staging = temporaryName(p.absolute(request.output));
     await Directory(staging).create(recursive: true);
     Future<void> call(List<String> args) async {
@@ -123,7 +124,7 @@ class InterfacePipeline {
       file('referenced-trim.yaml')
     ]);
     final history = <Map<String, dynamic>>[];
-    String? additions;
+    String? additions, detailsInput;
     var input = file('referenced.yaml'),
         trimInput = file('referenced-trim.yaml');
     String? previousHash;
@@ -147,6 +148,9 @@ class InterfacePipeline {
           p.join(yamlCache, 'platform_privates-${sdk.version}.yaml')
         ],
         if (additions != null) ...['--additions', additions],
+        if (detailsInput != null) ...['--details-in', detailsInput],
+        '--out-details',
+        file('round-$round-details.json'),
         '--out-iface',
         iface,
         '--out-trim-iface',
@@ -215,6 +219,8 @@ class InterfacePipeline {
             'Validator succeeded without bytecode output.');
         await File(iface).copy(file('dynamic_interface.yaml'));
         await File(trim).copy(file('trim_interface.yaml'));
+        await File(file('round-$round-details.json'))
+            .copy(file('interface_detailed.json'));
         final report = <String, dynamic>{
           'status': 'interface_validated',
           ...sdk.toJson(),
@@ -226,6 +232,8 @@ class InterfacePipeline {
           'own': request.own,
           'dynamic_interface_sha256': digest,
           'trim_interface_sha256': await hashFile(trim),
+          'interface_detailed_sha256':
+              await hashFile(file('interface_detailed.json')),
           'dynamic_selectors':
               request.mode == 'whole' ? wholeSelectors : <String>[],
           'host_build_verified': false,
@@ -251,6 +259,7 @@ class InterfacePipeline {
         additions
       ]);
       input = iface;
+      detailsInput = file('round-$round-details.json');
       trimInput = trim;
     }
     throw Failure(

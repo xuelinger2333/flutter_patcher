@@ -29,7 +29,7 @@ class CompilerFixture extends Commands {
     if (args.last == '--help') {
       return oldTool
           ? 'bytecode'
-          : 'extract-surface merge-interface resolve-interface-hints trim-interface';
+          : 'extract-surface merge-interface resolve-interface-hints trim-interface --out-details';
     }
     if (args.contains('--output-dill')) {
       await write(value(args, '--output-dill'), 'index');
@@ -39,6 +39,10 @@ class CompilerFixture extends Commands {
       await write(value(args, '--out-iface'),
           jsonEncode({'round': stuck ? 0 : merges}));
       await write(value(args, '--out-trim-iface'), 'trim-$merges');
+      if (args.contains('--out-details')) {
+        await write(
+            value(args, '--out-details'), '{"schema":1,"round":$merges}');
+      }
     } else if (args.contains('resolve-interface-hints')) {
       await write(value(args, '--out'), '{}');
     }
@@ -92,6 +96,11 @@ void main() {
   test('validation converges and commits outputs only after success', () async {
     final result = await pipeline.generate(request);
     expect(compiler.validations, 2);
+    expect(compiler.invocations.any((args) => args.contains('--details-in')),
+        true);
+    expect(
+        await File(p.join(request.output, 'interface_detailed.json')).exists(),
+        true);
     expect(result['host_build_verified'], false);
     expect(result['device_verified'], false);
     expect(
