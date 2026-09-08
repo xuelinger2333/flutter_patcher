@@ -100,6 +100,26 @@ class Commands {
       String code = 'TOOL_FAILED',
       Duration timeout = const Duration(minutes: 15),
       Map<String, String>? extraEnvironment}) async {
+    final result = await runResult(executable, args,
+        cwd: cwd,
+        code: code,
+        timeout: timeout,
+        extraEnvironment: extraEnvironment);
+    if (result.exitCode != 0) {
+      final detail = '${result.stderr}\n${result.stdout}'.trim();
+      throw Failure(
+          code,
+          '${p.basename(executable)} exited ${result.exitCode}: '
+          '${detail.length > 6000 ? detail.substring(detail.length - 6000) : detail}');
+    }
+    return result.stdout;
+  }
+
+  Future<CommandResult> runResult(String executable, List<String> args,
+      {String? cwd,
+      String code = 'TOOL_FAILED',
+      Duration timeout = const Duration(minutes: 15),
+      Map<String, String>? extraEnvironment}) async {
     Process process;
     try {
       process = await Process.start(executable, args,
@@ -121,15 +141,14 @@ class Commands {
     }
     final out = await output;
     final err = await diagnostic;
-    if (result != 0) {
-      final detail = '$err\n$out'.trim();
-      throw Failure(
-          code,
-          '${p.basename(executable)} exited $result: '
-          '${detail.length > 6000 ? detail.substring(detail.length - 6000) : detail}');
-    }
-    return out;
+    return CommandResult(result, out, err);
   }
+}
+
+class CommandResult {
+  final int exitCode;
+  final String stdout, stderr;
+  CommandResult(this.exitCode, this.stdout, this.stderr);
 }
 
 class Downloads {

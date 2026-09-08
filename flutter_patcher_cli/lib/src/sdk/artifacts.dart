@@ -234,13 +234,16 @@ class ArtifactStore {
         'Flutter $version is not supported. Supported versions: ${versions.join(', ')}');
   }
 
-  Future<Map<String, dynamic>> obtain(String kind, SdkIdentity sdk) async {
+  Future<Map<String, dynamic>> obtain(String kind, SdkIdentity sdk,
+      {bool refresh = false}) async {
+    require(!refresh || (kind == 'tools' && !downloads.offline),
+        'CONFIG_INVALID', 'Tool refresh requires online mode.');
     final directory = p.join(root, 'artifacts', sdk.version, kind);
     await rejectLinks(directory);
     final source =
         '${base.toString().replaceAll(RegExp(r'/+$'), '')}/flutter-${sdk.version}/';
     final manifestName = '$kind.manifest.json';
-    if (await Directory(directory).exists()) {
+    if (!refresh && await Directory(directory).exists()) {
       try {
         final provenance = await readObject(p.join(directory, 'source.json'));
         require(provenance['url'] == source, 'CACHE_INVALID',
@@ -269,6 +272,7 @@ class ArtifactStore {
     }
     await validateFiles(staging, manifest);
     await writeObject(p.join(staging, 'source.json'), {'url': source});
+    if (await Directory(directory).exists()) await quarantine(directory);
     await Directory(staging).rename(directory);
     return manifest;
   }

@@ -1,6 +1,6 @@
-# flutter_patcher_cli · WP-2
+# flutter_patcher_cli · WP-2 / WP-3
 
-本包负责为当前 Flutter 版本准备补丁工具链。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前实现 `doctor`；`build`、`patch`、`publish`、`keys` 明确返回未实现。
+本包负责为当前 Flutter 版本准备补丁工具链和新宿主的动态接口。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前实现 `doctor` 和高级接口准备命令 `interface`；`build`、`patch`、`publish`、`keys` 明确返回未实现。
 
 M1 支持 Linux x64（含 x64 WSL2），目标 Android arm64。需要已初始化的 stock Flutter SDK、Git 和首次下载所需的网络。原生 Windows/macOS 会明确报错；不支持的 Flutter 版本不会转入自行编译流程。
 
@@ -55,6 +55,39 @@ YAML 缓存键包含版本、engine/framework commit、所用 Flutter 源文件�
 | `--apk` | ZIP 内 `lib/arm64-v8a/libflutter.so` 大小/哈希匹配 manifest；不安装或运行 APK |
 
 `--artifacts-url`、`--supported-versions-url` 是维护/测试用覆盖项，普通用户只需选择 Flutter SDK。下载允许 HTTPS，HTTP 仅允许 loopback 测试服务。错误报告不会提供自行编译引擎的路径。
+
+## WP-3 接口准备
+
+这是后续 build/patch 管线的接口准备能力和维护入口，不修改已发布基线。
+需要含 WP-3 子命令的 CI 工具 dill；当前公开 WP-2 工具缺少这些命令时会明确报错。
+源码实现不会自动覆盖现有 Release，审核后的新工具发布仍使用同一 Flutter 版本的单 dill。
+工具发布更新后，执行 `flutter_patcher doctor --refresh-tools` 在线校验并替换工具缓存；
+刷新失败保留原缓存，不刷新引擎。工具哈希变化会使 SDK YAML 缓存失效。
+
+```bash
+flutter_patcher interface \
+  --dill /path/to/unannotated-app.dill \
+  --module /path/to/module.dart \
+  --packages /path/to/module/.dart_tool/package_config.json \
+  --own my_app --mode lean --out /path/to/new-interface-output --json
+```
+
+`--out` 必须是新目录；省略时使用项目 `.dart_tool/flutter_patcher/interfaces/` 下的新子目录。
+SDK、工具和协议缓存沿用 doctor 的自动版本选择。只读输入文件，所有轮次在临时目录完成，
+验证成功后才提交输出。失败保留诊断，不把半成品当作可用接口。
+
+- `dynamic_interface.yaml`：已引用面、协议、常用控件和 dart:core 的确定性并集。
+- `trim_interface.yaml`：同源派生，额外保留自有库导入的 barrel；仅用于裁剪。
+- `interface.manifest.json`：输入/输出与工具哈希、模式、轮次及校验结果。
+- 每轮 YAML、编译日志、验证字节码及精简档的裁剪 kernel：用于诊断，不是可发布补丁。
+
+精简档调用 CI 工具中的 SDK trimmer，然后通过 `--import-dill` 验证模块；整程序档编译框架副本，
+使用完整平台接口、平台私有条目和限定的动态调用选择子。两档都只补全编译器明确要求的声明，
+不全局模糊匹配同名类，无法解析/仍有歧义、无进展或超过 `--max-rounds`（上限 5）时失败。
+
+没有 main 的模块通过临时入口生成索引，实际字节码编译仍针对原模块。
+成功状态为 `interface_validated`，`host_build_verified` 和 `device_verified` 均为 false：
+这不代表宿主 APK 已按该接口构建，也不代表补丁已经在设备上运行。
 
 ## 验证
 

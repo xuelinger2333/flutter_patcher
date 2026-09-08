@@ -202,8 +202,8 @@ class EnvironmentBuilder {
     return File(selected).existsSync() ? selected : p.join(managed, relative);
   }
 
-  Future<String> yamlCache(
-      SdkIdentity sdk, String managed, String tools) async {
+  Future<String> yamlCache(SdkIdentity sdk, String managed, String tools,
+      {bool requireIndex = false}) async {
     final platform = sdkInput(sdk, managed,
         'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill');
     final frontend = sdkInput(sdk, managed,
@@ -247,6 +247,15 @@ class EnvironmentBuilder {
           require(await hashFile(file) == (state['outputs'] as Map)[name],
               'YAML_CACHE_INVALID', 'Cached YAML hash differs.');
           _validateYaml(await File(file).readAsString());
+        }
+        if (requireIndex) {
+          final index = p.join(directory, 'probe/linked.dill');
+          await rejectLinks(index);
+          require(
+              await File(index).exists() &&
+                  await hashFile(index) == state['index_sha256'],
+              'YAML_CACHE_INVALID',
+              'SDK declaration index is missing or changed.');
         }
         return directory;
       } catch (_) {
@@ -313,8 +322,11 @@ class EnvironmentBuilder {
       _validateYaml(await File(p.join(staging, name)).readAsString());
       outputs[name] = await hashFile(p.join(staging, name));
     }
-    await writeObject(
-        p.join(staging, 'state.json'), {'inputs': inputs, 'outputs': outputs});
+    await writeObject(p.join(staging, 'state.json'), {
+      'inputs': inputs,
+      'outputs': outputs,
+      if (await File(dill).exists()) 'index_sha256': await hashFile(dill)
+    });
     await Directory(staging).rename(directory);
     return directory;
   }

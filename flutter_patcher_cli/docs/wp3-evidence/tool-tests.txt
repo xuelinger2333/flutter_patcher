@@ -1,0 +1,11 @@
+PASS canonical merge, list expansion, distinct member/class and constructor
+PASS invalid YAML and unsafe dynamic Object declarations fail
+PASS constants recover all public declarations; private fields excluded
+PASS inheritance/overrides and separate trim barrel entries
+PASS enum type also retained as callable class
+PASS hint resolution follows barrel exports and rejects unrelated names
+PASS defaults include common controls/core and whole-mode dynamic allowlist
+PASS unimported dart:ffi Size cannot shadow exported dart:ui Size
+PASS exporting Matrix4 does not make vector_math Colors a candidate
+9 interface structural cases passed
+detect_shape structural tests: 9 passed

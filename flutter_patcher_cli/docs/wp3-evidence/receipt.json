@@ -1,0 +1,27 @@
+{
+  "execution": "source validation; no new CI dill or release published",
+  "sdk_file_count": 17572,
+  "sdk_inventory_unchanged": true,
+  "sdk_inventory_sha256": "dbdc113d891d1ad7abbe88c5104125349c1cf62a175e60f4dc6fead18d63a90e",
+  "dart_source_commit": "60a57cd42d64dc03e9f07aa60a2e250755c1ef28",
+  "source_sha256": {
+    "artifacts/bin/kernel_tools.dart": "033c1978ab939e6b547d2c5c77044f9b395c2f6d3d0828012a026779286cca68",
+    "artifacts/bin/main.dart": "a03b38888953f1f99d1d3dc8d1d5d11b0788fd0761b6f5f6dcae1611c20b7973",
+    "artifacts/lib/src/detect_shape.dart": "0991f1de6a3cfca2e266ceaa2bc4bb69ecc6519930e63e88c60ab9e4e7c2b6c1",
+    "artifacts/lib/src/extract_surface.dart": "738f23d62c94be1e9a03872ba6ca997bcc8c580d186867365f6cfc5ab08e77da",
+    "artifacts/lib/src/interface_commands.dart": "b80228cce0fb5ff669dcd53540e0eaa4ee426f12cf3887fb21a3057456954edc",
+    "artifacts/lib/src/interface_defaults.dart": "bd197e4f27a776e2310c09b67b41629b146d14cba0c65a5defe45ee26262d860",
+    "artifacts/lib/src/interface_document.dart": "78d38acb452807db45b6efd79d01f2e4e992a6b3e5a7fe6943b5f3f62416ab9d",
+    "artifacts/lib/src/resolve_interface_hints.dart": "25a716f4d9d99d80a79e39bad4b202d504de4bc8a4aeca17de8366f6e33c8d6c",
+    "artifacts/lib/src/transform_overlay.dart": "c115f8da9c6e06aef91881280228e583dc7af647b7c8c9f7bc9c9d11e6e010bd",
+    "artifacts/lib/src/trim_interface.dart": "1aad01661d22674f2e603ab554424f26b9991c6b8044cc4faf6481415706da37",
+    "artifacts/pubspec.yaml": "c76f65761940c405947d09d113479a0aea0ac4a2828bcb4ec9ac888f03495c41",
+    "cli/bin/flutter_patcher.dart": "8640e676c3b880d2a4b042cc8858dfb3528a9f8605611f8544efc9e12934ee48",
+    "cli/lib/src/cli.dart": "2dc462a343f8c52e6d0a864145e9d1876d24c7f5ff6e8089117c053233c76a19",
+    "cli/lib/src/core.dart": "4fe7a10a80ae94ec24c106f6a386ed69354dd52e8cdd00d5efb8a91048619676",
+    "cli/lib/src/interfaces/pipeline.dart": "35646300019dfa8074a401430e30dfbac994a2fe2d6e420153bcd2d696a766d9",
+    "cli/lib/src/sdk/artifacts.dart": "753d1df1c9a31a41c5b4adeb1d3830699408135744a11f1768ca858b166afc9d",
+    "cli/lib/src/sdk/environment.dart": "edd84eef023da1c668d0824b0fbaad8da9695bc50c6c0ce4782743074391448f",
+    "cli/pubspec.yaml": "5993b1e1d873b8ee3d7a29d49af56a7248ad07eac20d870e3b675d80e7edbeb3"
+  }
+}

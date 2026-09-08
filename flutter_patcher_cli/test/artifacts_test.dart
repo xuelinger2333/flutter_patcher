@@ -236,6 +236,31 @@ void main() {
           throwsA(failure('ENGINE_ARTIFACT_MISSING')));
       expect(network.requests, 1);
     });
+    test('failed refresh preserves previously verified tools', () async {
+      await store.obtain('tools', sdk);
+      final name = 'flutter_patcher_tools-${sdk.version}.dill';
+      final oldBytes = await File(store.file(sdk, 'tools', name)).readAsBytes();
+      fixture.bytes[name] = [0];
+      await expectLater(
+          store.obtain('tools', sdk, refresh: true), throwsA(isA<Failure>()));
+      expect(
+          await File(store.file(sdk, 'tools', name)).readAsBytes(), oldBytes);
+      final offline = ArtifactStore(
+          temp.path, store.base, store.supportUri, Downloads(offline: true));
+      await offline.obtain('tools', sdk);
+      await expectLater(offline.obtain('tools', sdk, refresh: true),
+          throwsA(failure('CONFIG_INVALID')));
+    });
+    test('successful refresh fetches tools again without touching engine',
+        () async {
+      await store.obtain('engine', sdk);
+      await store.obtain('tools', sdk);
+      final count = network.requests;
+      await store.obtain('tools', sdk, refresh: true);
+      expect(network.requests, count + 2);
+      await store.obtain('engine', sdk);
+      expect(network.requests, count + 2);
+    });
     test('refreshes a cached support table for a newly supported version',
         () async {
       await store.checkSupport('3.47.2');

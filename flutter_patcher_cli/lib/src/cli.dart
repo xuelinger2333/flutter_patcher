@@ -5,47 +5,65 @@ import 'package:path/path.dart' as p;
 import 'core.dart';
 import 'sdk/artifacts.dart';
 import 'sdk/environment.dart';
+import 'interfaces/pipeline.dart';
 
 const releaseBase =
     'https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download';
 const supportTable =
     'https://api.github.com/repos/xuelinger2333/flutter_patcher_artifacts/contents/supported_versions.txt';
 
+ArgParser environmentOptions() => ArgParser()
+  ..addFlag('help', abbr: 'h', negatable: false)
+  ..addFlag('json',
+      negatable: false, help: 'Print a structured diagnostic report.')
+  ..addFlag('offline',
+      negatable: false, help: 'Use verified local caches only.')
+  ..addFlag('refresh-tools',
+      negatable: false,
+      help:
+          'Re-download and verify tools before replacing their cache (online only).')
+  ..addOption('flutter-sdk',
+      help: 'Select the Flutter SDK; defaults to Flutter on PATH.')
+  ..addOption('cache-dir',
+      help:
+          'Managed directory under ~/.flutter_patcher or .dart_tool/flutter_patcher.')
+  ..addOption('artifacts-url',
+      defaultsTo: releaseBase,
+      help: 'Maintainer/test override for the release download base.')
+  ..addOption('supported-versions-url',
+      defaultsTo: supportTable,
+      help: 'Maintainer/test override for the support table.')
+  ..addOption('public-key', help: 'Optional signing public key file to check.')
+  ..addOption('private-key',
+      help: 'Optional signing private key file to check.')
+  ..addOption('baseline-store',
+      help: 'Optional file:// or HTTPS baseline store to probe.')
+  ..addOption('baseline',
+      help: 'Optional extracted baseline directory for file-presence checks.')
+  ..addOption('version-code',
+      help: 'Optional versionCode for a file-store release sidecar check.')
+  ..addOption('flavor', help: 'Flavor used in the release sidecar filename.')
+  ..addOption('apk',
+      help: 'Optional existing APK whose engine should be checked.');
+
 ArgParser parser() {
-  final doctor = ArgParser()
-    ..addFlag('help', abbr: 'h', negatable: false)
-    ..addFlag('json',
-        negatable: false, help: 'Print a structured diagnostic report.')
-    ..addFlag('offline',
-        negatable: false, help: 'Use verified local caches only.')
-    ..addOption('flutter-sdk',
-        help: 'Select the Flutter SDK; defaults to Flutter on PATH.')
-    ..addOption('cache-dir',
+  final doctor = environmentOptions();
+  final interfaces = environmentOptions()
+    ..addOption('dill', help: 'Unannotated baseline app.dill.')
+    ..addOption('module',
+        help: 'Dart module source to validate the new host interface against.')
+    ..addOption('packages', help: 'Module package_config.json.')
+    ..addOption('own', help: 'Comma-separated application package names.')
+    ..addOption('out',
         help:
-            'Managed directory under ~/.flutter_patcher or .dart_tool/flutter_patcher.')
-    ..addOption('artifacts-url',
-        defaultsTo: releaseBase,
-        help: 'Maintainer/test override for the release download base.')
-    ..addOption('supported-versions-url',
-        defaultsTo: supportTable,
-        help: 'Maintainer/test override for the support table.')
-    ..addOption('public-key',
-        help: 'Optional signing public key file to check.')
-    ..addOption('private-key',
-        help: 'Optional signing private key file to check.')
-    ..addOption('baseline-store',
-        help: 'Optional file:// or HTTPS baseline store to probe.')
-    ..addOption('baseline',
-        help: 'Optional extracted baseline directory for file-presence checks.')
-    ..addOption('version-code',
-        help: 'Optional versionCode for a file-store release sidecar check.')
-    ..addOption('flavor', help: 'Flavor used in the release sidecar filename.')
-    ..addOption('apk',
-        help: 'Optional existing APK whose engine should be checked.');
+            'New output directory; defaults under .dart_tool/flutter_patcher.')
+    ..addOption('mode', defaultsTo: 'lean', allowed: ['lean', 'whole'])
+    ..addOption('max-rounds', defaultsTo: '5');
   return ArgParser()
     ..addFlag('help', abbr: 'h', negatable: false)
     ..addFlag('version', negatable: false)
-    ..addCommand('doctor', doctor);
+    ..addCommand('doctor', doctor)
+    ..addCommand('interface', interfaces);
 }
 
 Future<int> runCli(List<String> arguments) async {
@@ -66,16 +84,17 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher doctor [options]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher doctor [options]\nflutter_patcher interface [options]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
-      stdout.writeln(args.commands['doctor']!.usage);
+      stdout.writeln(args.commands[parsed.command!.name]!.usage);
       return 0;
     }
     require(parsed.rest.isEmpty && parsed.command!.rest.isEmpty, 'USAGE_ERROR',
         'Unexpected positional arguments.');
-    return await doctor(parsed.command!);
+    return await doctor(parsed.command!,
+        generateInterface: parsed.command!.name == 'interface');
   } on FormatException catch (error) {
     stderr.writeln('USAGE_ERROR: ${error.message}');
     return 2;
@@ -85,13 +104,14 @@ Future<int> runCli(List<String> arguments) async {
   }
 }
 
-Future<int> doctor(ArgResults args) async {
+Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
   final checks = <Map<String, dynamic>>[];
   final watch = Stopwatch()..start();
   final downloads = Downloads(offline: args['offline'] as bool);
   final report = <String, dynamic>{
-    'command': 'doctor',
-    'scope': 'WP-2 toolchain',
+    'command': generateInterface ? 'interface' : 'doctor',
+    'scope':
+        generateInterface ? 'WP-3 interface preparation' : 'WP-2 toolchain',
     'checks': checks
   };
   RandomAccessFile? lock;
@@ -107,6 +127,29 @@ Future<int> doctor(ArgResults args) async {
   void pending(String id, String message) =>
       checks.add({'id': id, 'status': 'not_run', 'message': message});
   try {
+    require(!(args['offline'] == true && args['refresh-tools'] == true),
+        'CONFIG_INVALID', '--refresh-tools cannot be used offline.');
+    InterfaceRequest? interfaceRequest;
+    if (generateInterface) {
+      String input(String name) {
+        final value = args[name] as String?;
+        require(value != null && value.isNotEmpty, 'CONFIG_INVALID',
+            'Missing --$name');
+        return value!;
+      }
+
+      interfaceRequest = InterfaceRequest(
+          dill: p.absolute(input('dill')),
+          module: p.absolute(input('module')),
+          packages: p.absolute(input('packages')),
+          own: input('own').split(','),
+          mode: args['mode'] as String,
+          maxRounds: int.tryParse(args['max-rounds'] as String) ?? 0,
+          output: p.absolute(args['out'] as String? ??
+              p.join('.dart_tool/flutter_patcher/interfaces',
+                  DateTime.now().microsecondsSinceEpoch.toString())));
+      await interfaceRequest.validate();
+    }
     require(Platform.isLinux, 'HOST_UNSUPPORTED',
         'M1 requires Linux x64, including x64 WSL2.');
     final home = Platform.environment['HOME'];
@@ -158,7 +201,8 @@ Future<int> doctor(ArgResults args) async {
       engine = await store.obtain('engine', sdk);
     }, 'Engine, gen_snapshot and embedding size/hash/format verified');
     await check('tools_artifacts', () async {
-      toolsManifest = await store.obtain('tools', sdk);
+      toolsManifest = await store.obtain('tools', sdk,
+          refresh: args['refresh-tools'] as bool);
     }, 'Unified dill size/hash/format and Dart version verified');
     report['engine_build_id'] = engine['build_id'];
     report['tools_builder_commit'] = toolsManifest['builder_repo_commit'];
@@ -186,10 +230,18 @@ Future<int> doctor(ArgResults args) async {
           'Required tool subcommands/compiler flags are missing.');
     }, 'Downloaded tool and bytecode help run without source packages');
     await check('yaml_cache', () async {
-      report['yaml_cache'] = await environment.yamlCache(sdk, managed, tool);
+      report['yaml_cache'] = await environment.yamlCache(sdk, managed, tool,
+          requireIndex: generateInterface);
     }, 'SDK-specific protocol and platform YAML generated or validated');
     await check('engine_pair', () => environment.pairSmoke(sdk, managed),
         'Downloaded gen_snapshot compiled a minimal arm64 AOT ELF');
+    if (interfaceRequest != null) {
+      await check('interface', () async {
+        report['interface'] = await InterfacePipeline(commands, sdk, tool,
+                managed, report['yaml_cache'] as String, environment)
+            .generate(interfaceRequest!);
+      }, 'New host interface converged under bytecode validation; host/device execution not verified');
+    }
     final pub = args['public-key'] as String?,
         secret = args['private-key'] as String?;
     if (pub == null && secret == null) {
@@ -293,7 +345,9 @@ Future<int> doctor(ArgResults args) async {
     await lock?.close();
   }
   report.addAll({
-    'status': success ? 'toolchain_ready' : 'failed',
+    'status': success
+        ? (generateInterface ? 'interface_validated' : 'toolchain_ready')
+        : 'failed',
     'all_checks_complete': false,
     'network_requests': downloads.requests,
     'elapsed_ms': watch.elapsedMilliseconds
@@ -305,7 +359,9 @@ Future<int> doctor(ArgResults args) async {
       stdout.writeln('[${item['status']}] ${item['id']}: ${item['message']}');
     }
     stdout.writeln(success
-        ? 'Toolchain ready. Project/device checks above may remain unverified.'
+        ? (generateInterface
+            ? 'Interface validated. Host build/device execution remain unverified.'
+            : 'Toolchain ready. Project/device checks above may remain unverified.')
         : 'Doctor failed.');
   }
   return success ? 0 : 1;

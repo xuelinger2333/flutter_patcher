@@ -1,0 +1,10 @@
+{
+  "lean": {
+    "rounds": 2,
+    "bytecode_bytes": 133977
+  },
+  "whole": {
+    "rounds": 1,
+    "bytecode_bytes": 8832525
+  }
+}

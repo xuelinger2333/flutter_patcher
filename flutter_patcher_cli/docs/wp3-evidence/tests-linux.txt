@@ -1,0 +1,46 @@
+00:00 +0: loading test/yaml_cache_test.dart
+00:00 +0: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +1: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +2: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +3: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +4: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +5: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +6: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +7: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +8: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +9: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +10: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +11: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +12: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +13: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +14: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +15: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +16: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +17: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +18: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +19: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +20: test/yaml_cache_test.dart: YAML cache binds SDK source and tool hashes and repairs corruption
+00:00 +21: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +22: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +23: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +24: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +25: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +26: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +27: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +28: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +29: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +30: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +31: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +32: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +33: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +34: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +35: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +36: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +37: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +38: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +39: test/cli_test.dart: help and version are usable without Flutter or a network
+00:00 +40: test/cli_test.dart: help and version are usable without Flutter or a network
+00:02 +41: test/cli_test.dart: later work packages fail explicitly
+00:07 +42: test/cli_test.dart: invalid options and positional arguments fail
+00:11 +43: test/cli_test.dart: unsupported host emits a structured failure
+00:11 +43 ~1: All tests passed!

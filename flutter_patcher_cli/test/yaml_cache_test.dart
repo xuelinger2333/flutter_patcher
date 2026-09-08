@@ -15,6 +15,10 @@ class FakeCompiler extends Commands {
       Duration timeout = const Duration(minutes: 15),
       Map<String, String>? extraEnvironment}) async {
     final index = args.indexOf('--out');
+    final indexOutput = args.indexOf('--output-dill');
+    if (indexOutput >= 0) {
+      await File(args[indexOutput + 1]).writeAsString('linked-index');
+    }
     if (index >= 0) {
       generators++;
       await File(args[index + 1])
@@ -65,5 +69,13 @@ void main() {
         .writeAsString('corrupted');
     expect(await builder.yamlCache(sdk, root, tool.path), third);
     expect(commands.generators, 8);
+    expect(await builder.yamlCache(sdk, root, tool.path, requireIndex: true),
+        third);
+    expect(commands.generators, 8);
+    await File(p.join(third, 'probe/linked.dill'))
+        .writeAsString('corrupted-index');
+    expect(await builder.yamlCache(sdk, root, tool.path, requireIndex: true),
+        third);
+    expect(commands.generators, 10);
   });
 }
