@@ -60,6 +60,8 @@ ArgParser parser() {
     ..addOption('fingerprint')
     ..addOption('seq')
     ..addOption('previous-seq')
+    ..addMultiOption('assets',
+        help: 'Asset keys to override; omitted selects changed assets.')
     ..addOption('strategy', defaultsTo: 'so', allowed: ['so', 'bytecode']);
   final build = environmentOptions()
     ..addOption('project',

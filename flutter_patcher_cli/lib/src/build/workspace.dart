@@ -68,6 +68,28 @@ class BuildWorkspace {
       }
       if (changed) await pubspec.writeAsString('${jsonEncode(data)}\n');
     }
+    if (application) {
+      for (final entry in copies.entries) {
+        final lock = File(p.join(entry.value, 'pubspec.lock'));
+        if (!await lock.exists()) continue;
+        final data =
+            jsonDecode(jsonEncode(loadYaml(await lock.readAsString()))) as Map;
+        var changed = false;
+        for (final row in (data['packages'] as Map).values) {
+          if (row['source'] != 'path') continue;
+          final description = row['description'] as Map;
+          final path = p.normalize(
+              p.absolute(p.join(entry.key, description['path'] as String)));
+          final mapped = copies[path];
+          require(mapped != null, 'BUILD_PROJECT_INVALID',
+              'Locked path dependency was not copied');
+          description['path'] = mapped;
+          description['relative'] = false;
+          changed = true;
+        }
+        if (changed) await lock.writeAsString('${jsonEncode(data)}\n');
+      }
+    }
     return destination;
   }
 

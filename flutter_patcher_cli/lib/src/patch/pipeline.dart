@@ -9,6 +9,7 @@ import '../sdk/artifacts.dart';
 import '../sdk/package_inputs.dart';
 import 'sources.dart';
 import 'package.dart';
+import 'resources.dart';
 
 class PatchFailure extends Failure {
   final Map<String, Object?> details;
@@ -20,6 +21,7 @@ class PatchRequest {
   final int seq, minBuild;
   final int? previousSeq;
   final bool validationOnly, offline;
+  final List<String> assets;
   PatchRequest(
       {required this.project,
       required this.fingerprint,
@@ -28,6 +30,7 @@ class PatchRequest {
       required this.seq,
       required this.minBuild,
       this.previousSeq,
+      this.assets = const [],
       this.target = 'lib/main.dart',
       this.validationOnly = false,
       this.offline = false});
@@ -191,8 +194,6 @@ class PatchPipeline {
           }
         }
       }
-      require(
-          changed.isNotEmpty, 'PATCH_NO_CHANGES', 'No Dart changes detected');
       // Native plugin capability cannot be supplied by a Dart module.
       for (final name in roots.keys) {
         if (name == app) continue;
@@ -210,12 +211,57 @@ class PatchPipeline {
             'PATCH_NATIVE_CHANGE',
             'Native plugin changes require a new host release: $name');
       }
-      final resources = pubspec['flutter'] is Map &&
-          ((pubspec['flutter'] as Map)['assets'] != null ||
-              (pubspec['flutter'] as Map)['fonts'] != null);
+      phase = 'resources';
+      final bundle = p.join(work, 'flutter_assets');
+      await commands.run(
+          p.join(managed, 'bin/flutter'),
+          [
+            '--suppress-analytics',
+            'build',
+            'bundle',
+            '--release',
+            '--no-pub',
+            '--target-platform',
+            'android-arm64',
+            '--target',
+            req.target,
+            '--asset-dir',
+            bundle,
+          ],
+          cwd: project);
+      final payload = PatchResources(bundle, work, commands, managed);
+      final oldResources = receipt['resources'];
+      require(
+          oldResources is Map || req.validationOnly,
+          'PATCH_BASELINE_INCOMPATIBLE',
+          'Baseline lacks resource inventory; rebuild host');
+      await payload.collect(
+          oldResources is Map
+              ? Map<String, dynamic>.from(oldResources)
+              : {
+                  'schema': 1,
+                  'files': <String, dynamic>{},
+                  'manifest': <String, dynamic>{}
+                },
+          req.assets);
+      if (payload.assets.isNotEmpty) changed.add('resources');
+      final resources = payload.assets.isNotEmpty;
       final remap =
           await remapSources(config, p.join(work, 'module'), own, req.seq);
       final names = Map<String, String>.from(remap['names'] as Map);
+      if (resources) {
+        final plugin = roots['flutter_patcher'] as Uri?;
+        require(plugin != null, 'PATCH_OVERLAY_UNAVAILABLE',
+            'WP-7 flutter_patcher dependency is required');
+        final helper =
+            File.fromUri(plugin!.resolve('src/bootstrap/overlay.dart'));
+        require(await helper.exists(), 'PATCH_OVERLAY_UNAVAILABLE',
+            'WP-7 overlay source is missing');
+        final generated = p.join(work, 'module', app, '__patch_overlay.dart');
+        require(!await File(generated).exists(), 'PATCH_SOURCE_INVALID',
+            'Application uses reserved __patch_overlay.dart');
+        await helper.copy(generated);
+      }
       final entry = p.join(work, 'module', app, '__patch_entry.dart');
       final interfaceYaml = loadYaml(
           await File(p.join(baseline, 'dynamic_interface.yaml'))
@@ -232,7 +278,8 @@ class PatchPipeline {
       Future<Map<String, dynamic>> compile(bool emit) async {
         phase = '$tier-${emit ? 'emit' : 'check'}';
         await File(entry).writeAsString(patchEntry(names[app]!,
-            req.target.substring(4), req.seq, req.fingerprint, tier));
+            req.target.substring(4), req.seq, req.fingerprint, tier,
+            resources: resources));
         final input = p.join(work, '$phase-request.json'),
             output = p.join(work, '$phase-report.json');
         await writeObject(input, {
@@ -251,6 +298,8 @@ class PatchPipeline {
               p.join(sdk.root, (manifest['platform'] as Map)['path'] as String),
           'allocated': p.join(baseline, 'allocate_finalized.json'),
           'resources': resources,
+          if (resources)
+            'overlay_library': 'package:${names[app]}/__patch_overlay.dart',
           'own': names.values.toList(),
           'original_own': own.toList(),
           'out': p.join(work, 'module.bc'),
@@ -286,21 +335,41 @@ class PatchPipeline {
         require(whole['status'] == 'checked', 'PATCH_UNSAFE',
             'Whole-tier checks failed; evidence: $work');
       }
-      require(!resources, 'PATCH_RESOURCES_UNAVAILABLE',
-          'Resource/font packaging requires WP-7');
       final finalReport = await compile(true);
-      require(
-          (finalReport['fonts'] as List? ?? []).isEmpty,
-          'PATCH_RESOURCES_UNAVAILABLE',
-          'IconData requires WP-7 font subsetting');
       require(finalReport['status'] == 'compiled', 'PATCH_UNSAFE',
           'Final compiler checks failed; evidence: $work');
+      require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',
+          'Resource transform did not run');
+      await payload.collectFonts(finalReport['fonts'] as List? ?? [],
+          finalReport['dynamic_fonts'] as List? ?? []);
+      // Font-only changes are meaningful even when all Dart hashes match.
+      if (payload.fonts.isNotEmpty) {
+        final current = File(p.join(bundle, 'FontManifest.json'));
+        final oldFiles =
+            oldResources is Map ? oldResources['files'] as Map : const {};
+        if (await current.exists() &&
+            await hashFile(current.path) !=
+                oldFiles['FontManifest.json']?['sha256']) {
+          changed.add('fonts');
+        }
+        final definitions = await readObjectFontSources(bundle);
+        for (final key in definitions) {
+          if (await hashFile(p.join(bundle, key)) != oldFiles[key]?['sha256']) {
+            changed.add('font:$key');
+          }
+        }
+      }
+      require(changed.isNotEmpty, 'PATCH_NO_CHANGES',
+          'No Dart, dependency or resource changes detected');
       phase = 'package';
       final artifact = await packPatch(
           module: p.join(work, 'module.bc'),
           work: work,
           key: key,
           commands: commands,
+          extraEntries: payload.entries,
+          fonts: payload.fonts,
+          assets: payload.assets,
           metadata: {
             'format_version': 1,
             'patch_seq': req.seq,

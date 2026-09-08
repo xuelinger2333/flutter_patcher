@@ -60,6 +60,7 @@ Future<int> patchCommand(ArgResults args) async {
             ? null
             : int.tryParse(value('previous-seq')) ?? -1,
         target: args['target'] as String,
+        assets: (args['assets'] as List).cast<String>(),
         offline: offline);
     await request.validate();
     await rejectLinks(p.join(cache, 'doctor.lock'));

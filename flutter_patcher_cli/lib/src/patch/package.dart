@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
+import 'resources.dart';
 
 Uint8List hexBytes(String text) => Uint8List.fromList([
       for (var i = 0; i < text.length; i += 2)
@@ -57,8 +58,51 @@ Future<Map<String, Object?>> packPatch(
     required String work,
     required Map<String, dynamic> metadata,
     required List<int> key,
-    required Commands commands}) async {
+    required Commands commands,
+    Map<String, List<int>> extraEntries = const {},
+    List<Map<String, dynamic>> fonts = const [],
+    List<Map<String, dynamic>> assets = const []}) async {
   final bytes = await File(module).readAsBytes();
+  require(
+      extraEntries.length <= 4094 &&
+          extraEntries.values.every((v) => v.length <= 64 * 1024 * 1024) &&
+          bytes.length +
+                  extraEntries.values.fold<int>(0, (n, v) => n + v.length) <=
+              256 * 1024 * 1024,
+      'PATCH_PACKAGE_INVALID',
+      'Patch payload exceeds resource limits');
+  for (final row in assets) {
+    assetKey(row['key'] as String);
+    require(row['path'] == 'assets/${row['key']}', 'PATCH_PACKAGE_INVALID',
+        'Asset key/path mismatch');
+  }
+  for (final row in fonts) {
+    require(
+        row['family'] is String &&
+            (row['family'] as String).isNotEmpty &&
+            (row['path'] as String).startsWith('fonts/'),
+        'PATCH_PACKAGE_INVALID',
+        'Invalid font metadata');
+  }
+  final listed = <String>{};
+  for (final row in [...fonts, ...assets]) {
+    final path = row['path'] as String;
+    assetKey(path);
+    require(
+        (path.startsWith('fonts/') || path.startsWith('assets/')) &&
+            listed.add(path) &&
+            extraEntries.containsKey(path),
+        'PATCH_PACKAGE_INVALID',
+        'Invalid resource entry');
+    final data = extraEntries[path]!;
+    require(
+        data.length == row['length'] &&
+            sha256.convert(data).toString() == row['sha256'],
+        'PATCH_PACKAGE_INVALID',
+        'Resource metadata does not match bytes');
+  }
+  require(listed.length == extraEntries.length, 'PATCH_PACKAGE_INVALID',
+      'Unlisted resource entry');
   require(bytes.isNotEmpty && bytes.length <= 64 * 1024 * 1024,
       'PATCH_PACKAGE_INVALID', 'Invalid bytecode size');
   final manifest = {
@@ -68,13 +112,14 @@ Future<Map<String, Object?>> packPatch(
       'length': bytes.length,
       'sha256': sha256.convert(bytes).toString()
     },
-    'fonts': <Object>[],
-    'assets': <Object>[]
+    'fonts': fonts,
+    'assets': assets
   };
   final archive = Archive();
   for (final entry in {
     'module.bc': bytes,
-    'patch_manifest.json': utf8.encode(jsonEncode(manifest))
+    'patch_manifest.json': utf8.encode(jsonEncode(manifest)),
+    ...extraEntries
   }.entries) {
     archive.addFile(ArchiveFile(entry.key, entry.value.length, entry.value)
       ..compression = CompressionType.none);
@@ -82,7 +127,9 @@ Future<Map<String, Object?>> packPatch(
   final payload = ZipEncoder().encode(archive, level: 0);
   final zip = ZipDecoder().decodeBytes(payload);
   require(
-      zip.length == 2 &&
+      zip.length == 2 + extraEntries.length &&
+          zip.length <= 4096 &&
+          zip.every((f) => f.size <= 64 * 1024 * 1024) &&
           zip.every((f) => f.compression == CompressionType.none),
       'PATCH_PACKAGE_INVALID',
       'Only STORED entries are allowed');

@@ -53,6 +53,16 @@ void main() {
         .writeAsString('name: app\ndependencies:\n  dep:\n    path: ../dep\n');
     await File(p.join(root, 'app/pubspec_overrides.yaml')).writeAsString(
         'dependency_overrides:\n  dep:\n    path: ../override\n');
+    await File(p.join(root, 'app/pubspec.lock')).writeAsString(jsonEncode({
+      'packages': {
+        'dep': {
+          'source': 'path',
+          'version': '1.2.3',
+          'description': {'path': '../override', 'relative': true}
+        }
+      },
+      'sdks': {'dart': '>=3.0.0 <4.0.0'}
+    }));
     final work = BuildWorkspace(p.join(root, 'copy'));
     final copy = await work.copyPackage(p.join(root, 'app'), application: true);
     for (final name in ['pubspec.yaml', 'pubspec_overrides.yaml']) {
@@ -60,6 +70,12 @@ void main() {
           isNot(contains('../')));
     }
     expect(work.copies.length, 3);
+    final locked =
+        jsonDecode(await File(p.join(copy, 'pubspec.lock')).readAsString())
+            as Map;
+    expect(locked['packages']['dep']['version'], '1.2.3');
+    expect(locked['packages']['dep']['description'],
+        {'path': work.copies[p.join(root, 'override')], 'relative': false});
     await work.verifyOriginals();
     await File(p.join(root, 'dep/pubspec.yaml'))
         .writeAsString('name: changed\n');
