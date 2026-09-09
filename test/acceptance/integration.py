@@ -120,10 +120,11 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         report['fingerprint'] = prior['fingerprint']
         for tier, seq in [('lean', 7), ('whole', 8)]:
             main = source.replace("const revision = 'original';", f"const revision = '{tier}';")
-            # Embed the const value: a new SDK Icons getter is intentionally not
-            # callable from a lean module's baseline dynamic interface.
-            icon = "IconData(0xe57f, fontFamily: 'MaterialIcons')" if tier == 'lean' else "IconData(0xe25b, fontFamily: 'MaterialIcons')"
-            main = main.replace('Icons.home', icon)
+            # Lean retains the baseline getter and still repacks its font subset.
+            # New SDK getters/constructors legitimately require whole fallback;
+            # exercise a new glyph in that tier without widening the interface.
+            if tier == 'whole':
+                main = main.replace('Icons.home', 'Icons.favorite')
             if tier == 'whole':
                 extra = out / 'extra'
                 (extra / 'lib').mkdir(parents=True)
