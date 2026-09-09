@@ -56,6 +56,7 @@ class BootRunner {
         'fingerprint': fingerprint,
         'publicKeyBase64': publicKeyBase64
       }).timeout(timeout);
+      final payloadUs = startup.elapsedMicroseconds;
       if (reply == null) throw const _NoPatch();
       bootRequire(reply is Map, 'Invalid boot payload');
       final row = reply as Map;
@@ -67,6 +68,7 @@ class BootRunner {
       attempt = row['attempt'] as String;
       final patch = verifyPatchBytes(await read(row['path'] as String),
           fingerprint, row['sha256'] as String);
+      final verifiedUs = startup.elapsedMicroseconds;
       final started =
           await call('markBooting', {'attempt': attempt}).timeout(timeout);
       bootRequire(started == true, 'Boot attempt expired');
@@ -80,6 +82,7 @@ class BootRunner {
         }
       });
       final entry = await load(patch.module);
+      final loadedUs = startup.elapsedMicroseconds;
       bootRequire(!failed, 'Boot attempt already failed');
       bootRequire(entry is List && entry.length == 6, 'PatchEntry length');
       final slots = entry as List;
@@ -107,6 +110,11 @@ class BootRunner {
       bootRequire(!failed, 'Boot attempt already failed');
       entered = true;
       startup.stop();
+      log('BYTECODE_BOOT_TIMING: payload_us=$payloadUs '
+          'verify_us=${verifiedUs - payloadUs} '
+          'load_and_handshake_us=${loadedUs - verifiedUs} '
+          'resources_us=${startup.elapsedMicroseconds - loadedUs} '
+          'total_us=${startup.elapsedMicroseconds}');
       if (startup.elapsedMicroseconds > 85000) {
         log('BYTECODE_BOOT_SLOW: ${startup.elapsedMicroseconds} us before patched main');
       }

@@ -1,0 +1,12 @@
+{
+  "3.47.2": {
+    "flutter": "/home/runner/.flutter_patcher/flutter-stock/3.47.2",
+    "artifacts_url": "https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download",
+    "support_url": "https://raw.githubusercontent.com/xuelinger2333/flutter_patcher_artifacts/REVIEWED_COMMIT/supported_versions.txt",
+    "baseline_store": "file:///mnt/wp9-shared/baselines",
+    "exchange": "/mnt/wp9-shared/evidence",
+    "serial": "REPLACE_WITH_ARM64_API33_DEVICE",
+    "lower_api_serial": null,
+    "size_threshold_bytes": null
+  }
+}

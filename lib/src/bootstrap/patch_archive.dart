@@ -141,8 +141,9 @@ VerifiedPatch verifyPatchBytes(
       'Required entries');
   bootRequire(entries['patch_manifest.json']!.length <= 4 * 1024 * 1024,
       'Manifest size');
-  final manifest = jsonDecode(utf8.decode(entries['patch_manifest.json']!));
-  bootRequire(manifest is Map, 'Manifest object');
+  final decoded = jsonDecode(utf8.decode(entries['patch_manifest.json']!));
+  bootRequire(decoded is Map, 'Manifest object');
+  final manifest = decoded as Map;
   final seq = data.getUint32(38), tier = manifest['tier'];
   bootRequire(
       seq > 0 &&
@@ -154,8 +155,9 @@ VerifiedPatch verifyPatchBytes(
           (tier == 'lean' || tier == 'whole'),
       'Manifest identity');
   final listed = {'patch_manifest.json'};
-  Uint8List entry(dynamic row, String prefix) {
-    bootRequire(row is Map && row['path'] is String, 'Manifest entry');
+  Uint8List entry(Object? value, String prefix) {
+    bootRequire(value is Map && value['path'] is String, 'Manifest entry');
+    final row = value as Map;
     final path = row['path'] as String, content = entries[path];
     bootRequire(path.startsWith(prefix) && listed.add(path) && content != null,
         'Unlisted/duplicate entry');
@@ -167,9 +169,9 @@ VerifiedPatch verifyPatchBytes(
     return content!;
   }
 
+  final moduleRow = manifest['module'];
   bootRequire(
-      manifest['module'] is Map && manifest['module']['path'] == 'module.bc',
-      'Module path');
+      moduleRow is Map && moduleRow['path'] == 'module.bc', 'Module path');
   final module = entry(manifest['module'], 'module.bc');
   bootRequire(
       module.length >= 120 &&
@@ -179,24 +181,28 @@ VerifiedPatch verifyPatchBytes(
   bootRequire(manifest['assets'] is List && manifest['fonts'] is List,
       'Resource lists');
   final assets = <String, Uint8List>{}, fonts = <String, List<Uint8List>>{};
-  for (final row in manifest['assets']) {
+  for (final value in manifest['assets'] as List) {
+    final Object? row = value;
     bootRequire(
         row is Map &&
             row['key'] is String &&
             row['path'] == 'assets/${row['key']}' &&
             !assets.containsKey(row['key']),
         'Asset key');
-    assets[row['key'] as String] = entry(row, 'assets/');
+    final record = row as Map;
+    assets[record['key'] as String] = entry(record, 'assets/');
   }
-  for (final row in manifest['fonts']) {
+  for (final value in manifest['fonts'] as List) {
+    final Object? row = value;
     bootRequire(
         row is Map &&
             row['family'] is String &&
             (row['family'] as String).isNotEmpty,
         'Font family');
+    final record = row as Map;
     fonts
-        .putIfAbsent(row['family'] as String, () => [])
-        .add(entry(row, 'fonts/'));
+        .putIfAbsent(record['family'] as String, () => [])
+        .add(entry(record, 'fonts/'));
   }
   bootRequire(listed.length == entries.length, 'Unlisted ZIP entries');
   return VerifiedPatch(module, assets, fonts, seq, tier as String);

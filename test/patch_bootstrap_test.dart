@@ -105,6 +105,7 @@ void main() {
         () async {
       final bytes = envelope(assets: true, fonts: scenario == 'font');
       final calls = <String>[], events = <String>[];
+      final logs = <String>[];
       Future<void> Function()? firstFrame;
       Future<void> Function(Object)? failure;
       final late = Completer<Object?>();
@@ -156,7 +157,7 @@ void main() {
             failure = onError;
             firstFrame = success;
           },
-          log: (_) {});
+          log: (message) => logs.add(message.toString()));
       await runner.run(
           original: () {
             events.add('original');
@@ -172,6 +173,15 @@ void main() {
           lessThanOrEqualTo(1));
       if (scenario == 'good') {
         expect(events, ['load', 'assets', 'patched']);
+        final timing = logs
+            .singleWhere((line) => line.startsWith('BYTECODE_BOOT_TIMING:'));
+        final values = RegExp(r'\w+_us=(\d+)')
+            .allMatches(timing)
+            .map((m) => int.parse(m.group(1)!))
+            .toList();
+        expect(values.length, 5);
+        expect(values.take(4).fold<int>(0, (sum, value) => sum + value),
+            values.last);
         expect(calls.last, 'reportBootSuccess');
       } else if (scenario == 'main' || scenario == 'font') {
         expect(events, isNot(contains('original')));
