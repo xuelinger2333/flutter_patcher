@@ -353,7 +353,7 @@ Put the resulting signature in the `signature` field of the check-update respons
 
 `strictSignature` defaults to `true`.
 
-On Android API < 33 (no JDK Ed25519), if the device receives a signed patch, the plugin **rejects** it instead of silently skipping verification. On API ≥ 33 the flag has no effect — native verification always runs.
+Under the existing compatibility policy, on Android API < 33 the plugin **rejects** signed patches instead of silently skipping verification. On API ≥ 33 the flag has no effect — verification always runs using the bundled Ed25519 implementation, independently of system KeyFactory support for external public keys. See [signature verification](signature-verification.md) for implementation and format details.
 
 This avoids the false sense of security where "we configured signing but some devices don't actually verify".
 

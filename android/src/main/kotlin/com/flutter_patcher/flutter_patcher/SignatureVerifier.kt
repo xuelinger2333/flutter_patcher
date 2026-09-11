@@ -4,10 +4,7 @@ import android.os.Build
 import android.util.Base64
 import android.util.Log
 import java.io.File
-import java.security.KeyFactory
 import java.security.MessageDigest
-import java.security.Signature
-import java.security.spec.X509EncodedKeySpec
 
 /**
  * 补丁文件完整性与签名校验。
@@ -16,7 +13,7 @@ import java.security.spec.X509EncodedKeySpec
  * - MD5 校验：始终执行（来自 [com.flutter_patcher.flutter_patcher.PatchInfo.md5]）
  * - Ed25519 签名：
  *   - signature 为空 → 跳过（仅靠 MD5 + 传输层防篡改）
- *   - signature 非空 且 API >= 33 → 使用 JDK 原生 Ed25519 验签
+ *   - signature 非空 且 API >= 33 → 使用随插件打包的 Ed25519 实现验签
  *   - signature 非空 且 API < 33：
  *     - strictSignature=true（默认安全） → **拒绝加载**，防止攻击者通过降级到低
  *       版本设备绕过签名校验
@@ -163,15 +160,8 @@ internal object SignatureVerifier {
         publicKeyBase64: String
     ): Boolean {
         val pkBytes = Base64.decode(publicKeyBase64, Base64.NO_WRAP)
-        val keySpec = X509EncodedKeySpec(pkBytes)
-        val kf = KeyFactory.getInstance("Ed25519")
-        val pk = kf.generatePublic(keySpec)
-
-        val sig = Signature.getInstance("Ed25519")
-        sig.initVerify(pk)
-        sig.update(md5Hex.toByteArray(Charsets.UTF_8))
-
         val sigBytes = Base64.decode(signatureBase64, Base64.NO_WRAP)
-        return sig.verify(sigBytes)
+        return Ed25519Verifier.verify(Ed25519Verifier.rawPublicKey(pkBytes), sigBytes,
+            md5Hex.toByteArray(Charsets.UTF_8))
     }
 }

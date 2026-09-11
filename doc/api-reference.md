@@ -42,7 +42,7 @@ await FlutterPatcher.init(
 | ---  | --- |
 | `publicKeyBase64` | Ed25519 public key. When `PatchInfo.signature` is empty, signature verification is skipped. A patch that ships with a signature but is loaded on a client without a configured public key is rejected. |
 | `maxCrashCount` | Number of consecutive crashes that trips the patch. Default `1`. |
-| `strictSignature` | On API < 33 (no JDK Ed25519 support), reject signed patches instead of silently skipping verification. On API ≥ 33 the flag has no effect — native verification always runs. |
+| `strictSignature` | Under the existing compatibility policy, reject signed patches on API < 33 instead of silently skipping verification. On API ≥ 33 the flag has no effect — verification always runs using the plugin's bundled Ed25519 implementation. |
 | `loaderFieldCandidates` | Candidate field names used to locate `FlutterLoader`. Rarely needs changing. |
 | `loaderFallbackHeuristic` | If the candidates fail, use a heuristic last-resort scan. Off by default. |
 | `verifyAfter` | Window after launch during which the patch is still considered "under verification". |

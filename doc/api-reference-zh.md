@@ -42,7 +42,7 @@ await FlutterPatcher.init(
 | ------------------------- | -------------------------- |
 | `publicKeyBase64`         | Ed25519 公钥。`PatchInfo.signature` 为空时跳过签名校验；补丁带签名但未配置公钥会拒绝应用 |
 | `maxCrashCount`           | 连续崩溃多少次后熔断补丁，默认 `1`        |
-| `strictSignature`         | API < 33（无 JDK 原生 Ed25519）遇到带签名补丁时是否拒绝应用；API ≥ 33 时该开关无影响，永远走原生校验 |
+| `strictSignature`         | 按既有兼容策略，API < 33 遇到带签名补丁时是否拒绝应用；API ≥ 33 时该开关无影响，始终使用插件内置的 Ed25519 实现验签 |
 | `loaderFieldCandidates`   | FlutterLoader 字段名候选，一般无需修改 |
 | `loaderFallbackHeuristic` | 候选字段失败后是否启用兜底扫描            |
 | `verifyAfter`             | 启动后用于判断补丁稳定的保护窗口           |

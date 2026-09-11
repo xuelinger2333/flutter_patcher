@@ -1,10 +1,7 @@
 package com.flutter_patcher.flutter_patcher
 
 import java.nio.ByteBuffer
-import java.security.KeyFactory
 import java.security.MessageDigest
-import java.security.Signature
-import java.security.spec.X509EncodedKeySpec
 
 /** FPTC v1: never allocate from the unauthenticated payload length. */
 internal object BytecodeEnvelope {
@@ -24,14 +21,12 @@ internal object BytecodeEnvelope {
         val hash = MessageDigest.getInstance("SHA-256").apply { update(bytes, 146, bytes.size - 146) }.digest()
         require(MessageDigest.isEqual(hash, bytes.copyOfRange(50, 82))) { "Envelope hash" }
         require(rawKey.size == 32) { "Raw Ed25519 public key required" }
-        val prefix = byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00)
-        val key = KeyFactory.getInstance("Ed25519").generatePublic(X509EncodedKeySpec(prefix + rawKey))
-        val verifier = Signature.getInstance("Ed25519")
-        verifier.initVerify(key)
-        verifier.update(bytes, 0, 82)
-        verifier.update(bytes, 146, bytes.size - 146)
-        val valid = try { verifier.verify(bytes.copyOfRange(82, 146)) }
-            catch (_: java.security.SignatureException) { false }
+        // Pure Ed25519 signs the header followed by the ZIP, not Ed25519ph or its hash.
+        // One exact-size buffer, bounded above before allocation; never mutate the input.
+        val message = ByteArray(bytes.size - 64)
+        bytes.copyInto(message, 0, 0, 82)
+        bytes.copyInto(message, 82, 146)
+        val valid = Ed25519Verifier.verify(rawKey, bytes.copyOfRange(82, 146), message)
         require(valid) { "Envelope signature" }
         return (header.getInt(38).toLong() and 0xffffffffL).also { require(it > 0) { "Patch sequence" } }
     }

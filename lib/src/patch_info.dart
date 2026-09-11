@@ -194,7 +194,7 @@ enum PatchApplyError {
   md5Mismatch,
 
   /// Ed25519 verification failed, or strict mode rejected a signed patch on an
-  /// Android version without Ed25519 support.
+  /// Android version below the API 33 signature-policy minimum.
   signatureInvalid,
 
   /// The patch package has no `libapp.so` for the current device ABI.

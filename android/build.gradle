@@ -76,6 +76,7 @@ android {
 
     defaultConfig {
         minSdk = 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         // ABI 白名单：覆盖主流 Android 设备。Flutter 默认只出 arm64-v8a，
         // 但插件要兼容 32 位旧机型和 x86_64 模拟器。
@@ -88,6 +89,10 @@ android {
     }
 
     dependencies {
+        // Use the lightweight Ed25519 API directly; never register a global JCA provider.
+        implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
+        androidTestImplementation("androidx.test:runner:1.7.0")
+        androidTestImplementation("androidx.test.ext:junit:1.3.0")
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.json:json:20240303")
         testImplementation("org.mockito:mockito-core:5.0.0")
