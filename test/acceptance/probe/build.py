@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import zipfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--run', type=Path, required=True)
@@ -19,9 +20,14 @@ args = parser.parse_args()
 run, out = args.run.resolve(), args.out.resolve()
 out.mkdir(parents=True, exist_ok=False)
 config = json.loads((run / 'config.json').read_text())
-flutter = Path(config['flutter'])
+baseline = run / 'standard-build'
+receipt = json.loads((baseline / 'handoff.json').read_text())
+flutter = baseline / 'cache/flutter' / config['version']
+assert (flutter / 'bin/flutter').is_file()
 os.environ.update(config['build_env'])
 os.environ['PATH'] = str(flutter / 'bin') + ':' + os.environ['PATH']
+os.environ['GRADLE_USER_HOME'] = str(out / 'gradle')
+os.environ['FLUTTER_STORAGE_BASE_URL'] = (baseline / 'cache/mirrors' / config['version'] / receipt['build']['baseline']['build_id']).as_uri() + '/'
 project = out / 'app'
 def call(command):
     subprocess.run([str(v) for v in command], cwd=out, check=True)
@@ -60,7 +66,13 @@ subprocess.run([str(flutter / 'bin/flutter'), 'build', 'apk', '--release', '--ta
     '--dart-define=PROBE_SHA256=' + row['sha256'], '--dart-define=PROBE_LENGTH=' + str(len(data))], cwd=project, check=True)
 apk = out / 'probe.apk'
 shutil.copyfile(project / 'build/app/outputs/flutter-apk/app-release.apk', apk)
+def engine_hash(path):
+    with zipfile.ZipFile(path) as archive:
+        return hashlib.sha256(archive.read('lib/arm64-v8a/libflutter.so')).hexdigest()
+engine = engine_hash(apk)
+assert engine == engine_hash(baseline / 'release/app-release.apk'), 'Probe engine differs from production'
 (out / 'build-result.json').write_text(json.dumps({'status': 'passed', 'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+    'libflutter_sha256': engine,
     'production_source': json.loads((run / 'source.json').read_text())['source_sha256'], 'copied_native_sha256': hashes,
     'template_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in template.iterdir() if p.is_file()},
     'payload_bytes': len(data), 'payload_sha256': row['sha256']}, indent=2))

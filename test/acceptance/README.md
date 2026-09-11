@@ -113,3 +113,30 @@ and keeps framework host-interface reuse outside this milestone. Native channel
 traces now separate codec, worker queue, lock wait and main-thread reply queue;
 the analyzer reports those nested spans separately from the additive bootstrap
 breakdown to avoid double-counting.
+
+Native-bytes transport uses bootstrap profile schema 2. It removes Dart file
+reopening and the payload/full-file SHA counters; entry SHA and CRC remain.
+The analyzer requires the `native-bytes-v1` transport marker and still reads
+schema-1 historical runs. A missing required counter is an error, not zero work.
+See [the authenticated-byte design](../../doc/authenticated-bootstrap-bytes-design.md).
+
+## Standalone cold/post-frame channel probe
+
+This is a separate test APK, installed only after the formal matrix. It replaces
+the dedicated acceptance app temporarily, uses the same SDK/ABI and copies the
+frozen verifier and channel profiler into its own package. No production boot
+transaction is repeated. It measures empty, whole-sized bytes, and verified
+whole-sized bytes before binding creation and one second after the first frame.
+Each mode has ten paired cold launches, with three-second spacing and dwell.
+Its startup workload is not identical to the full acceptance host, so it is an
+experiment about phase sensitivity, not proof of the actual engine queue cause.
+
+Build on the authorized Linux host, with templates from `probe/`:
+`python probe/build.py --run FROZEN_REMOTE_RUN --out FRESH_REMOTE_PROBE_DIR`.
+Copy `probe.apk` and `build-result.json` back, then run locally:
+`python test/acceptance/probe/run.py --apk PROBE_APK --serial SERIAL --out FRESH_RESULT_DIR`.
+The runner emits `result.json`, preserves logs and checks request IDs, exact byte
+digests outside timing, counter reconciliation and same-process liveness.
+RSS/high-water RSS and post-frame dumpsys meminfo are observations for this fixed
+payload, not a maximum-size transfer certification. Restore the freshly tested
+acceptance APK afterward with `adb -s SERIAL install -r ACCEPTANCE_APK`.

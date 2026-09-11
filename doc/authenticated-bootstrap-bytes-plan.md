@@ -6,15 +6,15 @@ Spec: [approved design](authenticated-bootstrap-bytes-design.md).
 Execution: inline in the current workspace, local commits only; no emulator,
 phone configuration changes, push or publication. Primary agent uses gpu builds.
 
-- [ ] Transport and parser: `BytecodePatchManager.kt` returns
+- [x] Transport and parser: `BytecodePatchManager.kt` returns
   `transportVersion: 1, envelopeBytes: ByteArray, attempt`; `runner.dart` rejects
   legacy replies and calls `parseAuthenticatedPatchBytes(Uint8List, String)`.
   `verifyPatchBytes` remains the offline exact-file verifier. Shared archive
   parsing retains all CRC, manifest and entry checks. Remove BootRunner.read.
-- [ ] Tests: adapt startup fixtures, exercise wrong response types/version,
+- [x] Tests: adapt startup fixtures, exercise wrong response types/version,
   expired attempt and late response; codec preserves 2 MiB bytes even after
   original array changes. Keep offline corruption tests.
-- [ ] Profiles: schema 2 explicitly identifies native-bytes transport and
+- [x] Profiles: schema 2 explicitly identifies native-bytes transport and
   absent file-read/payload-SHA/file-SHA work. Analyzer supports schema 1 and 2,
   rejects missing schema-2 counters and reconciles every measured interval.
 - [ ] Test-only probe: generated acceptance Android/Dart sources run paired
