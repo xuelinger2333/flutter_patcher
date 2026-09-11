@@ -19,6 +19,24 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
     report = {'schema': 1, 'status': 'failed', 'cases': [], 'device': serial,
               'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
               'scope': 'lower_api_rejection' if compatibility else 'bytecode_fault_matrix'}
+    captured = []
+    capture_lock = threading.Lock()
+    log_process = None
+    log_thread = None
+    def collect_logs():
+        with (out / 'live-logcat.txt').open('w', encoding='utf-8') as output:
+            for line in log_process.stdout:
+                output.write(line)
+                output.flush()
+                with capture_lock:
+                    captured.append(line)
+    def logs_since(started, pid=None):
+        with capture_lock:
+            lines = list(captured)
+        return '\n'.join(line for line in lines
+                         if re.match(r'^\s*\d+\.\d+', line)
+                         and float(line.split()[0]) >= started
+                         and (pid is None or line.split()[1] == str(pid)))
     def adb(*args, timeout=90):
         return subprocess.check_output(['adb', '-s', serial, *args], text=True, timeout=timeout)
     def request(path, data=None):
@@ -35,13 +53,23 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
             try:
                 result = status()
                 if result['frame'] and result['asset'] != 'pending':
+                    # Observe a live process before deliberately ending this cold start.
+                    time.sleep(3)
+                    observed = status()
+                    if observed['pid'] != result['pid'] or not observed['frame']:
+                        raise AssertionError('Application did not survive the first-frame dwell')
                     return result
             except (OSError, ValueError, urllib.error.URLError):
                 pass
             time.sleep(0.25)
         raise RuntimeError('No live first-frame application within 30 seconds')
     def launch(stop=True, wait=True):
-        if stop: adb('shell', 'am', 'force-stop', package)
+        if stop:
+            with (out / 'lifecycle.jsonl').open('a', encoding='utf-8') as log:
+                log.write(json.dumps({'time': time.time(), 'action': 'test_force_stop',
+                                      'package': package}) + '\n')
+            adb('shell', 'am', 'force-stop', package)
+            time.sleep(3)
         result = adb('shell', 'am', 'start', *(['-W'] if wait else []), '-n', package + '/.MainActivity')
         match = re.search(r'TotalTime:\s*(\d+)', result)
         return int(match[1]) if match else None
@@ -49,13 +77,14 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
         values = []
         bootstrap = []
         for _ in range(10):
+            started = float(adb('shell', 'date', '+%s').strip())
             elapsed = launch()
             current = ready()
             if current['revision'] != expected or elapsed is None:
                 raise AssertionError('Cold-start measurement lacks a valid first-frame sample')
             values.append(elapsed)
             if expected != 'original':
-                logs = adb('logcat', '-d', '--pid=' + str(current['pid']))
+                logs = logs_since(started, current['pid'])
                 matches = re.findall(r'BYTECODE_BOOT_TIMING: payload_us=(\d+) verify_us=(\d+) load_and_handshake_us=(\d+) resources_us=(\d+) total_us=(\d+)', logs)
                 if len(matches) != 1: raise AssertionError('Exactly one bootstrap timing record is required per process')
                 measured = [int(v) for v in matches[0]]
@@ -84,6 +113,11 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
             raise RuntimeError('Full bytecode acceptance requires API33+ arm64')
         if compatibility and api >= 33: raise RuntimeError('Compatibility case requires API below 33')
         report.update(api=api, abi=abi, build=adb('shell', 'getprop', 'ro.build.fingerprint').strip())
+        log_process = subprocess.Popen(['adb', '-s', serial, 'logcat', '-T', '1', '-v', 'epoch',
+            'flutter:I', 'ActivityManager:I', 'AndroidRuntime:E', 'DEBUG:F', '*:S'],
+            stdout=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
+        log_thread = threading.Thread(target=collect_logs, daemon=True)
+        log_thread.start()
         suite = json.loads((corpus / 'corpus.json').read_text())
         active = {}
         class Handler(BaseHTTPRequestHandler):
@@ -99,7 +133,14 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
             def log_message(self, *_): pass
         server = ThreadingHTTPServer(('127.0.0.1', 8765), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        adb('install', '-r', str(apk))
+        installed = adb('shell', 'pm', 'path', package).strip().splitlines()
+        same_apk = False
+        if len(installed) == 1 and installed[0].startswith('package:/data/app/'):
+            digest = adb('shell', 'sha256sum', installed[0].removeprefix('package:')).split()[0]
+            same_apk = digest == report['apk_sha256']
+        if not same_apk:
+            adb('install', '-r', str(apk))
+        report['apk_install'] = 'existing_sha256_verified' if same_apk else 'installed'
         adb('reverse', 'tcp:8765', 'tcp:8765')
         adb('forward', 'tcp:8766', 'tcp:8766')
         for row in (suite['cases'][:1] if compatibility else suite['cases']):
@@ -174,19 +215,50 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 raise AssertionError({'premature_rejection': row, 'apply': applied})
             launch(wait=row['id'] not in ['main-hangs', 'main-throws'])
             if row['id'] == 'main-hangs':
-                for _ in range(2):
-                    time.sleep(2)
-                    adb('shell', 'am', 'crash', package)
-                    time.sleep(2)
-                    launch(stop=False, wait=False)
+                # Dart can occupy the platform thread: am crash is queued there and
+                # cannot execute. Exercise a real input ANR, and prove process death
+                # before restarting. Default crash threshold is one, not two.
+                time.sleep(3)
+                hung_pid = adb('shell', 'pidof', package).strip()
+                if not hung_pid.isdigit(): raise AssertionError('Expected one hung process')
+                monitor_path = out / 'main-hangs-monitor.txt'
+                with monitor_path.open('w', encoding='utf-8') as monitor_log:
+                    monitor = subprocess.Popen(['adb', '-s', serial, 'shell', 'am', 'monitor',
+                        '-k', '-p', package], stdin=subprocess.PIPE, stdout=monitor_log,
+                        stderr=subprocess.STDOUT, text=True)
+                    try:
+                        deadline = time.monotonic() + 10
+                        while 'Monitoring activity manager' not in monitor_path.read_text(encoding='utf-8'):
+                            if monitor.poll() is not None or time.monotonic() > deadline:
+                                raise AssertionError('ANR monitor did not start')
+                            time.sleep(.1)
+                        adb('shell', 'input', 'keyevent', '62', timeout=20)
+                        deadline = time.monotonic() + 30
+                        while True:
+                            probe = subprocess.run(['adb', '-s', serial, 'shell', 'pidof', package],
+                                                   capture_output=True, text=True, timeout=10)
+                            if probe.returncode == 1 and not probe.stdout.strip(): break
+                            if probe.returncode != 0 or probe.stdout.strip() != hung_pid:
+                                raise AssertionError('Unexpected process during ANR termination')
+                            if time.monotonic() > deadline:
+                                raise AssertionError('Hung process did not exit after input ANR')
+                            time.sleep(.25)
+                        exits = adb('shell', 'dumpsys', 'activity', 'exit-info', package)
+                        (out / 'main-hangs-injected-exit.txt').write_text(exits, encoding='utf-8')
+                        if not re.search(r'pid=' + hung_pid + r'\b(?:(?!ApplicationExitInfo).)*reason=6 \(ANR\)', exits, re.S):
+                            raise AssertionError('Hung PID lacks an Android ANR exit record')
+                    finally:
+                        try: monitor.communicate('q\n', timeout=10)
+                        except subprocess.TimeoutExpired:
+                            monitor.terminate(); monitor.wait(timeout=10)
+                time.sleep(3)
+                launch(stop=False, wait=False)
             if row['id'] == 'main-throws':
                 # Failure after entering main must quarantine; no unsafe same-isolate fallback.
                 time.sleep(6)
                 launch()
             after = ready()
-            raw = adb('logcat', '-d', '-v', 'epoch', '-t', '5000')
-            logs = '\n'.join(line for line in raw.splitlines()
-                             if re.match(r'^\s*\d+\.\d+', line) and float(line.split()[0]) >= started)
+            logs = logs_since(started)
             (out / (row['id'] + '.log')).write_text(logs)
             if row['layer'] == 'accept':
                 expected = row.get('revision', row['tier'])
@@ -233,12 +305,17 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
         raise
     finally:
         (out / 'device.json').write_text(json.dumps(report, indent=2) + '\n')
+        (out / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
         if server:
             server.shutdown(); server.server_close()
         if publisher:
             publisher.terminate()
             publisher.wait(timeout=10)
         if publisher_log: publisher_log.close()
+        if log_process:
+            log_process.terminate()
+            log_process.wait(timeout=10)
+            log_thread.join(timeout=10)
 
 
 if __name__ == '__main__':
