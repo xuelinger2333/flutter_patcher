@@ -74,7 +74,9 @@ internal class BytecodePatchManager(private val context: Context) {
             offered = UUID.randomUUID().toString()
             attempt = BytecodeAttempt(offered!!)
             offeredMeta = meta
-            mapOf("path" to file.absolutePath, "sha256" to meta.getString("sha256"), "attempt" to offered,
+            // This exact local snapshot passed verification above. Never reopen
+            // the path or mutate the array after handing it to the codec.
+            mapOf("transportVersion" to 1, "envelopeBytes" to bytes, "attempt" to offered,
                 "profile_us" to mapOf("lock_wait" to (profileStart - lockRequested) / 1000,
                     "prepare" to preparedUs, "read" to readUs - preparedUs,
                     "envelope_verify" to verifiedUs - readUs, "file_digest" to digestUs - verifiedUs,

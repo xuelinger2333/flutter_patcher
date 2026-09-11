@@ -24,6 +24,11 @@ def stats(values):
 
 def details(row, detail):
     native, verify = detail['native'], detail['verify']
+    direct = detail['schema'] == 2
+    if direct and (detail.get('transport') != 'native-bytes-v1' or
+                   any(k in detail for k in ['read_file_us']) or
+                   any(k in verify for k in ['payload_sha256_us', 'file_sha256_us'])):
+        raise ValueError('Invalid native-bytes profile')
     buckets = {
         'channel_and_dispatch': row['payload_us'] - native['total'],
         'native_prepare': native['prepare'],
@@ -32,10 +37,10 @@ def details(row, detail):
         'native_file_digest': native['file_digest'],
         'native_other': native['total'] - sum(native[k] for k in
             ['prepare', 'read', 'envelope_verify', 'file_digest']),
-        'dart_read_file': detail['read_file_us'],
+        'dart_read_file': (0 if direct else detail['read_file_us']),
         'dart_envelope_fields': verify['envelope_fields_us'],
-        'dart_payload_sha256': verify['payload_sha256_us'],
-        'dart_file_sha256': verify['file_sha256_us'],
+        'dart_payload_sha256': (0 if direct else verify['payload_sha256_us']),
+        'dart_file_sha256': (0 if direct else verify['file_sha256_us']),
         'dart_zip_crc': verify['zip_crc_us'],
         'dart_zip_structure': verify['zip_total_us'] - verify['zip_crc_us'],
         'dart_entry_sha256': verify['entry_sha256_us'],
@@ -45,9 +50,9 @@ def details(row, detail):
         'module_load': detail['module_load_us'],
         'resources': row['resources_us'],
     }
-    buckets['dart_verify_other'] = row['verify_us'] - detail['read_file_us'] - sum(
-        verify[k] for k in ['envelope_fields_us', 'payload_sha256_us', 'file_sha256_us',
-                            'zip_total_us', 'manifest_and_entries_us'])
+    buckets['dart_verify_other'] = row['verify_us'] - (0 if direct else detail['read_file_us']) - sum(
+        verify[k] for k in (['envelope_fields_us', 'zip_total_us', 'manifest_and_entries_us'] if direct else
+            ['envelope_fields_us', 'payload_sha256_us', 'file_sha256_us', 'zip_total_us', 'manifest_and_entries_us']))
     if min(buckets.values()) < 0 or sum(buckets.values()) != row['total_us']:
         raise ValueError('Detailed counters do not reconcile with total')
     return buckets
@@ -79,7 +84,7 @@ def analyze(run):
             if pid not in pending:
                 raise ValueError('Profile without matching preceding timing')
             detail = json.loads(line.split(prefix, 1)[1])
-            if detail['schema'] != 1:
+            if detail['schema'] not in [1, 2]:
                 raise ValueError('Unknown profile schema')
             records.append((pending.pop(pid), detail, pid, float(fields[0])))
     report = {'source': json.loads((run / 'source.json').read_text())['source_sha256'],

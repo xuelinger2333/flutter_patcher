@@ -2,10 +2,29 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from analyze_bootstrap import analyze
+from analyze_bootstrap import analyze, details
 
 
 class BootstrapBudgetTest(unittest.TestCase):
+    def test_native_bytes_profiles_remove_only_redundant_work(self):
+        detail = dict(schema=2, transport='native-bytes-v1',
+            native=dict(total=10, prepare=1, read=2, envelope_verify=3, file_digest=4),
+            verify=dict(envelope_fields_us=1, zip_total_us=4, zip_crc_us=3,
+                        manifest_and_entries_us=5, entry_sha256_us=4),
+            mark_booting_us=2, observe_us=1, module_load_us=7)
+        row = dict(payload_us=20, verify_us=10, load_and_handshake_us=10,
+                   resources_us=1, total_us=41)
+        buckets = details(row, detail)
+        self.assertEqual(sum(buckets.values()), 41)
+        self.assertEqual(buckets['dart_file_sha256'], 0)
+        self.assertEqual(buckets['dart_payload_sha256'], 0)
+        self.assertEqual(buckets['dart_entry_sha256'], 4)
+        detail['verify']['payload_sha256_us'] = 0
+        with self.assertRaises(ValueError): details(row, detail)
+        del detail['verify']['payload_sha256_us']
+        del detail['verify']['entry_sha256_us']
+        with self.assertRaises(KeyError): details(row, detail)
+
     def test_each_tier_uses_absolute_bootstrap_budget_with_inclusive_boundary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'bootstrap/fonts.dart';
-import 'io_stub.dart' if (dart.library.io) 'io.dart' as platform_io;
 import 'bootstrap/raw_channel.dart';
 import 'bootstrap/runner.dart';
 
@@ -22,7 +21,6 @@ class PatchBootstrap {
     final runner = BootRunner(
         call: rawPatcherCall,
         load: loadModule,
-        read: platform_io.readPatchFile,
         fonts: patcherLoadFonts,
         log: (e) => debugPrint('[FlutterPatcher] $e'),
         observe: (failure, onSuccess) {

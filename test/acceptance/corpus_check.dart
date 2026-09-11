@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_patcher/src/bootstrap/patch_archive.dart';
@@ -25,7 +24,7 @@ void main() {
       final fp = suite['fingerprint'] as String;
       if (layer == 'archive') {
         expect(
-            () => verifyPatchBytes(bytes, fp, row['sha256'] as String),
+            () => parseAuthenticatedPatchBytes(bytes, fp),
             throwsA(isA<FormatException>()
                 .having((e) => e.message, 'reason', contains(row['reason']))));
       } else {
@@ -40,8 +39,8 @@ void main() {
             if (method == 'bootPayload') {
               return {
                 'attempt': 'wp9',
-                'path': 'fixture',
-                'sha256': row['sha256']
+                'transportVersion': 1,
+                'envelopeBytes': bytes
               };
             }
             if (method == 'markBooting') return true;
@@ -50,7 +49,6 @@ void main() {
             }
             return null;
           },
-          read: (_) async => Uint8List.fromList(bytes),
           load: (_) async => row['id'] == 'entry-short'
               ? [1]
               : [

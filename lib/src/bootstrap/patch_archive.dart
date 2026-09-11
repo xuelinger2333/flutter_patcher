@@ -114,7 +114,20 @@ class VerifiedPatch {
 }
 
 VerifiedPatch verifyPatchBytes(
-    Uint8List bytes, String fingerprint, String verifiedSha256,
+        Uint8List bytes, String fingerprint, String verifiedSha256,
+        {Map<String, int>? profile}) =>
+    _parsePatch(bytes, fingerprint, verifiedSha256, profile: profile);
+
+/// Consumes a private snapshot returned by native-bytes-v1 bootPayload.
+/// Native must already have authenticated these exact bytes. This is NOT an
+/// untrusted-file verifier; callers with file bytes must use verifyPatchBytes.
+/// All ZIP/manifest consistency checks remain mandatory for signed input too.
+VerifiedPatch parseAuthenticatedPatchBytes(Uint8List bytes, String fingerprint,
+        {Map<String, int>? profile}) =>
+    _parsePatch(bytes, fingerprint, null, profile: profile);
+
+VerifiedPatch _parsePatch(
+    Uint8List bytes, String fingerprint, String? verifiedSha256,
     {Map<String, int>? profile}) {
   final watch = profile == null ? null : (Stopwatch()..start());
   var checkpoint = 0;
@@ -138,16 +151,18 @@ VerifiedPatch verifyPatchBytes(
   bootRequire(fp == fingerprint, 'Envelope fingerprint');
   final payload = Uint8List.sublistView(bytes, 146);
   mark('envelope_fields_us');
-  bootRequire(
-      sha256.convert(payload).bytes.toString() ==
-          bytes.sublist(50, 82).toString(),
-      'Envelope hash');
-  mark('payload_sha256_us');
-  // Native bootPayload verified Ed25519 with the embedded public key. Bind its
-  // attestation to these exact bytes so a path replacement cannot bypass it.
-  bootRequire(sha256.convert(bytes).toString() == verifiedSha256,
-      'Verified file changed');
-  mark('file_sha256_us');
+  if (verifiedSha256 != null) {
+    bootRequire(
+        sha256.convert(payload).bytes.toString() ==
+            bytes.sublist(50, 82).toString(),
+        'Envelope hash');
+    mark('payload_sha256_us');
+    // Native bootPayload verified Ed25519 with the embedded public key. Bind its
+    // attestation to these exact bytes so a path replacement cannot bypass it.
+    bootRequire(sha256.convert(bytes).toString() == verifiedSha256,
+        'Verified file changed');
+    mark('file_sha256_us');
+  }
   final entries = readPatchArchive(payload, profile: profile);
   mark('zip_total_us');
   bootRequire(

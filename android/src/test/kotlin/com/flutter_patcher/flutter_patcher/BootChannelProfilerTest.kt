@@ -29,4 +29,16 @@ class BootChannelProfilerTest {
         val encoded = profiler.codec.encodeSuccessEnvelope(value)
         assertEquals(value, StandardMethodCodec.INSTANCE.decodeEnvelope(readable(encoded)))
     }
+
+    @Test fun largeByteSnapshotDoesNotAliasOriginalAfterEncoding() {
+        val original = ByteArray(2 * 1024 * 1024) { (it * 31).toByte() }
+        val expected = original.copyOf()
+        val profiler = BootChannelProfiler()
+        val encoded = profiler.codec.encodeSuccessEnvelope(mapOf(
+            "transportVersion" to 1, "attempt" to "token", "envelopeBytes" to original))
+        original.fill(0)
+        val decoded = StandardMethodCodec.INSTANCE.decodeEnvelope(readable(encoded)) as Map<*, *>
+        assertEquals(1, decoded["transportVersion"])
+        assertContentEquals(expected, decoded["envelopeBytes"] as ByteArray)
+    }
 }

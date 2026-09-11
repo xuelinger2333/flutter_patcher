@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_patcher/src/bootstrap/patch_archive.dart';
 import 'package:flutter_patcher/src/bootstrap/runner.dart';
 
@@ -64,6 +66,29 @@ Uint8List envelope(
 }
 
 void main() {
+  test('codec snapshot survives source file replacement before parsing', () {
+    final directory = Directory.systemTemp.createTempSync('boot-snapshot-');
+    try {
+      final file = File('${directory.path}/candidate.fptc');
+      file.writeAsBytesSync(envelope(assets: true));
+      final authenticated = file.readAsBytesSync();
+      const codec = StandardMethodCodec();
+      final encoded = codec.encodeSuccessEnvelope({
+        'transportVersion': 1,
+        'attempt': 'token',
+        'envelopeBytes': authenticated
+      });
+      file.writeAsBytesSync([0, 1, 2]);
+      authenticated.fillRange(0, authenticated.length, 0);
+      final reply = codec.decodeEnvelope(encoded) as Map;
+      final patch =
+          parseAuthenticatedPatchBytes(reply['envelopeBytes'] as Uint8List, fp);
+      expect(patch.assets['a'], [1]);
+      expect(patch.seq, 7);
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
   test('reads the real CLI STORED encoding and validates all resource digests',
       () {
     final bytes = envelope(assets: true, fonts: true);
@@ -93,6 +118,10 @@ void main() {
   for (final scenario in [
     'good',
     'missing',
+    'legacy',
+    'wrong-version',
+    'wrong-bytes',
+    'expired',
     'timeout',
     'bad-entry',
     'bad-types',
@@ -116,20 +145,38 @@ void main() {
             if (method == 'bootPayload') {
               if (scenario == 'missing') return null;
               if (scenario == 'timeout') return late.future;
+              if (scenario == 'legacy')
+                return {
+                  'attempt': 'token',
+                  'path': 'file',
+                  'sha256': sha256.convert(bytes).toString()
+                };
+              if (scenario == 'wrong-version')
+                return {
+                  'attempt': 'token',
+                  'transportVersion': 2,
+                  'envelopeBytes': bytes
+                };
+              if (scenario == 'wrong-bytes')
+                return {
+                  'attempt': 'token',
+                  'transportVersion': 1,
+                  'envelopeBytes': bytes.toList()
+                };
               return {
                 'attempt': 'token',
-                'path': 'file',
-                'sha256': sha256.convert(bytes).toString()
+                'transportVersion': 1,
+                'envelopeBytes': bytes
               };
             }
             expect(args['attempt'], 'token');
+            if (scenario == 'expired' && method == 'markBooting') return false;
             if (method == 'reportDartBootError') {
               expect(
                   args['quarantine'], scenario == 'font' || scenario == 'main');
             }
             return true;
           },
-          read: (_) async => bytes,
           load: (_) async {
             events.add('load');
             if (scenario == 'loader') throw StateError('loader');
@@ -165,7 +212,8 @@ void main() {
           fingerprint: fp,
           publicKeyBase64: 'key');
       if (scenario == 'timeout') {
-        late.complete({'attempt': 'late'});
+        late.complete(
+            {'attempt': 'late', 'transportVersion': 1, 'envelopeBytes': bytes});
         await Future<void>.delayed(Duration.zero);
       }
       await firstFrame?.call();

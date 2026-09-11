@@ -16,14 +16,12 @@ class _NoPatch implements Exception {
 class BootRunner {
   BootRunner(
       {required this.call,
-      required this.read,
       required this.load,
       required this.fonts,
       required this.observe,
       required this.log,
       this.timeout = const Duration(seconds: 3)});
   final RawCall call;
-  final Future<Uint8List> Function(String path) read;
   final ModuleLoader load;
   final Future<void> Function(Map<String, List<Uint8List>>) fonts;
   final void Function(Future<void> Function(Object) failure,
@@ -64,16 +62,16 @@ class BootRunner {
       final row = reply as Map;
       bootRequire(
           row['attempt'] is String &&
-              row['path'] is String &&
-              row['sha256'] is String,
+              (row['attempt'] as String).isNotEmpty &&
+              row['transportVersion'] is int &&
+              row['transportVersion'] == 1 &&
+              row['envelopeBytes'] is Uint8List,
           'Invalid boot attestation');
       attempt = row['attempt'] as String;
       final profile = <String, int>{};
-      final bytes = await read(row['path'] as String);
-      final readUs = startup.elapsedMicroseconds;
-      final patch = verifyPatchBytes(
-          bytes, fingerprint, row['sha256'] as String,
-          profile: profile);
+      final bytes = row['envelopeBytes'] as Uint8List;
+      final patch =
+          parseAuthenticatedPatchBytes(bytes, fingerprint, profile: profile);
       final verifiedUs = startup.elapsedMicroseconds;
       final started =
           await call('markBooting', {'attempt': attempt}).timeout(timeout);
@@ -124,12 +122,12 @@ class BootRunner {
           'resources_us=${startup.elapsedMicroseconds - loadedUs} '
           'total_us=${startup.elapsedMicroseconds}');
       log('BYTECODE_BOOT_PROFILE: ${jsonEncode({
-            'schema': 1,
+            'schema': 2,
+            'transport': 'native-bytes-v1',
             'tier': patch.tier,
             'budget_us': bootstrapBudgetUs(patch.tier),
             'native': row['profile_us'],
             'dart_channel': row['dart_channel_us'],
-            'read_file_us': readUs - payloadUs,
             'verify': profile,
             'mark_booting_us': markedUs - verifiedUs,
             'observe_us': beforeLoadUs - markedUs,
