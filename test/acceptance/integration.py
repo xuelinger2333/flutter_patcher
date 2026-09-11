@@ -35,7 +35,7 @@ def configure_android(project):
 
 
 def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_store,
-            handoff=None, custom_binding=False):
+            handoff=None, custom_binding=False, source_identity=None):
     out.mkdir(parents=True, exist_ok=False)
     dart = flutter / 'bin/cache/dart-sdk/bin/dart'
     cli = repo / 'flutter_patcher_cli/bin/flutter_patcher.dart'
@@ -77,9 +77,12 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
     call([dart, cli, 'doctor', *common, '--json'], repo, out / 'doctor.log')
     report = {'schema': 1, 'stage': stage, 'host': socket.gethostname(),
               'machine_id': Path('/etc/machine-id').read_text().strip(),
-              'code_commit': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip(),
+              'code_commit': source_identity['commit'] if source_identity else subprocess.check_output(
+                  ['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip(),
               'sdk': json.loads(subprocess.check_output([str(flutter / 'bin/flutter'), '--version', '--machine'], text=True)),
               'device_verified': False, 'custom_binding': custom_binding}
+    if source_identity:
+        report['source_sha256'] = source_identity['source_sha256']
     if stage == 'build':
         call([dart, cli, 'build', 'android', '--strategy', 'bytecode', *common,
               '--project', project, '--baseline-store', baseline_store, '--public-key', public,
@@ -113,6 +116,8 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
             raise ValueError('Cross-host SDK version differs')
         if prior['code_commit'] != report['code_commit'] or prior['custom_binding'] != custom_binding:
             raise ValueError('Cross-host code revision or binding fixture differs')
+        if prior.get('source_sha256') != report.get('source_sha256'):
+            raise ValueError('Build and patch source snapshots differ')
         for key in ['engineRevision', 'dartSdkVersion']:
             if prior['sdk'][key] != report['sdk'][key]:
                 raise ValueError('Cross-host SDK identity differs: ' + key)

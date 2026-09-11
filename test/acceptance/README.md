@@ -1,5 +1,50 @@
 # Real-device fault matrix
 
+## Rebuild current product sources and regress
+
+```powershell
+python test/acceptance/rebuild_regression.py --config test/acceptance/regression-config.example.json
+```
+
+The example is configured for the existing `gpu` Linux builder and HONOR test
+device. Copy it to an ignored local file to use another environment. This command
+uses SSH/SCP for isolated builds only; it does not push Git, publish releases,
+alter phone settings or launch emulators. Python 3.12+ is required for safe archive
+extraction, along with the configured Linux Flutter/Android SDK, Python test
+dependencies, and fixed artifact/generator files. Installation can require normal
+on-device approval.
+
+The command snapshots current tracked and non-ignored untracked files (including
+uncommitted product changes), hashes their bytes, and transfers that snapshot to
+a new remote directory. Keep secrets and local configuration Git-ignored. Both
+build and patch use that same frozen snapshot. The recorded commit identifies
+the base; `source_sha256` identifies the actual source being tested. The command
+rebuilds the APK, lean/whole patches and all 31 matching fault samples, runs native
+tests, builds/runs the 4 instrumentation tests, then runs the real-device matrix.
+
+The timestamped `.dart_tool/flutter_patcher/regression/` output contains a top-level
+`result.json`, APK byte size, source receipt, `instrumentation.txt`, downloaded
+build evidence and `matrix/result.json`. Every failed stage exits nonzero and
+keeps its evidence; old outputs are not reused as current results. Local source
+changes after snapshot creation belong to the next run. This is a same-builder
+regression, not independent-host M1 acceptance.
+
+If the device disconnects after a successful build, reconnect it and add
+`--resume-built PATH_TO_PRIOR_RUN` to the same command. This verifies and extracts
+the previous output archive into a **new** result directory and reruns device
+tests. The report explicitly says `resume_frozen_build`; it tests the old frozen
+source, never claims to test later product edits. The failed attempt stays intact.
+Omit this flag whenever product code changed and a fresh build is required.
+
+On this Windows workstation, if `python` points to the Microsoft Store alias,
+use the bundled interpreter without changing PATH:
+
+```powershell
+& "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe" test/acceptance/rebuild_regression.py --config test/acceptance/regression-config.example.json
+```
+
+## Rerun an already built APK and corpus
+
 Use Python 3, ADB, Dart and an unlocked API 33+ arm64 device. The dedicated
 `com.example.wp9_acceptance` APK is installed and its data is reset between cases.
 If the installed base APK has exactly the requested SHA256, installation is
