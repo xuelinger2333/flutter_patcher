@@ -45,9 +45,9 @@ native tests and instrumentation APK. Existing device results from earlier
 implementations are not evidence for this version.
 
 Local Dart tests: 13/13. Python contract tests: 5/5. JVM tests: 32/32 passed,
-including both new codec compatibility tests. Device measurements and the
-current-version 4-test instrumentation / 31-case matrix remain pending because
-ADB lists no connected device. No phone configuration changes, emulator, push
+including both new codec compatibility tests. At this initial checkpoint, device
+measurements and the current-version instrumentation / matrix were pending because
+ADB listed no connected device. See the device follow-up below. No phone configuration changes, emulator, push
 or publication were used. No claim is made that whole now meets 200 ms.
 
 The top-level result is `failed` at instrumentation installation with
@@ -70,3 +70,92 @@ changes before testing, rebuild instead of using this frozen build.
 Framework reuse through the whole host interface is explicitly deferred until
 after M1.5. Moving hash work to Android and profiling whole runtime frame/CPU
 behavior remain distinct follow-up work, not changes hidden in this optimization.
+
+## Device follow-up: 2026-09-11 21:38
+
+The same frozen build was resumed into the fresh directory
+`.dart_tool/flutter_patcher/regression/20260911-213838-f4da09a3/` after reconnection.
+Device: HONOR MEY-AN00, Android 16/API 36, serial AF2Q025C05004551. Ten process-cold
+starts per tier, retaining the established three-second spacing and dwell.
+
+| Bootstrap metric | Lean | Whole |
+| --- | ---: | ---: |
+| Mean | 65.14 ms | 252.63 ms |
+| Median | 65.02 ms | 252.53 ms |
+| Minimum | 53.39 ms | 244.97 ms |
+| Maximum | 73.48 ms | 262.48 ms |
+| Tier budget | 85 ms | 200 ms |
+| Samples within budget | 10/10 | 0/10 |
+
+Whole CRC now averages **15.86 ms**, versus **71.67 ms** in the preceding
+instrumented run (`20260911-204739-e9958ac8`): about 78% lower, but not single-digit
+milliseconds on this phone. Whole bootstrap mean changed from 316.79 to 252.63 ms
+(about 20% lower). These are successive same-device runs, not randomized A/B
+measurements; the stage-specific CRC change is stronger evidence than attributing
+every millisecond of total-time change to CRC.
+
+Whole still spends 68.19 ms in the three Dart SHA-256 passes, 88.18 ms loading the
+module, and 10.18 ms in markBooting. Native envelope verification including
+Ed25519 is 16.28 ms. Eliminating the remaining CRC time entirely would still leave
+about 236.77 ms, so CRC alone cannot meet the 200 ms whole target.
+
+The Android total-start-time medians are 500 ms patched and 274 ms original,
+a 226 ms difference. This is separate from the bootstrap budget metric above.
+
+### Native channel decomposition
+
+Means in ms. Rows within Java reconcile to Java total; this table overlaps the
+bootstrap's native span and must not be added to it a second time.
+
+| Span | Lean | Whole |
+| --- | ---: | ---: |
+| Java decode | 0.051 | 0.052 |
+| Handler preparation | 0.061 | 0.060 |
+| Worker creation / scheduling | 0.410 | 0.401 |
+| Native operation | 15.705 | 26.083 |
+| Main-thread reply queue | 3.527 | 3.893 |
+| Java reply encoding | 0.136 | 0.111 |
+| Reply send and surrounding work | 0.070 | 0.065 |
+| **Measured Java channel total** | **19.960** | **30.665** |
+| **Payload interval outside measured Java channel** | **35.708** | **36.096** |
+
+Lock wait reads 0 microseconds in all samples (microsecond reporting resolution,
+not proof of mathematically zero wait). Dart request encoding plus response
+decoding averages 0.117 ms lean and 0.091 ms whole. Main-thread reply queue maxima
+are 7.46/7.71 ms, so it does not explain the roughly 36 ms residual.
+
+This narrows the fixed cost: plugin locking, worker startup and codec work are
+not its main source. The residual lies mostly outside the instrumented Java
+decode-to-reply boundary and remains similar for both tiers. It includes engine /
+platform dispatch and Dart callback delivery, plus small unmeasured call setup.
+These measurements do not distinguish inbound from outbound engine queues or
+prove a particular Android startup scheduling cause. Further attribution needs
+engine message-boundary tracing or a correlated system trace, not another guess
+that the plugin's main-thread post accounts for all of it.
+
+### Final validation and receipts
+
+The resumed run completed with process exit 0 and top-level status `passed` /
+stage `complete`. Instrumentation passed 4/4. The fault matrix passed 31/31,
+with all case IDs and their order matching the fresh corpus, and no failed cases.
+No cases were skipped or assembled from prior runs. The earlier disconnected
+device result remains preserved.
+
+The separate performance assertion exited 1 with
+`BOOTSTRAP_OVER_BUDGET: whole`: functional acceptance passed, while the whole
+200 ms performance target did not. All 20 detailed profiles reconcile with the
+broad stage timings and include matching native channel traces.
+
+All files listed in the frozen source manifest still match their SHA256 except
+`test/acceptance/README.md`, whose documentation was updated after the build.
+Product and test harness sources match the tested build. The source manifest's
+base commit predates the implementation commit `994f77c`; file hashes identify
+the actual tested content. This report was added separately from that manifest.
+
+Receipts under `.dart_tool/flutter_patcher/regression/20260911-213838-f4da09a3/`:
+
+| File | SHA256 |
+| --- | --- |
+| `result.json` | `2c0cc84c167f8965f569babb82bdd9104553469a1c1d1af635d1ccc1bc3fe8d3` |
+| `matrix/result.json` | `f348ec48f1585326cd7d1eb0a669eec25dda5dcff0a16dc4c61ef15a37e77f74` |
+| `bootstrap-analysis.json` | `ccaa19145bef129cbbec604d898f0f939033aa13c44456027bdf7e6709a70f03` |
