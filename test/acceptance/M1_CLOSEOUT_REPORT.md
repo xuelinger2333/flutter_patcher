@@ -1,7 +1,8 @@
 # M1 收口：custom 矩阵与 keys init
 
-日期：2026-09-11。keys init 已完成；custom 构建通过，真机阶段因设备断开
-尚未开始。因此本轮两个收口条件尚未全部完成。
+日期：2026-09-11。keys init 已完成；custom 真机完整矩阵 31/31、仪器测试
+4/4 通过。本轮两个收口条件均已完成；不据此宣称整体发布条件全部满足，
+此前 whole 性能预算未达标的事实仍保留。
 
 ## 本轮范围
 
@@ -58,10 +59,10 @@ corpus 31 项。`valid-lean` 与 `valid-whole` 的实际 tier **均为 whole**�
 下载归档 SHA256 与远端一致：
 `d294cb707bcc2e8fe7e3291dcf0195064751724e7328c10c2ae6ac2560169e34`。
 
-进入 instrumentation 安装阶段时 ADB 报
+首次运行进入 instrumentation 安装阶段时 ADB 报
 `device 'AF2Q025C05004551' not found`，随后 `adb devices` 为空。
 顶层 `result.json` 保留 failed；`inputs/build-result.json` 为 passed。
-尚无本轮 custom 仪器测试或真机矩阵通过记录，不把构建成功算作真机验收。
+该失败运行没有 custom 仪器测试或真机矩阵通过记录，不把构建成功算作真机验收。
 
 手机重新连接后，以相同冻结产物开始新的结果目录：
 
@@ -71,3 +72,36 @@ python test/acceptance/rebuild_regression.py --config .dart_tool/flutter_patcher
 
 Windows 的 Python 若为 Store 别名，使用既有 bundled Python 路径。此入口
 会先核对归档及源码身份，再跑仪器 4 项和完整矩阵；不重建、不覆盖失败记录。
+
+## custom 真机最终结果
+
+手机重新连接后，以上命令已完成一次完整运行，进程退出码 0。
+新目录：`.dart_tool/flutter_patcher/regression/20260911-232309-e766a632/`。
+顶层 `result.json` 为 `passed` / `complete`，仪器测试 4/4；
+`matrix/result.json` 为 passed，31/31 全部 passed，无跳过、无拼接。
+逐项核对 ID 与顺序均与 `inputs/custom-corpus/corpus.json` 一致。
+原始设备断开失败目录保留不变。
+
+设备为 HONOR MEY-AN00、Android 16 / API 36、arm64-v8a，序列号
+`AF2Q025C05004551`。测试 APK SHA256：
+`63bf9501a6f6c458cfeac0dc6f9d684d13cae5c30d5cb079a8b65334b963ed21`。
+31 项的 before.binding 均为 true；两个有效控制的 after.binding 也均为
+true，revision/asset 分别更新为 lean 和 whole，并有 patched 首帧记录。
+两个控制实际 tier 均为 whole，不把 fixture 名称当作 custom lean 验收。
+故障项覆盖拒绝、回退与隔离，包含 main 抛异常及卡住后的恢复。
+
+对冻结 source.json 中全部文件重新核对，差异仅为 CLI README、CLI 命令
+分派与对应测试；运行时、已有验收脚本均匹配冻结源码。新增 keys 文件由
+前述独立 CLI 套件验证，不宣称整个当前仓库与冻结构建完全相同。
+
+最终证据 SHA256：
+
+| 文件（相对新运行目录） | SHA256 |
+| --- | --- |
+| result.json | `0b180c5f720d9eb4694d868f56b17ee5bf4046478a1fa1a2b9c3db3b97ed5038` |
+| matrix/result.json | `856a83ebcf34cbb665ca1dcaa79880793351eb85d3c572681a6a309b532f916b` |
+| instrumentation.txt | `7ad45bbbe4cee8473812091677ba7a1ca52bd50e2b1fbc6c9aa670aaef6e3157` |
+
+矩阵通过指功能/故障断言通过；附带的 timing 文件与预算标记原样保留，
+不将功能通过等同于 whole 性能达标。本轮未修改性能代码或手机配置，
+未使用模拟器，未推送或发布。
