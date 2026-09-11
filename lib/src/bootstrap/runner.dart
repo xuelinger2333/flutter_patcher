@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'patch_archive.dart';
+import 'budget.dart';
 import 'raw_channel.dart';
 
 typedef ModuleLoader = Future<Object?> Function(Uint8List bytes);
@@ -125,15 +126,19 @@ class BootRunner {
       log('BYTECODE_BOOT_PROFILE: ${jsonEncode({
             'schema': 1,
             'tier': patch.tier,
+            'budget_us': bootstrapBudgetUs(patch.tier),
             'native': row['profile_us'],
+            'dart_channel': row['dart_channel_us'],
             'read_file_us': readUs - payloadUs,
             'verify': profile,
             'mark_booting_us': markedUs - verifiedUs,
             'observe_us': beforeLoadUs - markedUs,
             'module_load_us': loadedUs - beforeLoadUs,
           })}');
-      if (startup.elapsedMicroseconds > 85000) {
-        log('BYTECODE_BOOT_SLOW: ${startup.elapsedMicroseconds} us before patched main');
+      final budgetUs = bootstrapBudgetUs(patch.tier);
+      if (startup.elapsedMicroseconds > budgetUs) {
+        log('BYTECODE_BOOT_SLOW: ${startup.elapsedMicroseconds} us before patched main '
+            'tier=${patch.tier} budget_us=$budgetUs');
       }
       await (slots[4] as FutureOr<void> Function())();
       return;

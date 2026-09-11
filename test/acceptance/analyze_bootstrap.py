@@ -1,7 +1,7 @@
 """Summarize exact cold-start samples; nested profile counters are not additive.
 
 python test/acceptance/analyze_bootstrap.py --run PATH --out PATH/report.json
-Add --assert-budget to fail when any whole bootstrap sample exceeds 85 ms.
+Add --assert-budget to enforce lean 85 ms and whole 200 ms per sampled startup.
 """
 import argparse
 import hashlib
@@ -12,6 +12,7 @@ import statistics
 
 
 STAGES = ['payload_us', 'verify_us', 'load_and_handshake_us', 'resources_us', 'total_us']
+BUDGET_US = {'lean': 85000, 'whole': 200000}
 TIMING = re.compile(r'BYTECODE_BOOT_TIMING: ' + r' '.join(k + r'=(\d+)' for k in STAGES))
 
 
@@ -56,12 +57,20 @@ def analyze(run):
     matrix = run / 'matrix'
     raw_log = (matrix / 'live-logcat.txt').read_bytes()
     text = raw_log.decode('utf-8')
-    pending, records = {}, []
+    pending, records, channels = {}, [], []
     for line in text.splitlines():
         fields = line.split()
         if len(fields) < 3 or not re.match(r'^\d+\.\d+$', fields[0]):
             continue
         pid = fields[1]
+        channel_prefix = 'BYTECODE_CHANNEL_TIMING: '
+        if channel_prefix in line:
+            channel = json.loads(line.split(channel_prefix, 1)[1])
+            parts = ['decode_us', 'handler_us', 'worker_queue_us', 'operation_us',
+                     'main_queue_us', 'encode_us', 'reply_send_us']
+            if channel['schema'] != 1 or min(channel[k] for k in parts) < 0 or sum(channel[k] for k in parts) != channel['total_us']:
+                raise ValueError('Native channel counters do not reconcile')
+            channels.append((float(fields[0]), pid, channel))
         match = TIMING.search(line)
         if match:
             pending[pid] = tuple(map(int, match.groups()))
@@ -72,7 +81,7 @@ def analyze(run):
             detail = json.loads(line.split(prefix, 1)[1])
             if detail['schema'] != 1:
                 raise ValueError('Unknown profile schema')
-            records.append((pending.pop(pid), detail, pid))
+            records.append((pending.pop(pid), detail, pid, float(fields[0])))
     report = {'source': json.loads((run / 'source.json').read_text())['source_sha256'],
               'log_sha256': hashlib.sha256(raw_log).hexdigest(), 'tiers': {}}
     for tier in ['lean', 'whole']:
@@ -86,20 +95,37 @@ def analyze(run):
                 'stages': {k: dict(stats([r[k] for r in rows]),
                                   percent_of_total=statistics.mean(r[k] for r in rows) / total * 100)
                            for k in STAGES},
-                'budget_passed': all(r['total_us'] <= 85000 for r in rows)}
+                'budget_us': BUDGET_US[tier],
+                'budget_policy': 'lean-85ms-whole-200ms-v1',
+                'budget_passed': all(r['total_us'] <= BUDGET_US[tier] for r in rows)}
         profiles = []
         if records:
             for row in rows:
-                matches = [(d, pid) for key, d, pid in records
+                matches = [(d, pid, timestamp) for key, d, pid, timestamp in records
                            if key == tuple(row[k] for k in STAGES) and d['tier'] == tier]
                 if len(matches) != 1:
                     raise ValueError('Expected exactly one profile per measured cold start')
-                d, pid = matches[0]
-                profiles.append({'pid': pid, 'buckets_us': details(row, d), 'raw': d})
+                d, pid, timestamp = matches[0]
+                if 'budget_us' in d and d['budget_us'] != BUDGET_US[tier]:
+                    raise ValueError('Application budget differs from analysis policy')
+                sample = {'pid': pid, 'buckets_us': details(row, d), 'raw': d}
+                if channels:
+                    matched = [ch for at, cp, ch in channels if cp == pid and abs(at - timestamp) < 3]
+                    if len(matched) != 1: raise ValueError('Expected one native channel trace per startup')
+                    sample['channel'] = matched[0]
+                profiles.append(sample)
             item['profiles'] = profiles
             item['breakdown'] = {k: dict(stats([r['buckets_us'][k] for r in profiles]),
                 percent_of_total=statistics.mean(r['buckets_us'][k] for r in profiles) / total * 100)
                 for k in profiles[0]['buckets_us']}
+            if channels:
+                item['channel_stages'] = {k: stats([s['channel'][k] for s in profiles])
+                    for k in profiles[0]['channel'] if k.endswith('_us')}
+                item['native_lock_wait'] = stats([s['raw']['native']['lock_wait'] for s in profiles])
+                item['outside_java_channel'] = stats([row['payload_us'] - sample['channel']['total_us']
+                    for row, sample in zip(rows, profiles)])
+                item['dart_channel_stages'] = {k: stats([s['raw']['dart_channel'][k] for s in profiles])
+                    for k in profiles[0]['raw']['dart_channel']}
         report['tiers'][tier] = item
     report['whole_minus_lean_ms'] = {
         k: report['tiers']['whole']['stages'][k]['mean_ms'] - report['tiers']['lean']['stages'][k]['mean_ms']
@@ -118,8 +144,9 @@ def main():
     args.out.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     for name, item in report['tiers'].items():
         print(name, json.dumps({k: round(v['mean_ms'], 3) for k, v in item['stages'].items()}))
-    if args.assert_budget and not report['tiers']['whole']['budget_passed']:
-        raise SystemExit('WHOLE_BOOTSTRAP_OVER_85MS')
+    failed = [tier for tier, item in report['tiers'].items() if not item['budget_passed']]
+    if args.assert_budget and failed:
+        raise SystemExit('BOOTSTRAP_OVER_BUDGET: ' + ', '.join(failed))
 
 
 if __name__ == '__main__':

@@ -50,6 +50,7 @@ class FlutterPatcherPlugin :
     private lateinit var eventChannel: EventChannel
     private lateinit var appContext: Context
     private lateinit var bytecode: BytecodePatchManager
+    private val bootProfiler = BootChannelProfiler()
     private var renderer: FlutterRenderer? = null
     private val firstFrame = object : FlutterUiDisplayListener {
         override fun onFlutterUiDisplayed() {
@@ -71,7 +72,7 @@ class FlutterPatcherPlugin :
         bytecode = BytecodePatchManager(appContext)
         renderer = binding.textureRegistry as? FlutterRenderer
         renderer?.addIsDisplayingFlutterUiListener(firstFrame)
-        channel = MethodChannel(binding.binaryMessenger, CHANNEL)
+        channel = MethodChannel(binding.binaryMessenger, CHANNEL, bootProfiler.codec)
         channel.setMethodCallHandler(this)
         eventChannel = EventChannel(binding.binaryMessenger, EVENT_CHANNEL)
         eventChannel.setStreamHandler(this)
@@ -100,8 +101,9 @@ class FlutterPatcherPlugin :
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
             "bootPayload" -> {
+                val trace = bootProfiler.take()
                 bytecode.announceBootstrap()
-                bytecodeCall(result) {
+                bytecodeCall(result, trace) {
                     try {
                         bytecode.bootPayload(call.argument<String>("fingerprint") ?: "",
                             call.argument<String>("publicKeyBase64") ?: "")
@@ -161,11 +163,21 @@ class FlutterPatcherPlugin :
 
     // ==================== handlers ====================
 
-    private fun bytecodeCall(result: Result, operation: () -> Any?) {
+    private fun bytecodeCall(result: Result, trace: BootChannelProfiler.Trace? = null, operation: () -> Any?) {
+        if (trace != null) trace.submitted = System.nanoTime()
         Thread {
+            if (trace != null) trace.worker = System.nanoTime()
             try {
                 val value = operation()
-                main.post { result.success(value) }
+                if (trace != null) trace.operationDone = System.nanoTime()
+                main.post {
+                    if (trace != null) {
+                        trace.reply = System.nanoTime()
+                        bootProfiler.beginReply(trace)
+                    }
+                    try { result.success(value) }
+                    finally { if (trace != null) bootProfiler.endReply(trace) }
+                }
             } catch (error: Exception) {
                 main.post { result.error("BYTECODE_REJECTED", error.message, null) }
             }

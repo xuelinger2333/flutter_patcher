@@ -32,7 +32,9 @@ internal class BytecodePatchManager(private val context: Context) {
 
     fun announceBootstrap() { bootstrapped = true }
 
-    fun bootPayload(fp: String, publicKey: String): Map<String, Any?>? = synchronized(lock) {
+    fun bootPayload(fp: String, publicKey: String): Map<String, Any?>? {
+      val lockRequested = System.nanoTime()
+      return synchronized(lock) {
         val profileStart = System.nanoTime()
         fun elapsedUs() = (System.nanoTime() - profileStart) / 1000
         if (fingerprint != null || processClaimed) return@synchronized null
@@ -73,13 +75,15 @@ internal class BytecodePatchManager(private val context: Context) {
             attempt = BytecodeAttempt(offered!!)
             offeredMeta = meta
             mapOf("path" to file.absolutePath, "sha256" to meta.getString("sha256"), "attempt" to offered,
-                "profile_us" to mapOf("prepare" to preparedUs, "read" to readUs - preparedUs,
+                "profile_us" to mapOf("lock_wait" to (profileStart - lockRequested) / 1000,
+                    "prepare" to preparedUs, "read" to readUs - preparedUs,
                     "envelope_verify" to verifiedUs - readUs, "file_digest" to digestUs - verifiedUs,
                     "total" to elapsedUs()))
         } catch (error: Exception) {
             recordFailure(meta, error.message ?: "Candidate rejected")
             null
         }
+      }
     }
 
     fun markBooting(token: String?): Boolean = synchronized(lock) {

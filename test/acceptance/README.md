@@ -83,8 +83,8 @@ and reject the quarantined patch on reinstallation.
 
 The suite covers valid lean/whole controls, envelope/signature rejection,
 sequence replay, archive/entry rejection and crash/hang quarantine. Timing
-budget alerts remain separate: a passing functional matrix does not prove whole
-bootstrap meets 85 ms, cross-machine acceptance, or complete M1 release readiness.
+budget alerts remain separate: a passing functional matrix does not prove the
+tier-specific startup budgets, cross-machine acceptance, or complete M1 readiness.
 Do not interact with the test app during the run. Installation may require the
 phone's normal confirmation. No automatic retries or skipped cases are used.
 
@@ -98,9 +98,18 @@ not additive until their enclosing spans have been adjusted.
 Use `python test/acceptance/analyze_bootstrap.py --run PATH_TO_REGRESSION_RUN
 --out PATH_TO_ANALYSIS_JSON` to join profiles to the exact twenty sampled cold
 starts and summarize durations and shares. Add `--assert-budget` to return
-nonzero when whole bootstrap exceeds 85 ms. That performance failure is separate
+nonzero when lean bootstrap exceeds 85 ms or whole exceeds 200 ms in any sampled
+startup. This uses absolute bootstrap time, not the Android start-time delta.
+That performance failure is separate
 from the functional matrix verdict. The analyzer also supports older runs with
 only the four broad timing stages.
 
 See [the measured whole-bootstrap diagnosis](WHOLE_BOOTSTRAP_PROFILE.md) for
 results, measurement limits and the recommended optimization order.
+
+The current [tier-specific budget decision](../../doc/bootstrap-performance-budget.md)
+also records why interleaving three hashers is not equivalent to doing one hash,
+and keeps framework host-interface reuse outside this milestone. Native channel
+traces now separate codec, worker queue, lock wait and main-thread reply queue;
+the analyzer reports those nested spans separately from the additive bootstrap
+breakdown to avoid double-counting.

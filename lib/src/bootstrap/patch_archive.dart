@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'crc32.dart';
 
 void bootRequire(bool value, String reason) {
   if (!value) throw FormatException(reason);
@@ -89,18 +90,12 @@ Map<String, Uint8List> readPatchArchive(Uint8List bytes,
     bootRequire(start + length <= central, 'ZIP overlapping entry');
     final content = Uint8List.sublistView(bytes, start, start + length);
     final crcWatch = profile == null ? null : (Stopwatch()..start());
-    var crc = 0xffffffff;
-    for (final value in content) {
-      crc ^= value;
-      for (var bit = 0; bit < 8; bit++) {
-        crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xedb88320 : 0);
-      }
-    }
+    final crc = patchCrc32(content);
     if (crcWatch != null) {
       profile!['zip_crc_us'] =
           (profile['zip_crc_us'] ?? 0) + crcWatch.elapsedMicroseconds;
     }
-    bootRequire((crc ^ 0xffffffff) == u32(cp + 16), 'ZIP CRC mismatch');
+    bootRequire(crc == u32(cp + 16), 'ZIP CRC mismatch');
     result[file] = content;
     lp = start + length;
     cp += 46 + n;

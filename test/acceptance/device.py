@@ -269,6 +269,13 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 timing['original'] = baseline_timing
                 timing['median_added_ms'] = timing['median'] - baseline_timing['median']
                 timing['alert_over_85ms'] = timing['median_added_ms'] > 85
+                # Keep legacy 85-ms diagnostics for historical comparisons, but
+                # use tier-specific absolute bootstrap time for the current budget.
+                timing['bootstrap_budget_us'] = 85000 if row['tier'] == 'lean' else 200000
+                timing['bootstrap_over_budget'] = any(s['total_us'] > timing['bootstrap_budget_us']
+                                                     for s in timing['bootstrap'])
+                timing['budget_metric'] = 'bootstrap total_us before patched main'
+                timing['budget_policy'] = 'lean-85ms-whole-200ms-v1'
                 timing['bootstrap_only_measurement'] = True
                 (out / (row['id'] + '-timing.json')).write_text(json.dumps(timing, indent=2))
                 # Keep the rendered font/icon result for visual verification.
