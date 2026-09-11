@@ -17,10 +17,12 @@ parser.add_argument('--serial', required=True)
 parser.add_argument('--out', type=Path, required=True)
 args = parser.parse_args()
 args.out.mkdir(parents=True, exist_ok=False)
-result = {'status': 'failed', 'apk_sha256': hashlib.sha256(args.apk.read_bytes()).hexdigest(), 'samples': []}
+result = {'status': 'failed', 'apk_sha256': hashlib.sha256(args.apk.read_bytes()).hexdigest(),
+          'runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'samples': []}
 package = 'com.example.wp9_acceptance'
 def adb(*command):
-    return subprocess.check_output(['adb', '-s', args.serial, *command], text=True, stderr=subprocess.STDOUT)
+    return subprocess.check_output(['adb', '-s', args.serial, *command], text=True,
+                                   stderr=subprocess.STDOUT, timeout=180)
 def write(): (args.out / 'result.json').write_text(json.dumps(result, indent=2))
 logger = None
 try:

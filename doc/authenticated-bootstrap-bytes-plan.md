@@ -17,14 +17,16 @@ phone configuration changes, push or publication. Primary agent uses gpu builds.
 - [x] Profiles: schema 2 explicitly identifies native-bytes transport and
   absent file-read/payload-SHA/file-SHA work. Analyzer supports schema 1 and 2,
   rejects missing schema-2 counters and reconciles every measured interval.
-- [ ] Test-only probe: generated acceptance Android/Dart sources run paired
+- [x] Test-only probe: generated acceptance Android/Dart sources run paired
   pre-bootstrap and post-frame empty/byte/verified-byte requests with matched
   worker/main response path, request IDs and no boot transaction mutations.
   Keep probes disabled during the formal matrix and report memory observations.
-- [ ] Validate locally with Flutter bootstrap/CRC tests and Python contracts;
+- [x] Validate locally with Flutter bootstrap/CRC tests and Python contracts;
   rebuild using `test/acceptance/rebuild_regression.py --config
   test/acceptance/regression-config.example.json`. Require native JVM tests,
   instrumentation 4/4 and matrix 31/31. Run analyzer with `--assert-budget`.
-- [ ] Preserve raw receipts, write measured report, update SPEC/README, commit
+- [x] Preserve raw receipts, write measured report, update SPEC/README, commit
   locally. If whole still exceeds 200 ms, report the gap without changing the
   agreed archive checks or starting the native entry-parser redesign.
+
+Results: formal matrix 31/31, instrumentation 4/4, JVM 33/33; probe 60/60. Lean 65.343 ms meets 85 ms; whole 205.861 ms fails 200 ms (0/10). See test/acceptance/NATIVE_BYTES_REPORT.md.
