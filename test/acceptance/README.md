@@ -87,3 +87,20 @@ budget alerts remain separate: a passing functional matrix does not prove whole
 bootstrap meets 85 ms, cross-machine acceptance, or complete M1 release readiness.
 Do not interact with the test app during the run. Installation may require the
 phone's normal confirmation. No automatic retries or skipped cases are used.
+
+## Bootstrap stage profiling
+
+New builds emit `BYTECODE_BOOT_PROFILE` alongside the existing total timing.
+It separates native preparation/read/verification, Dart file read, SHA-256,
+ZIP CRC, durable boot handshake and dynamic-module loading. Nested counters are
+not additive until their enclosing spans have been adjusted.
+
+Use `python test/acceptance/analyze_bootstrap.py --run PATH_TO_REGRESSION_RUN
+--out PATH_TO_ANALYSIS_JSON` to join profiles to the exact twenty sampled cold
+starts and summarize durations and shares. Add `--assert-budget` to return
+nonzero when whole bootstrap exceeds 85 ms. That performance failure is separate
+from the functional matrix verdict. The analyzer also supports older runs with
+only the four broad timing stages.
+
+See [the measured whole-bootstrap diagnosis](WHOLE_BOOTSTRAP_PROFILE.md) for
+results, measurement limits and the recommended optimization order.

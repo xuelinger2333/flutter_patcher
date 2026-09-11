@@ -8,7 +8,8 @@ void bootRequire(bool value, String reason) {
 
 /// Strict, read-only STORED ZIP reader. Central and local records must agree;
 /// no extraction, ambiguous paths, data descriptors, zip64 or trailing data.
-Map<String, Uint8List> readPatchArchive(Uint8List bytes) {
+Map<String, Uint8List> readPatchArchive(Uint8List bytes,
+    {Map<String, int>? profile}) {
   final view = ByteData.sublistView(bytes);
   void range(int p, int n) =>
       bootRequire(p >= 0 && n >= 0 && p + n <= bytes.length, 'ZIP bounds');
@@ -87,12 +88,17 @@ Map<String, Uint8List> readPatchArchive(Uint8List bytes) {
     range(start, length);
     bootRequire(start + length <= central, 'ZIP overlapping entry');
     final content = Uint8List.sublistView(bytes, start, start + length);
+    final crcWatch = profile == null ? null : (Stopwatch()..start());
     var crc = 0xffffffff;
     for (final value in content) {
       crc ^= value;
       for (var bit = 0; bit < 8; bit++) {
         crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xedb88320 : 0);
       }
+    }
+    if (crcWatch != null) {
+      profile!['zip_crc_us'] =
+          (profile['zip_crc_us'] ?? 0) + crcWatch.elapsedMicroseconds;
     }
     bootRequire((crc ^ 0xffffffff) == u32(cp + 16), 'ZIP CRC mismatch');
     result[file] = content;
@@ -113,7 +119,17 @@ class VerifiedPatch {
 }
 
 VerifiedPatch verifyPatchBytes(
-    Uint8List bytes, String fingerprint, String verifiedSha256) {
+    Uint8List bytes, String fingerprint, String verifiedSha256,
+    {Map<String, int>? profile}) {
+  final watch = profile == null ? null : (Stopwatch()..start());
+  var checkpoint = 0;
+  void mark(String name) {
+    if (watch == null) return;
+    final now = watch.elapsedMicroseconds;
+    profile![name] = now - checkpoint;
+    checkpoint = now;
+  }
+
   bootRequire(bytes.length >= 146 && bytes.length <= 320 * 1024 * 1024,
       'Envelope size');
   final data = ByteData.sublistView(bytes);
@@ -126,15 +142,19 @@ VerifiedPatch verifyPatchBytes(
       .join();
   bootRequire(fp == fingerprint, 'Envelope fingerprint');
   final payload = Uint8List.sublistView(bytes, 146);
+  mark('envelope_fields_us');
   bootRequire(
       sha256.convert(payload).bytes.toString() ==
           bytes.sublist(50, 82).toString(),
       'Envelope hash');
+  mark('payload_sha256_us');
   // Native bootPayload verified Ed25519 with the embedded public key. Bind its
   // attestation to these exact bytes so a path replacement cannot bypass it.
   bootRequire(sha256.convert(bytes).toString() == verifiedSha256,
       'Verified file changed');
-  final entries = readPatchArchive(payload);
+  mark('file_sha256_us');
+  final entries = readPatchArchive(payload, profile: profile);
+  mark('zip_total_us');
   bootRequire(
       entries.containsKey('module.bc') &&
           entries.containsKey('patch_manifest.json'),
@@ -161,11 +181,16 @@ VerifiedPatch verifyPatchBytes(
     final path = row['path'] as String, content = entries[path];
     bootRequire(path.startsWith(prefix) && listed.add(path) && content != null,
         'Unlisted/duplicate entry');
+    final hashWatch = profile == null ? null : (Stopwatch()..start());
     bootRequire(
         row['length'] is int &&
             row['length'] == content!.length &&
             row['sha256'] == sha256.convert(content).toString(),
         'Entry digest');
+    if (hashWatch != null) {
+      profile!['entry_sha256_us'] =
+          (profile['entry_sha256_us'] ?? 0) + hashWatch.elapsedMicroseconds;
+    }
     return content!;
   }
 
@@ -205,5 +230,11 @@ VerifiedPatch verifyPatchBytes(
         .add(entry(record, 'fonts/'));
   }
   bootRequire(listed.length == entries.length, 'Unlisted ZIP entries');
+  mark('manifest_and_entries_us');
+  if (profile != null) {
+    profile['file_bytes'] = bytes.length;
+    profile['module_bytes'] = module.length;
+    profile['entry_count'] = entries.length;
+  }
   return VerifiedPatch(module, assets, fonts, seq, tier as String);
 }

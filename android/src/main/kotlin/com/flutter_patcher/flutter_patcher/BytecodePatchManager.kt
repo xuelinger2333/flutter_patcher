@@ -33,6 +33,8 @@ internal class BytecodePatchManager(private val context: Context) {
     fun announceBootstrap() { bootstrapped = true }
 
     fun bootPayload(fp: String, publicKey: String): Map<String, Any?>? = synchronized(lock) {
+        val profileStart = System.nanoTime()
+        fun elapsedUs() = (System.nanoTime() - profileStart) / 1000
         if (fingerprint != null || processClaimed) return@synchronized null
         processClaimed = true
         require(Regex("[0-9a-f]{64}").matches(fp)) { "Invalid host fingerprint" }
@@ -59,14 +61,21 @@ internal class BytecodePatchManager(private val context: Context) {
         }
         if (prefs.getBoolean("bad:${id(meta)}", false)) return@synchronized null
         try {
+            val preparedUs = elapsedUs()
             val file = File(directory, meta.getString("sha256") + ".fptc")
             val bytes = readBounded(file.inputStream())
+            val readUs = elapsedUs()
             val seq = BytecodeEnvelope.verify(bytes, fp, raw)
+            val verifiedUs = elapsedUs()
             require(seq == meta.getLong("seq") && BytecodeEnvelope.digest(bytes) == meta.getString("sha256")) { "Stored candidate changed" }
+            val digestUs = elapsedUs()
             offered = UUID.randomUUID().toString()
             attempt = BytecodeAttempt(offered!!)
             offeredMeta = meta
-            mapOf("path" to file.absolutePath, "sha256" to meta.getString("sha256"), "attempt" to offered)
+            mapOf("path" to file.absolutePath, "sha256" to meta.getString("sha256"), "attempt" to offered,
+                "profile_us" to mapOf("prepare" to preparedUs, "read" to readUs - preparedUs,
+                    "envelope_verify" to verifiedUs - readUs, "file_digest" to digestUs - verifiedUs,
+                    "total" to elapsedUs()))
         } catch (error: Exception) {
             recordFailure(meta, error.message ?: "Candidate rejected")
             null

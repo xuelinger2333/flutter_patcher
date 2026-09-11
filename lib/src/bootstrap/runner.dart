@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'patch_archive.dart';
 import 'raw_channel.dart';
@@ -66,12 +67,17 @@ class BootRunner {
               row['sha256'] is String,
           'Invalid boot attestation');
       attempt = row['attempt'] as String;
-      final patch = verifyPatchBytes(await read(row['path'] as String),
-          fingerprint, row['sha256'] as String);
+      final profile = <String, int>{};
+      final bytes = await read(row['path'] as String);
+      final readUs = startup.elapsedMicroseconds;
+      final patch = verifyPatchBytes(
+          bytes, fingerprint, row['sha256'] as String,
+          profile: profile);
       final verifiedUs = startup.elapsedMicroseconds;
       final started =
           await call('markBooting', {'attempt': attempt}).timeout(timeout);
       bootRequire(started == true, 'Boot attempt expired');
+      final markedUs = startup.elapsedMicroseconds;
       observe(failure, () async {
         if (failed) return;
         try {
@@ -81,6 +87,7 @@ class BootRunner {
           log(e);
         }
       });
+      final beforeLoadUs = startup.elapsedMicroseconds;
       final entry = await load(patch.module);
       final loadedUs = startup.elapsedMicroseconds;
       bootRequire(!failed, 'Boot attempt already failed');
@@ -115,6 +122,16 @@ class BootRunner {
           'load_and_handshake_us=${loadedUs - verifiedUs} '
           'resources_us=${startup.elapsedMicroseconds - loadedUs} '
           'total_us=${startup.elapsedMicroseconds}');
+      log('BYTECODE_BOOT_PROFILE: ${jsonEncode({
+            'schema': 1,
+            'tier': patch.tier,
+            'native': row['profile_us'],
+            'read_file_us': readUs - payloadUs,
+            'verify': profile,
+            'mark_booting_us': markedUs - verifiedUs,
+            'observe_us': beforeLoadUs - markedUs,
+            'module_load_us': loadedUs - beforeLoadUs,
+          })}');
       if (startup.elapsedMicroseconds > 85000) {
         log('BYTECODE_BOOT_SLOW: ${startup.elapsedMicroseconds} us before patched main');
       }
