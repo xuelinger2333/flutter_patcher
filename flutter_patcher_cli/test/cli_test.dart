@@ -14,11 +14,11 @@ void main() {
     expect(version.exitCode, 0);
     expect(version.stdout, contains('2.0.0-dev.1'));
   });
-  test('later work packages fail explicitly', () async {
+  test('keys requires an explicit initialization subcommand', () async {
     for (final command in ['keys']) {
       final result = await cli([command]);
       expect(result.exitCode, 2);
-      expect(result.stderr, contains('COMMAND_NOT_IMPLEMENTED'));
+      expect(result.stderr, contains('USAGE_ERROR'));
     }
   });
   test('invalid options and positional arguments fail', () async {

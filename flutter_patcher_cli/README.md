@@ -1,6 +1,6 @@
-# flutter_patcher_cli · WP-2 / WP-3
+# flutter_patcher_cli · M1
 
-本包负责为当前 Flutter 版本准备补丁工具链和新宿主的动态接口。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前实现 `doctor` 和高级接口准备命令 `interface`；`build`、`patch`、`publish`、`keys` 明确返回未实现。
+本包负责为当前 Flutter 版本准备补丁工具链和新宿主的动态接口。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前支持 `doctor`、`interface`、`baseline`、字节码 `build` / `patch`、本地 mock `publish` 和 `keys init`。后面的 WP 阶段说明保留各阶段的历史边界；实际命令以当前帮助为准。
 
 M1 支持 Linux x64（含 x64 WSL2），目标 Android arm64。需要已初始化的 stock Flutter SDK、Git 和首次下载所需的网络。原生 Windows/macOS 会明确报错；不支持的 Flutter 版本不会转入自行编译流程。
 
@@ -15,6 +15,42 @@ dart run bin/flutter_patcher.dart doctor --offline --json
 ```
 
 也可用 `dart pub global activate --source path .` 安装本地版本，再运行 `flutter_patcher doctor`。入口 Dart 运行 CLI，所选 Flutter SDK 内的 Dart 运行下载的工具 dill。本包暂不发布到 pub.dev。
+
+## 初始化正式签名密钥
+
+在 Linux x64/WSL2 上运行，需 PATH 中的 OpenSSL 支持 Ed25519；此命令不需要 Flutter SDK，也不访问网络。
+
+```bash
+flutter_patcher keys init
+# 或为另一个应用选择全新的目录：
+flutter_patcher keys init --out "$HOME/.flutter_patcher/keys/my-app"
+```
+
+不指定 `--out` 时，默认目录为 `~/.flutter_patcher/keys`。生成
+`private-key.base64`（32 字节 Ed25519 seed 的 Base64）和
+`public-key.base64`（32 字节公钥的 Base64）。目录权限为 700，私钥为 600；
+私钥不打印到终端，也不写入临时 DER 文件。输出的一行 JSON 只有文件路径、
+格式和公钥 SHA256 指纹。目录内 `.gitignore` 排除私钥文件。
+
+已有文件、目录或符号链接一律拒绝覆盖；重复运行不会轮换或覆盖旧密钥。
+私钥文件不加密，请妥善备份并限制访问，不要把它随 APK 或源码分发。
+同一宿主的后续补丁必须继续使用匹配的私钥；另生成一对密钥不会给旧宿主换钥。
+
+将输出路径直接传给现有流程：宿主构建使用 `--public-key`，补丁使用
+`--private-key`。以下目录、序号和指纹需替换为实际项目值：
+
+```bash
+flutter_patcher build android --strategy bytecode --project /path/to/app \
+  --public-key "$HOME/.flutter_patcher/keys/public-key.base64" \
+  --baseline-store file:///path/to/baselines --version-code 1 --out /path/to/new-release
+
+flutter_patcher patch android --strategy bytecode --project /path/to/app \
+  --private-key "$HOME/.flutter_patcher/keys/private-key.base64" \
+  --baseline-store file:///path/to/baselines --fingerprint BUILD_FINGERPRINT \
+  --seq 1 --version-code 1 --out /path/to/new-patch
+```
+
+验收脚本的公开 RFC 8032 测试密钥只用于测试，不能用于正式宿主。
 
 ## 自动准备的内容
 

@@ -13,6 +13,7 @@ import 'baseline/store.dart';
 import 'build/command.dart';
 import 'patch/command.dart';
 import 'mock/command.dart';
+import 'keys/command.dart';
 
 const releaseBase =
     'https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download';
@@ -90,6 +91,7 @@ ArgParser parser() {
     ..addCommand('patch', patch)
     ..addCommand('publish', publishOptions())
     ..addCommand('baseline', baselineOptions())
+    ..addCommand('keys', keysOptions())
     ..addCommand('interface', interfaces);
 }
 
@@ -97,10 +99,6 @@ Future<int> runCli(List<String> arguments) async {
   final args = parser();
   ArgResults parsed;
   try {
-    if (arguments.isNotEmpty && arguments.first == 'keys') {
-      throw Failure('COMMAND_NOT_IMPLEMENTED',
-          '${arguments.first} belongs to a later implementation step; WP-2 provides doctor.');
-    }
     parsed = args.parse(arguments);
     require(
         parsed.rest.isEmpty, 'USAGE_ERROR', 'Unexpected positional arguments.');
@@ -110,7 +108,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android --strategy bytecode [options]\nflutter_patcher patch android --strategy bytecode [options]\nflutter_patcher publish --out <local-mock-directory> [options]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android --strategy bytecode [options]\nflutter_patcher patch android --strategy bytecode [options]\nflutter_patcher publish --out <local-mock-directory> [options]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
@@ -119,6 +117,14 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed.command!.name == 'build') {
       return await buildCommand(parsed.command!);
+    }
+    if (parsed.command!.name == 'keys') {
+      try {
+        return await keysCommand(parsed.command!);
+      } on IOException {
+        throw Failure('KEYS_IO_ERROR',
+            'Key initialization failed; check output permissions and required local tools.');
+      }
     }
     if (parsed.command!.name == 'patch') {
       return await patchCommand(parsed.command!);
