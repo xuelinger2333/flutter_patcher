@@ -35,6 +35,9 @@ example/tools/
 plan/
 temp/
 
+# Frozen acceptance evidence belongs in Git, not the published package.
+test/acceptance/baselines/
+
 # OS junk
 .DS_Store
 Thumbs.db

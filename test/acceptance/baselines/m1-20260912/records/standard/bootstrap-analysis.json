@@ -1,0 +1,1913 @@
+{
+  "source": "2bfd64c1a3c7b885d3500ac3b8cf9b62bddf29655a5dbfbb1898ce3bcfcd7b22",
+  "log_sha256": "dea65ec2648b5e1913a25ecf2c662fa8fe4ddccf5f0bbf7885bba08f6062e188",
+  "tiers": {
+    "lean": {
+      "samples": 10,
+      "android_total_time_median_ms": 289.5,
+      "original_total_time_median_ms": 276.0,
+      "stages": {
+        "payload_us": {
+          "mean_ms": 56.6744,
+          "median_ms": 57.1345,
+          "min_ms": 45.81,
+          "max_ms": 64.722,
+          "percent_of_total": 86.73383030137934
+        },
+        "verify_us": {
+          "mean_ms": 0.4606,
+          "median_ms": 0.405,
+          "min_ms": 0.388,
+          "max_ms": 0.945,
+          "percent_of_total": 0.704896782971065
+        },
+        "load_and_handshake_us": {
+          "mean_ms": 7.9461,
+          "median_ms": 7.934,
+          "min_ms": 7.475,
+          "max_ms": 8.246,
+          "percent_of_total": 12.160617297365132
+        },
+        "resources_us": {
+          "mean_ms": 0.26180000000000003,
+          "median_ms": 0.2305,
+          "min_ms": 0.224,
+          "max_ms": 0.449,
+          "percent_of_total": 0.4006556182844655
+        },
+        "total_us": {
+          "mean_ms": 65.3429,
+          "median_ms": 65.834,
+          "min_ms": 54.382,
+          "max_ms": 73.692,
+          "percent_of_total": 100.0
+        }
+      },
+      "budget_us": 85000,
+      "budget_policy": "lean-85ms-whole-200ms-v1",
+      "budget_passed": true,
+      "profiles": [
+        {
+          "pid": "3213",
+          "buckets_us": {
+            "channel_and_dispatch": 40339,
+            "native_prepare": 3960,
+            "native_read": 443,
+            "native_envelope_verify": 11856,
+            "native_file_digest": 132,
+            "native_other": 554,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 62,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 96,
+            "dart_zip_structure": 25,
+            "dart_entry_sha256": 128,
+            "dart_manifest_other": 69,
+            "mark_booting": 7520,
+            "observe": 4,
+            "module_load": 414,
+            "resources": 227,
+            "dart_verify_other": 14
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3960,
+              "read": 443,
+              "envelope_verify": 11856,
+              "file_digest": 132,
+              "total": 16945
+            },
+            "dart_channel": {
+              "encode": 47,
+              "callback_wait": 57009,
+              "decode": 54,
+              "total": 57110
+            },
+            "verify": {
+              "envelope_fields_us": 62,
+              "zip_crc_us": 96,
+              "zip_total_us": 121,
+              "entry_sha256_us": 128,
+              "manifest_and_entries_us": 197,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7520,
+            "observe_us": 4,
+            "module_load_us": 414
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 53,
+            "handler_us": 59,
+            "worker_queue_us": 434,
+            "operation_us": 17011,
+            "main_queue_us": 4082,
+            "encode_us": 165,
+            "reply_send_us": 65,
+            "total_us": 21869
+          }
+        },
+        {
+          "pid": "3613",
+          "buckets_us": {
+            "channel_and_dispatch": 38221,
+            "native_prepare": 2703,
+            "native_read": 71,
+            "native_envelope_verify": 9767,
+            "native_file_digest": 122,
+            "native_other": 343,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 58,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 97,
+            "dart_zip_structure": 21,
+            "dart_entry_sha256": 129,
+            "dart_manifest_other": 65,
+            "mark_booting": 7481,
+            "observe": 4,
+            "module_load": 406,
+            "resources": 230,
+            "dart_verify_other": 18
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2703,
+              "read": 71,
+              "envelope_verify": 9767,
+              "file_digest": 122,
+              "total": 13006
+            },
+            "dart_channel": {
+              "encode": 48,
+              "callback_wait": 51029,
+              "decode": 52,
+              "total": 51129
+            },
+            "verify": {
+              "envelope_fields_us": 58,
+              "zip_crc_us": 97,
+              "zip_total_us": 118,
+              "entry_sha256_us": 129,
+              "manifest_and_entries_us": 194,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7481,
+            "observe_us": 4,
+            "module_load_us": 406
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 48,
+            "handler_us": 105,
+            "worker_queue_us": 457,
+            "operation_us": 13069,
+            "main_queue_us": 3970,
+            "encode_us": 163,
+            "reply_send_us": 50,
+            "total_us": 17862
+          }
+        },
+        {
+          "pid": "3876",
+          "buckets_us": {
+            "channel_and_dispatch": 39018,
+            "native_prepare": 3416,
+            "native_read": 174,
+            "native_envelope_verify": 13738,
+            "native_file_digest": 171,
+            "native_other": 519,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 66,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 100,
+            "dart_zip_structure": 28,
+            "dart_entry_sha256": 128,
+            "dart_manifest_other": 83,
+            "mark_booting": 7729,
+            "observe": 4,
+            "module_load": 408,
+            "resources": 229,
+            "dart_verify_other": 14
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3416,
+              "read": 174,
+              "envelope_verify": 13738,
+              "file_digest": 171,
+              "total": 18018
+            },
+            "dart_channel": {
+              "encode": 31,
+              "callback_wait": 56834,
+              "decode": 57,
+              "total": 56922
+            },
+            "verify": {
+              "envelope_fields_us": 66,
+              "zip_crc_us": 100,
+              "zip_total_us": 128,
+              "entry_sha256_us": 128,
+              "manifest_and_entries_us": 211,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7729,
+            "observe_us": 4,
+            "module_load_us": 408
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 55,
+            "handler_us": 73,
+            "worker_queue_us": 799,
+            "operation_us": 18089,
+            "main_queue_us": 1993,
+            "encode_us": 153,
+            "reply_send_us": 57,
+            "total_us": 21219
+          }
+        },
+        {
+          "pid": "4097",
+          "buckets_us": {
+            "channel_and_dispatch": 43239,
+            "native_prepare": 2966,
+            "native_read": 234,
+            "native_envelope_verify": 11314,
+            "native_file_digest": 134,
+            "native_other": 471,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 59,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 97,
+            "dart_zip_structure": 23,
+            "dart_entry_sha256": 127,
+            "dart_manifest_other": 64,
+            "mark_booting": 7498,
+            "observe": 3,
+            "module_load": 407,
+            "resources": 232,
+            "dart_verify_other": 18
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2966,
+              "read": 234,
+              "envelope_verify": 11314,
+              "file_digest": 134,
+              "total": 15119
+            },
+            "dart_channel": {
+              "encode": 42,
+              "callback_wait": 58147,
+              "decode": 53,
+              "total": 58242
+            },
+            "verify": {
+              "envelope_fields_us": 59,
+              "zip_crc_us": 97,
+              "zip_total_us": 120,
+              "entry_sha256_us": 127,
+              "manifest_and_entries_us": 191,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7498,
+            "observe_us": 3,
+            "module_load_us": 407
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 65,
+            "handler_us": 60,
+            "worker_queue_us": 308,
+            "operation_us": 15175,
+            "main_queue_us": 7319,
+            "encode_us": 164,
+            "reply_send_us": 67,
+            "total_us": 23158
+          }
+        },
+        {
+          "pid": "4202",
+          "buckets_us": {
+            "channel_and_dispatch": 46717,
+            "native_prepare": 3707,
+            "native_read": 137,
+            "native_envelope_verify": 12762,
+            "native_file_digest": 121,
+            "native_other": 526,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 111,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 211,
+            "dart_zip_structure": 76,
+            "dart_entry_sha256": 348,
+            "dart_manifest_other": 167,
+            "mark_booting": 6670,
+            "observe": 4,
+            "module_load": 801,
+            "resources": 449,
+            "dart_verify_other": 32
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3707,
+              "read": 137,
+              "envelope_verify": 12762,
+              "file_digest": 121,
+              "total": 17253
+            },
+            "dart_channel": {
+              "encode": 40,
+              "callback_wait": 63617,
+              "decode": 84,
+              "total": 63741
+            },
+            "verify": {
+              "envelope_fields_us": 111,
+              "zip_crc_us": 211,
+              "zip_total_us": 287,
+              "entry_sha256_us": 348,
+              "manifest_and_entries_us": 515,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 6670,
+            "observe_us": 4,
+            "module_load_us": 801
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 51,
+            "handler_us": 57,
+            "worker_queue_us": 419,
+            "operation_us": 17317,
+            "main_queue_us": 6925,
+            "encode_us": 292,
+            "reply_send_us": 105,
+            "total_us": 25166
+          }
+        },
+        {
+          "pid": "4454",
+          "buckets_us": {
+            "channel_and_dispatch": 42556,
+            "native_prepare": 2837,
+            "native_read": 278,
+            "native_envelope_verify": 8986,
+            "native_file_digest": 100,
+            "native_other": 330,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 65,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 96,
+            "dart_zip_structure": 26,
+            "dart_entry_sha256": 127,
+            "dart_manifest_other": 83,
+            "mark_booting": 7477,
+            "observe": 4,
+            "module_load": 449,
+            "resources": 231,
+            "dart_verify_other": 14
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2837,
+              "read": 278,
+              "envelope_verify": 8986,
+              "file_digest": 100,
+              "total": 12531
+            },
+            "dart_channel": {
+              "encode": 31,
+              "callback_wait": 54904,
+              "decode": 53,
+              "total": 54988
+            },
+            "verify": {
+              "envelope_fields_us": 65,
+              "zip_crc_us": 96,
+              "zip_total_us": 122,
+              "entry_sha256_us": 127,
+              "manifest_and_entries_us": 210,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7477,
+            "observe_us": 4,
+            "module_load_us": 449
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 63,
+            "handler_us": 99,
+            "worker_queue_us": 431,
+            "operation_us": 12622,
+            "main_queue_us": 4655,
+            "encode_us": 169,
+            "reply_send_us": 50,
+            "total_us": 18089
+          }
+        },
+        {
+          "pid": "4611",
+          "buckets_us": {
+            "channel_and_dispatch": 39908,
+            "native_prepare": 3666,
+            "native_read": 154,
+            "native_envelope_verify": 10126,
+            "native_file_digest": 131,
+            "native_other": 2032,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 61,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 121,
+            "dart_zip_structure": 52,
+            "dart_entry_sha256": 126,
+            "dart_manifest_other": 78,
+            "mark_booting": 7504,
+            "observe": 3,
+            "module_load": 466,
+            "resources": 238,
+            "dart_verify_other": 14
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3666,
+              "read": 154,
+              "envelope_verify": 10126,
+              "file_digest": 131,
+              "total": 16109
+            },
+            "dart_channel": {
+              "encode": 43,
+              "callback_wait": 55805,
+              "decode": 51,
+              "total": 55899
+            },
+            "verify": {
+              "envelope_fields_us": 61,
+              "zip_crc_us": 121,
+              "zip_total_us": 173,
+              "entry_sha256_us": 126,
+              "manifest_and_entries_us": 204,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7504,
+            "observe_us": 3,
+            "module_load_us": 466
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 52,
+            "handler_us": 57,
+            "worker_queue_us": 427,
+            "operation_us": 16176,
+            "main_queue_us": 1888,
+            "encode_us": 144,
+            "reply_send_us": 61,
+            "total_us": 18805
+          }
+        },
+        {
+          "pid": "4998",
+          "buckets_us": {
+            "channel_and_dispatch": 33181,
+            "native_prepare": 2824,
+            "native_read": 75,
+            "native_envelope_verify": 9295,
+            "native_file_digest": 106,
+            "native_other": 329,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 64,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 98,
+            "dart_zip_structure": 25,
+            "dart_entry_sha256": 135,
+            "dart_manifest_other": 84,
+            "mark_booting": 7502,
+            "observe": 4,
+            "module_load": 423,
+            "resources": 224,
+            "dart_verify_other": 13
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2824,
+              "read": 75,
+              "envelope_verify": 9295,
+              "file_digest": 106,
+              "total": 12629
+            },
+            "dart_channel": {
+              "encode": 47,
+              "callback_wait": 45613,
+              "decode": 51,
+              "total": 45711
+            },
+            "verify": {
+              "envelope_fields_us": 64,
+              "zip_crc_us": 98,
+              "zip_total_us": 123,
+              "entry_sha256_us": 135,
+              "manifest_and_entries_us": 219,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7502,
+            "observe_us": 4,
+            "module_load_us": 423
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 58,
+            "handler_us": 76,
+            "worker_queue_us": 535,
+            "operation_us": 12694,
+            "main_queue_us": 3985,
+            "encode_us": 168,
+            "reply_send_us": 49,
+            "total_us": 17565
+          }
+        },
+        {
+          "pid": "5195",
+          "buckets_us": {
+            "channel_and_dispatch": 44560,
+            "native_prepare": 2229,
+            "native_read": 487,
+            "native_envelope_verify": 15762,
+            "native_file_digest": 126,
+            "native_other": 1558,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 53,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 96,
+            "dart_zip_structure": 26,
+            "dart_entry_sha256": 127,
+            "dart_manifest_other": 76,
+            "mark_booting": 7693,
+            "observe": 3,
+            "module_load": 550,
+            "resources": 333,
+            "dart_verify_other": 13
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2229,
+              "read": 487,
+              "envelope_verify": 15762,
+              "file_digest": 126,
+              "total": 20162
+            },
+            "dart_channel": {
+              "encode": 46,
+              "callback_wait": 64511,
+              "decode": 55,
+              "total": 64612
+            },
+            "verify": {
+              "envelope_fields_us": 53,
+              "zip_crc_us": 96,
+              "zip_total_us": 122,
+              "entry_sha256_us": 127,
+              "manifest_and_entries_us": 203,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7693,
+            "observe_us": 3,
+            "module_load_us": 550
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 57,
+            "handler_us": 76,
+            "worker_queue_us": 328,
+            "operation_us": 20307,
+            "main_queue_us": 8147,
+            "encode_us": 164,
+            "reply_send_us": 63,
+            "total_us": 29142
+          }
+        },
+        {
+          "pid": "5368",
+          "buckets_us": {
+            "channel_and_dispatch": 39390,
+            "native_prepare": 3445,
+            "native_read": 349,
+            "native_envelope_verify": 13434,
+            "native_file_digest": 128,
+            "native_other": 487,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 54,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 96,
+            "dart_zip_structure": 26,
+            "dart_entry_sha256": 132,
+            "dart_manifest_other": 77,
+            "mark_booting": 7630,
+            "observe": 3,
+            "module_load": 397,
+            "resources": 225,
+            "dart_verify_other": 14
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "lean",
+            "budget_us": 85000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3445,
+              "read": 349,
+              "envelope_verify": 13434,
+              "file_digest": 128,
+              "total": 17843
+            },
+            "dart_channel": {
+              "encode": 38,
+              "callback_wait": 57032,
+              "decode": 55,
+              "total": 57125
+            },
+            "verify": {
+              "envelope_fields_us": 54,
+              "zip_crc_us": 96,
+              "zip_total_us": 122,
+              "entry_sha256_us": 132,
+              "manifest_and_entries_us": 209,
+              "file_bytes": 11459,
+              "module_bytes": 8628,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7630,
+            "observe_us": 3,
+            "module_load_us": 397
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 42,
+            "handler_us": 44,
+            "worker_queue_us": 328,
+            "operation_us": 17911,
+            "main_queue_us": 3014,
+            "encode_us": 148,
+            "reply_send_us": 63,
+            "total_us": 21550
+          }
+        }
+      ],
+      "breakdown": {
+        "channel_and_dispatch": {
+          "mean_ms": 40.712900000000005,
+          "median_ms": 40.1235,
+          "min_ms": 33.181,
+          "max_ms": 46.717,
+          "percent_of_total": 62.30653980769143
+        },
+        "native_prepare": {
+          "mean_ms": 3.1753,
+          "median_ms": 3.191,
+          "min_ms": 2.229,
+          "max_ms": 3.96,
+          "percent_of_total": 4.859441500147683
+        },
+        "native_read": {
+          "mean_ms": 0.2402,
+          "median_ms": 0.204,
+          "min_ms": 0.071,
+          "max_ms": 0.487,
+          "percent_of_total": 0.36759923419376855
+        },
+        "native_envelope_verify": {
+          "mean_ms": 11.704,
+          "median_ms": 11.585,
+          "min_ms": 8.986,
+          "max_ms": 15.762,
+          "percent_of_total": 17.911662935070222
+        },
+        "native_file_digest": {
+          "mean_ms": 0.1271,
+          "median_ms": 0.127,
+          "min_ms": 0.1,
+          "max_ms": 0.171,
+          "percent_of_total": 0.19451233416331382
+        },
+        "native_other": {
+          "mean_ms": 0.7149,
+          "median_ms": 0.503,
+          "min_ms": 0.329,
+          "max_ms": 2.032,
+          "percent_of_total": 1.0940744901129273
+        },
+        "dart_read_file": {
+          "mean_ms": 0.0,
+          "median_ms": 0.0,
+          "min_ms": 0.0,
+          "max_ms": 0.0,
+          "percent_of_total": 0.0
+        },
+        "dart_envelope_fields": {
+          "mean_ms": 0.0653,
+          "median_ms": 0.0615,
+          "min_ms": 0.053,
+          "max_ms": 0.111,
+          "percent_of_total": 0.09993434634826431
+        },
+        "dart_payload_sha256": {
+          "mean_ms": 0.0,
+          "median_ms": 0.0,
+          "min_ms": 0.0,
+          "max_ms": 0.0,
+          "percent_of_total": 0.0
+        },
+        "dart_file_sha256": {
+          "mean_ms": 0.0,
+          "median_ms": 0.0,
+          "min_ms": 0.0,
+          "max_ms": 0.0,
+          "percent_of_total": 0.0
+        },
+        "dart_zip_crc": {
+          "mean_ms": 0.1108,
+          "median_ms": 0.097,
+          "min_ms": 0.096,
+          "max_ms": 0.211,
+          "percent_of_total": 0.16956700728005641
+        },
+        "dart_zip_structure": {
+          "mean_ms": 0.032799999999999996,
+          "median_ms": 0.026,
+          "min_ms": 0.021,
+          "max_ms": 0.076,
+          "percent_of_total": 0.050196731396984204
+        },
+        "dart_entry_sha256": {
+          "mean_ms": 0.1507,
+          "median_ms": 0.128,
+          "min_ms": 0.126,
+          "max_ms": 0.348,
+          "percent_of_total": 0.2306294945587049
+        },
+        "dart_manifest_other": {
+          "mean_ms": 0.0846,
+          "median_ms": 0.0775,
+          "min_ms": 0.064,
+          "max_ms": 0.167,
+          "percent_of_total": 0.12947083768856293
+        },
+        "mark_booting": {
+          "mean_ms": 7.4704,
+          "median_ms": 7.503,
+          "min_ms": 6.67,
+          "max_ms": 7.729,
+          "percent_of_total": 11.432611653293625
+        },
+        "observe": {
+          "mean_ms": 0.0036,
+          "median_ms": 0.004,
+          "min_ms": 0.003,
+          "max_ms": 0.004,
+          "percent_of_total": 0.005509397348449487
+        },
+        "module_load": {
+          "mean_ms": 0.4721,
+          "median_ms": 0.4185,
+          "min_ms": 0.397,
+          "max_ms": 0.801,
+          "percent_of_total": 0.7224962467230563
+        },
+        "resources": {
+          "mean_ms": 0.26180000000000003,
+          "median_ms": 0.2305,
+          "min_ms": 0.224,
+          "max_ms": 0.449,
+          "percent_of_total": 0.4006556182844655
+        },
+        "dart_verify_other": {
+          "mean_ms": 0.016399999999999998,
+          "median_ms": 0.014,
+          "min_ms": 0.013,
+          "max_ms": 0.032,
+          "percent_of_total": 0.025098365698492102
+        }
+      },
+      "channel_stages": {
+        "decode_us": {
+          "mean_ms": 0.0544,
+          "median_ms": 0.054,
+          "min_ms": 0.042,
+          "max_ms": 0.065
+        },
+        "handler_us": {
+          "mean_ms": 0.0706,
+          "median_ms": 0.0665,
+          "min_ms": 0.044,
+          "max_ms": 0.105
+        },
+        "worker_queue_us": {
+          "mean_ms": 0.4466,
+          "median_ms": 0.429,
+          "min_ms": 0.308,
+          "max_ms": 0.799
+        },
+        "operation_us": {
+          "mean_ms": 16.0371,
+          "median_ms": 16.5935,
+          "min_ms": 12.622,
+          "max_ms": 20.307
+        },
+        "main_queue_us": {
+          "mean_ms": 4.5978,
+          "median_ms": 4.0335,
+          "min_ms": 1.888,
+          "max_ms": 8.147
+        },
+        "encode_us": {
+          "mean_ms": 0.173,
+          "median_ms": 0.164,
+          "min_ms": 0.144,
+          "max_ms": 0.292
+        },
+        "reply_send_us": {
+          "mean_ms": 0.063,
+          "median_ms": 0.062,
+          "min_ms": 0.049,
+          "max_ms": 0.105
+        },
+        "total_us": {
+          "mean_ms": 21.4425,
+          "median_ms": 21.3845,
+          "min_ms": 17.565,
+          "max_ms": 29.142
+        }
+      },
+      "native_lock_wait": {
+        "mean_ms": 0.0,
+        "median_ms": 0.0,
+        "min_ms": 0.0,
+        "max_ms": 0.0
+      },
+      "outside_java_channel": {
+        "mean_ms": 35.2319,
+        "median_ms": 35.6315,
+        "min_ms": 28.245,
+        "max_ms": 38.804
+      },
+      "dart_channel_stages": {
+        "encode": {
+          "mean_ms": 0.041299999999999996,
+          "median_ms": 0.0425,
+          "min_ms": 0.031,
+          "max_ms": 0.048
+        },
+        "callback_wait": {
+          "mean_ms": 56.4501,
+          "median_ms": 56.9215,
+          "min_ms": 45.613,
+          "max_ms": 64.511
+        },
+        "decode": {
+          "mean_ms": 0.0565,
+          "median_ms": 0.0535,
+          "min_ms": 0.051,
+          "max_ms": 0.084
+        },
+        "total": {
+          "mean_ms": 56.5479,
+          "median_ms": 57.016,
+          "min_ms": 45.711,
+          "max_ms": 64.612
+        }
+      }
+    },
+    "whole": {
+      "samples": 10,
+      "android_total_time_median_ms": 456.0,
+      "original_total_time_median_ms": 273.0,
+      "stages": {
+        "payload_us": {
+          "mean_ms": 70.55260000000001,
+          "median_ms": 70.6915,
+          "min_ms": 65.44,
+          "max_ms": 77.303,
+          "percent_of_total": 34.27189361385865
+        },
+        "verify_us": {
+          "mean_ms": 38.861599999999996,
+          "median_ms": 38.6895,
+          "min_ms": 38.598,
+          "max_ms": 40.107,
+          "percent_of_total": 18.877555481503574
+        },
+        "load_and_handshake_us": {
+          "mean_ms": 96.1704,
+          "median_ms": 96.0175,
+          "min_ms": 93.519,
+          "max_ms": 98.684,
+          "percent_of_total": 46.716091506227
+        },
+        "resources_us": {
+          "mean_ms": 0.2768,
+          "median_ms": 0.266,
+          "min_ms": 0.246,
+          "max_ms": 0.328,
+          "percent_of_total": 0.13445939841077542
+        },
+        "total_us": {
+          "mean_ms": 205.8614,
+          "median_ms": 204.609,
+          "min_ms": 202.032,
+          "max_ms": 213.255,
+          "percent_of_total": 100.0
+        }
+      },
+      "budget_us": 200000,
+      "budget_policy": "lean-85ms-whole-200ms-v1",
+      "budget_passed": false,
+      "profiles": [
+        {
+          "pid": "8087",
+          "buckets_us": {
+            "channel_and_dispatch": 45864,
+            "native_prepare": 3384,
+            "native_read": 3176,
+            "native_envelope_verify": 16061,
+            "native_file_digest": 1212,
+            "native_other": 1541,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 69,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15757,
+            "dart_zip_structure": 40,
+            "dart_entry_sha256": 22711,
+            "dart_manifest_other": 130,
+            "mark_booting": 8313,
+            "observe": 3,
+            "module_load": 85798,
+            "resources": 246,
+            "dart_verify_other": 23
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3384,
+              "read": 3176,
+              "envelope_verify": 16061,
+              "file_digest": 1212,
+              "total": 25374
+            },
+            "dart_channel": {
+              "encode": 39,
+              "callback_wait": 70990,
+              "decode": 70,
+              "total": 71099
+            },
+            "verify": {
+              "envelope_fields_us": 69,
+              "zip_crc_us": 15757,
+              "zip_total_us": 15797,
+              "entry_sha256_us": 22711,
+              "manifest_and_entries_us": 22841,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 8313,
+            "observe_us": 3,
+            "module_load_us": 85798
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 54,
+            "handler_us": 103,
+            "worker_queue_us": 445,
+            "operation_us": 25441,
+            "main_queue_us": 7699,
+            "encode_us": 1813,
+            "reply_send_us": 651,
+            "total_us": 36206
+          }
+        },
+        {
+          "pid": "8209",
+          "buckets_us": {
+            "channel_and_dispatch": 41622,
+            "native_prepare": 3251,
+            "native_read": 6505,
+            "native_envelope_verify": 18009,
+            "native_file_digest": 1403,
+            "native_other": 438,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 54,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15787,
+            "dart_zip_structure": 39,
+            "dart_entry_sha256": 22594,
+            "dart_manifest_other": 109,
+            "mark_booting": 8030,
+            "observe": 4,
+            "module_load": 87492,
+            "resources": 264,
+            "dart_verify_other": 15
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3251,
+              "read": 6505,
+              "envelope_verify": 18009,
+              "file_digest": 1403,
+              "total": 29606
+            },
+            "dart_channel": {
+              "encode": 43,
+              "callback_wait": 71017,
+              "decode": 57,
+              "total": 71117
+            },
+            "verify": {
+              "envelope_fields_us": 54,
+              "zip_crc_us": 15787,
+              "zip_total_us": 15826,
+              "entry_sha256_us": 22594,
+              "manifest_and_entries_us": 22703,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 8030,
+            "observe_us": 4,
+            "module_load_us": 87492
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 49,
+            "handler_us": 91,
+            "worker_queue_us": 322,
+            "operation_us": 29666,
+            "main_queue_us": 1707,
+            "encode_us": 2121,
+            "reply_send_us": 748,
+            "total_us": 34704
+          }
+        },
+        {
+          "pid": "8357",
+          "buckets_us": {
+            "channel_and_dispatch": 44504,
+            "native_prepare": 3033,
+            "native_read": 4875,
+            "native_envelope_verify": 16092,
+            "native_file_digest": 1227,
+            "native_other": 441,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 63,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15877,
+            "dart_zip_structure": 32,
+            "dart_entry_sha256": 22554,
+            "dart_manifest_other": 105,
+            "mark_booting": 7872,
+            "observe": 4,
+            "module_load": 87589,
+            "resources": 266,
+            "dart_verify_other": 16
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3033,
+              "read": 4875,
+              "envelope_verify": 16092,
+              "file_digest": 1227,
+              "total": 25668
+            },
+            "dart_channel": {
+              "encode": 34,
+              "callback_wait": 69964,
+              "decode": 64,
+              "total": 70062
+            },
+            "verify": {
+              "envelope_fields_us": 63,
+              "zip_crc_us": 15877,
+              "zip_total_us": 15909,
+              "entry_sha256_us": 22554,
+              "manifest_and_entries_us": 22659,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7872,
+            "observe_us": 4,
+            "module_load_us": 87589
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 55,
+            "handler_us": 66,
+            "worker_queue_us": 345,
+            "operation_us": 25733,
+            "main_queue_us": 5370,
+            "encode_us": 2135,
+            "reply_send_us": 766,
+            "total_us": 34470
+          }
+        },
+        {
+          "pid": "8551",
+          "buckets_us": {
+            "channel_and_dispatch": 46282,
+            "native_prepare": 2152,
+            "native_read": 6855,
+            "native_envelope_verify": 13586,
+            "native_file_digest": 1416,
+            "native_other": 485,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 60,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 17174,
+            "dart_zip_structure": 53,
+            "dart_entry_sha256": 22666,
+            "dart_manifest_other": 123,
+            "mark_booting": 5936,
+            "observe": 3,
+            "module_load": 87580,
+            "resources": 266,
+            "dart_verify_other": 31
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2152,
+              "read": 6855,
+              "envelope_verify": 13586,
+              "file_digest": 1416,
+              "total": 24494
+            },
+            "dart_channel": {
+              "encode": 43,
+              "callback_wait": 70508,
+              "decode": 67,
+              "total": 70618
+            },
+            "verify": {
+              "envelope_fields_us": 60,
+              "zip_crc_us": 17174,
+              "zip_total_us": 17227,
+              "entry_sha256_us": 22666,
+              "manifest_and_entries_us": 22789,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 5936,
+            "observe_us": 3,
+            "module_load_us": 87580
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 53,
+            "handler_us": 101,
+            "worker_queue_us": 617,
+            "operation_us": 24550,
+            "main_queue_us": 4794,
+            "encode_us": 2501,
+            "reply_send_us": 784,
+            "total_us": 33400
+          }
+        },
+        {
+          "pid": "8739",
+          "buckets_us": {
+            "channel_and_dispatch": 48130,
+            "native_prepare": 3317,
+            "native_read": 5967,
+            "native_envelope_verify": 17580,
+            "native_file_digest": 1288,
+            "native_other": 1021,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 56,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15788,
+            "dart_zip_structure": 34,
+            "dart_entry_sha256": 22663,
+            "dart_manifest_other": 114,
+            "mark_booting": 7902,
+            "observe": 4,
+            "module_load": 89121,
+            "resources": 252,
+            "dart_verify_other": 18
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3317,
+              "read": 5967,
+              "envelope_verify": 17580,
+              "file_digest": 1288,
+              "total": 29173
+            },
+            "dart_channel": {
+              "encode": 57,
+              "callback_wait": 77079,
+              "decode": 61,
+              "total": 77197
+            },
+            "verify": {
+              "envelope_fields_us": 56,
+              "zip_crc_us": 15788,
+              "zip_total_us": 15822,
+              "entry_sha256_us": 22663,
+              "manifest_and_entries_us": 22777,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7902,
+            "observe_us": 4,
+            "module_load_us": 89121
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 51,
+            "handler_us": 100,
+            "worker_queue_us": 292,
+            "operation_us": 29234,
+            "main_queue_us": 7746,
+            "encode_us": 2144,
+            "reply_send_us": 801,
+            "total_us": 40368
+          }
+        },
+        {
+          "pid": "8893",
+          "buckets_us": {
+            "channel_and_dispatch": 44372,
+            "native_prepare": 3108,
+            "native_read": 7985,
+            "native_envelope_verify": 15883,
+            "native_file_digest": 1431,
+            "native_other": 347,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 60,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15844,
+            "dart_zip_structure": 39,
+            "dart_entry_sha256": 22647,
+            "dart_manifest_other": 117,
+            "mark_booting": 7876,
+            "observe": 3,
+            "module_load": 88630,
+            "resources": 265,
+            "dart_verify_other": 16
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3108,
+              "read": 7985,
+              "envelope_verify": 15883,
+              "file_digest": 1431,
+              "total": 28754
+            },
+            "dart_channel": {
+              "encode": 43,
+              "callback_wait": 72910,
+              "decode": 58,
+              "total": 73011
+            },
+            "verify": {
+              "envelope_fields_us": 60,
+              "zip_crc_us": 15844,
+              "zip_total_us": 15883,
+              "entry_sha256_us": 22647,
+              "manifest_and_entries_us": 22764,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7876,
+            "observe_us": 3,
+            "module_load_us": 88630
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 42,
+            "handler_us": 42,
+            "worker_queue_us": 567,
+            "operation_us": 28817,
+            "main_queue_us": 4172,
+            "encode_us": 2168,
+            "reply_send_us": 739,
+            "total_us": 36547
+          }
+        },
+        {
+          "pid": "9037",
+          "buckets_us": {
+            "channel_and_dispatch": 43032,
+            "native_prepare": 1574,
+            "native_read": 3394,
+            "native_envelope_verify": 15582,
+            "native_file_digest": 1559,
+            "native_other": 299,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 54,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15835,
+            "dart_zip_structure": 30,
+            "dart_entry_sha256": 22665,
+            "dart_manifest_other": 102,
+            "mark_booting": 7942,
+            "observe": 4,
+            "module_load": 90715,
+            "resources": 314,
+            "dart_verify_other": 20
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 1574,
+              "read": 3394,
+              "envelope_verify": 15582,
+              "file_digest": 1559,
+              "total": 22408
+            },
+            "dart_channel": {
+              "encode": 44,
+              "callback_wait": 65226,
+              "decode": 58,
+              "total": 65328
+            },
+            "verify": {
+              "envelope_fields_us": 54,
+              "zip_crc_us": 15835,
+              "zip_total_us": 15865,
+              "entry_sha256_us": 22665,
+              "manifest_and_entries_us": 22767,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7942,
+            "observe_us": 4,
+            "module_load_us": 90715
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 52,
+            "handler_us": 69,
+            "worker_queue_us": 415,
+            "operation_us": 22472,
+            "main_queue_us": 652,
+            "encode_us": 2116,
+            "reply_send_us": 768,
+            "total_us": 26544
+          }
+        },
+        {
+          "pid": "9215",
+          "buckets_us": {
+            "channel_and_dispatch": 41977,
+            "native_prepare": 3278,
+            "native_read": 5854,
+            "native_envelope_verify": 15105,
+            "native_file_digest": 1441,
+            "native_other": 329,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 53,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15843,
+            "dart_zip_structure": 34,
+            "dart_entry_sha256": 22590,
+            "dart_manifest_other": 120,
+            "mark_booting": 8183,
+            "observe": 4,
+            "module_load": 86909,
+            "resources": 293,
+            "dart_verify_other": 19
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 3278,
+              "read": 5854,
+              "envelope_verify": 15105,
+              "file_digest": 1441,
+              "total": 26007
+            },
+            "dart_channel": {
+              "encode": 43,
+              "callback_wait": 67752,
+              "decode": 58,
+              "total": 67853
+            },
+            "verify": {
+              "envelope_fields_us": 53,
+              "zip_crc_us": 15843,
+              "zip_total_us": 15877,
+              "entry_sha256_us": 22590,
+              "manifest_and_entries_us": 22710,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 8183,
+            "observe_us": 4,
+            "module_load_us": 86909
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 56,
+            "handler_us": 72,
+            "worker_queue_us": 520,
+            "operation_us": 26072,
+            "main_queue_us": 2452,
+            "encode_us": 1952,
+            "reply_send_us": 675,
+            "total_us": 31799
+          }
+        },
+        {
+          "pid": "9386",
+          "buckets_us": {
+            "channel_and_dispatch": 46757,
+            "native_prepare": 2090,
+            "native_read": 3289,
+            "native_envelope_verify": 13753,
+            "native_file_digest": 1438,
+            "native_other": 325,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 68,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 15797,
+            "dart_zip_structure": 35,
+            "dart_entry_sha256": 22619,
+            "dart_manifest_other": 108,
+            "mark_booting": 8046,
+            "observe": 4,
+            "module_load": 89053,
+            "resources": 328,
+            "dart_verify_other": 15
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2090,
+              "read": 3289,
+              "envelope_verify": 13753,
+              "file_digest": 1438,
+              "total": 20895
+            },
+            "dart_channel": {
+              "encode": 30,
+              "callback_wait": 67453,
+              "decode": 67,
+              "total": 67550
+            },
+            "verify": {
+              "envelope_fields_us": 68,
+              "zip_crc_us": 15797,
+              "zip_total_us": 15832,
+              "entry_sha256_us": 22619,
+              "manifest_and_entries_us": 22727,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 8046,
+            "observe_us": 4,
+            "module_load_us": 89053
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 55,
+            "handler_us": 71,
+            "worker_queue_us": 391,
+            "operation_us": 20957,
+            "main_queue_us": 4602,
+            "encode_us": 2196,
+            "reply_send_us": 728,
+            "total_us": 29000
+          }
+        },
+        {
+          "pid": "9526",
+          "buckets_us": {
+            "channel_and_dispatch": 44686,
+            "native_prepare": 2827,
+            "native_read": 3814,
+            "native_envelope_verify": 17526,
+            "native_file_digest": 1428,
+            "native_other": 326,
+            "dart_read_file": 0,
+            "dart_envelope_fields": 67,
+            "dart_payload_sha256": 0,
+            "dart_file_sha256": 0,
+            "dart_zip_crc": 16213,
+            "dart_zip_structure": 41,
+            "dart_entry_sha256": 22675,
+            "dart_manifest_other": 119,
+            "mark_booting": 7332,
+            "observe": 4,
+            "module_load": 91348,
+            "resources": 274,
+            "dart_verify_other": 16
+          },
+          "raw": {
+            "schema": 2,
+            "transport": "native-bytes-v1",
+            "tier": "whole",
+            "budget_us": 200000,
+            "native": {
+              "lock_wait": 0,
+              "prepare": 2827,
+              "read": 3814,
+              "envelope_verify": 17526,
+              "file_digest": 1428,
+              "total": 25921
+            },
+            "dart_channel": {
+              "encode": 44,
+              "callback_wait": 70403,
+              "decode": 59,
+              "total": 70506
+            },
+            "verify": {
+              "envelope_fields_us": 67,
+              "zip_crc_us": 16213,
+              "zip_total_us": 16254,
+              "entry_sha256_us": 22675,
+              "manifest_and_entries_us": 22794,
+              "file_bytes": 2174015,
+              "module_bytes": 2170998,
+              "entry_count": 5
+            },
+            "mark_booting_us": 7332,
+            "observe_us": 4,
+            "module_load_us": 91348
+          },
+          "channel": {
+            "schema": 1,
+            "decode_us": 81,
+            "handler_us": 99,
+            "worker_queue_us": 426,
+            "operation_us": 25981,
+            "main_queue_us": 5204,
+            "encode_us": 2277,
+            "reply_send_us": 799,
+            "total_us": 34867
+          }
+        }
+      ],
+      "breakdown": {
+        "channel_and_dispatch": {
+          "mean_ms": 44.7226,
+          "median_ms": 44.595,
+          "min_ms": 41.622,
+          "max_ms": 48.13,
+          "percent_of_total": 21.724616659558325
+        },
+        "native_prepare": {
+          "mean_ms": 2.8014,
+          "median_ms": 3.0705,
+          "min_ms": 1.574,
+          "max_ms": 3.384,
+          "percent_of_total": 1.3608184924420024
+        },
+        "native_read": {
+          "mean_ms": 5.171399999999999,
+          "median_ms": 5.3645,
+          "min_ms": 3.176,
+          "max_ms": 7.985,
+          "percent_of_total": 2.5120785149620084
+        },
+        "native_envelope_verify": {
+          "mean_ms": 15.9177,
+          "median_ms": 15.972,
+          "min_ms": 13.586,
+          "max_ms": 18.009,
+          "percent_of_total": 7.732241206947976
+        },
+        "native_file_digest": {
+          "mean_ms": 1.3842999999999999,
+          "median_ms": 1.422,
+          "min_ms": 1.212,
+          "max_ms": 1.559,
+          "percent_of_total": 0.6724427211706516
+        },
+        "native_other": {
+          "mean_ms": 0.5552,
+          "median_ms": 0.3925,
+          "min_ms": 0.299,
+          "max_ms": 1.541,
+          "percent_of_total": 0.2696960187776825
+        },
+        "dart_read_file": {
+          "mean_ms": 0.0,
+          "median_ms": 0.0,
+          "min_ms": 0.0,
+          "max_ms": 0.0,
+          "percent_of_total": 0.0
+        },
+        "dart_envelope_fields": {
+          "mean_ms": 0.060399999999999995,
+          "median_ms": 0.06,
+          "min_ms": 0.053,
+          "max_ms": 0.069,
+          "percent_of_total": 0.02934012884396978
+        },
+        "dart_payload_sha256": {
+          "mean_ms": 0.0,
+          "median_ms": 0.0,
+          "min_ms": 0.0,
+          "max_ms": 0.0,
+          "percent_of_total": 0.0
+        },
+        "dart_file_sha256": {
+          "mean_ms": 0.0,
+          "median_ms": 0.0,
+          "min_ms": 0.0,
+          "max_ms": 0.0,
+          "percent_of_total": 0.0
+        },
+        "dart_zip_crc": {
+          "mean_ms": 15.9915,
+          "median_ms": 15.839,
+          "min_ms": 15.757,
+          "max_ms": 17.174,
+          "percent_of_total": 7.768090569674549
+        },
+        "dart_zip_structure": {
+          "mean_ms": 0.037700000000000004,
+          "median_ms": 0.037,
+          "min_ms": 0.03,
+          "max_ms": 0.053,
+          "percent_of_total": 0.018313292341351997
+        },
+        "dart_entry_sha256": {
+          "mean_ms": 22.6384,
+          "median_ms": 22.655,
+          "min_ms": 22.554,
+          "max_ms": 22.711,
+          "percent_of_total": 10.996913457306713
+        },
+        "dart_manifest_other": {
+          "mean_ms": 0.1147,
+          "median_ms": 0.1155,
+          "min_ms": 0.102,
+          "max_ms": 0.13,
+          "percent_of_total": 0.055717098980187646
+        },
+        "mark_booting": {
+          "mean_ms": 7.7432,
+          "median_ms": 7.922,
+          "min_ms": 5.936,
+          "max_ms": 8.313,
+          "percent_of_total": 3.761365656699119
+        },
+        "observe": {
+          "mean_ms": 0.0037,
+          "median_ms": 0.004,
+          "min_ms": 0.003,
+          "max_ms": 0.004,
+          "percent_of_total": 0.0017973257735544403
+        },
+        "module_load": {
+          "mean_ms": 88.4235,
+          "median_ms": 88.1095,
+          "min_ms": 85.798,
+          "max_ms": 91.348,
+          "percent_of_total": 42.95292852375434
+        },
+        "resources": {
+          "mean_ms": 0.2768,
+          "median_ms": 0.266,
+          "min_ms": 0.246,
+          "max_ms": 0.328,
+          "percent_of_total": 0.13445939841077542
+        },
+        "dart_verify_other": {
+          "mean_ms": 0.0189,
+          "median_ms": 0.017,
+          "min_ms": 0.015,
+          "max_ms": 0.031,
+          "percent_of_total": 0.009180934356805113
+        }
+      },
+      "channel_stages": {
+        "decode_us": {
+          "mean_ms": 0.054799999999999995,
+          "median_ms": 0.0535,
+          "min_ms": 0.042,
+          "max_ms": 0.081
+        },
+        "handler_us": {
+          "mean_ms": 0.0814,
+          "median_ms": 0.0815,
+          "min_ms": 0.042,
+          "max_ms": 0.103
+        },
+        "worker_queue_us": {
+          "mean_ms": 0.434,
+          "median_ms": 0.4205,
+          "min_ms": 0.292,
+          "max_ms": 0.617
+        },
+        "operation_us": {
+          "mean_ms": 25.8923,
+          "median_ms": 25.857,
+          "min_ms": 20.957,
+          "max_ms": 29.666
+        },
+        "main_queue_us": {
+          "mean_ms": 4.4398,
+          "median_ms": 4.698,
+          "min_ms": 0.652,
+          "max_ms": 7.746
+        },
+        "encode_us": {
+          "mean_ms": 2.1423,
+          "median_ms": 2.1395,
+          "min_ms": 1.813,
+          "max_ms": 2.501
+        },
+        "reply_send_us": {
+          "mean_ms": 0.7459,
+          "median_ms": 0.757,
+          "min_ms": 0.651,
+          "max_ms": 0.801
+        },
+        "total_us": {
+          "mean_ms": 33.7905,
+          "median_ms": 34.587,
+          "min_ms": 26.544,
+          "max_ms": 40.368
+        }
+      },
+      "native_lock_wait": {
+        "mean_ms": 0.0,
+        "median_ms": 0.0,
+        "min_ms": 0.0,
+        "max_ms": 0.0
+      },
+      "outside_java_channel": {
+        "mean_ms": 36.7621,
+        "median_ms": 36.5515,
+        "min_ms": 35.032,
+        "max_ms": 38.896
+      },
+      "dart_channel_stages": {
+        "encode": {
+          "mean_ms": 0.042,
+          "median_ms": 0.043,
+          "min_ms": 0.03,
+          "max_ms": 0.057
+        },
+        "callback_wait": {
+          "mean_ms": 70.33019999999999,
+          "median_ms": 70.4555,
+          "min_ms": 65.226,
+          "max_ms": 77.079
+        },
+        "decode": {
+          "mean_ms": 0.0619,
+          "median_ms": 0.06,
+          "min_ms": 0.057,
+          "max_ms": 0.07
+        },
+        "total": {
+          "mean_ms": 70.4341,
+          "median_ms": 70.562,
+          "min_ms": 65.328,
+          "max_ms": 77.197
+        }
+      }
+    }
+  },
+  "whole_minus_lean_ms": {
+    "payload_us": 13.878200000000014,
+    "verify_us": 38.400999999999996,
+    "load_and_handshake_us": 88.2243,
+    "resources_us": 0.014999999999999958,
+    "total_us": 140.51850000000002
+  }
+}

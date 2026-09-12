@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "input_and_output_sha256": {
+    "inputs/handoff.json": "3e28b4fad9622669889c236ff2389b4115b9a4122d806841dc0c32cd71b3b707",
+    "inputs/runner.py": "080c83f35cefc2bade36b0d64e4e6fcea56a14ee5f0466876352d164c249aa0d",
+    "inputs/source.json": "66f33cff1e6839c4752f33cb5f75fbc95d482eb6b1ed1ab3af310344bd9c7e35",
+    "inputs/artifacts/supported_versions.txt": "838d19398c494c46b46ffb22ba449d2e73728dd2b71f6bd17bc723b170b1659a",
+    "inputs/baseline-store/release-default-1-arm64-v8a.json": "2f354f9ffb09e532a0b89274ed20416b80b17d9543adff3df26c62acc44d4e45",
+    "inputs/baseline-store/.baseline-store.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "inputs/baseline-store/baseline-83271f6fd8fd22e6705c70c3458d5f9b2063842666dd78d1195ace53c2902731.tar.zst": "fc312f9dbad662fe015872f8c09933086f88c20d6bab238252e5c42d2b5f91e6",
+    "inputs/artifacts/flutter-3.47.2/flutter_embedding_release.jar": "79d51115c9154ae201a35d8f91c1bb8acab880e67895f1f697c889f8e1149bff",
+    "inputs/artifacts/flutter-3.47.2/libflutter-arm64_v8a-release.jar": "fbc4ac7992387637a6c7ad73e6f0e3f1c887a8b9671ba1a9a8b381e72ba1feca",
+    "inputs/artifacts/flutter-3.47.2/engine.manifest.json": "89469cf90671ab8347cbcb907e26dc8eb84e35948c8541e0638a97d995d9e6df",
+    "inputs/artifacts/flutter-3.47.2/gen_snapshot-linux-x64": "cd2d3459ab33e07a3510928a9c5c6d32403cbace1c122cef6aadc131d80d5fcc",
+    "inputs/artifacts/flutter-3.47.2/tools.manifest.json": "7963e7221f4b358d51349b387f5e6e85903288b4f977a744fbb748bb148d2e2c",
+    "inputs/artifacts/flutter-3.47.2/flutter_patcher_tools-3.47.2.dill": "448fd8e8d3bfe52c875a98838a4abc0a022f9256332cc6a0c7deefbbd73753f9",
+    "patch/lean/patch.fptc": "0ead082e7337f8a7d6cefa6cd1a456c3d7eb37cb1b937cdf5f5b1615dc74c449",
+    "patch/whole/patch.fptc": "9f4f0f4b69641a21dfd484b17d71cbadf727251b1cba3cfc3b5fd39692cead12",
+    "patch/lean/patch.json": "5a6afe37759dfd920f64f0aeb18e8bdb052d1bcb0c4703c709b9565d60baeac9",
+    "patch/whole/patch.json": "c58b7d32292e6a45b512950475086426e0bcd696cf35e0a4db38411669978b06",
+    "patch/handoff.json": "9464a1493ee3618e8f4587148486c0f092be2a31d2f0c8315c433fc632ee76fb",
+    "sdk/platform_strong.dill": "1ae5541b4d93fb1de5a6af4a6bcfde4430f5fe5d03ad42f35a2da2acfa02fd0e"
+  },
+  "original_build_root": "/root/.flutter_patcher/source-regressions/20260911-225827-24eb92fe",
+  "source_in_rootfs": "/workspace/source",
+  "sdk_in_rootfs": "/toolchain/flutter",
+  "independent_machine": false,
+  "host_namespaces": {
+    "mnt": "mnt:[4026531841]",
+    "pid": "pid:[4026531836]",
+    "net": "net:[4026531840]"
+  },
+  "provision_cache_had_baselines": false
+}

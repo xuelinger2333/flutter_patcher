@@ -1,0 +1,17 @@
+{
+  "ssh_host": "gpu",
+  "remote_root": "/root/.flutter_patcher/source-regressions",
+  "flutter": "/root/.flutter_patcher/artifacts-builder/cache/flutter-3.47.2",
+  "version": "3.47.2",
+  "served_artifacts": "/root/.flutter_patcher/wp9-development/served-pinned",
+  "tools_sha256": "448fd8e8d3bfe52c875a98838a4abc0a022f9256332cc6a0c7deefbbd73753f9",
+  "fault_modules": "/root/.flutter_patcher/wp9-development/artifacts/tools/release/fault_modules.py",
+  "fault_modules_sha256": "4189c230779d3513c43939469169a69032598960c17cbef748d50a2e703befef",
+  "build_env": {
+    "ANDROID_HOME": "/opt/android-sdk",
+    "PUB_CACHE": "/root/.flutter_patcher/wp2-development/pub-cache"
+  },
+  "binding": "custom",
+  "serial": "AF2Q025C05004551",
+  "local_dart": "D:/DevTools/flutter/bin/cache/dart-sdk/bin/dart.exe"
+}

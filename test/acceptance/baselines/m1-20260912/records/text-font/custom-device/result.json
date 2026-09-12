@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "cases": [
+    {
+      "id": "valid-lean",
+      "status": "passed",
+      "apply": {
+        "ok": true,
+        "error": null,
+        "message": null
+      },
+      "before": {
+        "revision": "original",
+        "asset": "original",
+        "frame": true,
+        "pid": 30107,
+        "binding": true,
+        "diagnostic": "PatchBootDiagnostic(noPatch, appVc=1)",
+        "version": null
+      },
+      "after": {
+        "revision": "lean",
+        "asset": "lean",
+        "frame": true,
+        "pid": 31774,
+        "binding": true,
+        "diagnostic": "PatchBootDiagnostic(patched, v=bytecode-7, appVc=1, crashes=0, msg=Bytecode first frame)",
+        "version": "bytecode-7"
+      }
+    },
+    {
+      "id": "valid-whole",
+      "status": "passed",
+      "apply": {
+        "ok": true,
+        "error": null,
+        "message": null
+      },
+      "before": {
+        "revision": "original",
+        "asset": "original",
+        "frame": true,
+        "pid": 2320,
+        "binding": true,
+        "diagnostic": "PatchBootDiagnostic(noPatch, appVc=1)",
+        "version": null
+      },
+      "after": {
+        "revision": "whole",
+        "asset": "whole",
+        "frame": true,
+        "pid": 6240,
+        "binding": true,
+        "diagnostic": "PatchBootDiagnostic(patched, v=bytecode-8, appVc=1, crashes=0, msg=Bytecode first frame)",
+        "version": "bytecode-8"
+      }
+    }
+  ],
+  "device": "AF2Q025C05004551",
+  "apk_sha256": "c696814d53396250b8ae30fbb86020f8c98fba931a254dd7082e594f49881b99",
+  "scope": "bytecode_fault_matrix",
+  "api": 36,
+  "abi": "arm64-v8a",
+  "build": "HONOR/MEY-AN00/HNMEY:16/HONORMEY-AN00/10DLDLD175C00E170:user/release-keys",
+  "apk_install": "existing_sha256_verified"
+}

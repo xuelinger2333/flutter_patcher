@@ -1,0 +1,118 @@
+{
+  "unit": "ms",
+  "metric": "Android am start TotalTime",
+  "samples": [
+    294,
+    274,
+    284,
+    278,
+    316,
+    292,
+    300,
+    275,
+    300,
+    287
+  ],
+  "median": 289.5,
+  "p95": 316,
+  "bootstrap": [
+    {
+      "payload_us": 57284,
+      "verify_us": 394,
+      "load_and_handshake_us": 7938,
+      "resources_us": 227,
+      "total_us": 65843
+    },
+    {
+      "payload_us": 51227,
+      "verify_us": 388,
+      "load_and_handshake_us": 7891,
+      "resources_us": 230,
+      "total_us": 59736
+    },
+    {
+      "payload_us": 57036,
+      "verify_us": 419,
+      "load_and_handshake_us": 8141,
+      "resources_us": 229,
+      "total_us": 65825
+    },
+    {
+      "payload_us": 58358,
+      "verify_us": 388,
+      "load_and_handshake_us": 7908,
+      "resources_us": 232,
+      "total_us": 66886
+    },
+    {
+      "payload_us": 63970,
+      "verify_us": 945,
+      "load_and_handshake_us": 7475,
+      "resources_us": 449,
+      "total_us": 72839
+    },
+    {
+      "payload_us": 55087,
+      "verify_us": 411,
+      "load_and_handshake_us": 7930,
+      "resources_us": 231,
+      "total_us": 63659
+    },
+    {
+      "payload_us": 56017,
+      "verify_us": 452,
+      "load_and_handshake_us": 7973,
+      "resources_us": 238,
+      "total_us": 64680
+    },
+    {
+      "payload_us": 45810,
+      "verify_us": 419,
+      "load_and_handshake_us": 7929,
+      "resources_us": 224,
+      "total_us": 54382
+    },
+    {
+      "payload_us": 64722,
+      "verify_us": 391,
+      "load_and_handshake_us": 8246,
+      "resources_us": 333,
+      "total_us": 73692
+    },
+    {
+      "payload_us": 57233,
+      "verify_us": 399,
+      "load_and_handshake_us": 8030,
+      "resources_us": 225,
+      "total_us": 65887
+    }
+  ],
+  "bootstrap_over_85ms": false,
+  "original": {
+    "unit": "ms",
+    "metric": "Android am start TotalTime",
+    "samples": [
+      259,
+      283,
+      278,
+      289,
+      279,
+      274,
+      266,
+      262,
+      258,
+      282
+    ],
+    "median": 276.0,
+    "p95": 289,
+    "bootstrap": [],
+    "bootstrap_over_85ms": false
+  },
+  "median_added_ms": 13.5,
+  "alert_over_85ms": false,
+  "bootstrap_budget_us": 85000,
+  "bootstrap_over_budget": false,
+  "budget_metric": "bootstrap total_us before patched main",
+  "budget_policy": "lean-85ms-whole-200ms-v1",
+  "bootstrap_only_measurement": true
+}

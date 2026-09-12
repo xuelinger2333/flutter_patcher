@@ -1,0 +1,91 @@
+{
+  "scope": "text_font_review",
+  "automated_status": "passed",
+  "visual_review": "pending_user_confirmation",
+  "cases": [
+    {
+      "binding": "standard",
+      "id": "valid-lean",
+      "tier": "lean",
+      "status": "passed",
+      "screenshots": [
+        {
+          "file": "standard-device/valid-lean-before.png",
+          "sha256": "1c7e6fa1a87f2990327463a5d802ff989a52c10bcd24bfe2d2edcd3e7c94113c"
+        },
+        {
+          "file": "standard-device/valid-lean.png",
+          "sha256": "b8a22598f86b81be4ee9b1f583333ec7e11d07d910d7d3695336ce60bec28dea"
+        },
+        {
+          "file": "standard-device/valid-lean-rollback.png",
+          "sha256": "38fdd19366772a52a670d006930639aa1ee2aac0599ba408eaab5144f908b6f4"
+        }
+      ]
+    },
+    {
+      "binding": "standard",
+      "id": "valid-whole",
+      "tier": "whole",
+      "status": "passed",
+      "screenshots": [
+        {
+          "file": "standard-device/valid-whole-before.png",
+          "sha256": "1de5cb23bdc3670e79eaee0c0da4062333231f043324c5e770d0988be4d3db39"
+        },
+        {
+          "file": "standard-device/valid-whole.png",
+          "sha256": "f89ae814711cd9919f410c7b79d86ca1ac94037917382d4482994ebd9fe8eefc"
+        },
+        {
+          "file": "standard-device/valid-whole-rollback.png",
+          "sha256": "63cc8b9bd01d1f6e6a2cfd896c690bc6909c37c88f2f2244d529a9dfab8a55ed"
+        }
+      ]
+    },
+    {
+      "binding": "custom",
+      "id": "valid-lean",
+      "tier": "whole",
+      "status": "passed",
+      "screenshots": [
+        {
+          "file": "custom-device/valid-lean-before.png",
+          "sha256": "e43e92496645604dcf95c775a3f4db2eff09c88839f9eb888b4f5ccd05964998"
+        },
+        {
+          "file": "custom-device/valid-lean.png",
+          "sha256": "8f4edec9695f8da227c1a13014951de4aacf237fa3344adef64267e6a62a1e90"
+        },
+        {
+          "file": "custom-device/valid-lean-rollback.png",
+          "sha256": "5f819aa639f5882b0c2f3c30e87ea1f3c44d287b9a8e03a1068902839f61319b"
+        }
+      ]
+    },
+    {
+      "binding": "custom",
+      "id": "valid-whole",
+      "tier": "whole",
+      "status": "passed",
+      "screenshots": [
+        {
+          "file": "custom-device/valid-whole-before.png",
+          "sha256": "54eb67332806208f1562ea02f8b1c629a294237b93f6fefa2f67ac06b4babad9"
+        },
+        {
+          "file": "custom-device/valid-whole.png",
+          "sha256": "edd45765fa25ac88e7c9c359688f285a05ba1477e8834de6d58db37fc4e89ede"
+        },
+        {
+          "file": "custom-device/valid-whole-rollback-clean.png",
+          "sha256": "8593d0044ab8848c962422f7d22182799a7faae0adfde1158abecf1d525eccc3"
+        }
+      ]
+    }
+  ],
+  "evidence": {
+    "standard": "8e6279d9bb0c9adf7e6885544dcdd52e18a86d22ff381bf3e03a9b272b242fbe",
+    "custom": "b1c960fb1ef424b737fe54a9aad42bd9b96e0d687ae7ffc42144af2f72e29b72"
+  }
+}

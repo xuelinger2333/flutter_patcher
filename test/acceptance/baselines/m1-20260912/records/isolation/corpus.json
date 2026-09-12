@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "fingerprint": "83271f6fd8fd22e6705c70c3458d5f9b2063842666dd78d1195ace53c2902731",
+  "seq": 7,
+  "public_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+  "cases": [
+    {
+      "id": "valid-lean",
+      "file": "lean.fptc",
+      "layer": "accept",
+      "reason": "",
+      "bytes": 2153062,
+      "sha256": "0ead082e7337f8a7d6cefa6cd1a456c3d7eb37cb1b937cdf5f5b1615dc74c449",
+      "tier": "whole",
+      "revision": "lean"
+    },
+    {
+      "id": "valid-whole",
+      "file": "whole.fptc",
+      "layer": "accept",
+      "reason": "",
+      "bytes": 2153957,
+      "sha256": "9f4f0f4b69641a21dfd484b17d71cbadf727251b1cba3cfc3b5fd39692cead12",
+      "tier": "whole",
+      "revision": "whole"
+    }
+  ],
+  "device_verified": false,
+  "scope": "isolated_environment_two_control_roundtrips"
+}
