@@ -35,7 +35,8 @@ def configure_android(project):
 
 
 def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_store,
-            handoff=None, custom_binding=False, source_identity=None):
+            handoff=None, custom_binding=False, source_identity=None,
+            font_original=None, font_replacement=None):
     out.mkdir(parents=True, exist_ok=False)
     dart = flutter / 'bin/cache/dart-sdk/bin/dart'
     cli = repo / 'flutter_patcher_cli/bin/flutter_patcher.dart'
@@ -58,6 +59,13 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         'environment': {'sdk': '>=3.13.0 <4.0.0'}, 'dependencies': dependencies,
         'flutter': {'uses-material-design': True, 'assets': ['assets/message.txt']}}
     source = (repo / 'test/acceptance/app/main.dart').read_text()
+    if font_original is not None:
+        if font_replacement is None:
+            raise ValueError('Both review fonts are required')
+        source = (repo / 'test/acceptance/app/font_main.dart').read_text()
+        specification['flutter']['fonts'] = [{'family': 'ReviewText', 'fonts': [{'asset': 'fonts/review.ttf'}]}]
+        (project / 'fonts').mkdir()
+        shutil.copyfile(font_original, project / 'fonts/review.ttf')
     source = re.sub(r'  if \(customBinding\) \{.*?\n  \} else \{.*?\n  \}',
                     '  AcceptanceBinding();' if custom_binding else
                     '  WidgetsFlutterBinding.ensureInitialized();', source, count=1, flags=re.S)
@@ -91,6 +99,10 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         if built['status'] != 'build_archived' or not built['runtime_bootstrap']:
             raise AssertionError('Formal archived bootstrap build required')
         report.update(fingerprint=built['fingerprint'], build=built)
+        if font_original is not None:
+            # Font review needs the formal host, not additional size/legacy APKs.
+            (out / 'handoff.json').write_text(json.dumps(report, indent=2) + '\n')
+            return report
         # Matched ordinary-build control, same SDK/project/ABI. No patcher bootstrap.
         call([flutter / 'bin/flutter', 'build', 'apk', '--release', '--target-platform', 'android-arm64'],
              project, out / 'ordinary-build.log')
@@ -124,6 +136,8 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         report['independent_machine'] = prior['machine_id'] != report['machine_id']
         report['fingerprint'] = prior['fingerprint']
         for tier, seq in [('lean', 7), ('whole', 8)]:
+            if font_original is not None:
+                shutil.copyfile(font_replacement, project / 'fonts/review.ttf')
             main = source.replace("const revision = 'original';", f"const revision = '{tier}';")
             # Lean retains the baseline getter and still repacks its font subset.
             # New SDK getters/constructors legitimately require whole fallback;

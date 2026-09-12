@@ -14,7 +14,8 @@ import urllib.error
 import urllib.request
 
 
-def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=True, cli=None, dart=None):
+def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=True, cli=None, dart=None,
+        capture_rollback=False):
     out.mkdir(parents=True, exist_ok=False)
     report = {'schema': 1, 'status': 'failed', 'cases': [], 'device': serial,
               'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
@@ -284,7 +285,14 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 publish()
                 request('/update', {'url': update_url})
                 launch()
-                if ready()['revision'] != 'original': raise AssertionError('Withdrawal failed')
+                rollback = ready()
+                if rollback['revision'] != 'original': raise AssertionError('Withdrawal failed')
+                if capture_rollback:
+                    if rollback['binding'] != custom_binding or rollback['asset'] != 'original':
+                        raise AssertionError('Withdrawal did not restore binding/assets')
+                    (out / (row['id'] + '-rollback.png')).write_bytes(subprocess.check_output(
+                        ['adb', '-s', serial, 'exec-out', 'screencap', '-p']))
+                    (out / (row['id'] + '-rollback.json')).write_text(json.dumps(rollback, indent=2))
             else:
                 if after['revision'] != 'original': raise AssertionError(after)
                 if row['layer'] in ['archive', 'boot'] and row['reason'] not in logs + str(after):
@@ -332,6 +340,7 @@ if __name__ == '__main__':
     parser.add_argument('--serial', required=True)
     parser.add_argument('--package', required=True)
     parser.add_argument('--compatibility', action='store_true')
+    parser.add_argument('--capture-rollback', action='store_true')
     parser.add_argument('--custom-binding', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--cli', type=Path, required=True)
     parser.add_argument('--dart', type=Path, required=True)
