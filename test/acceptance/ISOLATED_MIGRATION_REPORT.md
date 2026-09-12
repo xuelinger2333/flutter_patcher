@@ -6,8 +6,9 @@
 
 同一远端 Linux 上的隔离环境已完成 **归档基线恢复 → 两份补丁生成**，
 全程离线；两份均为 `patch_created`，实际 tier 均为 whole。
-真机阶段开始时 ADB 设备已断开，因此 **尚未完成本次新补丁的设备闭环**，
-不能把此前 custom 矩阵的通过结果移用于本次产物，也不宣称完整 A1/A10 通过。
+手机重连后，两份新补丁在原宿主 APK 上的 **下载 → 重启生效 → 撤回 →
+重启回退全部通过（2/2）**。本次独立环境迁移闭环已完成；这是同机隔离环境
+口径的验证，不宣称物理换机或 A10 两份引擎验收完成。
 
 该实验验证干净环境迁移，不验证独立物理主机：`independent_machine=false`。
 远端未安装 Docker，实际使用 Linux mount/PID/network namespace + chroot。
@@ -75,3 +76,22 @@ python test/acceptance/device.py --apk .dart_tool/flutter_patcher/regression/202
 
 Windows Python 若为 Store 别名，使用既有 bundled Python。
 性能优化保持冻结；本次未更改手机配置、未使用 Android 模拟器、未推送或发布。
+
+## 2026-09-12 真机续跑完成
+
+以上续跑命令已执行，进程退出码 0。`device-resume-1/result.json` 为 passed，
+两项均 passed，用例 ID 与本次两项 corpus 一致，没有拼接旧矩阵结果。
+设备为 `AF2Q025C05004551`；原宿主 APK 通过已安装文件 SHA256 核验，
+`apk_install=existing_sha256_verified`，本轮无需安装或重建宿主。
+APK SHA256：`63bf9501a6f6c458cfeac0dc6f9d684d13cae5c30d5cb079a8b65334b963ed21`。
+
+两项 before.revision 均为 original；after.revision/asset 分别为 lean 和
+whole，after.frame 为 true，diagnostic 为 patched，crashes=0。
+更新前后的 binding 均为 true。现有测试入口在撤回后重新启动并断言
+revision=original，然后才把该项记为 passed，两项均完成此检查。
+两份补丁哈希复核与隔离构建下载记录一致；fixture 名称不改变实际 whole tier。
+
+最终真机结果 SHA256：
+`ac8b072d0302d630a440efeafd28da23873339a4a8603b94a108b94312c9299d`。
+启动采样、截图及退出记录随设备结果保留；功能通过不等于性能预算通过，
+也不代替单独的字体人工审核、体积门槛或 A10。
