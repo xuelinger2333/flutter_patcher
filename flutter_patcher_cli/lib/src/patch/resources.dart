@@ -36,7 +36,7 @@ class AssetCodec {
   AssetCodec(this.bytes);
   final Uint8List bytes;
   int offset = 0;
-  ByteData get data => ByteData.sublistView(bytes);
+  late final ByteData data = ByteData.sublistView(bytes);
   void need(int count) {
     require(count >= 0 && offset + count <= bytes.length, 'PATCH_ASSET_INVALID',
         'Truncated asset manifest');
@@ -170,8 +170,7 @@ class AssetCodec {
   }
 }
 
-Future<Map<String, dynamic>> resourceReceipt(String apk) async {
-  final archive = ZipDecoder().decodeBytes(await File(apk).readAsBytes());
+Map<String, dynamic> resourceReceipt(Archive archive) {
   final files = <String, dynamic>{};
   Map<String, dynamic> manifest = {};
   for (final f in archive) {

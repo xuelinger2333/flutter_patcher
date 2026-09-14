@@ -39,19 +39,7 @@ Future<int> baselineCommand(ArgResults args) async {
       return value!;
     }
 
-    final home = Platform.environment['HOME'];
-    require(home != null, 'CONFIG_INVALID', 'HOME is not set.');
-    final defaultCache = p.join(home!, '.flutter_patcher');
-    final root =
-        p.normalize(p.absolute(args['cache-dir'] as String? ?? defaultCache));
-    final projectCache = p.absolute('.dart_tool/flutter_patcher');
-    require(
-        root == defaultCache ||
-            p.isWithin(defaultCache, root) ||
-            root == projectCache ||
-            p.isWithin(projectCache, root),
-        'CONFIG_INVALID',
-        'Cache must be under ~/.flutter_patcher or project .dart_tool/flutter_patcher.');
+    final root = managedCache(args['cache-dir'] as String?);
     final commands = Commands(root);
     require((await commands.run('uname', ['-m'])).trim() == 'x86_64',
         'HOST_UNSUPPORTED', 'M1 requires Linux x64.');

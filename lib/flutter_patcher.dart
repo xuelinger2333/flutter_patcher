@@ -93,8 +93,8 @@ class FlutterPatcher {
   /// [maxCrashCount] defaults to `1` (fail-fast). Once a loaded patch causes an
   /// early boot failure, the SDK rolls it back and blacklists the same payload.
   ///
-  /// [strictSignature] rejects signed patches on Android API < 33, where the
-  /// platform Ed25519 implementation is unavailable.
+  /// [strictSignature] rejects signed patches on Android API < 33, where
+  /// this plugin does not enable signed-patch verification.
   ///
   /// [loaderFieldCandidates] and [loaderFallbackHeuristic] are advanced Flutter
   /// embedding compatibility controls. Keep defaults unless adapting a new

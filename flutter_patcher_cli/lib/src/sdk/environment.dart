@@ -429,15 +429,14 @@ Future<void> embeddingPom(
   await File(receipt).writeAsString('${await hashFile(path)}\n');
 }
 
-Future<void> verifyApk(String apk, Map<String, dynamic> engine) async {
+Future<Archive> verifyApk(String apk, Map<String, dynamic> engine) async {
   require(await File(apk).exists(), 'ENGINE_INJECTION_FAILED',
       'APK does not exist: $apk');
   final expected = ((engine['files'] as List)
           .singleWhere((row) => row['role'] == 'engine')['contents'] as List)
       .single;
-  final entries = ZipDecoder()
-      .decodeBytes(await File(apk).readAsBytes())
-      .files
+  final archive = ZipDecoder().decodeBytes(await File(apk).readAsBytes());
+  final entries = archive.files
       .where((entry) => entry.name == 'lib/arm64-v8a/libflutter.so')
       .toList();
   require(
@@ -447,4 +446,5 @@ Future<void> verifyApk(String apk, Map<String, dynamic> engine) async {
               expected['sha256'],
       'ENGINE_INJECTION_FAILED',
       'APK arm64 libflutter.so differs from the engine manifest.');
+  return archive;
 }

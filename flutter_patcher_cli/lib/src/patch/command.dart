@@ -25,18 +25,7 @@ Future<int> patchCommand(ArgResults args) async {
       return v!;
     }
 
-    final home = Platform.environment['HOME'];
-    require(home != null, 'CONFIG_INVALID', 'HOME is not set');
-    final base = p.join(home!, '.flutter_patcher'),
-        local = p.absolute('.dart_tool/flutter_patcher');
-    final cache = p.normalize(p.absolute(args['cache-dir'] as String? ?? base));
-    require(
-        cache == base ||
-            p.isWithin(base, cache) ||
-            cache == local ||
-            p.isWithin(local, cache),
-        'CONFIG_INVALID',
-        'Use a managed cache');
+    final cache = managedCache(args['cache-dir'] as String?);
     await rejectLinks(cache);
     await Directory(cache).create(recursive: true);
     final commands = Commands(cache);

@@ -201,20 +201,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     }
     require(Platform.isLinux, 'HOST_UNSUPPORTED',
         'M1 requires Linux x64, including x64 WSL2.');
-    final home = Platform.environment['HOME'];
-    require(home != null, 'CONFIG_INVALID', 'HOME is not set.');
-    final defaultRoot = p.join(home!, '.flutter_patcher');
-    final cache =
-        p.normalize(p.absolute(args['cache-dir'] as String? ?? defaultRoot));
-    final projectRoot =
-        p.join(Directory.current.path, '.dart_tool/flutter_patcher');
-    require(
-        cache == defaultRoot ||
-            p.isWithin(defaultRoot, cache) ||
-            cache == projectRoot ||
-            p.isWithin(projectRoot, cache),
-        'CONFIG_INVALID',
-        'Cache must be under ~/.flutter_patcher or this project\'s .dart_tool/flutter_patcher.');
+    final cache = managedCache(args['cache-dir'] as String?);
     await rejectLinks(cache);
     final commands = Commands(cache);
     await check('host', () async {

@@ -18,6 +18,24 @@ void require(bool condition, String code, String message) {
   if (!condition) throw Failure(code, message);
 }
 
+/// Resolve the shared CLI cache policy; callers still reject symlinks before I/O.
+String managedCache(String? requested, {String? home, String? project}) {
+  home ??= Platform.environment['HOME'];
+  require(home != null, 'CONFIG_INVALID', 'HOME is not set.');
+  final base = p.join(home!, '.flutter_patcher');
+  final local = p.join(p.absolute(project ?? Directory.current.path),
+      '.dart_tool', 'flutter_patcher');
+  final cache = p.normalize(p.absolute(requested ?? base));
+  require(
+      cache == base ||
+          p.isWithin(base, cache) ||
+          cache == local ||
+          p.isWithin(local, cache),
+      'CONFIG_INVALID',
+      'Cache must be under ~/.flutter_patcher or this project\'s .dart_tool/flutter_patcher.');
+  return cache;
+}
+
 Future<String> hashFile(String path) async =>
     (await sha256.bind(File(path).openRead()).first).toString();
 
