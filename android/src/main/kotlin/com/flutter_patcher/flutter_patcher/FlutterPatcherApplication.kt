@@ -60,6 +60,9 @@ open class FlutterPatcherApplication : FlutterApplication() {
             val appVc = PatcherConfig.currentVersionCode(context)
 
             return try {
+                // An authenticated bytecode host cannot load an old SO candidate
+                // through the pre-engine legacy loader.
+                if (HostTrustConfig.load(context) != null) return false
                 // 在熔断/校验丢弃前预读 (version, downloadMd5)，等会儿入黑名单要用。
                 // 即便文件后续被删，这里捕获的字符串仍有效。
                 val patchManager = PatchManager(context)

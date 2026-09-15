@@ -1,13 +1,25 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../patch/resources.dart';
 import '../sdk/environment.dart';
 
 Future<Map<String, dynamic>> verifyBuildApk(String apk, String baseline,
-    String aapt, Commands commands, Map<String, dynamic> engine) async {
+    String aapt, Commands commands, Map<String, dynamic> engine,
+    {String? expectedHostTrust}) async {
   // Reuse the verified archive for libapp and resources instead of decoding three times.
   final archive = await verifyApk(apk, engine);
+  final trustAssets = archive
+      .where((file) => file.name == 'assets/flutter_patcher/host-trust.json')
+      .toList();
+  require(
+      expectedHostTrust == null
+          ? trustAssets.isEmpty
+          : trustAssets.length == 1 &&
+              utf8.decode(trustAssets.single.content) == expectedHostTrust,
+      'BUILD_APK_INVALID',
+      'Packaged host trust differs from explicit build policy.');
   final info = await commands.run(aapt, ['dump', 'badging', apk],
       code: 'BUILD_APK_INVALID');
   final package =

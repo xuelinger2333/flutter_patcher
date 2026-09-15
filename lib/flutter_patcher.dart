@@ -10,11 +10,13 @@ import 'src/boot_diagnostic.dart';
 import 'src/io_stub.dart' if (dart.library.io) 'src/io.dart' as platform_io;
 import 'src/patch_info.dart';
 import 'src/patcher_channel.dart';
+import 'src/signed_manifest.dart';
 
 export 'src/blacklist.dart';
 export 'src/boot_diagnostic.dart';
 export 'src/patch_info.dart';
 export 'src/patch_bootstrap.dart';
+export 'src/signed_manifest.dart';
 
 /// Android-only Flutter hot-update entrypoint.
 ///
@@ -39,6 +41,29 @@ export 'src/patch_bootstrap.dart';
 /// {@category Crash-protection}
 class FlutterPatcher {
   FlutterPatcher._();
+
+  /// Fetch an untrusted envelope, preserving its exact signed representation.
+  /// Authentication and replay checks occur only in [applySignedManifest].
+  static Future<SignedManifest> fetchSignedManifest(String url) async =>
+      SignedManifest.parse(await platform_io.getSignedWire(url));
+
+  /// Authenticate, download and commit a publication, or persist a withdrawal.
+  /// Requires a host built with --host-policy. Failure never enables legacy mode.
+  static Future<SignedUpdateResult> applySignedManifest(
+      SignedManifest manifest) async {
+    final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
+        'applySignedManifest', {'wire': manifest.wire});
+    if (raw == null) throw StateError('Missing authenticated update result');
+    return SignedUpdateResult(
+        raw['action'] as String, PatchApplyResult.fromNative(raw));
+  }
+
+  /// Apply an independent root-signed key-set update. The carrier is untrusted;
+  /// native checks its domain, scope, root signature and durable trust revision.
+  static Future<void> updatePublicationTrust(SignedManifest document) async {
+    await PatcherChannel.channel.invokeMethod<Object?>(
+        'updatePublicationTrust', {'wire': document.wire});
+  }
 
   static bool _inited = false;
   static bool _bootReported = false;

@@ -11,7 +11,10 @@ import 'package:flutter_patcher/src/bootstrap/runner.dart';
 
 final fp = 'ab' * 32;
 Uint8List envelope(
-    {bool fonts = false, bool assets = false, String extra = ''}) {
+    {bool fonts = false,
+    bool assets = false,
+    String extra = '',
+    bool wrongEntryDigest = false}) {
   final module = Uint8List(120);
   ByteData.sublistView(module).setUint32(0, 0x44424333, Endian.little);
   Map<String, Object> row(String path, List<int> bytes) => {
@@ -24,7 +27,10 @@ Uint8List envelope(
     'patch_seq': 7,
     'fingerprint': fp,
     'tier': 'lean',
-    'module': row('module.bc', module),
+    'module': {
+      ...row('module.bc', module),
+      if (wrongEntryDigest) 'sha256': '0' * 64
+    },
     'assets': [
       if (assets)
         {
@@ -66,6 +72,27 @@ Uint8List envelope(
 }
 
 void main() {
+  test('authenticated snapshot still rejects inconsistent entry metadata', () {
+    final bytes = envelope(wrongEntryDigest: true);
+    expect(
+        () => parseAuthenticatedPatchBytes(bytes, fp),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'reason', 'Entry digest')));
+  });
+  test(
+      'authenticated snapshot still rejects matching but incorrect ZIP CRC fields',
+      () {
+    final bytes = envelope();
+    final view = ByteData.sublistView(bytes);
+    final central = 146 + view.getUint32(bytes.length - 6, Endian.little);
+    final wrong = view.getUint32(146 + 14, Endian.little) ^ 1;
+    view.setUint32(146 + 14, wrong, Endian.little);
+    view.setUint32(central + 16, wrong, Endian.little);
+    expect(
+        () => parseAuthenticatedPatchBytes(bytes, fp),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'reason', 'ZIP CRC mismatch')));
+  });
   test('codec snapshot survives source file replacement before parsing', () {
     final directory = Directory.systemTemp.createTempSync('boot-snapshot-');
     try {

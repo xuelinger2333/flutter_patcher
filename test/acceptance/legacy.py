@@ -39,6 +39,7 @@ def run(apk, so, serial, out):
             return json.load(result)
     def boot(expected):
         adb('shell', 'am', 'force-stop', package)
+        time.sleep(3)
         adb('shell', 'am', 'start', '-n', package + '/.MainActivity')
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:

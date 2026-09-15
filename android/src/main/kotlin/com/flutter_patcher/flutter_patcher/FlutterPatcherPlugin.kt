@@ -99,9 +99,9 @@ class FlutterPatcherPlugin :
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
+        val trace = bootProfiler.take()
         when (call.method) {
             "bootPayload" -> {
-                val trace = bootProfiler.take()
                 bytecode.announceBootstrap()
                 bytecodeCall(result, trace) {
                     try {
@@ -117,7 +117,7 @@ class FlutterPatcherPlugin :
             "saveConfig" -> handleSaveConfig(call, result)
             "markBooting" -> {
                 if (bytecode.bootstrapped) {
-                    bytecodeCall(result) { bytecode.markBooting(call.argument<String>("attempt")) }
+                    bytecodeCall(result, trace) { bytecode.markBooting(call.argument<String>("attempt")) }
                     return
                 }
                 CrashGuard(appContext).markBooting()
@@ -138,6 +138,13 @@ class FlutterPatcherPlugin :
                 bytecodeCall(result) { bytecode.error(token, call.argument<String>("message"), call.argument<Boolean>("quarantine") == true); null }
             } else handleReportDartBootError(call, result)
             "applyPatch" -> handleApplyPatch(call, result)
+            "applySignedManifest" -> authenticatedCall(result) {
+                bytecode.applyManifest(call.argument<String>("wire") ?: "", ::emitProgress)
+            }
+            "updatePublicationTrust" -> authenticatedCall(result) {
+                bytecode.updateTrust(call.argument<String>("wire") ?: "")
+                mapOf("ok" to true)
+            }
             "rollback" -> handleRollback(result)
             "currentVersion" -> handleCurrentVersion(result)
             "lastBootDiagnostic" -> handleLastBootDiagnostic(result)
@@ -163,13 +170,33 @@ class FlutterPatcherPlugin :
 
     // ==================== handlers ====================
 
+    private fun authenticatedCall(result: Result, operation: () -> Any?) {
+        Thread {
+            try {
+                val value = operation()
+                main.post { result.success(value) }
+            } catch (_: java.io.IOException) {
+                // Network exception messages may contain credential-bearing URLs.
+                main.post { result.error("AUTH_UPDATE_IO", "Authenticated update I/O failed", null) }
+            } catch (_: Exception) {
+                main.post { result.error("AUTH_UPDATE_REJECTED", "Authenticated update rejected", null) }
+            }
+        }.start()
+    }
+
     private fun bytecodeCall(result: Result, trace: BootChannelProfiler.Trace? = null, operation: () -> Any?) {
         if (trace != null) trace.submitted = System.nanoTime()
         Thread {
-            if (trace != null) trace.worker = System.nanoTime()
+            if (trace != null) {
+                trace.worker = System.nanoTime()
+                trace.workerCpuBegin = android.os.Debug.threadCpuTimeNanos()
+            }
             try {
                 val value = operation()
-                if (trace != null) trace.operationDone = System.nanoTime()
+                if (trace != null) {
+                    trace.operationDone = System.nanoTime()
+                    trace.workerCpuEnd = android.os.Debug.threadCpuTimeNanos()
+                }
                 main.post {
                     if (trace != null) {
                         trace.reply = System.nanoTime()
@@ -179,7 +206,18 @@ class FlutterPatcherPlugin :
                     finally { if (trace != null) bootProfiler.endReply(trace) }
                 }
             } catch (error: Exception) {
-                main.post { result.error("BYTECODE_REJECTED", error.message, null) }
+                if (trace != null) {
+                    trace.operationDone = System.nanoTime()
+                    trace.workerCpuEnd = android.os.Debug.threadCpuTimeNanos()
+                }
+                main.post {
+                    if (trace != null) {
+                        trace.reply = System.nanoTime()
+                        bootProfiler.beginReply(trace)
+                    }
+                    try { result.error("BYTECODE_REJECTED", error.message, null) }
+                    finally { if (trace != null) bootProfiler.endReply(trace) }
+                }
             }
         }.start()
     }
@@ -207,6 +245,7 @@ class FlutterPatcherPlugin :
                 emitProgress(phase, received, total)
             }
             val applyResult = try {
+                require(HostTrustConfig.load(appContext) == null) { "Authenticated manifest required" }
                 if (args["strategy"] == "bytecode") bytecode.apply(args, progress)
                 else if (args["strategy"] != null && args["strategy"] != "legacy")
                     ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, "Unknown patch strategy")
@@ -226,6 +265,8 @@ class FlutterPatcherPlugin :
                 bytecode.rollback()
             } catch (e: Exception) {
                 Log.e(TAG, "rollback error", e)
+                main.post { result.error("ROLLBACK_FAILED", "Could not persist rollback", null) }
+                return@Thread
             }
             main.post { result.success(null) }
         }.start()

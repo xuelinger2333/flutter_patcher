@@ -11,11 +11,14 @@ import 'workspace.dart';
 import 'bootstrap.dart';
 import 'runtime_package.dart';
 import 'outputs.dart';
+import 'host_policy.dart';
+import 'dart:convert';
 
 class BuildRequest {
   final String project, output, publicKey;
   final String target;
   final String? flavor, versionCode;
+  final HostPolicy? hostPolicy;
 
   /// Internal integration harness only; deliberately not a CLI option.
   final bool pipelineValidationOnly;
@@ -26,6 +29,7 @@ class BuildRequest {
       this.target = 'lib/main.dart',
       this.flavor,
       this.versionCode,
+      this.hostPolicy,
       this.pipelineValidationOnly = false});
   Future<void> validate() async {
     require(
@@ -40,6 +44,16 @@ class BuildRequest {
     require(versionCode == null || RegExp(r'^[0-9]+$').hasMatch(versionCode!),
         'BUILD_CONFIG_INVALID', 'Invalid versionCode.');
     bootstrapSource('app', 'main.dart', '0' * 64, publicKey);
+    if (hostPolicy != null) {
+      require(
+          !pipelineValidationOnly &&
+              hostPolicy!.fields['fptc_key'] == publicKey &&
+              hostPolicy!.fields['flavor'] == (flavor ?? 'default') &&
+              (versionCode == null ||
+                  hostPolicy!.fields['version_code'] == versionCode),
+          'BUILD_CONFIG_INVALID',
+          'Host policy differs from build inputs.');
+    }
     await rejectLinks(output);
     require(
         !await FileSystemEntity.isDirectory(output) &&
@@ -263,7 +277,29 @@ class BuildPipeline {
         p.join(baseline, 'compiler_interface.json')
       ]);
       final identity = fingerprint(await hashFile(p.join(baseline, 'app.dill')),
-          sdk.engine, await hashFile(iface), sdk.version);
+          sdk.engine, await hashFile(iface), sdk.version,
+          hostPolicyHash: request.hostPolicy?.digest);
+      // Capture user/plugin sources before injecting generated native policy.
+      // The latter has its own fingerprint/APK binding, not a source-file input
+      // that the unchanged application must reproduce when preparing a patch.
+      final sourceInputs = await packageInputs(packages, application: package);
+      String? hostTrust;
+      if (request.hostPolicy != null) {
+        final policy = request.hostPolicy!;
+        await File(p.join(baseline, 'host_policy.json'))
+            .writeAsString(policy.canonical);
+        final nativeAsset = File(p.join(project,
+            'android/app/src/main/assets/flutter_patcher/host-trust.json'));
+        require(!await nativeAsset.exists(), 'BUILD_CONFIG_INVALID',
+            'Host trust asset is reserved for generated build inputs.');
+        await nativeAsset.parent.create(recursive: true);
+        hostTrust = jsonEncode({
+          'policy': policy.canonical,
+          'fingerprint': identity,
+          'policy_sha256': policy.digest,
+        });
+        await nativeAsset.writeAsString(hostTrust);
+      }
       final target = p.join(project, '.dart_tool/flutter_patcher/main.dart');
       if (!request.pipelineValidationOnly) {
         await File(target).parent.create(recursive: true);
@@ -306,8 +342,18 @@ class BuildPipeline {
       final apk = p.join(project,
           'build/app/outputs/flutter-apk/app-${request.flavor == null ? '' : '${request.flavor}-'}release.apk');
       phase = 'verify-apk';
-      final apkInfo =
-          await verifyBuildApk(apk, baseline, aapt, commands, engine);
+      final apkInfo = await verifyBuildApk(
+          apk, baseline, aapt, commands, engine,
+          expectedHostTrust: hostTrust);
+      if (request.hostPolicy != null) {
+        require(
+            apkInfo['application_id'] ==
+                    request.hostPolicy!.fields['application_id'] &&
+                apkInfo['version_code'] ==
+                    request.hostPolicy!.fields['version_code'],
+            'BUILD_APK_INVALID',
+            'Actual APK differs from immutable host policy.');
+      }
       if (request.versionCode != null) {
         require(apkInfo['version_code'] == request.versionCode,
             'BUILD_APK_INVALID', 'Actual versionCode differs.');
@@ -333,16 +379,20 @@ class BuildPipeline {
         ...apkInfo,
         ...kernel,
         'schema': 1,
+        if (request.hostPolicy != null)
+          'host_policy_sha256': request.hostPolicy!.digest,
         'runtime_bootstrap': !request.pipelineValidationOnly,
         'interface_sha256': await hashFile(iface),
         'fingerprint': identity,
         'public_key': request.pipelineValidationOnly ? null : request.publicKey,
-        'package_inputs': await packageInputs(packages, application: package)
+        'package_inputs': sourceInputs
       };
       await writeObject(p.join(baseline, 'build_receipt.json'), receipt);
       await workspace.verifyOriginals();
       final metadata = <String, dynamic>{
-        'schema': 2,
+        'schema': request.hostPolicy == null ? 2 : 3,
+        if (request.hostPolicy != null)
+          'host_policy_sha256': request.hostPolicy!.digest,
         'flutter_version': sdk.version,
         'engine_commit': sdk.engine,
         'build_id': engine['build_id'],

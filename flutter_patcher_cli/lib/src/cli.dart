@@ -14,6 +14,8 @@ import 'build/command.dart';
 import 'patch/command.dart';
 import 'mock/command.dart';
 import 'keys/command.dart';
+import 'publish/command.dart';
+import 'publish/trust_command.dart';
 
 const releaseBase =
     'https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download';
@@ -66,6 +68,9 @@ ArgParser parser() {
         help: 'Asset keys to override; omitted selects changed assets.')
     ..addOption('strategy', defaultsTo: 'so', allowed: ['so', 'bytecode']);
   final build = environmentOptions()
+    ..addOption('host-policy',
+        help:
+            'Canonical public policy enabling authenticated bytecode updates.')
     ..addOption('project',
         help: 'Application source directory; builds use an isolated copy.')
     ..addOption('target', defaultsTo: 'lib/main.dart')
@@ -92,6 +97,7 @@ ArgParser parser() {
     ..addCommand('publish', publishOptions())
     ..addCommand('baseline', baselineOptions())
     ..addCommand('keys', keysOptions())
+    ..addCommand('trust', trustOptions())
     ..addCommand('interface', interfaces);
 }
 
@@ -118,6 +124,16 @@ Future<int> runCli(List<String> arguments) async {
     if (parsed.command!.name == 'build') {
       return await buildCommand(parsed.command!);
     }
+    if (parsed.command!.name == 'trust') {
+      try {
+        return await trustCommand(parsed.command!);
+      } on Failure {
+        rethrow;
+      } catch (_) {
+        throw Failure('TRUST_FAILED',
+            'Trust operation failed; check public inputs and local key files.');
+      }
+    }
     if (parsed.command!.name == 'keys') {
       try {
         return await keysCommand(parsed.command!);
@@ -130,6 +146,16 @@ Future<int> runCli(List<String> arguments) async {
       return await patchCommand(parsed.command!);
     }
     if (parsed.command!.name == 'publish') {
+      if (parsed.command!['production'] == true) {
+        try {
+          return await productionPublish(parsed.command!);
+        } on Failure {
+          rethrow;
+        } catch (_) {
+          throw Failure('PUBLISH_FAILED',
+              'Publication failed; check configuration and operation receipt');
+        }
+      }
       try {
         return await publishCommand(parsed.command!);
       } on IOException catch (error) {

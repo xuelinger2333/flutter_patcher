@@ -15,6 +15,7 @@ class BaselineArchive {
   static final names = [
     ...baselineFiles,
     ...buildBaselineFiles,
+    'host_policy.json',
     'baseline.manifest.json'
   ]..sort();
 

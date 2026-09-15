@@ -20,6 +20,8 @@ internal class BytecodePatchManager(private val context: Context) {
     }
     private val prefs = context.getSharedPreferences("flutter_patcher_bytecode", Context.MODE_PRIVATE)
     private val directory = File(context.filesDir, "flutter_patcher_bytecode")
+    private val host by lazy { HostTrustConfig.load(context) }
+    private val authenticated by lazy { host?.let { AuthenticatedUpdates(context, it) } }
     @Volatile var bootstrapped = false
         private set
     private var fingerprint: String? = null
@@ -37,6 +39,12 @@ internal class BytecodePatchManager(private val context: Context) {
       return synchronized(lock) {
         val profileStart = System.nanoTime()
         fun elapsedUs() = (System.nanoTime() - profileStart) / 1000
+        host?.let {
+            HostTrustConfig.requireOwner(context)
+            require(fp == it.scope["fingerprint"] &&
+                Base64.decode(publicKey, Base64.DEFAULT).contentEquals(it.fptcKey)) { "Bootstrap differs from immutable host" }
+        }
+        val policyUs = elapsedUs() // [PROFILE] Includes lazy APK policy loading.
         if (fingerprint != null || processClaimed) return@synchronized null
         processClaimed = true
         require(Regex("[0-9a-f]{64}").matches(fp)) { "Invalid host fingerprint" }
@@ -63,6 +71,8 @@ internal class BytecodePatchManager(private val context: Context) {
         }
         if (prefs.getBoolean("bad:${id(meta)}", false)) return@synchronized null
         try {
+            val authorizationStartUs = elapsedUs()
+            authenticated?.checkBoot(meta)
             val preparedUs = elapsedUs()
             val file = File(directory, meta.getString("sha256") + ".fptc")
             val bytes = readBounded(file.inputStream())
@@ -79,6 +89,9 @@ internal class BytecodePatchManager(private val context: Context) {
             mapOf("transportVersion" to 1, "envelopeBytes" to bytes, "attempt" to offered,
                 "profile_us" to mapOf("lock_wait" to (profileStart - lockRequested) / 1000,
                     "prepare" to preparedUs, "read" to readUs - preparedUs,
+                    "host_policy" to policyUs,
+                    "candidate_recovery" to authorizationStartUs - policyUs,
+                    "authorization" to preparedUs - authorizationStartUs,
                     "envelope_verify" to verifiedUs - readUs, "file_digest" to digestUs - verifiedUs,
                     "total" to elapsedUs()))
         } catch (error: Exception) {
@@ -91,6 +104,7 @@ internal class BytecodePatchManager(private val context: Context) {
     fun markBooting(token: String?): Boolean = synchronized(lock) {
         if (token == null || token != offered || attempt?.running == true || attempt?.failed == true) return@synchronized false
         val meta = offeredMeta ?: return@synchronized false
+        try { authenticated?.checkBoot(meta) } catch (_: Exception) { return@synchronized false }
         // A rollback or a newly installed candidate invalidates a prepared offer.
         if (active()?.let { id(it) } != id(meta)) return@synchronized false
         commit(prefs.edit().putString("attempt_meta", meta.toString())
@@ -125,7 +139,43 @@ internal class BytecodePatchManager(private val context: Context) {
         commit(prefs.edit().remove("attempt_meta").remove("pid").putBoolean("loading", false))
     }
 
-    fun apply(args: Map<String, Any?>, progress: ProgressCallback): ApplyResult = synchronized(lock) {
+    fun apply(args: Map<String, Any?>, progress: ProgressCallback): ApplyResult {
+        require(host == null) { "Authenticated manifest required" }
+        return install(args, progress)
+    }
+
+    fun applyManifest(wire: String, progress: ProgressCallback): Map<String, Any?> {
+        val auth = authenticated ?: error("Host has no authenticated policy")
+        val decision = synchronized(lock) { auth.accept(wire) }
+        if (decision.action == "withdraw") {
+            synchronized(lock) { invalidateUnauthorized(auth) }
+            return mapOf("action" to "withdraw", "ok" to true)
+        }
+        progress("downloading", 0, decision.fields.getValue("size").toLong())
+        val bytes = AuthenticatedUpdates.download(decision.fields)
+        return synchronized(lock) {
+            val fields = auth.checkCommit(wire).fields
+            val result = install(mapOf("version" to fields.getValue("patch_seq"),
+                "patchUrl" to fields.getValue("url"), "sha256" to fields.getValue("sha256"),
+                "patch_seq" to fields.getValue("patch_seq").toLong()), progress, bytes, wire)
+            result.toMap() + mapOf("action" to "publish")
+        }
+    }
+
+    fun updateTrust(wire: String) = synchronized(lock) {
+        val auth = authenticated ?: error("Host has no authenticated policy")
+        auth.updateTrust(wire)
+        invalidateUnauthorized(auth)
+    }
+
+    private fun invalidateUnauthorized(auth: AuthenticatedUpdates) {
+        val candidate = active() ?: return
+        val authorized = try { auth.checkBoot(candidate); true } catch (_: Exception) { false }
+        if (!authorized) rollback()
+    }
+
+    private fun install(args: Map<String, Any?>, progress: ProgressCallback,
+        authenticatedBytes: ByteArray? = null, authorization: String? = null): ApplyResult = synchronized(lock) {
         if (Build.VERSION.SDK_INT < 33 || fingerprint == null || key == null)
             return@synchronized ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, "A bootstrapped Android API 33+ host is required")
         try {
@@ -136,7 +186,7 @@ internal class BytecodePatchManager(private val context: Context) {
             require(args["targetVersionCode"] == null || (args["targetVersionCode"] as Number).toLong() == vc) { "Target version mismatch" }
             progress("downloading", 0, -1)
             val uri = URI(url)
-            val bytes = if (uri.scheme == "file") {
+            val bytes = authenticatedBytes ?: if (uri.scheme == "file") {
                 val file = File(uri).canonicalFile
                 require(file.toPath().startsWith(context.cacheDir.canonicalFile.toPath())) { "Staged file must be in application cache" }
                 readBounded(file.inputStream())
@@ -160,6 +210,7 @@ internal class BytecodePatchManager(private val context: Context) {
             require(args["patch_seq"] == null || (args["patch_seq"] as Number).toLong() == seq) { "Metadata sequence mismatch" }
             val meta = JSONObject().put("fingerprint", fingerprint).put("seq", seq)
                 .put("sha256", hash).put("version", version).put("versionCode", vc)
+            if (authorization != null) meta.put("authorization", authorization)
             if (prefs.getBoolean("bad:${id(meta)}", false))
                 return@synchronized ApplyResult.failure(ApplyErrorCode.BLACKLISTED, "Bytecode candidate is blacklisted")
             val old = active()
@@ -179,6 +230,7 @@ internal class BytecodePatchManager(private val context: Context) {
     }
 
     fun rollback() = synchronized(lock) {
+        if (host != null) HostTrustConfig.requireOwner(context)
         // Keep high-water marks and blacklist across explicit rollback.
         commit(prefs.edit().remove("active").remove("attempt_meta").remove("pid").putBoolean("loading", false))
         offered = null
@@ -191,6 +243,7 @@ internal class BytecodePatchManager(private val context: Context) {
             .map { mapOf("version" to it.key.removePrefix("bad:"), "md5" to "", "reason" to "BOOT_CRASH", "strategy" to "bytecode") }
     }
     fun clearBlacklist() = synchronized(lock) {
+        if (host != null) HostTrustConfig.requireOwner(context)
         val edit = prefs.edit()
         prefs.all.keys.filter { it.startsWith("bad:") || it.startsWith("crashes:") }.forEach { edit.remove(it) }
         commit(edit)

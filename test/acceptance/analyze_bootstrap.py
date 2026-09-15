@@ -73,7 +73,7 @@ def analyze(run):
             channel = json.loads(line.split(channel_prefix, 1)[1])
             parts = ['decode_us', 'handler_us', 'worker_queue_us', 'operation_us',
                      'main_queue_us', 'encode_us', 'reply_send_us']
-            if channel['schema'] != 1 or min(channel[k] for k in parts) < 0 or sum(channel[k] for k in parts) != channel['total_us']:
+            if channel['schema'] not in [1, 2] or min(channel[k] for k in parts) < 0 or sum(channel[k] for k in parts) != channel['total_us']:
                 raise ValueError('Native channel counters do not reconcile')
             channels.append((float(fields[0]), pid, channel))
         match = TIMING.search(line)
@@ -115,9 +115,14 @@ def analyze(run):
                     raise ValueError('Application budget differs from analysis policy')
                 sample = {'pid': pid, 'buckets_us': details(row, d), 'raw': d}
                 if channels:
-                    matched = [ch for at, cp, ch in channels if cp == pid and abs(at - timestamp) < 3]
+                    matched = [ch for at, cp, ch in channels if cp == pid and abs(at - timestamp) < 3
+                               and ch.get('method', 'bootPayload') == 'bootPayload']
                     if len(matched) != 1: raise ValueError('Expected one native channel trace per startup')
                     sample['channel'] = matched[0]
+                    marked = [ch for at, cp, ch in channels if cp == pid and 0 <= timestamp - at < 3
+                              and ch.get('method') == 'markBooting']
+                    if len(marked) > 1: raise ValueError('Duplicate markBooting trace')
+                    if marked: sample['mark_channel'] = marked[0]
                 profiles.append(sample)
             item['profiles'] = profiles
             item['breakdown'] = {k: dict(stats([r['buckets_us'][k] for r in profiles]),

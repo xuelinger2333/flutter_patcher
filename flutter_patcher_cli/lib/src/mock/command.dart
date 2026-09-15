@@ -8,6 +8,14 @@ import '../core.dart';
 
 ArgParser publishOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
+  ..addFlag('production',
+      negatable: false,
+      help: 'Explicit production protocol; default is still local mock.')
+  ..addFlag('commit',
+      negatable: false,
+      help: 'Commit a production request; otherwise preview only.')
+  ..addOption('request', help: 'Production request JSON file.')
+  ..addOption('receipt', help: 'New output JSON file for production result.')
   ..addOption('action',
       defaultsTo: 'stage', allowed: ['stage', 'serve', 'withdraw'])
   ..addOption('out',
@@ -102,6 +110,12 @@ Future<HttpServer> serveMock(String directory, int port) async {
 }
 
 Future<int> publishCommand(ArgResults args) async {
+  require(
+      args['commit'] != true &&
+          args['request'] == null &&
+          args['receipt'] == null,
+      'USAGE_ERROR',
+      'Production options require --production');
   require(args.rest.isEmpty, 'USAGE_ERROR', 'Unexpected positional arguments');
   final output = args['out'] as String?;
   require(output != null && output.isNotEmpty, 'MOCK_CONFIG_INVALID',

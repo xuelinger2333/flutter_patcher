@@ -22,8 +22,10 @@ Map<String, dynamic> sidecar(Map<String, dynamic> m) => {
       'engine_commit': m['engine_commit'],
       'build_id': m['build_id'],
       'libapp_sha256': (m['files'] as Map)['libapp.so']['sha256'],
-      if (m['schema'] == 2) 'baseline_schema': 2,
-      if (m['schema'] == 2) 'runtime_bootstrap': m['runtime_bootstrap'],
+      if ([2, 3].contains(m['schema'])) 'baseline_schema': m['schema'],
+      if ([2, 3].contains(m['schema']))
+        'runtime_bootstrap': m['runtime_bootstrap'],
+      if (m['schema'] == 3) 'host_policy_sha256': m['host_policy_sha256'],
     };
 
 class BaselineRepository {

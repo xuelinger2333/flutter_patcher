@@ -8,6 +8,7 @@ import '../sdk/environment.dart';
 import '../baseline/repository.dart';
 import '../baseline/store.dart';
 import 'pipeline.dart';
+import 'host_policy.dart';
 
 Future<int> buildCommand(ArgResults args) async {
   RandomAccessFile? lock;
@@ -40,6 +41,10 @@ Future<int> buildCommand(ArgResults args) async {
             p.join(project, '.dart_tool/flutter_patcher/releases',
                 DateTime.now().microsecondsSinceEpoch.toString())),
         publicKey: key,
+        hostPolicy: args['host-policy'] == null
+            ? null
+            : HostPolicy.parse(
+                await File(args['host-policy'] as String).readAsString()),
         target: args['target'] as String,
         flavor: args['flavor'] as String?,
         versionCode: args['version-code'] as String?);

@@ -6,52 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import 'resources.dart';
-
-Uint8List hexBytes(String text) => Uint8List.fromList([
-      for (var i = 0; i < text.length; i += 2)
-        int.parse(text.substring(i, i + 2), radix: 16)
-    ]);
-
-Future<List<int>> signingKey(String raw, String work, Commands commands,
-    {String? expectedPublic}) async {
-  List<int> seed;
-  try {
-    seed = base64Decode(raw.trim());
-  } catch (_) {
-    throw Failure('PATCH_KEY_INVALID', 'Expected base64 Ed25519 seed');
-  }
-  require(
-      seed.length == 32, 'PATCH_KEY_INVALID', 'Ed25519 seed must be 32 bytes');
-  final key = [...hexBytes('302e020100300506032b657004220420'), ...seed],
-      pub = p.join(work, 'signing-public.der');
-  await commands.run(
-      'openssl',
-      [
-        'pkey',
-        '-inform',
-        'DER',
-        '-in',
-        '/dev/stdin',
-        '-pubout',
-        '-outform',
-        'DER',
-        '-out',
-        pub
-      ],
-      inputBytes: key,
-      code: 'PATCH_KEY_INVALID');
-  final bytes = await File(pub).readAsBytes();
-  require(
-      bytes.length == 44 &&
-          bytes.take(12).join(',') ==
-              hexBytes('302a300506032b6570032100').join(','),
-      'PATCH_KEY_INVALID',
-      'Unexpected Ed25519 public key');
-  final public = base64Encode(bytes.sublist(12));
-  require(expectedPublic == null || public == expectedPublic,
-      'PATCH_KEY_MISMATCH', 'Signing key does not match the release bootstrap');
-  return key;
-}
+import '../crypto/signing.dart';
+export '../crypto/signing.dart' show signingKey, hexBytes;
 
 Future<Map<String, Object?>> packPatch(
     {required String module,

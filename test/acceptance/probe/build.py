@@ -46,11 +46,6 @@ for name in ['BootChannelProfiler.kt', 'BytecodeEnvelope.kt', 'Ed25519Verifier.k
     hashes[name] = hashlib.sha256(source).hexdigest()
     text = source.decode().replace('package com.flutter_patcher.flutter_patcher',
         'package com.example.wp9_acceptance', 1)
-    if name == 'BootChannelProfiler.kt':
-        text = text.replace('val decoded: Long)', 'val decoded: Long, val request: String)')
-        text = text.replace('Trace(begin, System.nanoTime())',
-                            'Trace(begin, System.nanoTime(), call.argument<String>("request")!!)')
-        text = text.replace('"schema" to 1,', '"schema" to 1, "request" to trace.request,')
     (kotlin / name).write_text(text)
 assets = project / 'android/app/src/main/assets'; assets.mkdir()
 corpus = run / 'standard-corpus'

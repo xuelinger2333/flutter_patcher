@@ -7,15 +7,17 @@ import io.flutter.plugin.common.StandardMethodCodec
 import java.nio.ByteBuffer
 import org.json.JSONObject
 
-/** Monotonic spans for the one bootPayload call; never changes its wire codec. */
+/** [PROFILE] Monotonic spans; encoding always delegates to StandardMethodCodec. */
 internal class BootChannelProfiler {
-    internal class Trace(val begin: Long, val decoded: Long) {
+    internal class Trace(val begin: Long, val decoded: Long, val method: String, val request: String?) {
         var submitted = 0L
         var worker = 0L
         var operationDone = 0L
         var reply = 0L
         var encodeBegin = 0L
         var encodeEnd = 0L
+        var workerCpuBegin = 0L
+        var workerCpuEnd = 0L
     }
     private val incoming = ThreadLocal<Trace>()
     private val outgoing = ThreadLocal<Trace>()
@@ -23,13 +25,24 @@ internal class BootChannelProfiler {
         override fun decodeMethodCall(message: ByteBuffer): MethodCall {
             val begin = System.nanoTime()
             val call = StandardMethodCodec.INSTANCE.decodeMethodCall(message)
-            if (call.method == "bootPayload") incoming.set(Trace(begin, System.nanoTime()))
+            if (call.method == "bootPayload" || call.method == "markBooting") {
+                incoming.set(Trace(begin, System.nanoTime(), call.method,
+                    (call.argument<Any?>("profileRequest") ?: call.argument<Any?>("request"))
+                        .let { it as? String }?.take(96)))
+            }
             return call
         }
         override fun encodeSuccessEnvelope(result: Any?): ByteBuffer {
             val trace = outgoing.get()
             if (trace != null) trace.encodeBegin = System.nanoTime()
             val bytes = StandardMethodCodec.INSTANCE.encodeSuccessEnvelope(result)
+            if (trace != null) trace.encodeEnd = System.nanoTime()
+            return bytes
+        }
+        override fun encodeErrorEnvelope(code: String, message: String?, details: Any?): ByteBuffer {
+            val trace = outgoing.get()
+            if (trace != null) trace.encodeBegin = System.nanoTime()
+            val bytes = StandardMethodCodec.INSTANCE.encodeErrorEnvelope(code, message, details)
             if (trace != null) trace.encodeEnd = System.nanoTime()
             return bytes
         }
@@ -43,7 +56,8 @@ internal class BootChannelProfiler {
         val encoded = (trace.encodeEnd - trace.encodeBegin) / 1000
         // Subtract nested encoding from the surrounding reply span.
         Log.i("flutter", "BYTECODE_CHANNEL_TIMING: " + JSONObject(mapOf(
-            "schema" to 1,
+            "schema" to 2, "method" to trace.method, "request" to trace.request,
+            "worker_cpu_us" to (trace.workerCpuEnd - trace.workerCpuBegin) / 1000,
             "decode_us" to at(trace.decoded),
             "handler_us" to at(trace.submitted) - at(trace.decoded),
             "worker_queue_us" to at(trace.worker) - at(trace.submitted),

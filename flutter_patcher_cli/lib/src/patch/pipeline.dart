@@ -93,7 +93,7 @@ class PatchPipeline {
           'SDK differs from baseline');
       require(
           req.validationOnly ||
-              (manifest['schema'] == 2 &&
+              ([2, 3].contains(manifest['schema']) &&
                   manifest['runtime_bootstrap'] == true),
           'BASELINE_NOT_RELEASE',
           'A formal WP-5 release baseline is required');

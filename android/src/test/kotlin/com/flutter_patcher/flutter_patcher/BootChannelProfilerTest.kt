@@ -8,7 +8,7 @@ import kotlin.test.*
 class BootChannelProfilerTest {
     private fun readable(buffer: ByteBuffer): ByteBuffer = buffer.apply { flip() }
 
-    @Test fun preservesStandardCodecAndAssociatesTraceWithBootCallOnly() {
+    @Test fun preservesStandardCodecAndAssociatesTraceWithBootstrapCallsOnly() {
         val profiler = BootChannelProfiler()
         val args = mapOf("fingerprint" to "ab".repeat(32), "publicKeyBase64" to "key")
         val encoded = StandardMethodCodec.INSTANCE.encodeMethodCall(MethodCall("bootPayload", args))
@@ -21,6 +21,28 @@ class BootChannelProfilerTest {
         profiler.codec.decodeMethodCall(readable(StandardMethodCodec.INSTANCE.encodeMethodCall(
             MethodCall("currentVersion", null))))
         assertNull(profiler.take())
+    }
+
+    @Test fun markTraceBoundsCorrelationWithoutChangingArguments() {
+        val profiler = BootChannelProfiler()
+        val args = mapOf("attempt" to "token", "profileRequest" to "x".repeat(120))
+        val decoded = profiler.codec.decodeMethodCall(readable(
+            StandardMethodCodec.INSTANCE.encodeMethodCall(MethodCall("markBooting", args))))
+        assertEquals(args, decoded.arguments)
+        val trace = assertNotNull(profiler.take())
+        assertEquals("markBooting", trace.method)
+        assertEquals("x".repeat(96), trace.request)
+        assertNull(profiler.take())
+    }
+
+    @Test fun errorEnvelopeRemainsByteForByteStandardCodec() {
+        fun bytes(buffer: ByteBuffer) = ByteArray(buffer.position()).also {
+            readable(buffer).get(it)
+        }
+        val profiler = BootChannelProfiler()
+        assertContentEquals(
+            bytes(StandardMethodCodec.INSTANCE.encodeErrorEnvelope("rejected", "message", null)),
+            bytes(profiler.codec.encodeErrorEnvelope("rejected", "message", null)))
     }
 
     @Test fun successEnvelopesRemainDecodableByStandardCodec() {

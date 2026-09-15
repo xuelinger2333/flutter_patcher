@@ -1,5 +1,9 @@
 # flutter_patcher_cli · M1
 
+M2 WP-2.2 已新增显式生产发布入口，默认命令仍是本地 mock。
+预览/条件提交、S3/R2、签名撤回与保留清理见
+[生产发布说明](docs/production-publish.md)。设备端新清单接线仍待 WP-2.3。
+
 本包负责为当前 Flutter 版本准备补丁工具链和新宿主的动态接口。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前支持 `doctor`、`interface`、`baseline`、字节码 `build` / `patch`、本地 mock `publish` 和 `keys init`。后面的 WP 阶段说明保留各阶段的历史边界；实际命令以当前帮助为准。
 
 M1 支持 Linux x64（含 x64 WSL2），目标 Android arm64。需要已初始化的 stock Flutter SDK、Git 和首次下载所需的网络。原生 Windows/macOS 会明确报错；不支持的 Flutter 版本不会转入自行编译流程。
