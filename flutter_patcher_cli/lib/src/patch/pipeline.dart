@@ -287,7 +287,8 @@ class PatchPipeline {
             for (final row in (interfaceYaml[section] as List? ?? []))
               if ((row['library'] as String).startsWith('dart:') ||
                   (reuseRequested &&
-                      (row['library'] as String).startsWith('package:flutter/')))
+                      (row['library'] as String)
+                          .startsWith('package:flutter/')))
                 row
           ]
       });
@@ -473,6 +474,36 @@ class PatchPipeline {
       final finalReport = await compile(true, reuse: reuseEnabled);
       require(finalReport['status'] == 'compiled', 'PATCH_UNSAFE',
           'Final compiler checks failed; evidence: $work');
+      if (reuseEnabled) {
+        // Prove on the artifact that only the planned framework copies are in
+        // the module and no original package:flutter library leaked in.
+        phase = 'structure';
+        final structure = await commands.runResult(sdk.dart, [
+          tool,
+          'verify-structure',
+          '--bytecode',
+          p.join(work, 'module.bc'),
+          '--expect-prefix',
+          'package:patch.${req.seq}.',
+          '--forbid-prefix',
+          'package:$app/',
+          '--framework-reuse',
+          partitionPath,
+          '--carry-package',
+          'package:${carryOwn.single}',
+          '--expected-carried',
+          selectedCarry.join(','),
+        ]);
+        await File(p.join(work, 'structure.log'))
+            .writeAsString('${structure.stdout}\n${structure.stderr}');
+        require(structure.exitCode == 0, 'PATCH_TOOL_FAILED',
+            'Structure check failed to run; evidence: $work');
+        await File(p.join(work, 'structure.json'))
+            .writeAsString(structure.stdout);
+        final verdict = await readObject(p.join(work, 'structure.json'));
+        require(verdict['ok'] == true, 'PATCH_UNSAFE',
+            'Framework reuse structure check failed; evidence: $work');
+      }
       require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',
           'Resource transform did not run');
       await payload.collectFonts(finalReport['fonts'] as List? ?? [],
