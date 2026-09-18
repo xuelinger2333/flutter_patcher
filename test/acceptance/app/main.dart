@@ -18,10 +18,12 @@ Future<void> main() async {
   await FlutterPatcher.init();
   var message = 'pending';
   var frame = false;
+  var themeType = 'unknown';
   WidgetsBinding.instance.addPostFrameCallback((_) {
     frame = true;
   });
   runApp(MaterialApp(home: Builder(builder: (context) {
+    themeType = Theme.of(context).runtimeType.toString();
     return FutureBuilder<String>(
         future: DefaultAssetBundle.of(context)
             .loadString('assets/message.txt')
@@ -33,6 +35,7 @@ Future<void> main() async {
                 body: Column(children: [
               Text('WP9:$revision:${snapshot.data ?? "pending"}'),
               const Icon(Icons.home),
+              // WP25_FEATURE is replaced only in the WP-2.5 patch fixtures.
             ])));
   })));
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 8766);
@@ -47,6 +50,7 @@ Future<void> main() async {
           'frame': frame,
           'pid': pid,
           'binding': WidgetsBinding.instance is AcceptanceBinding,
+          'themeType': themeType,
           'diagnostic': diagnostic?.toString(),
           'version': await FlutterPatcher.currentVersion
         }));

@@ -147,6 +147,12 @@ class InterfacePipeline {
           '--platform-privates',
           p.join(yamlCache, 'platform_privates-${sdk.version}.yaml')
         ],
+        if (request.mode == 'whole' &&
+            File(p.join(yamlCache, 'framework_partition-${sdk.version}.yaml'))
+                .existsSync()) ...[
+          '--framework-reuse',
+          p.join(yamlCache, 'framework_partition-${sdk.version}.yaml')
+        ],
         if (additions != null) ...['--additions', additions],
         if (detailsInput != null) ...['--details-in', detailsInput],
         '--out-details',

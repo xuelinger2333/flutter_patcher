@@ -125,6 +125,7 @@ class BootRunner {
             'schema': 2,
             'transport': 'native-bytes-v1',
             'tier': patch.tier,
+            'framework_reuse': patch.frameworkReuse?['enabled'] == true,
             'budget_us': bootstrapBudgetUs(patch.tier),
             'native': row['profile_us'],
             'dart_channel': row['dart_channel_us'],

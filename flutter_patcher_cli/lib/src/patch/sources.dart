@@ -4,7 +4,9 @@ import 'package:path/path.dart' as p;
 import '../core.dart';
 
 /// Rewrite URI literals only in directives, leaving runtime strings untouched.
-String rewriteImports(String source, Map<String, String> names) {
+String rewriteImports(String source, Map<String, String> names,
+    {Map<String, String> uriRewrites = const {},
+    Map<String, String> relativeUriRewrites = const {}}) {
   var directive = false, previous = 0;
   final out = StringBuffer();
   var i = 0;
@@ -78,6 +80,20 @@ String rewriteImports(String source, Map<String, String> names) {
         'PATCH_SOURCE_INVALID',
         'Escaped/interpolated directive URIs are unsupported');
     final uri = Uri.tryParse(content);
+    if (uriRewrites.containsKey(content)) {
+      final replacement = uriRewrites[content]!;
+      out.write(source.substring(previous, start));
+      out.write('${raw ? 'r' : ''}$delimiter$replacement$delimiter');
+      previous = i;
+      continue;
+    }
+    if (relativeUriRewrites.containsKey(content)) {
+      final replacement = relativeUriRewrites[content]!;
+      out.write(source.substring(previous, start));
+      out.write('${raw ? 'r' : ''}$delimiter$replacement$delimiter');
+      previous = i;
+      continue;
+    }
     if (uri?.scheme != 'package' ||
         uri!.pathSegments.isEmpty ||
         !names.containsKey(uri.pathSegments.first)) {

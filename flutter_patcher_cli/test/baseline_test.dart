@@ -107,6 +107,48 @@ void main() {
     expect(() => fingerprint('bad', '2' * 40, '3' * 64, '3.47.2'),
         throwsA(isA<Failure>()));
   });
+  test('schema 4 binds the framework partition without changing legacy inputs',
+      () async {
+    final root = p.join(temp.path, 'schema4');
+    await fixture(root);
+    final partition = p.join(root, 'framework_partition.json');
+    await writeObject(partition, {
+      'schema': 1,
+      'host': ['package:flutter/src/widgets/framework.dart'],
+      'carry': ['package:flutter/src/material/expansion_tile.dart'],
+      'libraries': [],
+    });
+    await writeObject(p.join(root, 'compiler_interface.json'), {
+      'callable': [
+        {'library': 'package:app/main.dart', 'class': 'Widget'}
+      ]
+    });
+    final m = metadata()
+      ..['schema'] = 4
+      ..['runtime_bootstrap'] = true
+      ..['framework_partition_sha256'] = await hashFile(partition);
+    final receipt = {
+      'runtime_bootstrap': true,
+      'fingerprint': fingerprint(
+          await hashFile(p.join(root, 'app.dill')),
+          m['engine_commit'] as String,
+          await hashFile(p.join(root, 'dynamic_interface.yaml')),
+          m['flutter_version'] as String,
+          frameworkPartitionHash: m['framework_partition_sha256'] as String),
+      'app_only': true,
+      'interface_sha256':
+          await hashFile(p.join(root, 'dynamic_interface.yaml')),
+      'libapp_sha256': await hashFile(p.join(root, 'libapp.so')),
+      'apk_sha256': 'd' * 64,
+    };
+    await writeObject(p.join(root, 'build_receipt.json'), receipt);
+    final result = await createManifest(root, m);
+    expect(result['schema'], 4);
+    expect(result['fingerprint'], receipt['fingerprint']);
+    await File(partition)
+        .writeAsString('{"schema":1,"host":[],"carry":[],"libraries":[]}');
+    await expectLater(createManifest(root, m), throwsA(isA<Failure>()));
+  });
   test('manifest is path independent and detects payload tampering', () async {
     final other = p.join(temp.path, 'other');
     await fixture(other);

@@ -11,6 +11,8 @@ import '../sdk/package_inputs.dart';
 import 'sources.dart';
 import 'package.dart';
 import 'resources.dart';
+import 'tier_policy.dart';
+import 'framework_carry.dart';
 
 class PatchFailure extends Failure {
   final Map<String, Object?> details;
@@ -21,7 +23,7 @@ class PatchRequest {
   final String project, fingerprint, privateKey, output, target;
   final int seq, minBuild;
   final int? previousSeq;
-  final bool validationOnly, offline;
+  final bool validationOnly, offline, frameworkReuse;
   final List<String> assets;
   PatchRequest(
       {required this.project,
@@ -34,7 +36,8 @@ class PatchRequest {
       this.assets = const [],
       this.target = 'lib/main.dart',
       this.validationOnly = false,
-      this.offline = false});
+      this.offline = false,
+      this.frameworkReuse = true});
   Future<void> validate() async {
     require(
         baselineHash.hasMatch(fingerprint) &&
@@ -93,7 +96,7 @@ class PatchPipeline {
           'SDK differs from baseline');
       require(
           req.validationOnly ||
-              ([2, 3].contains(manifest['schema']) &&
+              ([2, 3, 4].contains(manifest['schema']) &&
                   manifest['runtime_bootstrap'] == true),
           'BASELINE_NOT_RELEASE',
           'A formal WP-5 release baseline is required');
@@ -110,6 +113,9 @@ class PatchPipeline {
       final usage = await commands.run(sdk.dart, [tool, '--help']);
       require(usage.contains('compile-patch'), 'TOOLS_VERSION_UNSUPPORTED',
           'CI tools with WP-6 support are required');
+      final partitionPath = p.join(baseline, 'framework_partition.json');
+      final partition =
+          manifest['schema'] == 4 ? await baselineObject(partitionPath) : null;
       phase = 'sources';
       final workspace = BuildWorkspace(work);
       final project =
@@ -271,7 +277,21 @@ class PatchPipeline {
           await File(p.join(baseline, 'dynamic_interface.yaml'))
               .readAsString()) as Map;
       final wholeInterface = p.join(work, 'whole-interface.yaml');
+      final fullWholeInterface = p.join(work, 'whole-full-interface.yaml');
+      final reuseRequested = req.frameworkReuse &&
+          partition != null &&
+          usage.contains('framework-reuse');
       await writeObject(wholeInterface, {
+        for (final section in interfaceYaml.keys)
+          section as String: [
+            for (final row in (interfaceYaml[section] as List? ?? []))
+              if ((row['library'] as String).startsWith('dart:') ||
+                  (reuseRequested &&
+                      (row['library'] as String).startsWith('package:flutter/')))
+                row
+          ]
+      });
+      await writeObject(fullWholeInterface, {
         for (final section in interfaceYaml.keys)
           section as String: [
             for (final row in (interfaceYaml[section] as List? ?? []))
@@ -279,7 +299,16 @@ class PatchPipeline {
           ]
       });
       var tier = 'lean';
-      Future<Map<String, dynamic>> compile(bool emit) async {
+      var reuseEnabled = false;
+      String? carryPackages;
+      final carryOwn = <String>{};
+      // The partition is a superset computed for the Flutter release.  A
+      // patch only materialises the framework libraries that this particular
+      // module needs; passing the complete partition here would make the
+      // compiler expect sources that were deliberately not copied.
+      Set<String> selectedCarry = <String>{};
+      Future<Map<String, dynamic>> compile(bool emit,
+          {bool reuse = false}) async {
         phase = '$tier-${emit ? 'emit' : 'check'}';
         await File(entry).writeAsString(patchEntry(names[app]!,
             req.target.substring(4), req.seq, req.fingerprint, tier,
@@ -292,10 +321,10 @@ class PatchPipeline {
           'seq': req.seq,
           'fingerprint': req.fingerprint,
           'entry': 'package:${names[app]}/__patch_entry.dart',
-          'packages': remap['packages'],
+          'packages': carryPackages ?? remap['packages'],
           'baseline': p.join(baseline, 'app.dill'),
           'interface': tier == 'whole'
-              ? wholeInterface
+              ? (reuse ? wholeInterface : fullWholeInterface)
               : p.join(baseline, 'dynamic_interface.yaml'),
           'compiler_interface': p.join(baseline, 'compiler_interface.json'),
           'platform':
@@ -304,10 +333,17 @@ class PatchPipeline {
           'resources': resources,
           if (resources)
             'overlay_library': 'package:${names[app]}/__patch_overlay.dart',
-          'own': names.values.toList(),
+          'own': [...names.values, ...carryOwn],
           'original_own': own.toList(),
           'out': p.join(work, 'module.bc'),
           if (!emit) 'kernel_out': p.join(work, '$tier-analysis.dill'),
+          if (reuse)
+            'framework_reuse': {
+              'enabled': true,
+              'partition': partitionPath,
+              'carried': selectedCarry.toList()..sort(),
+              'carry_package': carryOwn.single,
+            },
         });
         final result = await commands
             .runResult(sdk.dart, [tool, 'compile-patch', '--request', input]);
@@ -329,17 +365,112 @@ class PatchPipeline {
       final resourceUpgrade = resources &&
           resourceCheck is Map &&
           resourceCheck['verdict'] != 'INJECTABLE';
-      if (first['status'] != 'checked' ||
-          dependencyChanged ||
-          resourceUpgrade) {
-        tier = 'whole';
-      }
+      tier = selectPatchTier(
+          leanChecked: first['status'] == 'checked',
+          dependencyChanged: dependencyChanged,
+          resourceUpgrade: resourceUpgrade);
+      Map<String, Object?>? frameworkReuseInfo;
+      final frameworkReuseReasons = <Map<String, Object?>>[];
       if (tier == 'whole') {
         final whole = await compile(false);
         require(whole['status'] == 'checked', 'PATCH_UNSAFE',
             'Whole-tier checks failed; evidence: $work');
+        // A lean rejection can happen before the framework libraries are
+        // emitted, so `module_libraries` alone is not a complete description
+        // of M0.  Allocation and interface diagnostics carry the authoritative
+        // library URI for each cross-boundary framework use; collect those
+        // together with any libraries the compiler did report explicitly.
+        final candidate = <String>{
+          for (final uri in ((first['module_libraries'] as List?) ?? const []))
+            if (uri is String && uri.startsWith('package:flutter/')) uri
+        };
+        void collectFrameworkLibraries(Object? value) {
+          if (value is Map) {
+            final uri = value['library'];
+            if (uri is String && uri.startsWith('package:flutter/')) {
+              candidate.add(uri);
+            }
+            for (final child in value.values) {
+              collectFrameworkLibraries(child);
+            }
+          } else if (value is List) {
+            for (final child in value) {
+              collectFrameworkLibraries(child);
+            }
+          }
+        }
+
+        collectFrameworkLibraries(first['checks']);
+        final available = partition == null
+            ? <String>{}
+            : (partition['carry'] as List).cast<String>().toSet();
+        final hostBarrels = partition == null
+            ? <String>{}
+            : {
+                for (final row in (partition['libraries'] as List? ?? const []))
+                  if (row is Map &&
+                      row['role'] == 'host' &&
+                      (row['declarations'] as List? ?? const []).isEmpty)
+                    row['uri'] as String
+              };
+        final missing = candidate
+            .where(
+                (uri) => !available.contains(uri) && !hostBarrels.contains(uri))
+            .toSet();
+        final effectiveCandidate =
+            candidate.where((uri) => !hostBarrels.contains(uri)).toSet();
+        if (reuseRequested &&
+            effectiveCandidate.isNotEmpty &&
+            missing.isEmpty &&
+            available.containsAll(effectiveCandidate)) {
+          final selected = effectiveCandidate.where(available.contains).toSet();
+          selectedCarry = selected;
+          final carry = await prepareFrameworkCarry(
+              partition: partitionPath,
+              sdkRoot: sdk.root,
+              destination: p.join(work, 'module'),
+              packagesConfig: remap['packages'] as String,
+              seq: req.seq,
+              selected: selected);
+          carryPackages = carry['packages'] as String;
+          carryOwn.add(carry['package'] as String);
+          final rewrites =
+              (carry['uri_rewrites'] as Map).cast<String, String>();
+          for (final package in own) {
+            final directory = Directory(p.join(work, 'module', package));
+            if (!await directory.exists()) continue;
+            await for (final entity
+                in directory.list(recursive: true, followLinks: false)) {
+              if (entity is! File || !entity.path.endsWith('.dart')) continue;
+              await entity.writeAsString(rewriteImports(
+                  await entity.readAsString(), names,
+                  uriRewrites: rewrites));
+            }
+          }
+          reuseEnabled = true;
+          frameworkReuseInfo = {
+            'enabled': true,
+            'partition_sha256': await hashFile(partitionPath),
+            'carried': (carry['carried'] as List).cast<String>(),
+            'host_bound_count': available.length - selected.length,
+          };
+          final reuseCheck = await compile(false, reuse: true);
+          require(reuseCheck['status'] == 'checked', 'PATCH_UNSAFE',
+              'Framework reuse checks failed; evidence: $work');
+        } else if (reuseRequested && effectiveCandidate.isNotEmpty) {
+          final reason = missing.isEmpty
+              ? effectiveCandidate.join(', ')
+              : missing.join(', ');
+          frameworkReuseReasons.add({
+            'code': 'FRAMEWORK_NOT_CARRIABLE',
+            'message':
+                'Framework library set requires host declarations: $reason',
+            'libraries':
+                (missing.isEmpty ? effectiveCandidate : missing).toList()
+          });
+        }
       }
-      final finalReport = await compile(true);
+      final finalReport = await compile(true, reuse: reuseEnabled);
       require(finalReport['status'] == 'compiled', 'PATCH_UNSAFE',
           'Final compiler checks failed; evidence: $work');
       require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',
@@ -381,7 +512,9 @@ class PatchPipeline {
             'tier': tier,
             'flutter_version': sdk.version,
             'engine_commit': sdk.engine,
-            'build_id': manifest['build_id']
+            'build_id': manifest['build_id'],
+            if (frameworkReuseInfo != null)
+              'framework_reuse': frameworkReuseInfo
           });
       await workspace.verifyOriginals();
       await verifyBaseline(baseline,
@@ -396,9 +529,12 @@ class PatchPipeline {
         'patch_seq': req.seq,
         'min_build': req.minBuild,
         'tier': tier,
+        if (frameworkReuseInfo != null) 'framework_reuse': frameworkReuseInfo,
         if (tier == 'whole')
           'upgrade': {
             'dependency_changed': dependencyChanged,
+            'framework_reuse': frameworkReuseInfo ??
+                {'enabled': false, 'reasons': frameworkReuseReasons},
             'message':
                 'Framework code runs in the module interpreter; startup, scrolling and memory may regress.'
           },

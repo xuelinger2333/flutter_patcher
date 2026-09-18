@@ -8,6 +8,7 @@ import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/patch/sources.dart';
 import 'package:flutter_patcher_cli/src/patch/package.dart';
 import 'package:flutter_patcher_cli/src/sdk/package_inputs.dart';
+import 'package:flutter_patcher_cli/src/patch/framework_carry.dart';
 
 void main() {
   test('nested comments and runtime interpolation are not rewritten', () {
@@ -94,6 +95,42 @@ void main() {
     final after = await packageInputs(config);
     expect(jsonEncode(beforeNative), isNot(jsonEncode(after)));
     expect(after['plugin']['native'], true);
+  });
+  test('framework carry rewrites only selected framework directives', () async {
+    final root = (await Directory.systemTemp.createTemp('wp25-carry-')).path;
+    final sdk = p.join(root, 'sdk');
+    final source = p.join(sdk, 'packages/flutter/lib/src/demo.dart');
+    await File(source).parent.create(recursive: true);
+    await File(source).writeAsString(
+        "import 'package:flutter/src/host.dart';\nconst path = 'package:flutter/src/host.dart';\n");
+    final config = p.join(root, 'config.json');
+    await writeObject(config, {
+      'configVersion': 2,
+      'packages': [
+        {
+          'name': 'app',
+          'rootUri': Directory(root).uri.toString(),
+          'packageUri': 'lib/'
+        }
+      ]
+    });
+    final partition = p.join(root, 'partition.json');
+    await writeObject(partition, {
+      'schema': 1,
+      'carry': ['package:flutter/src/demo.dart'],
+    });
+    final result = await prepareFrameworkCarry(
+        partition: partition,
+        sdkRoot: sdk,
+        destination: p.join(root, 'module'),
+        packagesConfig: config,
+        seq: 4);
+    final copied =
+        await File(p.join(root, 'module/flutter_carry/src/demo.dart'))
+            .readAsString();
+    expect(copied, contains("import 'package:flutter/src/host.dart';"));
+    expect(copied, contains("const path = 'package:flutter/src/host.dart';"));
+    expect(result['package'], 'patch.4.flutter_carry');
   });
   test(
       'real Ed25519 envelope verifies and detects tampering without a private file',

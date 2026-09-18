@@ -240,7 +240,10 @@ class EnvironmentBuilder {
     await rejectLinks(directory);
     final names = [
       'protocol_interface-${sdk.version}.yaml',
-      'platform_privates-${sdk.version}.yaml'
+      'platform_privates-${sdk.version}.yaml',
+      if ((await commands.run(sdk.dart, [tools, '--help']))
+          .contains('gen-framework-partition'))
+        'framework_partition-${sdk.version}.yaml'
     ];
     if (await File(p.join(directory, 'state.json')).exists()) {
       try {
@@ -310,6 +313,23 @@ class EnvironmentBuilder {
           p.join(staging, names[0])
         ],
         code: 'YAML_GENERATION_FAILED');
+    if (names.length == 3) {
+      await commands.run(
+          sdk.dart,
+          [
+            tools,
+            'gen-framework-partition',
+            '--platform',
+            platform,
+            '--dill',
+            dill,
+            '--flutter-version',
+            sdk.version,
+            '--out',
+            p.join(staging, names[2])
+          ],
+          code: 'YAML_GENERATION_FAILED');
+    }
     await commands.run(
         sdk.dart,
         [

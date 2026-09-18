@@ -118,6 +118,7 @@ class BuildPipeline {
           ].every(usage.contains),
           'TOOLS_VERSION_UNSUPPORTED',
           'CI tools with build inspection are required.');
+      final frameworkReuseTool = usage.contains('gen-framework-partition');
       final project =
           await workspace.copyPackage(request.project, application: true);
       final pubspec =
@@ -229,6 +230,7 @@ class BuildPipeline {
       final iface = p.join(baseline, 'dynamic_interface.yaml');
       phase = 'interface';
       final privates = p.join(work, 'platform-privates.yaml');
+      final frameworkPartition = p.join(work, 'framework-partition.json');
       if (!request.pipelineValidationOnly) {
         await call([
           'gen-platform-privates',
@@ -237,6 +239,19 @@ class BuildPipeline {
           '--out',
           privates
         ]);
+        if (frameworkReuseTool) {
+          await call([
+            'gen-framework-partition',
+            '--platform',
+            platform,
+            '--dill',
+            analysis,
+            '--flutter-version',
+            sdk.version,
+            '--out',
+            frameworkPartition
+          ]);
+        }
       }
       await call([
         'merge-interface',
@@ -253,6 +268,10 @@ class BuildPipeline {
         if (!request.pipelineValidationOnly) ...[
           '--platform-privates',
           privates
+        ],
+        if (frameworkReuseTool && !request.pipelineValidationOnly) ...[
+          '--framework-reuse',
+          frameworkPartition
         ],
         '--out-iface',
         iface,
@@ -276,9 +295,18 @@ class BuildPipeline {
         '--compiler-interface',
         p.join(baseline, 'compiler_interface.json')
       ]);
+      if (frameworkReuseTool && !request.pipelineValidationOnly) {
+        await File(frameworkPartition)
+            .copy(p.join(baseline, 'framework_partition.json'));
+      }
+      final partitionHash =
+          frameworkReuseTool && !request.pipelineValidationOnly
+              ? await hashFile(p.join(baseline, 'framework_partition.json'))
+              : null;
       final identity = fingerprint(await hashFile(p.join(baseline, 'app.dill')),
           sdk.engine, await hashFile(iface), sdk.version,
-          hostPolicyHash: request.hostPolicy?.digest);
+          hostPolicyHash: request.hostPolicy?.digest,
+          frameworkPartitionHash: partitionHash);
       // Capture user/plugin sources before injecting generated native policy.
       // The latter has its own fingerprint/APK binding, not a source-file input
       // that the unchanged application must reproduce when preparing a patch.
@@ -381,6 +409,7 @@ class BuildPipeline {
         'schema': 1,
         if (request.hostPolicy != null)
           'host_policy_sha256': request.hostPolicy!.digest,
+        if (partitionHash != null) 'framework_partition_sha256': partitionHash,
         'runtime_bootstrap': !request.pipelineValidationOnly,
         'interface_sha256': await hashFile(iface),
         'fingerprint': identity,
@@ -390,9 +419,12 @@ class BuildPipeline {
       await writeObject(p.join(baseline, 'build_receipt.json'), receipt);
       await workspace.verifyOriginals();
       final metadata = <String, dynamic>{
-        'schema': request.hostPolicy == null ? 2 : 3,
+        'schema':
+            partitionHash != null ? 4 : (request.hostPolicy == null ? 2 : 3),
         if (request.hostPolicy != null)
           'host_policy_sha256': request.hostPolicy!.digest,
+        if (partitionHash != null)
+          'framework_partition_sha256': partitionHash,
         'flutter_version': sdk.version,
         'engine_commit': sdk.engine,
         'build_id': engine['build_id'],

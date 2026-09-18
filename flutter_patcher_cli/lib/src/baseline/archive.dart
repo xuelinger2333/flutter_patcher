@@ -16,6 +16,7 @@ class BaselineArchive {
     ...baselineFiles,
     ...buildBaselineFiles,
     'host_policy.json',
+    'framework_partition.json',
     'baseline.manifest.json'
   ]..sort();
 
