@@ -2,6 +2,11 @@
 
 **English** | [简体中文](README-zh.md)
 
+The development CLI defaults to bytecode: lean first, with checked whole fallback.
+Android bootstrap automatically prefers available FFI and preserves the app's
+Binding. SO continues through the existing v1 workflow. See
+[default paths and fallback rules](doc/default-paths.md).
+
 [![pub package](https://img.shields.io/pub/v/flutter_patcher.svg)](https://pub.dev/packages/flutter_patcher)
 [![Platform](https://img.shields.io/badge/platform-Android-brightgreen)](https://flutter.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

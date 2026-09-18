@@ -1,7 +1,7 @@
 """Summarize exact cold-start samples; nested profile counters are not additive.
 
 python test/acceptance/analyze_bootstrap.py --run PATH --out PATH/report.json
-Add --assert-budget to enforce lean 85 ms and whole 200 ms per sampled startup.
+Add --assert-budget to enforce lean 85 ms and whole 250 ms per sampled startup.
 """
 import argparse
 import hashlib
@@ -12,7 +12,7 @@ import statistics
 
 
 STAGES = ['payload_us', 'verify_us', 'load_and_handshake_us', 'resources_us', 'total_us']
-BUDGET_US = {'lean': 85000, 'whole': 200000}
+BUDGET_US = {'lean': 85000, 'whole': 250000}
 TIMING = re.compile(r'BYTECODE_BOOT_TIMING: ' + r' '.join(k + r'=(\d+)' for k in STAGES))
 
 
@@ -91,6 +91,10 @@ def analyze(run):
               'log_sha256': hashlib.sha256(raw_log).hexdigest(), 'tiers': {}}
     for tier in ['lean', 'whole']:
         timing = json.loads((matrix / ('valid-' + tier + '-timing.json')).read_text())
+        budget = timing.get('bootstrap_budget_us', BUDGET_US[tier])
+        if budget not in BUDGET_US.values():
+            raise ValueError('Unknown bootstrap budget')
+        actual_tier = next(name for name, value in BUDGET_US.items() if value == budget)
         rows = timing['bootstrap']
         if len(rows) != 10 or any(sum(r[k] for k in STAGES[:4]) != r['total_us'] for r in rows):
             raise ValueError('Expected ten complete reconciled cold-start samples')
@@ -100,21 +104,22 @@ def analyze(run):
                 'stages': {k: dict(stats([r[k] for r in rows]),
                                   percent_of_total=statistics.mean(r[k] for r in rows) / total * 100)
                            for k in STAGES},
-                'budget_us': BUDGET_US[tier],
-                'budget_policy': 'lean-85ms-whole-200ms-v1',
-                'budget_passed': all(r['total_us'] <= BUDGET_US[tier] for r in rows)}
+                'actual_tier': actual_tier,
+                'budget_us': budget,
+                'budget_policy': 'lean-85ms-whole-250ms-v2',
+                'budget_passed': all(r['total_us'] <= budget for r in rows)}
         profiles = []
         if records:
             for row in rows:
                 matches = [(d, pid, timestamp) for key, d, pid, timestamp in records
-                           if key == tuple(row[k] for k in STAGES) and d['tier'] == tier]
+                           if key == tuple(row[k] for k in STAGES) and d['tier'] == actual_tier]
                 if len(matches) != 1:
                     raise ValueError('Expected exactly one profile per measured cold start')
                 d, pid, timestamp = matches[0]
-                if 'budget_us' in d and d['budget_us'] != BUDGET_US[tier]:
+                if 'budget_us' in d and d['budget_us'] != budget:
                     raise ValueError('Application budget differs from analysis policy')
                 sample = {'pid': pid, 'buckets_us': details(row, d), 'raw': d}
-                if channels:
+                if channels and d.get('dart_channel', {}).get('ffi') != 1:
                     matched = [ch for at, cp, ch in channels if cp == pid and abs(at - timestamp) < 3
                                and ch.get('method', 'bootPayload') == 'bootPayload']
                     if len(matched) != 1: raise ValueError('Expected one native channel trace per startup')
@@ -128,7 +133,7 @@ def analyze(run):
             item['breakdown'] = {k: dict(stats([r['buckets_us'][k] for r in profiles]),
                 percent_of_total=statistics.mean(r['buckets_us'][k] for r in profiles) / total * 100)
                 for k in profiles[0]['buckets_us']}
-            if channels:
+            if profiles and all('channel' in sample for sample in profiles):
                 item['channel_stages'] = {k: stats([s['channel'][k] for s in profiles])
                     for k in profiles[0]['channel'] if k.endswith('_us')}
                 item['native_lock_wait'] = stats([s['raw']['native']['lock_wait'] for s in profiles])

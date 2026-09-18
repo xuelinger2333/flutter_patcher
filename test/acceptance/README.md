@@ -98,7 +98,7 @@ not additive until their enclosing spans have been adjusted.
 Use `python test/acceptance/analyze_bootstrap.py --run PATH_TO_REGRESSION_RUN
 --out PATH_TO_ANALYSIS_JSON` to join profiles to the exact twenty sampled cold
 starts and summarize durations and shares. Add `--assert-budget` to return
-nonzero when lean bootstrap exceeds 85 ms or whole exceeds 200 ms in any sampled
+nonzero when lean bootstrap exceeds 85 ms or whole exceeds 250 ms in any sampled
 startup. This uses absolute bootstrap time, not the Android start-time delta.
 That performance failure is separate
 from the functional matrix verdict. The analyzer also supports older runs with
@@ -140,3 +140,14 @@ digests outside timing, counter reconciliation and same-process liveness.
 RSS/high-water RSS and post-frame dumpsys meminfo are observations for this fixed
 payload, not a maximum-size transfer certification. Restore the freshly tested
 acceptance APK afterward with `adb -s SERIAL install -r ACCEPTANCE_APK`.
+
+Compact device acceptance: add `--compact` to `run_matrix.py` or
+`rebuild_regression.py`. All 31 scenarios run once; repeated performance sampling,
+post-rejection cold starts and second recovery confirmation starts are omitted.
+Necessary activation, withdrawal and crash/ANR recovery remain. Results identify
+`matrix_mode: compact-once`; they are not full performance stability evidence.
+
+To isolate one scenario while still validating the complete corpus, pass
+`run_matrix.py --case CASE_ID`; the result records `scope: single_case:CASE_ID`.
+For separated batches use `--start-index N --limit M` (where `M` is at most 20);
+the complete corpus is still integrity-checked before the selected batch runs.

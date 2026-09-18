@@ -2,6 +2,10 @@
 
 [English](README.md) | **简体中文**
 
+当前开发版 CLI 默认使用 bytecode：补丁自动优先 lean，必要时检查 whole；
+Android bootstrap 自动优先可用 FFI。应用保留自己的 Binding，通常无需选择
+standard/custom。SO 仍走现有 v1 流程。详见[默认路径与回退规则](doc/default-paths.md)。
+
 [![pub package](https://img.shields.io/pub/v/flutter_patcher.svg)](https://pub.dev/packages/flutter_patcher)
 [![Platform](https://img.shields.io/badge/platform-Android-brightgreen)](https://flutter.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

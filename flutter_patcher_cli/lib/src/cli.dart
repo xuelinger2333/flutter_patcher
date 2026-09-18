@@ -66,7 +66,13 @@ ArgParser parser() {
     ..addOption('previous-seq')
     ..addMultiOption('assets',
         help: 'Asset keys to override; omitted selects changed assets.')
-    ..addOption('strategy', defaultsTo: 'so', allowed: ['so', 'bytecode']);
+    ..addOption('strategy',
+        defaultsTo: 'bytecode',
+        allowed: ['so', 'bytecode'],
+        help: 'Bytecode by default; SO uses the existing v1 workflow.');
+  patch.addFlag('no-framework-reuse',
+      help:
+          'Disable WP-2.5 framework reuse for an explicit full-whole comparison.');
   final build = environmentOptions()
     ..addOption('host-policy',
         help:
@@ -75,7 +81,10 @@ ArgParser parser() {
         help: 'Application source directory; builds use an isolated copy.')
     ..addOption('target', defaultsTo: 'lib/main.dart')
     ..addOption('out', help: 'New APK/report output directory.')
-    ..addOption('strategy', defaultsTo: 'so', allowed: ['so', 'bytecode']);
+    ..addOption('strategy',
+        defaultsTo: 'bytecode',
+        allowed: ['so', 'bytecode'],
+        help: 'Bytecode by default; SO uses the existing v1 workflow.');
   final doctor = environmentOptions();
   final interfaces = environmentOptions()
     ..addOption('dill', help: 'Unannotated baseline app.dill.')

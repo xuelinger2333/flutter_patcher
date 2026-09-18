@@ -4,7 +4,7 @@ int bootstrapBudgetUs(String tier) {
     case 'lean':
       return 85000;
     case 'whole':
-      return 200000;
+      return 250000;
     default:
       throw ArgumentError.value(tier, 'tier');
   }

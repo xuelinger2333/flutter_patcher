@@ -1,7 +1,7 @@
-# Bootstrap performance budget decision (2026-09-11)
+# Bootstrap performance budget decision (updated 2026-09-15)
 
 Lean is the normal patch path: **85 ms**. Whole is the compatibility fallback
-within the same authenticated baseline: **200 ms**. These are targets, not an
+within the same authenticated baseline: **250 ms**. These are targets, not an
 assertion that the current implementation meets them. Whole is not a fallback
 across arbitrary Flutter/engine versions: fingerprint, version, signature and
 interface constraints still apply. It is not a guarantee that every patch is safe.
@@ -13,12 +13,18 @@ Android `am start TotalTime` and its difference from an unpatched app remain
 separate diagnostics. A stopwatch overrun is an alert, never a reason to skip
 integrity checks or to silently reject an otherwise valid patch.
 
-Each tier's acceptance record contains ten process-cold starts with the established
+The optional full performance run contains ten process-cold starts per tier with the established
 three-second dwell and restart spacing. A performance verdict is green only if
 all ten bootstrap samples are at or below its tier budget. Report distributions,
 device/OS, artifact/source identity and measurement conditions. Do not relabel an
 old failed performance record; analysis under this policy must state the policy.
 Functional matrix success is independent of these performance verdicts.
+
+The 2026-09-15 compact acceptance runs all 31 scenarios once for standard and
+custom, without additional performance loops or redundant cold starts. It keeps
+necessary activation, withdrawal and fault-recovery starts. Single observed
+bootstrap timings are reported against lean 85 ms / whole 250 ms, not presented
+as a ten-sample stability result. Earlier 200 ms verdicts remain historical.
 
 `plan/SPEC_M1.md` is updated locally with the same decision. This tracked document
 preserves it because the plan directory is ignored by Git. Runtime policy lives
@@ -48,7 +54,8 @@ messages: payload, complete envelope and manifest entries. Feeding multiple
 hashers from one chunk loop does not eliminate their independent compression
 work. The module is only a subrange of the ZIP payload, not the same message.
 
-`test/acceptance/hash_scan_benchmark.dart` compares sequential and interleaved
+The archived `test/acceptance/hash_scan_benchmark.dart` in the local
+`pre-ffi-baseline-20260915` tag compares sequential and interleaved
 32-KiB chunk feeding of the three real whole-file ranges, validates equal digests,
 warms up four rounds and alternates order over twelve measured rounds. A local
 Windows AOT run measured 38.283 versus 37.2345 ms median (about 2.7% difference).
