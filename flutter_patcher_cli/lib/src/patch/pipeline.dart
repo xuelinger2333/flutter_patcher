@@ -12,7 +12,7 @@ import 'sources.dart';
 import 'package.dart';
 import 'resources.dart';
 import 'tier_policy.dart';
-import 'framework_carry.dart';
+import 'framework_reuse.dart';
 
 class PatchFailure extends Failure {
   final Map<String, Object?> details;
@@ -281,24 +281,10 @@ class PatchPipeline {
       final reuseRequested = req.frameworkReuse &&
           partition != null &&
           usage.contains('framework-reuse');
-      await writeObject(wholeInterface, {
-        for (final section in interfaceYaml.keys)
-          section as String: [
-            for (final row in (interfaceYaml[section] as List? ?? []))
-              if ((row['library'] as String).startsWith('dart:') ||
-                  (reuseRequested &&
-                      (row['library'] as String)
-                          .startsWith('package:flutter/')))
-                row
-          ]
-      });
-      await writeObject(fullWholeInterface, {
-        for (final section in interfaceYaml.keys)
-          section as String: [
-            for (final row in (interfaceYaml[section] as List? ?? []))
-              if ((row['library'] as String).startsWith('dart:')) row
-          ]
-      });
+      await writeWholeInterface(wholeInterface, interfaceYaml,
+          includeFramework: reuseRequested);
+      await writeWholeInterface(fullWholeInterface, interfaceYaml,
+          includeFramework: false);
       var tier = 'lean';
       var reuseEnabled = false;
       String? carryPackages;
@@ -376,133 +362,45 @@ class PatchPipeline {
         final whole = await compile(false);
         require(whole['status'] == 'checked', 'PATCH_UNSAFE',
             'Whole-tier checks failed; evidence: $work');
-        // A lean rejection can happen before the framework libraries are
-        // emitted, so `module_libraries` alone is not a complete description
-        // of M0.  Allocation and interface diagnostics carry the authoritative
-        // library URI for each cross-boundary framework use; collect those
-        // together with any libraries the compiler did report explicitly.
-        final candidate = <String>{
-          for (final uri in ((first['module_libraries'] as List?) ?? const []))
-            if (uri is String && uri.startsWith('package:flutter/')) uri
-        };
-        void collectFrameworkLibraries(Object? value) {
-          if (value is Map) {
-            final uri = value['library'];
-            if (uri is String && uri.startsWith('package:flutter/')) {
-              candidate.add(uri);
-            }
-            for (final child in value.values) {
-              collectFrameworkLibraries(child);
-            }
-          } else if (value is List) {
-            for (final child in value) {
-              collectFrameworkLibraries(child);
-            }
-          }
-        }
-
-        collectFrameworkLibraries(first['checks']);
-        final available = partition == null
-            ? <String>{}
-            : (partition['carry'] as List).cast<String>().toSet();
-        final hostBarrels = partition == null
-            ? <String>{}
-            : {
-                for (final row in (partition['libraries'] as List? ?? const []))
-                  if (row is Map &&
-                      row['role'] == 'host' &&
-                      (row['declarations'] as List? ?? const []).isEmpty)
-                    row['uri'] as String
-              };
-        final missing = candidate
-            .where(
-                (uri) => !available.contains(uri) && !hostBarrels.contains(uri))
-            .toSet();
-        final effectiveCandidate =
-            candidate.where((uri) => !hostBarrels.contains(uri)).toSet();
-        if (reuseRequested &&
-            effectiveCandidate.isNotEmpty &&
-            missing.isEmpty &&
-            available.containsAll(effectiveCandidate)) {
-          final selected = effectiveCandidate.where(available.contains).toSet();
-          selectedCarry = selected;
-          final carry = await prepareFrameworkCarry(
-              partition: partitionPath,
+        final plan = FrameworkReusePlan(partition, frameworkCandidates(first));
+        if (reuseRequested && plan.carriable) {
+          selectedCarry = plan.effective;
+          final carry = await carryFrameworkLibraries(
+              partitionPath: partitionPath,
               sdkRoot: sdk.root,
-              destination: p.join(work, 'module'),
+              work: work,
               packagesConfig: remap['packages'] as String,
               seq: req.seq,
-              selected: selected);
+              selected: selectedCarry,
+              available: plan.available,
+              own: own,
+              names: names);
           carryPackages = carry['packages'] as String;
           carryOwn.add(carry['package'] as String);
-          final rewrites =
-              (carry['uri_rewrites'] as Map).cast<String, String>();
-          for (final package in own) {
-            final directory = Directory(p.join(work, 'module', package));
-            if (!await directory.exists()) continue;
-            await for (final entity
-                in directory.list(recursive: true, followLinks: false)) {
-              if (entity is! File || !entity.path.endsWith('.dart')) continue;
-              await entity.writeAsString(rewriteImports(
-                  await entity.readAsString(), names,
-                  uriRewrites: rewrites));
-            }
-          }
           reuseEnabled = true;
-          frameworkReuseInfo = {
-            'enabled': true,
-            'partition_sha256': await hashFile(partitionPath),
-            'carried': (carry['carried'] as List).cast<String>(),
-            'host_bound_count': available.length - selected.length,
-          };
+          frameworkReuseInfo = carry['info'] as Map<String, Object?>;
           final reuseCheck = await compile(false, reuse: true);
           require(reuseCheck['status'] == 'checked', 'PATCH_UNSAFE',
               'Framework reuse checks failed; evidence: $work');
-        } else if (reuseRequested && effectiveCandidate.isNotEmpty) {
-          final reason = missing.isEmpty
-              ? effectiveCandidate.join(', ')
-              : missing.join(', ');
-          frameworkReuseReasons.add({
-            'code': 'FRAMEWORK_NOT_CARRIABLE',
-            'message':
-                'Framework library set requires host declarations: $reason',
-            'libraries':
-                (missing.isEmpty ? effectiveCandidate : missing).toList()
-          });
+        } else if (reuseRequested && plan.effective.isNotEmpty) {
+          frameworkReuseReasons.add(plan.notCarriable());
         }
       }
       final finalReport = await compile(true, reuse: reuseEnabled);
       require(finalReport['status'] == 'compiled', 'PATCH_UNSAFE',
           'Final compiler checks failed; evidence: $work');
       if (reuseEnabled) {
-        // Prove on the artifact that only the planned framework copies are in
-        // the module and no original package:flutter library leaked in.
         phase = 'structure';
-        final structure = await commands.runResult(sdk.dart, [
-          tool,
-          'verify-structure',
-          '--bytecode',
-          p.join(work, 'module.bc'),
-          '--expect-prefix',
-          'package:patch.${req.seq}.',
-          '--forbid-prefix',
-          'package:$app/',
-          '--framework-reuse',
-          partitionPath,
-          '--carry-package',
-          'package:${carryOwn.single}',
-          '--expected-carried',
-          selectedCarry.join(','),
-        ]);
-        await File(p.join(work, 'structure.log'))
-            .writeAsString('${structure.stdout}\n${structure.stderr}');
-        require(structure.exitCode == 0, 'PATCH_TOOL_FAILED',
-            'Structure check failed to run; evidence: $work');
-        await File(p.join(work, 'structure.json'))
-            .writeAsString(structure.stdout);
-        final verdict = await readObject(p.join(work, 'structure.json'));
-        require(verdict['ok'] == true, 'PATCH_UNSAFE',
-            'Framework reuse structure check failed; evidence: $work');
+        await verifyReuseStructure(
+            commands: commands,
+            dart: sdk.dart,
+            tool: tool,
+            work: work,
+            seq: req.seq,
+            app: app,
+            partitionPath: partitionPath,
+            carryPackage: carryOwn.single,
+            carried: selectedCarry);
       }
       require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',
           'Resource transform did not run');
