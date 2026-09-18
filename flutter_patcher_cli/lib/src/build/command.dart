@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
+import '../sdk/android.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/host.dart';
 import '../sdk/environment.dart';
@@ -55,24 +56,11 @@ Future<int> buildCommand(ArgResults args) async {
         Uri.parse(required('baseline-store')), commands,
         offline: offline);
     await baselineStore.probe();
-    final android = Platform.environment['ANDROID_HOME'] ??
-        Platform.environment['ANDROID_SDK_ROOT'];
-    require(
-        android != null &&
-            await Directory(p.join(android, 'build-tools')).exists(),
-        'ANDROID_SDK_MISSING',
+    final android = locateAndroidSdk(host);
+    require(android != null, 'ANDROID_SDK_MISSING',
         'Set ANDROID_HOME to an initialized Android SDK.');
-    final buildTools = await Directory(p.join(android!, 'build-tools'))
-        .list()
-        .where((f) => f is Directory)
-        .toList();
-    buildTools.sort((a, b) => b.path.compareTo(a.path));
-    final aapts = buildTools
-        .map((d) => p.join(d.path, host.exe('aapt')))
-        .where((f) => File(f).existsSync())
-        .toList();
-    require(aapts.isNotEmpty, 'ANDROID_SDK_MISSING',
-        'Android build-tools aapt is missing.');
+    checkJavaHome(host);
+    final aapt = await selectAapt(android!, host);
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);
     await lock.lock(FileLock.blockingExclusive);
@@ -100,7 +88,7 @@ Future<int> buildCommand(ArgResults args) async {
             artifacts.file(
                 sdk, 'tools', 'flutter_patcher_tools-${sdk.version}.dill'),
             cache,
-            aapts.first,
+            aapt,
             engine,
             BaselineRepository(p.join(cache, 'baselines'), baselineStore))
         .build(request);
