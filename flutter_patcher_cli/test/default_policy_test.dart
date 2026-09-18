@@ -15,6 +15,18 @@ void main() {
     }
   });
 
+  test('framework reuse is on by default and can be disabled per command', () {
+    for (final command in ['build', 'patch']) {
+      expect(
+          parser().parse([command, 'android']).command!['no-framework-reuse'],
+          false);
+      expect(
+          parser().parse([command, 'android', '--no-framework-reuse']).command![
+              'no-framework-reuse'],
+          true);
+    }
+  });
+
   test('any host reuse restriction requires a separately checked whole patch',
       () {
     for (final checked in [true, false]) {

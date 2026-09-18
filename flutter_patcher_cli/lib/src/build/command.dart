@@ -47,7 +47,8 @@ Future<int> buildCommand(ArgResults args) async {
                 await File(args['host-policy'] as String).readAsString()),
         target: args['target'] as String,
         flavor: args['flavor'] as String?,
-        versionCode: args['version-code'] as String?);
+        versionCode: args['version-code'] as String?,
+        frameworkReuse: args['no-framework-reuse'] != true);
     await request.validate();
     final offline = args['offline'] == true;
     require(!(offline && args['refresh-tools'] == true), 'CONFIG_INVALID',

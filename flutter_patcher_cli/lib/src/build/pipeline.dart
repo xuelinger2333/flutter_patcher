@@ -22,6 +22,10 @@ class BuildRequest {
 
   /// Internal integration harness only; deliberately not a CLI option.
   final bool pipelineValidationOnly;
+
+  /// WP-2.5 host reuse surface. Off produces the pre-partition schema so the
+  /// same source can be measured with and without the surface.
+  final bool frameworkReuse;
   BuildRequest(
       {required this.project,
       required this.output,
@@ -30,7 +34,8 @@ class BuildRequest {
       this.flavor,
       this.versionCode,
       this.hostPolicy,
-      this.pipelineValidationOnly = false});
+      this.pipelineValidationOnly = false,
+      this.frameworkReuse = true});
   Future<void> validate() async {
     require(
         target.startsWith('lib/') &&
@@ -118,7 +123,8 @@ class BuildPipeline {
           ].every(usage.contains),
           'TOOLS_VERSION_UNSUPPORTED',
           'CI tools with build inspection are required.');
-      final frameworkReuseTool = usage.contains('gen-framework-partition');
+      final frameworkReuseTool =
+          request.frameworkReuse && usage.contains('gen-framework-partition');
       final project =
           await workspace.copyPackage(request.project, application: true);
       final pubspec =
@@ -423,8 +429,7 @@ class BuildPipeline {
             partitionHash != null ? 4 : (request.hostPolicy == null ? 2 : 3),
         if (request.hostPolicy != null)
           'host_policy_sha256': request.hostPolicy!.digest,
-        if (partitionHash != null)
-          'framework_partition_sha256': partitionHash,
+        if (partitionHash != null) 'framework_partition_sha256': partitionHash,
         'flutter_version': sdk.version,
         'engine_commit': sdk.engine,
         'build_id': engine['build_id'],

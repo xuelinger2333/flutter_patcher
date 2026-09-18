@@ -85,6 +85,9 @@ ArgParser parser() {
         defaultsTo: 'bytecode',
         allowed: ['so', 'bytecode'],
         help: 'Bytecode by default; SO uses the existing v1 workflow.');
+  build.addFlag('no-framework-reuse',
+      help: 'Build without the WP-2.5 host reuse surface (schema 3 baseline) '
+          'for a same-source size and frame-time comparison.');
   final doctor = environmentOptions();
   final interfaces = environmentOptions()
     ..addOption('dill', help: 'Unannotated baseline app.dill.')
