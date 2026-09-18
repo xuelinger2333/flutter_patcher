@@ -7,9 +7,12 @@ import 'package:test/test.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/sdk/artifacts.dart';
 import 'package:flutter_patcher_cli/src/sdk/environment.dart';
+import 'package:flutter_patcher_cli/src/sdk/host.dart';
 
-final sdk =
-    SdkIdentity('/selected/sdk', '3.47.2', 'a' * 40, '3.13.2', 'b' * 40);
+// Fixtures describe a linux-x64 release; the host under test is pinned so the
+// suite is host-independent.
+final sdk = SdkIdentity('/selected/sdk', '3.47.2', 'a' * 40, '3.13.2', 'b' * 40,
+    host: HostIdentity.linuxX64);
 Map<String, dynamic> copy(Map<String, dynamic> input) =>
     jsonDecode(jsonEncode(input)) as Map<String, dynamic>;
 Matcher failure(String code) =>
@@ -105,6 +108,15 @@ void main() {
     checkManifest(fixture.engine, 'engine', sdk);
     checkManifest(fixture.tools, 'tools', sdk);
   });
+  test('a release built for another host is missing, not corrupt', () {
+    final windows = SdkIdentity(
+        sdk.root, sdk.version, sdk.engine, sdk.dartVersion, sdk.framework,
+        host: const HostIdentity('windows', 'x64'));
+    expect(windows.host.genSnapshotArtifact, 'gen_snapshot-windows-x64.exe');
+    expect(() => checkManifest(fixture.engine, 'engine', windows),
+        throwsA(failure('ENGINE_ARTIFACT_MISSING')));
+    checkManifest(fixture.tools, 'tools', windows);
+  });
   final mutations = <String, void Function(Map<String, dynamic>)>{
     'unknown schema': (m) => m['schema'] = 2,
     'mixed engine': (m) => m['engine_commit'] = 'f' * 40,
@@ -154,10 +166,10 @@ void main() {
     for (final entry in fixture.bytes.entries) {
       await File(p.join(temp.path, entry.key)).writeAsBytes(entry.value);
     }
-    await validateFiles(temp.path, fixture.engine);
+    await validateFiles(temp.path, fixture.engine, host: sdk.host);
     await validateFiles(temp.path, fixture.tools);
     await File(p.join(temp.path, 'gen_snapshot-linux-x64')).writeAsBytes([0]);
-    await expectLater(validateFiles(temp.path, fixture.engine),
+    await expectLater(validateFiles(temp.path, fixture.engine, host: sdk.host),
         throwsA(failure('ARTIFACT_HASH_MISMATCH')));
   });
   test('APK check uses inner SO hash, never the jar hash', () async {

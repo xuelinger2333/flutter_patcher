@@ -73,5 +73,9 @@ void main() {
     expect(utf8.decode((await store.read('trust.json'))!.bytes),
         await File(next).readAsString());
     await expectLater(store.delete('trust.json'), throwsA(isA<Failure>()));
-  }, skip: !Platform.isLinux ? 'Requires Linux/OpenSSL' : false);
+  },
+      tags: 'openssl',
+      skip: Platform.isLinux
+          ? false
+          : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
 }

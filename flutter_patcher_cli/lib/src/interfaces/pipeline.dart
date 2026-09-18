@@ -87,15 +87,15 @@ class InterfacePipeline {
     String file(String name) => p.join(staging, name);
     final platform = environment.sdkInput(sdk, managed,
         'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill');
-    final frontend = environment.sdkInput(sdk, managed,
-        'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot');
+    final frontend = environment.sdkInput(
+        sdk, managed, sdk.host.toolchain('frontend_server_aot.dart.snapshot'));
     final index = file('module-index.dill');
     final indexEntry = file('index-entry.dart');
     await File(indexEntry).writeAsString(
         'import ${jsonEncode(Uri.file(p.absolute(request.module)).toString())};\nvoid main() {}\n');
     // Source compilation is only for inspecting module imports. The tool dill is from CI.
     await commands.run(
-        p.join(sdk.root, 'bin/cache/dart-sdk/bin/dartaotruntime'),
+        sdk.dartAotRuntime,
         [
           frontend,
           '--sdk-root',

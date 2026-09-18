@@ -121,7 +121,7 @@ class PatchPipeline {
       final project =
           await workspace.copyPackage(req.project, application: true);
       await commands.run(
-          p.join(managed, 'bin/flutter'),
+          sdk.host.flutterLauncher(managed),
           [
             '--suppress-analytics',
             'pub',
@@ -224,7 +224,7 @@ class PatchPipeline {
       phase = 'resources';
       final bundle = p.join(work, 'flutter_assets');
       await commands.run(
-          p.join(managed, 'bin/flutter'),
+          sdk.host.flutterLauncher(managed),
           [
             '--suppress-analytics',
             'build',

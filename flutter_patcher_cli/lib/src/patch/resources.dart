@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../baseline/manifest.dart';
+import '../sdk/host.dart';
 
 void assetKey(String key) {
   require(
@@ -335,8 +336,8 @@ class PatchResources {
         var bytes = await read(source);
         if (points != null) {
           final output = p.join(work, 'font-${fonts.length}.otf');
-          final binary =
-              p.join(sdk, 'bin/cache/artifacts/engine/linux-x64/font-subset');
+          final host = HostIdentity.current();
+          final binary = p.join(sdk, host.toolchain(host.exe('font-subset')));
           require(await File(binary).exists(), 'FONT_SUBSET_FAILED',
               'SDK font-subset is missing');
           await commands.run(binary, [output, p.join(bundle, source)],

@@ -4,6 +4,7 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../sdk/artifacts.dart';
+import '../sdk/host.dart';
 import '../sdk/environment.dart';
 import '../baseline/repository.dart';
 import '../baseline/store.dart';
@@ -16,8 +17,7 @@ Future<int> patchCommand(ArgResults args) async {
         'USAGE_ERROR', 'Use patch android');
     require(args['strategy'] == 'bytecode', 'PATCH_STRATEGY_UNSUPPORTED',
         'Select --strategy bytecode; v1 SO tooling is unchanged');
-    require(
-        Platform.isLinux, 'HOST_UNSUPPORTED', 'M1 patch requires Linux x64');
+    requireSupportedHost();
     String value(String name) {
       final v = args[name] as String?;
       require(
@@ -29,8 +29,6 @@ Future<int> patchCommand(ArgResults args) async {
     await rejectLinks(cache);
     await Directory(cache).create(recursive: true);
     final commands = Commands(cache);
-    require((await commands.run('uname', ['-m'])).trim() == 'x86_64',
-        'HOST_UNSUPPORTED', 'M1 patch requires Linux x64');
     final offline = args['offline'] == true;
     require(!(offline && args['refresh-tools'] == true), 'CONFIG_INVALID',
         'Cannot refresh tools offline');

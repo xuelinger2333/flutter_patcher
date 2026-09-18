@@ -133,7 +133,7 @@ class BuildPipeline {
               as Map;
       final package = pubspec['name'] as String;
       phase = 'pub-get';
-      await run(p.join(managed, 'bin/flutter'),
+      await run(sdk.host.flutterLauncher(managed),
           ['--suppress-analytics', 'pub', 'get', '--enforce-lockfile'],
           cwd: project);
       final packages = p.join(project, '.dart_tool/package_config.json');
@@ -158,7 +158,7 @@ class BuildPipeline {
       final platform = environment.sdkInput(sdk, managed,
           'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill');
       final frontend = environment.sdkInput(sdk, managed,
-          'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot');
+          sdk.host.toolchain('frontend_server_aot.dart.snapshot'));
       final baseline = p.join(work, 'baseline');
       await Directory(baseline).create();
       final analysis = p.join(work, 'analysis.dill');
@@ -195,7 +195,7 @@ class BuildPipeline {
           return;
         }
         await run(
-            p.join(sdk.root, 'bin/cache/dart-sdk/bin/dartaotruntime'),
+            sdk.dartAotRuntime,
             [
               frontend,
               '--sdk-root',
@@ -350,7 +350,7 @@ class BuildPipeline {
       final mirror =
           p.join(cache, 'mirrors', sdk.version, engine['build_id'] as String);
       await run(
-          p.join(managed, 'bin/flutter'),
+          sdk.host.flutterLauncher(managed),
           [
             '--suppress-analytics',
             'build',

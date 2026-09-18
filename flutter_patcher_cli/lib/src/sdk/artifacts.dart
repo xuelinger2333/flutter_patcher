@@ -4,6 +4,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
+import 'host.dart';
 
 final hex40 = RegExp(r'^[0-9a-f]{40}$');
 final hex64 = RegExp(r'^[0-9a-f]{64}$');
@@ -11,9 +12,14 @@ final versionPattern = RegExp(r'^\d+\.\d+\.\d+$');
 
 class SdkIdentity {
   final String root, version, engine, dartVersion, framework;
+  final HostIdentity host;
   SdkIdentity(
-      this.root, this.version, this.engine, this.dartVersion, this.framework);
-  String get dart => p.join(root, 'bin/cache/dart-sdk/bin/dart');
+      this.root, this.version, this.engine, this.dartVersion, this.framework,
+      {HostIdentity? host})
+      : host = host ?? HostIdentity.current();
+  String get dart => host.dartBinary(root);
+  String get dartAotRuntime => host.dartAotRuntime(root);
+  String get flutter => host.flutterLauncher(root);
   Map<String, dynamic> toJson() => {
         'flutter_version': version,
         'engine_commit': engine,
@@ -50,7 +56,7 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
   final expected = kind == 'engine'
       ? {
           'engine': 'libflutter-arm64_v8a-release.jar',
-          'gen_snapshot': 'gen_snapshot-linux-x64',
+          'gen_snapshot': sdk.host.genSnapshotArtifact,
           'embedding': 'flutter_embedding_release.jar'
         }
       : {'tools': 'flutter_patcher_tools-${sdk.version}.dill'};
@@ -67,14 +73,21 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
             expected.containsKey(row['role']) &&
             seen.add(row['role'] as String),
         'Unexpected or duplicate role.');
+    if (row['role'] == 'gen_snapshot') {
+      // Schema 1 releases carry one gen_snapshot. A release built for another
+      // host is not corrupt; it simply has nothing for this machine.
+      require(
+          row['name'] == expected['gen_snapshot'],
+          'ENGINE_ARTIFACT_MISSING',
+          'Engine release has no gen_snapshot for host ${sdk.host.key} '
+              '(release provides ${row['name']}).');
+      valid(row['host_os'] == sdk.host.os && row['host_arch'] == sdk.host.arch,
+          'Wrong gen_snapshot host.');
+    }
     valid(
         row['name'] == expected[row['role']], 'Unexpected artifact filename.');
     valid(row['size'] is int && row['size'] > 0 && hash(row['sha256'], hex64),
         'Invalid file size/hash.');
-    if (row['role'] == 'gen_snapshot') {
-      valid(row['host_os'] == 'linux' && row['host_arch'] == 'x64',
-          'Wrong gen_snapshot host.');
-    }
     if (row['role'] == 'engine' || row['role'] == 'embedding') {
       final name = row['role'] == 'engine'
           ? 'arm64_v8a_release'
@@ -130,8 +143,9 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
   }
 }
 
-Future<void> validateFiles(
-    String directory, Map<String, dynamic> manifest) async {
+Future<void> validateFiles(String directory, Map<String, dynamic> manifest,
+    {HostIdentity? host}) async {
+  host ??= HostIdentity.current();
   for (final row in manifest['files'] as List) {
     final file = p.join(directory, row['name'] as String);
     await rejectLinks(file);
@@ -146,15 +160,8 @@ Future<void> validateFiles(
       require(bytes.length >= 4 && bytes.take(4).join(',') == '144,171,205,239',
           'ARTIFACT_INVALID', 'Not a kernel dill.');
     } else if (row['role'] == 'gen_snapshot') {
-      require(
-          bytes.length > 20 &&
-              bytes.take(4).join(',') == '127,69,76,70' &&
-              bytes[4] == 2 &&
-              bytes[5] == 1 &&
-              bytes[18] == 62 &&
-              bytes[19] == 0,
-          'ARTIFACT_INVALID',
-          'Not a Linux x64 ELF.');
+      require(host.isNativeExecutable(bytes), 'ARTIFACT_INVALID',
+          'Not a ${host.key} executable.');
     } else {
       final archive = ZipDecoder().decodeBytes(bytes);
       if (row['role'] == 'engine') {
@@ -250,7 +257,7 @@ class ArtifactStore {
             'Cached source changed.');
         final manifest = await readObject(p.join(directory, manifestName));
         checkManifest(manifest, kind, sdk);
-        await validateFiles(directory, manifest);
+        await validateFiles(directory, manifest, host: sdk.host);
         return manifest;
       } catch (_) {
         if (downloads.offline) rethrow;
@@ -270,7 +277,7 @@ class ArtifactStore {
           p.join(staging, file['name'] as String),
           missingCode: missing, maxBytes: file['size'] as int);
     }
-    await validateFiles(staging, manifest);
+    await validateFiles(staging, manifest, host: sdk.host);
     await writeObject(p.join(staging, 'source.json'), {'url': source});
     if (await Directory(directory).exists()) await quarantine(directory);
     await Directory(staging).rename(directory);

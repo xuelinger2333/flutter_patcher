@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 import '../core.dart';
 import 'artifacts.dart';
+import 'host.dart';
 
 String findFlutter(String? requested) {
   if (requested != null) return p.absolute(requested);
@@ -21,14 +22,16 @@ String findFlutter(String? requested) {
       'Flutter is not on PATH. Select it with --flutter-sdk.');
 }
 
-Future<SdkIdentity> identify(String root, Commands commands) async {
+Future<SdkIdentity> identify(String root, Commands commands,
+    {HostIdentity? host}) async {
+  host ??= HostIdentity.current();
   require(
       await File(p.join(root, 'bin/cache/flutter_tools.snapshot')).exists() &&
-          await File(p.join(root, 'bin/cache/dart-sdk/bin/dart')).exists(),
+          await File(host.dartBinary(root)).exists(),
       'SDK_NOT_READY',
       'Selected Flutter SDK must already be initialized; doctor will not bootstrap it in place.');
   await checkSdkReady(root, commands);
-  final result = await commands.run(p.join(root, 'bin/flutter'),
+  final result = await commands.run(host.flutterLauncher(root),
       ['--suppress-analytics', '--version', '--machine'],
       code: 'FLUTTER_VERSION_INVALID');
   Map<String, dynamic> version;
@@ -57,7 +60,7 @@ Future<SdkIdentity> identify(String root, Commands commands) async {
           engine,
       'FLUTTER_VERSION_INVALID',
       'Selected SDK engine.version differs from flutter --version.');
-  return SdkIdentity(root, v, engine, dart, framework);
+  return SdkIdentity(root, v, engine, dart, framework, host: host);
 }
 
 /// Refuse SDK states that cause the Flutter launcher to rebuild itself.
@@ -75,8 +78,12 @@ Future<void> checkSdkReady(String root, Commands commands) async {
           .run('git', ['-C', root, 'rev-parse', 'HEAD'], code: 'SDK_NOT_READY'))
       .trim();
   final engine = await read('bin/internal/engine.version');
+  // flutter.bat writes the compile key quoted ("<revision>:"); the POSIX
+  // launcher writes it bare.
+  final toolsStamp =
+      (await read('bin/cache/flutter_tools.stamp')).replaceAll('"', '');
   require(
-      await read('bin/cache/flutter_tools.stamp') == '$framework:' &&
+      toolsStamp == '$framework:' &&
           await read('bin/cache/engine.stamp') == engine &&
           await read('bin/cache/engine-dart-sdk.stamp') == engine &&
           (await read('bin/cache/engine.realm')).isEmpty,
@@ -134,7 +141,7 @@ class EnvironmentBuilder {
       require(commit == sdk.framework, 'SDK_PREPARE_FAILED',
           'Flutter version tag differs from the selected SDK revision.');
       // Bootstrap stock downloads before constructing/using the local Maven mirror.
-      await commands.run(p.join(staging, 'bin/flutter'),
+      await commands.run(sdk.host.flutterLauncher(staging),
           ['--suppress-analytics', 'precache', '--android'],
           code: 'SDK_PREPARE_FAILED');
       require(
@@ -152,19 +159,18 @@ class EnvironmentBuilder {
         (await commands.run('git', ['-C', target, 'rev-parse', 'HEAD'])).trim();
     require(commit == sdk.framework, 'SDK_PREPARE_FAILED',
         'Managed SDK checkout changed.');
-    final snapshot = store.file(sdk, 'engine', 'gen_snapshot-linux-x64');
-    final installed = p.join(target,
-        'bin/cache/artifacts/engine/android-arm64-release/linux-x64/gen_snapshot');
+    final snapshot = store.file(sdk, 'engine', sdk.host.genSnapshotArtifact);
+    final installed = p.join(target, sdk.host.genSnapshotInstall);
     await rejectLinks(installed);
     await Directory(p.dirname(installed)).create(recursive: true);
     if (!await File(installed).exists() ||
         await hashFile(installed) != await hashFile(snapshot)) {
       final stage = temporaryName(installed);
       await File(snapshot).copy(stage);
-      await commands.run('chmod', ['755', stage]);
+      await markExecutable(commands, stage, host: sdk.host);
       await File(stage).rename(installed);
     }
-    await commands.run('chmod', ['755', installed]);
+    await markExecutable(commands, installed, host: sdk.host);
     require(await hashFile(installed) == await hashFile(snapshot),
         'ENGINE_ARTIFACT_MISMATCH', 'Installed gen_snapshot mismatch.');
     await mirror(sdk, store, engine);
@@ -210,8 +216,8 @@ class EnvironmentBuilder {
       {bool requireIndex = false}) async {
     final platform = sdkInput(sdk, managed,
         'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill');
-    final frontend = sdkInput(sdk, managed,
-        'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot');
+    final frontend = sdkInput(
+        sdk, managed, sdk.host.toolchain('frontend_server_aot.dart.snapshot'));
     require(await File(platform).exists() && await File(frontend).exists(),
         'SDK_NOT_READY', 'Matching SDK compiler inputs are missing.');
     final inputs = <String, dynamic>{
@@ -279,12 +285,12 @@ class EnvironmentBuilder {
         'dependencies:\n  flutter:\n    path: ${jsonEncode(p.join(sdk.root, 'packages/flutter'))}\n');
     await File(p.join(probe, 'main.dart')).writeAsString(
         "import 'package:flutter/material.dart';\nvoid main() { runApp(const SizedBox()); }\n");
-    await commands.run(p.join(managed, 'bin/flutter'),
+    await commands.run(sdk.host.flutterLauncher(managed),
         ['--suppress-analytics', 'pub', 'get', if (offline) '--offline'],
         cwd: probe, code: 'YAML_GENERATION_FAILED');
     final dill = p.join(probe, 'linked.dill');
     await commands.run(
-        p.join(sdk.root, 'bin/cache/dart-sdk/bin/dartaotruntime'),
+        sdk.dartAotRuntime,
         [
           frontend,
           '--sdk-root',
@@ -371,10 +377,10 @@ class EnvironmentBuilder {
         {'configVersion': 2, 'packages': []});
     final platform = sdkInput(sdk, managed,
         'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill');
-    final frontend = sdkInput(sdk, managed,
-        'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot');
+    final frontend = sdkInput(
+        sdk, managed, sdk.host.toolchain('frontend_server_aot.dart.snapshot'));
     await commands.run(
-        p.join(sdk.root, 'bin/cache/dart-sdk/bin/dartaotruntime'),
+        sdk.dartAotRuntime,
         [
           frontend,
           '--sdk-root',
@@ -392,8 +398,7 @@ class EnvironmentBuilder {
           p.join(work, 'main.dart')
         ],
         code: 'ENGINE_ARTIFACT_MISMATCH');
-    final snapshot = p.join(managed,
-        'bin/cache/artifacts/engine/android-arm64-release/linux-x64/gen_snapshot');
+    final snapshot = p.join(managed, sdk.host.genSnapshotInstall);
     final elf = p.join(work, 'libapp.so');
     await commands.run(
         snapshot,

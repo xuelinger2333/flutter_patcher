@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/sdk/artifacts.dart';
 import 'package:flutter_patcher_cli/src/sdk/environment.dart';
+import 'package:flutter_patcher_cli/src/sdk/host.dart';
 
 class FakeCompiler extends Commands {
   int generators = 0;
@@ -48,10 +49,11 @@ void main() {
         'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
         'platform');
     await seed(
-        'bin/cache/artifacts/engine/linux-x64/frontend_server_aot.dart.snapshot',
+        HostIdentity.linuxX64.toolchain('frontend_server_aot.dart.snapshot'),
         'compiler');
     final tool = await seed('tools.dill', 'tool v1');
-    final sdk = SdkIdentity(root, '3.47.2', 'a' * 40, '3.13.2', 'b' * 40);
+    final sdk = SdkIdentity(root, '3.47.2', 'a' * 40, '3.13.2', 'b' * 40,
+        host: HostIdentity.linuxX64);
     final commands = FakeCompiler(temp.path);
     final builder = EnvironmentBuilder(p.join(temp.path, 'cache'), commands);
     final first = await builder.yamlCache(sdk, root, tool.path);

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
+import '../sdk/host.dart';
 import '../crypto/signing.dart';
 import 'store.dart';
 import 'trust.dart';
@@ -19,8 +20,7 @@ ArgParser trustOptions() => ArgParser()
   ..addOption('cache-dir');
 
 Future<int> trustCommand(ArgResults args) async {
-  require(Platform.isLinux, 'HOST_UNSUPPORTED',
-      'Trust signing requires Linux/OpenSSL.');
+  requireSupportedHost();
   require(
       args.rest.length == 1 && {'sign', 'publish'}.contains(args.rest.single),
       'USAGE_ERROR',

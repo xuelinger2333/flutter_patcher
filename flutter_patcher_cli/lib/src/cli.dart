@@ -4,6 +4,7 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import 'core.dart';
 import 'sdk/artifacts.dart';
+import 'sdk/host.dart';
 import 'sdk/environment.dart';
 import 'interfaces/pipeline.dart';
 import 'baseline/command.dart';
@@ -237,16 +238,13 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
                   DateTime.now().microsecondsSinceEpoch.toString())));
       await interfaceRequest.validate();
     }
-    require(Platform.isLinux, 'HOST_UNSUPPORTED',
-        'M1 requires Linux x64, including x64 WSL2.');
+    final host = requireSupportedHost();
     final cache = managedCache(args['cache-dir'] as String?);
     await rejectLinks(cache);
     final commands = Commands(cache);
     await check('host', () async {
-      final arch = (await commands.run('uname', ['-m'])).trim();
-      require(arch == 'x86_64', 'HOST_UNSUPPORTED',
-          'M1 gen_snapshot requires Linux x64; detected $arch.');
-    }, 'Linux x64');
+      report['host'] = {'os': host.os, 'arch': host.arch};
+    }, 'Build host ${host.key}');
     await Directory(cache).create(recursive: true);
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);

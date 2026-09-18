@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:test/test.dart';
+import 'package:flutter_patcher_cli/src/core.dart';
+import 'package:flutter_patcher_cli/src/sdk/host.dart';
 
 void main() {
   Future<ProcessResult> cli(List<String> args) => Process.run(
@@ -37,5 +39,20 @@ void main() {
     expect(result.exitCode, 1);
     final report = jsonDecode(result.stdout as String) as Map;
     expect(jsonEncode(report), contains('HOST_UNSUPPORTED'));
-  }, skip: Platform.isLinux);
+  },
+      skip: HostIdentity.verified.contains(HostIdentity.current().key)
+          ? 'Runs only on hosts outside the WP-2.6 matrix'
+          : false);
+  test('verified hosts pass the gate; others are refused with the matrix', () {
+    expect(HostIdentity.verified, containsAll(['linux-x64', 'windows-x64']));
+    expect(HostIdentity.implemented, containsAll(HostIdentity.verified));
+    if (HostIdentity.verified.contains(HostIdentity.current().key)) {
+      expect(requireSupportedHost().key, HostIdentity.current().key);
+    } else {
+      expect(
+          requireSupportedHost,
+          throwsA(isA<Failure>()
+              .having((e) => e.code, 'code', 'HOST_UNSUPPORTED')));
+    }
+  });
 }

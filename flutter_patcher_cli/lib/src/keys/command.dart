@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'package:args/args.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
+import '../sdk/host.dart';
 
 ArgParser keysOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
@@ -50,9 +50,8 @@ bool _prefix(List<int> bytes, List<int> prefix) =>
 Future<int> keysCommand(ArgResults args) async {
   require(args.rest.length == 1 && args.rest.single == 'init', 'USAGE_ERROR',
       'Use keys init [--out <new-directory>].');
-  require(Abi.current() == Abi.linuxX64, 'HOST_UNSUPPORTED',
-      'M1 keys init supports Linux x64, including x64 WSL2.');
-  final home = Platform.environment['HOME'];
+  final host = requireSupportedHost();
+  final home = hostHome();
   require(args['out'] != null || home != null && home.isNotEmpty,
       'KEYS_CONFIG_INVALID', 'Specify --out when HOME is unavailable.');
   final out = p.normalize(p.absolute(
@@ -111,18 +110,33 @@ Future<int> keysCommand(ArgResults args) async {
   await Directory(p.dirname(out)).create(recursive: true);
   await rejectLinks(out);
   // mkdir is exclusive, unlike Directory.create: competing initializers cannot
-  // both succeed. Mode 700 is applied at creation, before any secret is written.
-  final claim = await Process.run('mkdir', ['-m', '700', '--', out]);
+  // both succeed. On POSIX mode 700 is applied at creation, before any secret
+  // is written; on Windows the directory is created exclusively by cmd's
+  // built-in mkdir and then its ACL is cut down to the current user.
+  final claim = host.isWindows
+      ? await Process.run('cmd', ['/c', 'mkdir', out])
+      : await Process.run('mkdir', ['-m', '700', '--', out]);
   require(claim.exitCode == 0, 'KEYS_OUTPUT_UNAVAILABLE',
       'Cannot exclusively create key directory (already exists or is not writable): $out');
+  if (host.isWindows) {
+    final user = Platform.environment['USERNAME'];
+    final acl = user == null
+        ? null
+        : await Process.run(
+            'icacls', [out, '/inheritance:r', '/grant:r', '$user:(OI)(CI)F']);
+    require(acl != null && acl.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
+        'Cannot restrict key directory permissions: $out');
+  }
   final privateFile = File(p.join(out, 'private-key.base64'));
   final publicFile = File(p.join(out, 'public-key.base64'));
   final ignoreFile = File(p.join(out, '.gitignore'));
   try {
     await privateFile.create();
-    final mode = await Process.run('chmod', ['600', '--', privateFile.path]);
-    require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
-        'Cannot protect private-key permissions.');
+    if (host.isPosix) {
+      final mode = await Process.run('chmod', ['600', '--', privateFile.path]);
+      require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
+          'Cannot protect private-key permissions.');
+    }
     await privateFile.writeAsString('${base64Encode(secret.sublist(16))}\n',
         flush: true);
     await publicFile.writeAsString('${base64Encode(public.sublist(12))}\n',

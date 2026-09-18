@@ -4,14 +4,14 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import '../baseline/store.dart';
 import '../core.dart';
+import '../sdk/host.dart';
 import 'pipeline.dart';
 import 'retention.dart';
 import 'store.dart';
 import 'transaction.dart';
 
 Future<int> productionPublish(ArgResults args) async {
-  require(Platform.isLinux, 'HOST_UNSUPPORTED',
-      'Production publishing currently requires Linux/OpenSSL');
+  requireSupportedHost();
   require(
       !['action', 'port', 'patch', 'version-code'].any(args.wasParsed),
       'PUBLISH_CONFIG_INVALID',

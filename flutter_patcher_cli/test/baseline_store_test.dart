@@ -100,7 +100,11 @@ void main() {
     expect(canonical(await verifyBaseline(restored)),
         canonical(await verifyBaseline(input)));
     await first.save(input, metadata(), flavor: 'default', versionCode: '1');
-  }, skip: !Platform.isLinux);
+  },
+      tags: 'zstd',
+      skip: Platform.isLinux
+          ? false
+          : 'Needs a verified zstd on PATH (WP-2.6 phase B item 5)');
 
   test(
       'real AWS CLI with isolated S3 emulator: roundtrip, conflict and missing',

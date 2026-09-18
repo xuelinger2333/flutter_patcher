@@ -311,5 +311,9 @@ void main() {
         verifyPublicationPatch(
             damaged, fields, public, p.join(temp.path, 'bad'), commands),
         throwsA(isA<Failure>()));
-  }, skip: !Platform.isLinux);
+  },
+      tags: 'openssl',
+      skip: Platform.isLinux
+          ? false
+          : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
 }

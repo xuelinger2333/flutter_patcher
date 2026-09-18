@@ -136,7 +136,9 @@ void main() {
     final manifest = await createManifest(root, meta);
     await writeObject(p.join(root, 'baseline.manifest.json'), manifest);
     expect((manifest['files'] as Map).length, 9);
-    if (Platform.isLinux) {
+    if (!Platform.isLinux) {
+      markTestSkipped('zstd roundtrip needs a verified zstd (WP-2.6 phase B)');
+    } else {
       final archive = BaselineArchive();
       await archive.pack(root, p.join(root, 'packed.tar.zst'));
       await archive.unpack(

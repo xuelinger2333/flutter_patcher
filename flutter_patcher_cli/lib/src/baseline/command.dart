@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
+import '../sdk/host.dart';
 import 'manifest.dart';
 import 'repository.dart';
 import 'store.dart';
@@ -30,8 +31,7 @@ ArgParser baselineOptions() => ArgParser()
 
 Future<int> baselineCommand(ArgResults args) async {
   try {
-    require(Platform.isLinux, 'HOST_UNSUPPORTED',
-        'M1 baseline operations require Linux x64 (including WSL2).');
+    requireSupportedHost();
     String required(String option) {
       final value = args[option] as String?;
       require(value != null && value.isNotEmpty, 'CONFIG_INVALID',
@@ -41,8 +41,6 @@ Future<int> baselineCommand(ArgResults args) async {
 
     final root = managedCache(args['cache-dir'] as String?);
     final commands = Commands(root);
-    require((await commands.run('uname', ['-m'])).trim() == 'x86_64',
-        'HOST_UNSUPPORTED', 'M1 requires Linux x64.');
     final uri = args['baseline-store'] as String?;
     final offline = args['offline'] == true;
     final store = uri == null || (offline && Uri.parse(uri).scheme != 'file')

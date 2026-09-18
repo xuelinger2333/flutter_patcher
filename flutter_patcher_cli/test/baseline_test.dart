@@ -422,5 +422,9 @@ void main() {
           BaselineArchive().unpack(truncated, p.join(temp.path, 'broken')),
           throwsA(isA<Failure>()));
     });
-  }, skip: !Platform.isLinux ? 'Requires real Linux zstd' : false);
+  },
+      tags: 'zstd',
+      skip: Platform.isLinux
+          ? false
+          : 'Needs a verified zstd on PATH (WP-2.6 phase B item 5)');
 }

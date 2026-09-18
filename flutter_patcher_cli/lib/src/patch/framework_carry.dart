@@ -49,8 +49,8 @@ Map<String, String> _relativeFrameworkRewrites({
     final resolved = base.resolve(value).toString();
     if (!resolved.startsWith('package:flutter/')) continue;
     if (carry.contains(resolved)) {
-      rewrites[value] = resolved.replaceFirst(
-          'package:flutter/', 'package:$packageName/');
+      rewrites[value] =
+          resolved.replaceFirst('package:flutter/', 'package:$packageName/');
     } else {
       rewrites[value] = resolved;
     }
@@ -149,14 +149,13 @@ Future<Map<String, Object?>> prepareFrameworkCarry({
     final target = File(p.join(root.path, relative));
     await target.parent.create(recursive: true);
     final text = await source.readAsString();
-    await target.writeAsString(
-        rewriteImports(text, const {},
-            uriRewrites: uriRewrites,
-            relativeUriRewrites: _relativeFrameworkRewrites(
-                relative: relative,
-                packageName: packageName,
-                carry: carry,
-                source: text)));
+    await target.writeAsString(rewriteImports(text, const {},
+        uriRewrites: uriRewrites,
+        relativeUriRewrites: _relativeFrameworkRewrites(
+            relative: relative,
+            packageName: packageName,
+            carry: carry,
+            source: text)));
     // Part files contribute declarations to the containing library's export
     // surface, so include their public types in the barrel hide list.
     final owner = ownerByRelative[relative] ?? '';

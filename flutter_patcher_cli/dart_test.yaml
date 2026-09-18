@@ -1,0 +1,9 @@
+# Host-scoped test tags (WP-2.6). Run a subset with `dart test -t <tag>` or
+# exclude one with `dart test -x <tag>`.
+tags:
+  openssl:
+    description: Needs an OpenSSL with Ed25519 on PATH.
+  zstd:
+    description: Needs a real zstd binary on PATH.
+  symlink:
+    description: Creates symbolic links (Windows needs Developer Mode).

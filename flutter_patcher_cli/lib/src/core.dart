@@ -20,8 +20,8 @@ void require(bool condition, String code, String message) {
 
 /// Resolve the shared CLI cache policy; callers still reject symlinks before I/O.
 String managedCache(String? requested, {String? home, String? project}) {
-  home ??= Platform.environment['HOME'];
-  require(home != null, 'CONFIG_INVALID', 'HOME is not set.');
+  home ??= Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+  require(home != null, 'CONFIG_INVALID', 'HOME (or USERPROFILE) is not set.');
   final base = p.join(home!, '.flutter_patcher');
   final local = p.join(p.absolute(project ?? Directory.current.path),
       '.dart_tool', 'flutter_patcher');
@@ -143,10 +143,15 @@ class Commands {
       Map<String, String>? extraEnvironment}) async {
     Process process;
     try {
+      // Windows batch launchers (flutter.bat, aws.cmd) only start through the
+      // command interpreter; native executables never go through a shell.
+      final extension = p.extension(executable).toLowerCase();
       process = await Process.start(executable, args,
           workingDirectory: cwd,
           environment: {...environment, ...?extraEnvironment},
-          includeParentEnvironment: false);
+          includeParentEnvironment: false,
+          runInShell: Platform.isWindows &&
+              (extension == '.bat' || extension == '.cmd'));
     } on ProcessException catch (error) {
       throw Failure(code, 'Cannot start $executable: ${error.message}');
     }
@@ -159,7 +164,8 @@ class Commands {
       result = await process.exitCode.timeout(timeout);
       await inputClosed;
     } on TimeoutException {
-      process.kill(ProcessSignal.sigkill);
+      process.kill(
+          Platform.isWindows ? ProcessSignal.sigterm : ProcessSignal.sigkill);
       throw Failure(code,
           'Timed out running ${p.basename(executable)} ${args.take(2).join(' ')}');
     }

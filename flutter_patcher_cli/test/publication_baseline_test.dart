@@ -139,5 +139,9 @@ void main() {
         await Directory(p.join(temp.path, 'fetch', 'baseline-cache', fp))
             .exists(),
         true);
-  }, skip: !Platform.isLinux);
+  },
+      tags: 'openssl',
+      skip: Platform.isLinux
+          ? false
+          : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
 }

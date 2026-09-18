@@ -4,6 +4,7 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../sdk/artifacts.dart';
+import '../sdk/host.dart';
 import '../sdk/environment.dart';
 import '../baseline/repository.dart';
 import '../baseline/store.dart';
@@ -17,8 +18,7 @@ Future<int> buildCommand(ArgResults args) async {
         'USAGE_ERROR', 'Use build android.');
     require(args['strategy'] == 'bytecode', 'BUILD_STRATEGY_UNSUPPORTED',
         'WP-5 implements --strategy bytecode; the existing v1 so workflow is unchanged.');
-    require(Platform.isLinux, 'HOST_UNSUPPORTED',
-        'M1 build requires Linux x64 (including WSL2).');
+    final host = requireSupportedHost();
     String required(String key) {
       final value = args[key] as String?;
       require(value != null && value.isNotEmpty, 'BUILD_CONFIG_INVALID',
@@ -30,8 +30,6 @@ Future<int> buildCommand(ArgResults args) async {
     await rejectLinks(cache);
     await Directory(cache).create(recursive: true);
     final commands = Commands(cache);
-    require((await commands.run('uname', ['-m'])).trim() == 'x86_64',
-        'HOST_UNSUPPORTED', 'M1 build requires Linux x64.');
     final project =
         p.absolute(args['project'] as String? ?? Directory.current.path);
     final key = (await File(required('public-key')).readAsString()).trim();
@@ -70,7 +68,7 @@ Future<int> buildCommand(ArgResults args) async {
         .toList();
     buildTools.sort((a, b) => b.path.compareTo(a.path));
     final aapts = buildTools
-        .map((d) => p.join(d.path, 'aapt'))
+        .map((d) => p.join(d.path, host.exe('aapt')))
         .where((f) => File(f).existsSync())
         .toList();
     require(aapts.isNotEmpty, 'ANDROID_SDK_MISSING',

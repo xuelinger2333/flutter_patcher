@@ -184,5 +184,9 @@ void main() {
       p.join(root, 'signature.bin')
     ]);
     expect(check.exitCode, isNot(0));
-  }, skip: !Platform.isLinux);
+  },
+      tags: 'openssl',
+      skip: Platform.isLinux
+          ? false
+          : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
 }

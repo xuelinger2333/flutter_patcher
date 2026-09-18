@@ -20,9 +20,8 @@ void main() {
       expect(parser().parse([command, 'android']).command!['framework-reuse'],
           false);
       expect(
-          parser()
-              .parse([command, 'android', '--framework-reuse'])
-              .command!['framework-reuse'],
+          parser().parse([command, 'android', '--framework-reuse']).command![
+              'framework-reuse'],
           true);
     }
   });
