@@ -37,7 +37,7 @@ class PatchRequest {
       this.target = 'lib/main.dart',
       this.validationOnly = false,
       this.offline = false,
-      this.frameworkReuse = true});
+      this.frameworkReuse = false});
   Future<void> validate() async {
     require(
         baselineHash.hasMatch(fingerprint) &&

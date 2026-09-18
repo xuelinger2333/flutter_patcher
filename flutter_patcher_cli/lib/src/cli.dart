@@ -70,9 +70,9 @@ ArgParser parser() {
         defaultsTo: 'bytecode',
         allowed: ['so', 'bytecode'],
         help: 'Bytecode by default; SO uses the existing v1 workflow.');
-  patch.addFlag('no-framework-reuse',
-      help:
-          'Disable WP-2.5 framework reuse for an explicit full-whole comparison.');
+  patch.addFlag('framework-reuse',
+      help: 'Experimental: carry leaf framework libraries against a host built '
+          'with --framework-reuse. Off by default (WP-2.5 host-cost gate).');
   final build = environmentOptions()
     ..addOption('host-policy',
         help:
@@ -85,9 +85,9 @@ ArgParser parser() {
         defaultsTo: 'bytecode',
         allowed: ['so', 'bytecode'],
         help: 'Bytecode by default; SO uses the existing v1 workflow.');
-  build.addFlag('no-framework-reuse',
-      help: 'Build without the WP-2.5 host reuse surface (schema 3 baseline) '
-          'for a same-source size and frame-time comparison.');
+  build.addFlag('framework-reuse',
+      help: 'Experimental: keep the WP-2.5 host reuse surface alive (schema 4 '
+          'baseline). Off by default: it adds ~4.5 MiB to libapp.so.');
   final doctor = environmentOptions();
   final interfaces = environmentOptions()
     ..addOption('dill', help: 'Unannotated baseline app.dill.')

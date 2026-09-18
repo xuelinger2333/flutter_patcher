@@ -51,7 +51,7 @@ Future<int> patchCommand(ArgResults args) async {
         target: args['target'] as String,
         assets: (args['assets'] as List).cast<String>(),
         offline: offline,
-        frameworkReuse: args['no-framework-reuse'] != true);
+        frameworkReuse: args['framework-reuse'] == true);
     await request.validate();
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);

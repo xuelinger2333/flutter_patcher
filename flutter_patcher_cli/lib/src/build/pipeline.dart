@@ -23,8 +23,9 @@ class BuildRequest {
   /// Internal integration harness only; deliberately not a CLI option.
   final bool pipelineValidationOnly;
 
-  /// WP-2.5 host reuse surface. Off produces the pre-partition schema so the
-  /// same source can be measured with and without the surface.
+  /// WP-2.5 host reuse surface. Off by default (schema 3 baseline): the
+  /// surface failed the frozen host-cost gate (+4.5 MiB libapp.so). On keeps
+  /// the experimental schema 4 path available for same-source comparison.
   final bool frameworkReuse;
   BuildRequest(
       {required this.project,
@@ -35,7 +36,7 @@ class BuildRequest {
       this.versionCode,
       this.hostPolicy,
       this.pipelineValidationOnly = false,
-      this.frameworkReuse = true});
+      this.frameworkReuse = false});
   Future<void> validate() async {
     require(
         target.startsWith('lib/') &&
