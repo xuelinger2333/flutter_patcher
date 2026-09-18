@@ -52,6 +52,7 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 }
 
 android {
+    externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.22.1' } }
     buildFeatures { buildConfig = true }
     namespace = "com.flutter_patcher.flutter_patcher"
 
@@ -76,6 +77,7 @@ android {
     }
 
     defaultConfig {
+        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
         def pluginVersion = (file('../pubspec.yaml').text =~ /(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$/)
         if (!pluginVersion.find()) throw new GradleException('Stable plugin version required')
         buildConfigField 'String', 'PATCHER_VERSION', '"' + pluginVersion.group(1) + '"'

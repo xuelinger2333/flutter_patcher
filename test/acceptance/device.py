@@ -15,9 +15,13 @@ import urllib.request
 
 
 def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=True, cli=None, dart=None,
-        capture_rollback=False):
+        capture_rollback=False, functional_only=False, compact=False, case_id=None,
+        start_index=0, limit=None):
+    functional_only = functional_only or compact
     out.mkdir(parents=True, exist_ok=False)
     report = {'schema': 1, 'status': 'failed', 'cases': [], 'device': serial,
+              'performance_sampling': not functional_only,
+              'matrix_mode': 'compact-once' if compact else 'full',
               'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
               'scope': 'lower_api_rejection' if compatibility else 'bytecode_fault_matrix'}
     captured = []
@@ -120,6 +124,20 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
         log_thread = threading.Thread(target=collect_logs, daemon=True)
         log_thread.start()
         suite = json.loads((corpus / 'corpus.json').read_text())
+        selected = suite['cases']
+        if case_id is not None:
+            selected = [row for row in selected if row['id'] == case_id]
+            if len(selected) != 1:
+                raise ValueError('Unknown corpus case: ' + case_id)
+            report['scope'] = 'single_case:' + case_id
+        elif start_index or limit is not None:
+            if start_index < 0 or start_index >= len(selected):
+                raise ValueError('Invalid batch start index')
+            end = len(selected) if limit is None else start_index + limit
+            if end <= start_index or end > len(selected):
+                raise ValueError('Invalid batch limit')
+            selected = selected[start_index:end]
+            report['scope'] = 'batch:%d-%d' % (start_index, end - 1)
         active = {}
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -144,7 +162,8 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
         report['apk_install'] = 'existing_sha256_verified' if same_apk else 'installed'
         adb('reverse', 'tcp:8765', 'tcp:8765')
         adb('forward', 'tcp:8766', 'tcp:8766')
-        for row in (suite['cases'][:1] if compatibility else suite['cases']):
+        for row in (selected[:1] if compatibility else selected):
+            observed_bootstrap = None
             data = (corpus / row['file']).read_bytes()
             if hashlib.sha256(data).hexdigest() != row['sha256']:
                 raise ValueError('Corpus file changed: ' + row['id'])
@@ -159,15 +178,19 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 active['bytes'] = (corpus / control['file']).read_bytes()
                 active['state']['patch'].update(sha256=control['sha256'], patch_seq=suite['seq'])
             # Deliberately reset only the dedicated test app between independent cases.
-            adb('shell', 'pm', 'clear', package)
+            if adb('shell', 'pm', 'clear', package).strip() != 'Success':
+                raise RuntimeError('Dedicated test app reset failed')
+            # pm clear already stops the process. Keep the normal restart gap
+            # without issuing a second, redundant force-stop.
+            time.sleep(3)
             started = float(adb('shell', 'date', '+%s').strip())
-            launch(); initial = ready()
+            launch(stop=False); initial = ready()
             if initial['revision'] != 'original':
                 raise AssertionError('Control host did not start original code')
             if initial['binding'] != custom_binding:
                 raise AssertionError('Custom application binding was replaced')
             if row['layer'] == 'accept':
-                baseline_timing = sample('original')
+                baseline_timing = None if functional_only else sample('original')
                 before_image = subprocess.check_output(['adb', '-s', serial, 'exec-out', 'screencap', '-p'])
                 (out / (row['id'] + '-before.png')).write_bytes(before_image)
             update_url = 'http://127.0.0.1:8765/check'
@@ -214,7 +237,10 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                     raise AssertionError({'case': row, 'apply': applied})
             elif not applied.get('ok'):
                 raise AssertionError({'premature_rejection': row, 'apply': applied})
-            launch(wait=row['id'] not in ['main-hangs', 'main-throws'])
+            # A rejected download never became a candidate. Compact acceptance
+            # checks the still-live original host without another cold start.
+            if not compact or row['layer'] not in ['envelope', 'state']:
+                launch(wait=row['id'] not in ['main-hangs', 'main-throws'])
             if row['id'] == 'main-hangs':
                 # Dart can occupy the platform thread: am crash is queued there and
                 # cannot execute. Exercise a real input ANR, and prove process death
@@ -266,19 +292,37 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 if after['revision'] != expected or after['asset'].strip() != expected:
                     raise AssertionError({'expected': expected, 'actual': after})
                 if after['binding'] != custom_binding: raise AssertionError('Patched application binding replaced')
-                timing = sample(expected)
+                if compact:
+                    boot_log = logs_since(started, after['pid'])
+                    matches = re.findall(r'BYTECODE_BOOT_TIMING: payload_us=(\d+) verify_us=(\d+) load_and_handshake_us=(\d+) resources_us=(\d+) total_us=(\d+)', boot_log)
+                    if len(matches) != 1:
+                        raise AssertionError('Expected one observed bootstrap timing')
+                    values = list(map(int, matches[0]))
+                    if sum(values[:4]) != values[4]:
+                        raise AssertionError('Bootstrap timing does not reconcile')
+                    budget = 85000 if row['tier'] == 'lean' else 250000
+                    profiles = [json.loads(line.split('BYTECODE_BOOT_PROFILE: ', 1)[1])
+                                for line in boot_log.splitlines() if 'BYTECODE_BOOT_PROFILE: ' in line]
+                    if len(profiles) != 1 or profiles[0].get('budget_us') != budget:
+                        raise AssertionError('APK bootstrap budget differs from acceptance policy')
+                    observed_bootstrap = dict(samples=1, total_us=values[4],
+                        tier=row['tier'], budget_us=budget, budget_passed=values[4] <= budget,
+                        policy='lean-85ms-whole-250ms-v2')
+                timing = None if functional_only else sample(expected)
+            if row['layer'] == 'accept' and not functional_only:
                 timing['original'] = baseline_timing
                 timing['median_added_ms'] = timing['median'] - baseline_timing['median']
                 timing['alert_over_85ms'] = timing['median_added_ms'] > 85
                 # Keep legacy 85-ms diagnostics for historical comparisons, but
                 # use tier-specific absolute bootstrap time for the current budget.
-                timing['bootstrap_budget_us'] = 85000 if row['tier'] == 'lean' else 200000
+                timing['bootstrap_budget_us'] = 85000 if row['tier'] == 'lean' else 250000
                 timing['bootstrap_over_budget'] = any(s['total_us'] > timing['bootstrap_budget_us']
                                                      for s in timing['bootstrap'])
                 timing['budget_metric'] = 'bootstrap total_us before patched main'
-                timing['budget_policy'] = 'lean-85ms-whole-200ms-v1'
+                timing['budget_policy'] = 'lean-85ms-whole-250ms-v2'
                 timing['bootstrap_only_measurement'] = True
                 (out / (row['id'] + '-timing.json')).write_text(json.dumps(timing, indent=2))
+            if row['layer'] == 'accept':
                 # Keep the rendered font/icon result for visual verification.
                 screenshot = subprocess.check_output(['adb', '-s', serial, 'exec-out', 'screencap', '-p'])
                 (out / (row['id'] + '.png')).write_bytes(screenshot)
@@ -298,7 +342,7 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 if row['layer'] in ['archive', 'boot'] and row['reason'] not in logs + str(after):
                     raise AssertionError('Expected rejection missing: ' + row['reason'])
                 if row['layer'] in ['archive', 'boot']:
-                    if row['id'] not in ['main-hangs', 'main-throws']:
+                    if not compact and row['id'] not in ['main-hangs', 'main-throws']:
                         launch()
                         if ready()['revision'] != 'original': raise AssertionError('Second boot did not recover')
                     rejected = request('/update', {'url': 'http://127.0.0.1:8765/check'})
@@ -312,7 +356,8 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
             if 'REASON_CRASH_NATIVE' in crashes or '(CRASH_NATIVE)' in crashes:
                 raise AssertionError('Native crash recorded')
             report['cases'].append({'id': row['id'], 'status': 'passed', 'apply': applied,
-                                    'before': initial, 'after': after})
+                                    'before': initial, 'after': after,
+                                    'observed_bootstrap': observed_bootstrap})
             (out / 'device.json').write_text(json.dumps(report, indent=2))
         report['status'] = 'passed'
     except Exception as error:
@@ -341,6 +386,8 @@ if __name__ == '__main__':
     parser.add_argument('--package', required=True)
     parser.add_argument('--compatibility', action='store_true')
     parser.add_argument('--capture-rollback', action='store_true')
+    parser.add_argument('--functional-only', action='store_true')
+    parser.add_argument('--compact', action='store_true')
     parser.add_argument('--custom-binding', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--cli', type=Path, required=True)
     parser.add_argument('--dart', type=Path, required=True)

@@ -21,3 +21,4 @@
 # Flutter Engine reflection targets used by LoaderHook.
 -keep class io.flutter.FlutterInjector { *; }
 -keep class io.flutter.embedding.engine.loader.FlutterLoader { *; }
+-keep class com.flutter_patcher.flutter_patcher.BootstrapBridge { *; }

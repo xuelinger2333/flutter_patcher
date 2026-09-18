@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'bootstrap/fonts.dart';
-import 'bootstrap/raw_channel.dart';
+import 'bootstrap/transport.dart';
 import 'bootstrap/runner.dart';
 
 /// Generated build entry calls this before the application's own binding.
@@ -19,7 +19,7 @@ class PatchBootstrap {
     var watching = true;
     void Function()? stopObserving;
     final runner = BootRunner(
-        call: rawPatcherCall,
+        call: BootstrapTransport().call,
         load: loadModule,
         fonts: patcherLoadFonts,
         log: (e) => debugPrint('[FlutterPatcher] $e'),

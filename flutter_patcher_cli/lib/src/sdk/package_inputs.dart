@@ -49,6 +49,15 @@ Future<Map<String, dynamic>> packageInputs(String config,
       if (!await dir.exists()) continue;
       Future<void> visit(Directory directory) async {
         await for (final file in directory.list(followLinks: false)) {
+          // AGP writes machine-specific CMake caches after the host is built.
+          // Only this generated Android root directory is excluded; CMakeLists
+          // and native sources beneath src remain part of the package identity.
+          if (part == 'android' &&
+              p.equals(directory.path, dir.path) &&
+              file is Directory &&
+              p.basename(file.path) == '.cxx') {
+            continue;
+          }
           if ([
             'build',
             '.gradle',

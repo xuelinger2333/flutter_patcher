@@ -78,9 +78,21 @@ void main() {
       ]
     });
     final before = await packageInputs(config);
+    final generated = File(p.join(root, 'android/.cxx/Release/CMakeCache.txt'));
+    await generated.parent.create(recursive: true);
+    await generated.writeAsString('machine-specific generated paths');
+    expect(await packageInputs(config), before);
+    final cmake = File(p.join(root, 'android/CMakeLists.txt'));
+    await cmake.writeAsString('add_library(plugin SHARED Plugin.cpp)');
+    final withCmake = await packageInputs(config);
+    expect(jsonEncode(withCmake), isNot(jsonEncode(before)));
+    await cmake.writeAsString('add_library(plugin SHARED Changed.cpp)');
+    expect(
+        jsonEncode(await packageInputs(config)), isNot(jsonEncode(withCmake)));
+    final beforeNative = await packageInputs(config);
     await native.writeAsString('changed');
     final after = await packageInputs(config);
-    expect(jsonEncode(before), isNot(jsonEncode(after)));
+    expect(jsonEncode(beforeNative), isNot(jsonEncode(after)));
     expect(after['plugin']['native'], true);
   });
   test(

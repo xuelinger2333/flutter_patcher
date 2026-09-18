@@ -50,6 +50,7 @@ class FlutterPatcherPlugin :
     private lateinit var eventChannel: EventChannel
     private lateinit var appContext: Context
     private lateinit var bytecode: BytecodePatchManager
+    private var bootstrapBridge: BootstrapBridge? = null
     private val bootProfiler = BootChannelProfiler()
     private var renderer: FlutterRenderer? = null
     private val firstFrame = object : FlutterUiDisplayListener {
@@ -70,6 +71,7 @@ class FlutterPatcherPlugin :
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
         bytecode = BytecodePatchManager(appContext)
+        bootstrapBridge = BootstrapBridge(appContext, bytecode)
         renderer = binding.textureRegistry as? FlutterRenderer
         renderer?.addIsDisplayingFlutterUiListener(firstFrame)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL, bootProfiler.codec)
@@ -161,6 +163,8 @@ class FlutterPatcherPlugin :
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        bootstrapBridge?.close()
+        bootstrapBridge = null
         renderer?.removeIsDisplayingFlutterUiListener(firstFrame)
         renderer = null
         channel.setMethodCallHandler(null)

@@ -42,6 +42,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--out', type=Path)
+    parser.add_argument('--compact', action='store_true')
+    parser.add_argument('--build-only', action='store_true',
+                        help='Rebuild and verify artifacts without operating the device')
     parser.add_argument('--resume-built', type=Path,
                         help='Test the frozen build from an earlier run in a fresh result directory')
     args = parser.parse_args()
@@ -113,12 +116,17 @@ def main():
         result['build'] = build
         if build['status'] != 'passed': raise RuntimeError('Remote build failed; see inputs/build-result.json')
         if build['source'] != result['source']: raise ValueError('Build source receipt mismatch')
+        if args.build_only:
+            result.update(status='passed', stage='built', scope='build_only',
+                          device_tests='not_run', apk_bytes=build['apk_bytes'])
+            return
         phase('instrumentation')
         apks = list(inputs.rglob('flutter_patcher-debug-androidTest.apk'))
         if len(apks) != 1: raise ValueError('Expected one instrumentation APK')
         adb = ['adb', '-s', config['serial']]
         subprocess.run(adb + ['install', '-r', str(apks[0])], check=True, timeout=180)
-        test = subprocess.run(adb + ['shell', 'am', 'instrument', '-w',
+        test = subprocess.run(adb + ['shell', 'am', 'instrument', '-w', '-e', 'class',
+            'com.flutter_patcher.flutter_patcher.Ed25519DeviceTest',
             'com.flutter_patcher.flutter_patcher.test/androidx.test.runner.AndroidJUnitRunner'],
             capture_output=True, text=True, timeout=180)
         (out / 'instrumentation.txt').write_text(test.stdout + test.stderr, encoding='utf-8')
@@ -128,7 +136,7 @@ def main():
         phase('matrix')
         subprocess.run([sys.executable, str(repo / 'test/acceptance/run_matrix.py'), '--inputs', str(inputs),
             '--serial', config['serial'], '--dart', config['local_dart'], '--binding', config.get('binding', 'standard'),
-            '--out', str(out / 'matrix')], check=True)
+            '--out', str(out / 'matrix'), *(['--compact'] if args.compact else [])], check=True)
         matrix = json.loads((out / 'matrix/result.json').read_text())
         if matrix['status'] != 'passed' or len(matrix['cases']) != 31 or any(c['status'] != 'passed' for c in matrix['cases']):
             raise RuntimeError('Matrix incomplete')

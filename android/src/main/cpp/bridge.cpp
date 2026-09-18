@@ -1,4 +1,4 @@
-// Experimental async byte-message bridge. Kotlin remains the only patch manager.
+// Bounded asynchronous bootstrap transport. Kotlin remains the only patch manager.
 #include <jni.h>
 #include <cstdint>
 #include <memory>
@@ -10,6 +10,8 @@
 namespace {
 JavaVM* vm=nullptr;
 jobject provider=nullptr;
+bool registered=false;
+bool disabled=false;
 jmethodID execute=nullptr;
 std::mutex mutex;
 struct Task { std::vector<uint8_t> bytes; int state=0; bool input=false; bool cancelled=false; };
@@ -27,7 +29,7 @@ void work(std::shared_ptr<Task> task,std::vector<uint8_t> request) {
         attached=true;
     }
     jobject local=nullptr;jmethodID method=nullptr;
-    { std::lock_guard<std::mutex> lock(mutex); if(provider) local=env->NewLocalRef(provider);method=execute; }
+    { std::lock_guard<std::mutex> lock(mutex); if(provider && !disabled) local=env->NewLocalRef(provider);method=execute; }
     jbyteArray input=nullptr,output=nullptr;
     std::vector<uint8_t> response;
     bool success=false;
@@ -55,29 +57,42 @@ void work(std::shared_ptr<Task> task,std::vector<uint8_t> request) {
     if(attached)vm->DetachCurrentThread();
     std::lock_guard<std::mutex> lock(mutex);
     --workers;
-    if(!task->cancelled) { task->bytes=std::move(response);task->state=success?1:-1; }
+    if(!task->cancelled) { task->bytes=std::move(response);task->state=success && !disabled?1:-1; }
 }
 }
 #define API extern "C" __attribute__((visibility("default")))
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* value,void*) {vm=value;return JNI_VERSION_1_6;}
 extern "C" JNIEXPORT void JNICALL
-Java_com_flutter_1patcher_flutter_1patcher_FfiBootBridge_nativeRegister(JNIEnv* env,jobject self) {
+Java_com_flutter_1patcher_flutter_1patcher_BootstrapBridge_nativeRegister(JNIEnv* env,jobject self) {
     std::lock_guard<std::mutex> lock(mutex);
-    if(provider) {env->ThrowNew(env->FindClass("java/lang/IllegalStateException"),"Bridge already attached");return;}
+    // No engine identity is passed across this ABI. After a second registration,
+    // stay on per-engine MethodChannels for the remainder of this process.
+    if(registered) {disabled=true;return;}
+    registered=true;
     provider=env->NewGlobalRef(self);
     jclass cls=env->GetObjectClass(self);
     execute=env->GetMethodID(cls,"execute","([B)[B");env->DeleteLocalRef(cls);
 }
-API uint64_t wp24_input(int32_t size) {
+extern "C" JNIEXPORT void JNICALL
+Java_com_flutter_1patcher_flutter_1patcher_BootstrapBridge_nativeUnregister(JNIEnv* env,jobject self) {
+    std::lock_guard<std::mutex> lock(mutex);
+    if(provider && env->IsSameObject(provider,self)) {
+        disabled=true;env->DeleteGlobalRef(provider);provider=nullptr;
+    }
+}
+API int32_t patcher_boot_v1_available() {
+    std::lock_guard<std::mutex> lock(mutex);return provider && !disabled?1:0;
+}
+API uint64_t patcher_boot_v1_input(int32_t size) {
     std::lock_guard<std::mutex> lock(mutex);
     if(size<=0 || size>65536 || tasks.size()>=4)return 0;
     try {auto task=std::make_shared<Task>();task->bytes.resize(size);task->state=1;task->input=true;
         const auto id=sequence++;tasks.emplace(id,task);return id;}catch(...){return 0;}
 }
-API uint64_t wp24_begin(uint64_t input) {
+API uint64_t patcher_boot_v1_begin(uint64_t input) {
     std::lock_guard<std::mutex> lock(mutex);
     const auto found=tasks.find(input);
-    if(found==tasks.end() || !found->second->input || !provider || tasks.size()>=4 || workers>=2)return 0;
+    if(found==tasks.end() || !found->second->input || !provider || disabled || tasks.size()>=4 || workers>=2)return 0;
     try {
         auto request=found->second->bytes;
         auto task=std::make_shared<Task>();const auto id=sequence++;
@@ -88,21 +103,22 @@ API uint64_t wp24_begin(uint64_t input) {
         return id;
     } catch(...) {return 0;}
 }
-API int32_t wp24_state(uint64_t id) {
+API int32_t patcher_boot_v1_state(uint64_t id) {
     std::lock_guard<std::mutex> lock(mutex);auto it=tasks.find(id);return it==tasks.end()?-2:it->second->state;
 }
-API int64_t wp24_size(uint64_t id) {
+API int64_t patcher_boot_v1_size(uint64_t id) {
     std::lock_guard<std::mutex> lock(mutex);auto it=tasks.find(id);
     return it==tasks.end() || it->second->state!=1?-1:static_cast<int64_t>(it->second->bytes.size());
 }
 // Borrowed only until release. Exactly one Dart owner copies before releasing.
-API uint8_t* wp24_data(uint64_t id) {
+API uint8_t* patcher_boot_v1_data(uint64_t id) {
     std::lock_guard<std::mutex> lock(mutex);auto it=tasks.find(id);
     return it==tasks.end() || it->second->state!=1?nullptr:it->second->bytes.data();
 }
-API int32_t wp24_release(uint64_t id) {
+API int32_t patcher_boot_v1_release(uint64_t id) {
     std::lock_guard<std::mutex> lock(mutex);auto it=tasks.find(id);if(it==tasks.end())return -1;
     it->second->cancelled=true;tasks.erase(it);return 0;
 }
-API int32_t wp24_workers() {std::lock_guard<std::mutex> lock(mutex);return workers;}
-API int32_t wp24_handles() {std::lock_guard<std::mutex> lock(mutex);return static_cast<int32_t>(tasks.size());}
+API int32_t patcher_boot_v1_workers() {std::lock_guard<std::mutex> lock(mutex);return workers;}
+API int32_t patcher_boot_v1_handles() {std::lock_guard<std::mutex> lock(mutex);return static_cast<int32_t>(tasks.size());}
+

@@ -1,5 +1,0 @@
-cmake_minimum_required(VERSION 3.22.1)
-project(wp24_transport LANGUAGES CXX)
-add_library(wp24_transport SHARED bridge.cpp)
-target_compile_features(wp24_transport PRIVATE cxx_std_17)
-target_compile_options(wp24_transport PRIVATE -Wall -Wextra -Werror -fvisibility=hidden)
