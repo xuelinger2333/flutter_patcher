@@ -57,8 +57,8 @@ Future<void> verifyPublicationPatch(Uint8List bytes, Map<String, String> fields,
                   .join(),
       'PUBLISH_PATCH_INVALID',
       'Envelope identity/hash mismatch');
-  await verifyMessage([...bytes.sublist(0, 82), ...bytes.sublist(146)],
-      bytes.sublist(82, 146), publicKey, work, commands);
+  verifyMessage([...bytes.sublist(0, 82), ...bytes.sublist(146)],
+      bytes.sublist(82, 146), publicKey);
 }
 
 String scopeOf(Map<String, String> fields) => digest(utf8.encode(jsonEncode({
@@ -146,8 +146,7 @@ class PublicationPipeline {
           patch == null, 'PUBLISH_CONFIG_INVALID', 'Withdrawal has no payload');
     }
     final manifest = PublishManifest(f), scope = scopeOf(f);
-    final signature = await signMessage(manifest.signingBytes, seed, publicKey,
-        p.join(work, 'manifest-sign'), commands);
+    final signature = signMessage(manifest.signingBytes, seed, publicKey);
     final wire = manifest.envelope(signature);
     final intent = {
       'kind': 'publish',

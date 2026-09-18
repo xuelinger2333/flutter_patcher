@@ -221,9 +221,7 @@ void main() {
             as List)
         .first as Map;
     final manifestMessage = hexBytes(vector['signing_hex'] as String);
-    expect(
-        await signMessage(manifestMessage, seed, public,
-            p.join(temp.path, 'vector-sign'), commands),
+    expect(signMessage(manifestMessage, seed, public),
         hexBytes(vector['signature'] as String));
     final header = ByteData(82)
       ..setUint32(0, 0x46505443)
@@ -233,8 +231,7 @@ void main() {
     final h = header.buffer.asUint8List();
     h.setRange(6, 38, List.filled(32, 0xab));
     h.setRange(50, 82, hexBytes(digest([7])));
-    final sig = await signMessage(
-        [...h, 7], seed, public, p.join(temp.path, 'sign-patch'), commands);
+    final sig = signMessage([...h, 7], seed, public);
     final patch = Uint8List.fromList([...h, ...sig, 7]);
     final fields = {
       ...base,
@@ -311,9 +308,5 @@ void main() {
         verifyPublicationPatch(
             damaged, fields, public, p.join(temp.path, 'bad'), commands),
         throwsA(isA<Failure>()));
-  },
-      tags: 'openssl',
-      skip: Platform.isLinux
-          ? false
-          : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
+  });
 }

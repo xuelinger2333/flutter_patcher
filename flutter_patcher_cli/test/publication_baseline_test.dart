@@ -69,8 +69,7 @@ void main() {
         .asUint8List();
     h.setRange(6, 38, hexBytes(fp));
     h.setRange(50, 82, hexBytes(digest([7])));
-    final signature = await signMessage([...h, 7], seed, public,
-        p.join(temp.path, 'sign'), Commands(temp.path));
+    final signature = signMessage([...h, 7], seed, public);
     final patch = File(p.join(temp.path, 'patch.fptc'));
     await patch.writeAsBytes([...h, ...signature, 7]);
     final priv = File(p.join(temp.path, 'private'));
@@ -140,8 +139,8 @@ void main() {
             .exists(),
         true);
   },
-      tags: 'openssl',
+      tags: 'zstd',
       skip: Platform.isLinux
           ? false
-          : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
+          : 'Needs a verified zstd on PATH (WP-2.6 phase B item 5)');
 }

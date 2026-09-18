@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:args/args.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
+import '../crypto/ed25519.dart';
 import '../sdk/host.dart';
 
 ArgParser keysOptions() => ArgParser()
@@ -12,40 +12,6 @@ ArgParser keysOptions() => ArgParser()
   ..addFlag('json', negatable: false, help: 'Output contains metadata only.')
   ..addOption('out',
       help: 'New key directory; default ~/.flutter_patcher/keys.');
-
-/// Binary output is kept in memory. Never include key material in diagnostics.
-Future<List<int>> _openssl(List<String> arguments, [List<int>? input]) async {
-  Process process;
-  try {
-    process = await Process.start('openssl', arguments);
-  } on ProcessException {
-    throw Failure('KEYS_CRYPTO_UNAVAILABLE',
-        'OpenSSL with Ed25519 support is required on PATH.');
-  }
-  final output = process.stdout.fold<List<int>>([], (a, b) => a..addAll(b));
-  final errors = process.stderr.drain<void>();
-  if (input != null) process.stdin.add(input);
-  try {
-    final closed = process.stdin.close();
-    final code = await process.exitCode.timeout(const Duration(seconds: 30));
-    await closed;
-    await errors;
-    final bytes = await output;
-    require(code == 0, 'KEYS_CRYPTO_FAILED',
-        'OpenSSL could not generate or derive the Ed25519 key.');
-    return bytes;
-  } on TimeoutException {
-    process.kill(ProcessSignal.sigkill);
-    await process.exitCode;
-    await errors;
-    await output;
-    throw Failure('KEYS_CRYPTO_FAILED', 'OpenSSL timed out.');
-  }
-}
-
-bool _prefix(List<int> bytes, List<int> prefix) =>
-    bytes.length >= prefix.length &&
-    List.generate(prefix.length, (i) => bytes[i] == prefix[i]).every((v) => v);
 
 Future<int> keysCommand(ArgResults args) async {
   require(args.rest.length == 1 && args.rest.single == 'init', 'USAGE_ERROR',
@@ -62,51 +28,11 @@ Future<int> keysCommand(ArgResults args) async {
           FileSystemEntityType.notFound,
       'KEYS_OUTPUT_EXISTS',
       'Refusing to overwrite an existing key directory: $out');
-  // RFC 8410 PKCS#8: version 0, id-Ed25519, absent parameters, nested raw32 seed.
-  final secret =
-      await _openssl(['genpkey', '-algorithm', 'ED25519', '-outform', 'DER']);
-  require(
-      secret.length == 48 &&
-          _prefix(secret, [
-            0x30,
-            0x2e,
-            0x02,
-            0x01,
-            0,
-            0x30,
-            0x05,
-            0x06,
-            0x03,
-            0x2b,
-            0x65,
-            0x70,
-            0x04,
-            0x22,
-            0x04,
-            0x20
-          ]),
-      'KEYS_CRYPTO_FAILED',
-      'Unexpected Ed25519 private-key encoding.');
-  final public = await _openssl(
-      ['pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'], secret);
-  require(
-      public.length == 44 &&
-          _prefix(public, [
-            0x30,
-            0x2a,
-            0x30,
-            0x05,
-            0x06,
-            0x03,
-            0x2b,
-            0x65,
-            0x70,
-            0x03,
-            0x21,
-            0
-          ]),
-      'KEYS_CRYPTO_FAILED',
-      'Unexpected Ed25519 public-key encoding.');
+  // The seed never leaves this process except as the base64 private-key file.
+  final seed = ed25519GenerateSeed();
+  final public = ed25519PublicKey(seed);
+  require(ed25519Verify(public, ed25519Sign(seed, const [0]), const [0]),
+      'KEYS_CRYPTO_FAILED', 'Generated key pair failed its self-check.');
   await Directory(p.dirname(out)).create(recursive: true);
   await rejectLinks(out);
   // mkdir is exclusive, unlike Directory.create: competing initializers cannot
@@ -137,10 +63,8 @@ Future<int> keysCommand(ArgResults args) async {
       require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
           'Cannot protect private-key permissions.');
     }
-    await privateFile.writeAsString('${base64Encode(secret.sublist(16))}\n',
-        flush: true);
-    await publicFile.writeAsString('${base64Encode(public.sublist(12))}\n',
-        flush: true);
+    await privateFile.writeAsString('${base64Encode(seed)}\n', flush: true);
+    await publicFile.writeAsString('${base64Encode(public)}\n', flush: true);
     await ignoreFile.writeAsString('private-key.base64\n', flush: true);
     stdout.writeln(jsonEncode({
       'command': 'keys init',
@@ -151,7 +75,7 @@ Future<int> keysCommand(ArgResults args) async {
       'directory': out,
       'private_key': privateFile.path,
       'public_key': publicFile.path,
-      'public_key_sha256': sha256.convert(public.sublist(12)).toString()
+      'public_key_sha256': sha256.convert(public).toString()
     }));
     return 0;
   } catch (_) {

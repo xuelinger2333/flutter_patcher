@@ -91,8 +91,7 @@ void main() {
           File(report['public_key'] as String).readAsStringSync().trim();
       final work = Directory(p.join(root.path, 'work'))..createSync();
       final commands = Commands(root.path);
-      final key =
-          await signingKey(secret, work.path, commands, expectedPublic: public);
+      final key = signingKey(secret, expectedPublic: public);
       final module = File(p.join(work.path, 'module.bc'))
         ..writeAsStringSync('synthetic signing contract only');
       final packed = await packPatch(
@@ -107,11 +106,7 @@ void main() {
           key: key,
           commands: commands);
       expect(File(packed['file'] as String).lengthSync(), greaterThan(146));
-    },
-        tags: 'openssl',
-        skip: Platform.isLinux
-            ? false
-            : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
+    });
     test('existing keys remain byte-for-byte unchanged on retry', () async {
       final out = p.join(root.path, 'keys');
       expect((await cli(['init', '--out', out])).exitCode, 0);
@@ -144,13 +139,12 @@ void main() {
           2);
       expect(actual.listSync(), isEmpty);
     }, tags: 'symlink');
-    test('missing crypto tool fails before creating the output', () async {
+    test('key generation needs no external tool', () async {
       final out = p.join(root.path, 'keys');
       final result =
           await cli(['init', '--out', out], environment: {'PATH': ''});
-      expect(result.exitCode, 2);
-      expect(result.stderr, contains('KEYS_CRYPTO_UNAVAILABLE'));
-      expect(Directory(out).existsSync(), false);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(File(p.join(out, 'public-key.base64')).existsSync(), true);
     });
     test('default location uses HOME and never prints private material',
         () async {

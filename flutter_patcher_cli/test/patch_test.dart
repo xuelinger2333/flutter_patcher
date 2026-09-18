@@ -137,8 +137,7 @@ void main() {
       () async {
     final root = (await Directory.systemTemp.createTemp('wp6-sign-')).path;
     final commands = Commands(root);
-    final key =
-        await signingKey(base64Encode(List.filled(32, 1)), root, commands);
+    final key = signingKey(base64Encode(List.filled(32, 1)));
     final module = File(p.join(root, 'module.bc'));
     await module.writeAsString(
         'explicit synthetic bytecode for envelope contract only');
@@ -184,9 +183,13 @@ void main() {
       p.join(root, 'signature.bin')
     ]);
     expect(check.exitCode, isNot(0));
-  },
-      tags: 'openssl',
-      skip: Platform.isLinux
-          ? false
-          : 'OpenSSL via /dev/stdin is POSIX-only until WP-2.6 phase B');
+  }, tags: 'openssl', skip: _hasOpenSsl() ? false : 'openssl not on PATH');
+}
+
+bool _hasOpenSsl() {
+  try {
+    return Process.runSync('openssl', ['version']).exitCode == 0;
+  } on ProcessException {
+    return false;
+  }
 }

@@ -107,7 +107,7 @@ class PatchPipeline {
           'Minimum build must match the target release');
       require(req.validationOnly || receipt['public_key'] is String,
           'PATCH_KEY_MISMATCH', 'Release public key is missing');
-      final key = await signingKey(req.privateKey, work, commands,
+      final key = signingKey(req.privateKey,
           expectedPublic:
               req.validationOnly ? null : receipt['public_key'] as String);
       final usage = await commands.run(sdk.dart, [tool, '--help']);

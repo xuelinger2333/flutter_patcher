@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import 'resources.dart';
+import '../crypto/ed25519.dart';
 import '../crypto/signing.dart';
 export '../crypto/signing.dart' show signingKey, hexBytes;
 
@@ -98,46 +99,17 @@ Future<Map<String, Object?>> packPatch(
   header.setUint32(38, metadata['patch_seq'] as int);
   header.setUint64(42, payload.length);
   header.buffer.asUint8List().setRange(50, 82, sha256.convert(payload).bytes);
-  final signed = p.join(work, 'signed.bin'),
-      sig = p.join(work, 'signature.bin');
-  await File(signed).writeAsBytes([...header.buffer.asUint8List(), ...payload]);
-  await commands.run(
-      'openssl',
-      [
-        'pkeyutl',
-        '-sign',
-        '-rawin',
-        '-inkey',
-        '/dev/stdin',
-        '-keyform',
-        'DER',
-        '-in',
-        signed,
-        '-out',
-        sig
-      ],
-      inputBytes: key,
-      code: 'PATCH_SIGN_FAILED');
-  final signature = await File(sig).readAsBytes();
-  require(
-      signature.length == 64, 'PATCH_SIGN_FAILED', 'Invalid signature length');
-  await commands.run(
-      'openssl',
-      [
-        'pkeyutl',
-        '-verify',
-        '-rawin',
-        '-pubin',
-        '-inkey',
-        p.join(work, 'signing-public.der'),
-        '-keyform',
-        'DER',
-        '-in',
-        signed,
-        '-sigfile',
-        sig
-      ],
-      code: 'PATCH_SIGN_FAILED');
+  // The signed bytes, signature and DER public key stay in the work directory
+  // as evidence; independent tools (e.g. openssl pkeyutl) can re-verify them.
+  final signedBytes = [...header.buffer.asUint8List(), ...payload];
+  final publicKey = ed25519PublicKey(key);
+  await File(p.join(work, 'signed.bin')).writeAsBytes(signedBytes);
+  await File(p.join(work, 'signing-public.der'))
+      .writeAsBytes([...hexBytes('302a300506032b6570032100'), ...publicKey]);
+  final signature = ed25519Sign(key, signedBytes);
+  await File(p.join(work, 'signature.bin')).writeAsBytes(signature);
+  require(ed25519Verify(publicKey, signature, signedBytes), 'PATCH_SIGN_FAILED',
+      'Signature self-check failed');
   final output = p.join(work, 'patch.fptc');
   await File(output)
       .writeAsBytes([...header.buffer.asUint8List(), ...signature, ...payload]);

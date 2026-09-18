@@ -48,8 +48,7 @@ Future<int> trustCommand(ArgResults args) async {
         TrustUpdate((jsonDecode(text) as Map).cast<String, String>());
     require(text == update.canonical && update.envelope(signature) == wire,
         'TRUST_INVALID', 'Noncanonical trust document');
-    await verifyMessage(update.signingBytes, signature, root,
-        p.join(work.path, stage), commands);
+    verifyMessage(update.signingBytes, signature, root);
     return update;
   }
 
@@ -63,8 +62,7 @@ Future<int> trustCommand(ArgResults args) async {
     require(
         !await out.exists(), 'TRUST_OUTPUT_EXISTS', 'Use a new output file.');
     final seed = (await File(input('root-private')).readAsString()).trim();
-    final signature =
-        await signMessage(update.signingBytes, seed, root, work.path, commands);
+    final signature = signMessage(update.signingBytes, seed, root);
     await out.parent.create(recursive: true);
     await out.writeAsString(update.envelope(signature), flush: true);
     stdout.writeln(jsonEncode(
