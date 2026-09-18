@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'host_tools.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/baseline/archive.dart';
 import 'package:flutter_patcher_cli/src/baseline/manifest.dart';
@@ -422,9 +423,5 @@ void main() {
           BaselineArchive().unpack(truncated, p.join(temp.path, 'broken')),
           throwsA(isA<Failure>()));
     });
-  },
-      tags: 'zstd',
-      skip: Platform.isLinux
-          ? false
-          : 'Needs a verified zstd on PATH (WP-2.6 phase B item 5)');
+  }, tags: 'zstd', skip: skipUnless('zstd') ?? false);
 }

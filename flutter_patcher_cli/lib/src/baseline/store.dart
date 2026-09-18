@@ -88,7 +88,7 @@ class FileBaselineStore implements BaselineStore {
           await File(source).copy(pending);
           valid(await hashFile(pending) == await hashFile(source),
               'Store copy failed verification.');
-          await File(pending).rename(target);
+          await File(pending).renameRetry(target);
           return true;
         } finally {
           await lock.unlock();

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'host_tools.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/baseline/manifest.dart';
 import 'package:flutter_patcher_cli/src/baseline/repository.dart';
@@ -100,11 +101,7 @@ void main() {
     expect(canonical(await verifyBaseline(restored)),
         canonical(await verifyBaseline(input)));
     await first.save(input, metadata(), flavor: 'default', versionCode: '1');
-  },
-      tags: 'zstd',
-      skip: Platform.isLinux
-          ? false
-          : 'Needs a verified zstd on PATH (WP-2.6 phase B item 5)');
+  }, tags: 'zstd', skip: skipUnless('zstd') ?? false);
 
   test(
       'real AWS CLI with isolated S3 emulator: roundtrip, conflict and missing',

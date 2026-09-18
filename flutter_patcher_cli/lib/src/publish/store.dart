@@ -75,14 +75,16 @@ class FilePublishStore implements PublishStore {
         await Directory(p.dirname(file.path)).create(recursive: true);
         final staging = File(temporaryName(file.path));
         await staging.writeAsBytes(bytes, flush: true);
-        await staging.rename(file.path);
+        await staging.renameRetry(file.path);
         return true;
       });
   @override
   Future<void> delete(String name) => _locked(() async {
         require(name != 'catalog.json' && name != 'trust.json',
             'PUBLISH_STORE_INVALID', 'Cannot delete catalog');
-        if (await _read(name) != null) await File(p.join(root, name)).delete();
+        if (await _read(name) != null) {
+          await File(p.join(root, name)).deleteRetry();
+        }
       });
   @override
   Future<List<String>> list() async {
@@ -177,7 +179,7 @@ class S3PublishStore implements PublishStore {
           'Missing ETag');
       return StoredObject(await file.readAsBytes(), token as String);
     } finally {
-      if (await file.exists()) await file.delete();
+      if (await file.exists()) await file.deleteRetry();
     }
   }
 
@@ -209,7 +211,7 @@ class S3PublishStore implements PublishStore {
       _success(result);
       return true;
     } finally {
-      await file.delete();
+      await file.deleteRetry();
     }
   }
 

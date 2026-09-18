@@ -246,7 +246,7 @@ class InterfacePipeline {
           'device_verified': false
         };
         await writeObject(file('interface.manifest.json'), report);
-        await Directory(staging).rename(p.absolute(request.output));
+        await Directory(staging).renameRetry(p.absolute(request.output));
         return {...report, 'output': p.absolute(request.output)};
       }
       await writeObject(file('validation-history.json'), {'rounds': history});

@@ -61,7 +61,38 @@ Future<void> writeObject(String path, Map<String, dynamic> value) async {
   await staging.writeAsString(
       '${const JsonEncoder.withIndent('  ').convert(value)}\n',
       flush: true);
-  await staging.rename(path);
+  await staging.renameRetry(path);
+}
+
+/// Windows refuses to rename or delete an entry another process still holds
+/// open (a Gradle daemon, an indexer, antivirus). Those holds are usually
+/// released within a second, so retry briefly before surfacing the error.
+/// POSIX never reports these codes, so the operation runs once there.
+Future<T> retryOnSharingViolation<T>(Future<T> Function() operation) async {
+  const retriable = {
+    5,
+    32,
+    145
+  }; // ACCESS_DENIED, SHARING_VIOLATION, DIR_NOT_EMPTY
+  for (var attempt = 0;; attempt++) {
+    try {
+      return await operation();
+    } on FileSystemException catch (error) {
+      if (!Platform.isWindows ||
+          attempt >= 10 ||
+          !retriable.contains(error.osError?.errorCode)) {
+        rethrow;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 100 * (attempt + 1)));
+    }
+  }
+}
+
+extension SharingViolationRetry on FileSystemEntity {
+  Future<void> renameRetry(String target) =>
+      retryOnSharingViolation(() => rename(target));
+  Future<void> deleteRetry({bool recursive = false}) =>
+      retryOnSharingViolation(() => delete(recursive: recursive));
 }
 
 /// Existing invalid data is retained for diagnosis instead of silently reused.
@@ -69,9 +100,9 @@ Future<void> quarantine(String path) async {
   final type = await FileSystemEntity.type(path, followLinks: false);
   final target = '$path.invalid-${DateTime.now().microsecondsSinceEpoch}';
   if (type == FileSystemEntityType.directory) {
-    await Directory(path).rename(target);
+    await Directory(path).renameRetry(target);
   } else if (type == FileSystemEntityType.file) {
-    await File(path).rename(target);
+    await File(path).renameRetry(target);
   } else if (type == FileSystemEntityType.link) {
     throw Failure('CACHE_INVALID', 'Symbolic link is not permitted: $path');
   }

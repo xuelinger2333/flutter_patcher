@@ -81,10 +81,10 @@ Future<int> keysCommand(ArgResults args) async {
   } catch (_) {
     // Only our known files; never recursively delete an output directory.
     for (final file in [privateFile, publicFile, ignoreFile]) {
-      if (await file.exists()) await file.delete();
+      if (await file.exists()) await file.deleteRetry();
     }
     try {
-      await Directory(out).delete();
+      await Directory(out).deleteRetry();
     } on FileSystemException {/* Retain foreign files. */}
     rethrow;
   }

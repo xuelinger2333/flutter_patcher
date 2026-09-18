@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'host_tools.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/build/workspace.dart';
 import 'package:flutter_patcher_cli/src/build/bootstrap.dart';
@@ -136,8 +137,8 @@ void main() {
     final manifest = await createManifest(root, meta);
     await writeObject(p.join(root, 'baseline.manifest.json'), manifest);
     expect((manifest['files'] as Map).length, 9);
-    if (!Platform.isLinux) {
-      markTestSkipped('zstd roundtrip needs a verified zstd (WP-2.6 phase B)');
+    if (!hasTool('zstd')) {
+      markTestSkipped('zstd roundtrip: zstd is not on PATH');
     } else {
       final archive = BaselineArchive();
       await archive.pack(root, p.join(root, 'packed.tar.zst'));

@@ -6,6 +6,14 @@ import 'package:path/path.dart' as p;
 import '../core.dart';
 import 'manifest.dart';
 
+/// Baseline archives are zstd streams; the codec is an external `zstd` on PATH
+/// on every host (Facebook's reference CLI, same flags everywhere).
+String get zstdInstallHint => Platform.isWindows
+    ? 'Install zstd on PATH (winget install Meta.Zstandard).'
+    : Platform.isMacOS
+        ? 'Install zstd on PATH (brew install zstd).'
+        : 'Install zstd on PATH (apt/dnf install zstd).';
+
 /// Strict flat ustar subset: only the seven payload files and the manifest.
 /// No links, directories, extensions, traversal, duplicate or unlisted entries.
 class BaselineArchive {
@@ -28,8 +36,7 @@ class BaselineArchive {
       process = await Process.start(
           zstd, ['-q', if (decode) '-d', '-c', '--', input]);
     } on ProcessException {
-      throw Failure(
-          'BASELINE_CODEC_MISSING', 'Install zstd on the Linux build host.');
+      throw Failure('BASELINE_CODEC_MISSING', zstdInstallHint);
     }
     final sink = File(output).openWrite();
     final errors = process.stderr.drain<void>();

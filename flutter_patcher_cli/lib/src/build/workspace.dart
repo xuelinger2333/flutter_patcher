@@ -119,7 +119,7 @@ Future<void> retireFlutterGradleCache(String home) async {
   for (final path in paths) {
     await rejectLinks(path);
     if (await Directory(path).exists()) {
-      await Directory(path).rename(temporaryName('$path.retired'));
+      await Directory(path).renameRetry(temporaryName('$path.retired'));
     }
   }
 }

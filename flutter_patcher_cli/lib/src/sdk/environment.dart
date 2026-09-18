@@ -153,7 +153,7 @@ class EnvironmentBuilder {
           'Managed SDK engine revision differs.');
       await writeObject(
           p.join(staging, '.flutter-patcher-sdk.json'), sdk.toJson());
-      await Directory(staging).rename(target);
+      await Directory(staging).renameRetry(target);
     }
     final commit =
         (await commands.run('git', ['-C', target, 'rev-parse', 'HEAD'])).trim();
@@ -168,7 +168,7 @@ class EnvironmentBuilder {
       final stage = temporaryName(installed);
       await File(snapshot).copy(stage);
       await markExecutable(commands, stage, host: sdk.host);
-      await File(stage).rename(installed);
+      await File(stage).renameRetry(installed);
     }
     await markExecutable(commands, installed, host: sdk.host);
     require(await hashFile(installed) == await hashFile(snapshot),
@@ -357,7 +357,7 @@ class EnvironmentBuilder {
       'outputs': outputs,
       if (await File(dill).exists()) 'index_sha256': await hashFile(dill)
     });
-    await Directory(staging).rename(directory);
+    await Directory(staging).renameRetry(directory);
     return directory;
   }
 
@@ -448,9 +448,9 @@ Future<void> embeddingPom(
   require(valid(await File(staged).readAsString()), 'ARTIFACT_INVALID',
       'Invalid upstream embedding POM.');
   if (await File(path).exists()) {
-    await File(path).rename(temporaryName('$path.retired'));
+    await File(path).renameRetry(temporaryName('$path.retired'));
   }
-  await File(staged).rename(path);
+  await File(staged).renameRetry(path);
   await File(receipt).writeAsString('${await hashFile(path)}\n');
 }
 

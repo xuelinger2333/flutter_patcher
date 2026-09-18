@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:test/test.dart';
+import 'host_tools.dart';
 import 'package:path/path.dart' as p;
 import 'package:archive/archive.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
@@ -183,13 +184,5 @@ void main() {
       p.join(root, 'signature.bin')
     ]);
     expect(check.exitCode, isNot(0));
-  }, tags: 'openssl', skip: _hasOpenSsl() ? false : 'openssl not on PATH');
-}
-
-bool _hasOpenSsl() {
-  try {
-    return Process.runSync('openssl', ['version']).exitCode == 0;
-  } on ProcessException {
-    return false;
-  }
+  }, tags: 'openssl', skip: skipUnless('openssl') ?? false);
 }

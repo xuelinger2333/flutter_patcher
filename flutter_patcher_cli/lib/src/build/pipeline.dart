@@ -467,7 +467,7 @@ class BuildPipeline {
       await writeObject(p.join(staging, 'build.json'), report);
       require(!await Directory(request.output).exists(), 'BUILD_CONFIG_INVALID',
           'Output appeared during build.');
-      await Directory(staging).rename(p.absolute(request.output));
+      await Directory(staging).renameRetry(p.absolute(request.output));
       return {...report, 'output': p.absolute(request.output)};
     } catch (error) {
       await writeObject(p.join(work, 'failure.json'), {

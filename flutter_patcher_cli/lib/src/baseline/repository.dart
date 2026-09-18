@@ -94,7 +94,7 @@ class BaselineRepository {
         final unpacked = p.join(staging, 'baseline');
         await archive.unpack(packed, unpacked);
         await verifyBaseline(unpacked, expected: fingerprint, sdkRoot: sdkRoot);
-        await Directory(unpacked).rename(target);
+        await Directory(unpacked).renameRetry(target);
         return target;
       });
 
@@ -172,7 +172,7 @@ class BaselineRepository {
         }
       }
       if (!await Directory(target).exists()) {
-        await Directory(payload).rename(target);
+        await Directory(payload).renameRetry(target);
       }
       return {
         'status': 'baseline_archived',

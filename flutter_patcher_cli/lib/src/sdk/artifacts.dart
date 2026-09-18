@@ -235,7 +235,7 @@ class ArtifactStore {
       await downloads.fetch(supportUri, staging, maxBytes: 65536);
       versions = await parse(staging);
       if (await File(cache).exists()) await quarantine(cache);
-      await File(staging).rename(cache);
+      await File(staging).renameRetry(cache);
     }
     require(versions.contains(version), 'ENGINE_ARTIFACT_MISSING',
         'Flutter $version is not supported. Supported versions: ${versions.join(', ')}');
@@ -280,7 +280,7 @@ class ArtifactStore {
     await validateFiles(staging, manifest, host: sdk.host);
     await writeObject(p.join(staging, 'source.json'), {'url': source});
     if (await Directory(directory).exists()) await quarantine(directory);
-    await Directory(staging).rename(directory);
+    await Directory(staging).renameRetry(directory);
     return manifest;
   }
 

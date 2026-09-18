@@ -7,6 +7,7 @@ import 'sdk/artifacts.dart';
 import 'sdk/host.dart';
 import 'sdk/environment.dart';
 import 'interfaces/pipeline.dart';
+import 'baseline/archive.dart' show zstdInstallHint;
 import 'baseline/command.dart';
 import 'baseline/manifest.dart';
 import 'baseline/repository.dart';
@@ -245,6 +246,19 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     await check('host', () async {
       report['host'] = {'os': host.os, 'arch': host.arch};
     }, 'Build host ${host.key}');
+    await check('cache_path', () async {
+      // Build passes cache paths inside comma-separated compiler options, and
+      // deep Gradle trees under a long cache root overrun MAX_PATH on Windows.
+      require(!cache.contains(',') && !cache.contains('\n'), 'CONFIG_INVALID',
+          'Cache path cannot contain commas or newlines; select --cache-dir.');
+      require(!host.isWindows || cache.length <= 80, 'CONFIG_INVALID',
+          'Cache path is ${cache.length} characters; select a short --cache-dir such as D:\\fp to stay within Windows path limits.');
+    }, 'Cache path usable');
+    await check('zstd', () async {
+      final version = await commands.runResult('zstd', ['--version'],
+          code: 'BASELINE_CODEC_MISSING');
+      require(version.exitCode == 0, 'BASELINE_CODEC_MISSING', zstdInstallHint);
+    }, 'zstd codec available');
     await Directory(cache).create(recursive: true);
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);

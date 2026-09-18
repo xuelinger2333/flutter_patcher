@@ -486,7 +486,7 @@ class PatchPipeline {
               FileSystemEntityType.notFound,
           'PATCH_CONFIG_INVALID',
           'Output appeared during compilation');
-      await Directory(pending).rename(p.absolute(req.output));
+      await Directory(pending).renameRetry(p.absolute(req.output));
       return {...report, 'output': p.absolute(req.output)};
     } catch (error) {
       await writeObject(p.join(work, 'failure.json'), {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'host_tools.dart';
 import 'package:flutter_patcher_cli/src/crypto/ed25519.dart';
 import 'package:flutter_patcher_cli/src/crypto/signing.dart';
 
@@ -29,14 +30,6 @@ const rfcVectors = [
         '6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a',
   ),
 ];
-
-bool hasOpenSsl() {
-  try {
-    return Process.runSync('openssl', ['version']).exitCode == 0;
-  } on ProcessException {
-    return false;
-  }
-}
 
 void main() {
   test('RFC 8032 vectors: key derivation, signing and verification', () {
@@ -154,5 +147,5 @@ void main() {
     ]);
     expect(sign.exitCode, 0, reason: '${sign.stderr}');
     expect(await File(theirs).readAsBytes(), ed25519Sign(seed, message));
-  }, tags: 'openssl', skip: hasOpenSsl() ? false : 'openssl not on PATH');
+  }, tags: 'openssl', skip: skipUnless('openssl') ?? false);
 }
