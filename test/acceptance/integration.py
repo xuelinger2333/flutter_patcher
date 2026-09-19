@@ -13,7 +13,28 @@ from pathlib import Path
 import shutil
 import socket
 import subprocess
+import sys
 import zipfile
+
+# WP-2.6: the harness runs on Windows hosts too; only launcher names and the
+# machine identity source differ.
+WINDOWS = sys.platform == 'win32'
+
+
+def flutter_launcher(flutter):
+    return flutter / ('bin/flutter.bat' if WINDOWS else 'bin/flutter')
+
+
+def dart_binary(flutter):
+    return flutter / ('bin/cache/dart-sdk/bin/dart.exe' if WINDOWS else 'bin/cache/dart-sdk/bin/dart')
+
+
+def machine_id():
+    if WINDOWS:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Cryptography') as key:
+            return winreg.QueryValueEx(key, 'MachineGuid')[0]
+    return Path('/etc/machine-id').read_text().strip()
 
 
 def call(args, cwd, log):
@@ -38,7 +59,8 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
             handoff=None, custom_binding=False, source_identity=None,
             font_original=None, font_replacement=None):
     out.mkdir(parents=True, exist_ok=False)
-    dart = flutter / 'bin/cache/dart-sdk/bin/dart'
+    dart = dart_binary(flutter)
+    launcher = flutter_launcher(flutter)
     cli = repo / 'flutter_patcher_cli/bin/flutter_patcher.dart'
     cache = out / 'cache'
     common = ['--flutter-sdk', flutter, '--cache-dir', cache,
@@ -51,7 +73,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
     public.write_text(base64.b64encode(bytes.fromhex(
         'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a')).decode())
     project = out / 'app'
-    call([flutter / 'bin/flutter', 'create', '--platforms', 'android', '--org', 'com.example',
+    call([launcher, 'create', '--platforms', 'android', '--org', 'com.example',
           '--project-name', 'wp9_acceptance', project], repo, out / 'create.log')
     configure_android(project)
     dependencies = {'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': str(repo)}}
@@ -80,14 +102,14 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
     manifest.write_text(manifest.read_text().replace('<application',
         '<uses-permission android:name="android.permission.INTERNET"/>\n<application android:usesCleartextTraffic="true"', 1))
     (project / 'pubspec.yaml').write_text(json.dumps(specification, indent=2))
-    call([flutter / 'bin/flutter', 'pub', 'get'], project, out / 'pub.log')
+    call([launcher, 'pub', 'get'], project, out / 'pub.log')
     call([dart, 'pub', 'get'], repo / 'flutter_patcher_cli', out / 'cli-pub.log')
     call([dart, cli, 'doctor', *common, '--json'], repo, out / 'doctor.log')
     report = {'schema': 1, 'stage': stage, 'host': socket.gethostname(),
-              'machine_id': Path('/etc/machine-id').read_text().strip(),
+              'machine_id': machine_id(),
               'code_commit': source_identity['commit'] if source_identity else subprocess.check_output(
                   ['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip(),
-              'sdk': json.loads(subprocess.check_output([str(flutter / 'bin/flutter'), '--version', '--machine'], text=True)),
+              'sdk': json.loads(subprocess.check_output([str(launcher), '--version', '--machine'], text=True)),
               'device_verified': False, 'custom_binding': custom_binding}
     if source_identity:
         report['source_sha256'] = source_identity['source_sha256']
@@ -104,7 +126,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
             (out / 'handoff.json').write_text(json.dumps(report, indent=2) + '\n')
             return report
         # Matched ordinary-build control, same SDK/project/ABI. No patcher bootstrap.
-        call([flutter / 'bin/flutter', 'build', 'apk', '--release', '--target-platform', 'android-arm64'],
+        call([launcher, 'build', 'apk', '--release', '--target-platform', 'android-arm64'],
              project, out / 'ordinary-build.log')
         normal = project / 'build/app/outputs/flutter-apk/app-release.apk'
         shutil.copyfile(normal, out / 'ordinary.apk')
@@ -118,7 +140,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         sizes['status'] = 'threshold_pending_review'
         report['size'] = sizes
         (project / 'lib/main.dart').write_text(source.replace("const revision = 'original';", "const revision = 'so';"))
-        call([flutter / 'bin/flutter', 'build', 'apk', '--release', '--target-platform', 'android-arm64'],
+        call([launcher, 'build', 'apk', '--release', '--target-platform', 'android-arm64'],
              project, out / 'legacy-build.log')
         with zipfile.ZipFile(normal) as z:
             (out / 'legacy-libapp.so').write_bytes(z.read('lib/arm64-v8a/libapp.so'))
@@ -155,7 +177,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
             (project / 'lib/main.dart').write_text(main)
             (project / 'assets/message.txt').write_text(tier)
             (project / 'pubspec.yaml').write_text(json.dumps(specification, indent=2))
-            call([flutter / 'bin/flutter', 'pub', 'get'], project, out / f'{tier}-pub.log')
+            call([launcher, 'pub', 'get'], project, out / f'{tier}-pub.log')
             call([dart, cli, 'patch', 'android', '--strategy', 'bytecode', *common,
                   '--project', project, '--fingerprint', prior['fingerprint'], '--seq', str(seq),
                   '--version-code', '1', '--baseline-store', baseline_store, '--private-key', seed,

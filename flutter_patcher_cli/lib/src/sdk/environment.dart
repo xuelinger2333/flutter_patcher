@@ -79,11 +79,19 @@ Future<void> checkSdkReady(String root, Commands commands) async {
       .trim();
   final engine = await read('bin/internal/engine.version');
   // flutter.bat writes the compile key quoted ("<revision>:"); the POSIX
-  // launcher writes it bare.
+  // launcher writes it bare. Stock Windows launchers (3.38 through 3.47 at
+  // least) compute the revision with a literal `$git rev-parse HEAD`, so the
+  // key they write and later compare is always ":"; that stamp is what keeps
+  // that launcher from rebuilding, so it is accepted only when the launcher
+  // really carries that bug.
   final toolsStamp =
       (await read('bin/cache/flutter_tools.stamp')).replaceAll('"', '');
+  final launcher = File(p.join(root, 'bin/internal/shared.bat'));
+  final launcherRevisionBroken = await launcher.exists() &&
+      (await launcher.readAsString()).contains(r'$git rev-parse HEAD');
   require(
-      toolsStamp == '$framework:' &&
+      (toolsStamp == '$framework:' ||
+              (launcherRevisionBroken && toolsStamp == ':')) &&
           await read('bin/cache/engine.stamp') == engine &&
           await read('bin/cache/engine-dart-sdk.stamp') == engine &&
           (await read('bin/cache/engine.realm')).isEmpty,
@@ -123,9 +131,13 @@ class EnvironmentBuilder {
       if (await Directory(target).exists()) await quarantine(target);
       await Directory(p.dirname(target)).create(recursive: true);
       final staging = temporaryName(target);
+      // The framework checkout has paths beyond MAX_PATH under dev/; Windows
+      // git needs core.longpaths (fvm sets the same option on its clones).
+      final longPaths = sdk.host.isWindows ? ['-c', 'core.longpaths=true'] : <String>[];
       await commands.run(
           'git',
           [
+            ...longPaths,
             'clone',
             '--depth',
             '1',
@@ -135,6 +147,11 @@ class EnvironmentBuilder {
             staging
           ],
           code: 'SDK_PREPARE_FAILED');
+      if (sdk.host.isWindows) {
+        await commands.run(
+            'git', ['-C', staging, 'config', 'core.longpaths', 'true'],
+            code: 'SDK_PREPARE_FAILED');
+      }
       final commit =
           (await commands.run('git', ['-C', staging, 'rev-parse', 'HEAD']))
               .trim();

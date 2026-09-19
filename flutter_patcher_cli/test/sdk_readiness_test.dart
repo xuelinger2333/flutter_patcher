@@ -42,6 +42,20 @@ void main() {
   test('initialized SDK passes read-only preflight', () async {
     await checkSdkReady(root.path, GitIdentity(root.path));
   });
+  test('the stock Windows launcher stamp ":" is accepted only with its bug',
+      () async {
+    await write('bin/cache/flutter_tools.stamp', '":"');
+    await expectLater(
+        checkSdkReady(root.path, GitIdentity(root.path)),
+        throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')));
+    await write('bin/internal/shared.bat',
+        "FOR /f %%r IN ('PUSHD %FLUTTER_ROOT% ^& \$git rev-parse HEAD') DO (");
+    await checkSdkReady(root.path, GitIdentity(root.path));
+    await write('bin/cache/flutter_tools.stamp', '"other:"');
+    await expectLater(
+        checkSdkReady(root.path, GitIdentity(root.path)),
+        throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')));
+  });
   for (final path in [
     'bin/cache/engine.stamp',
     'bin/cache/flutter_tools.stamp',
