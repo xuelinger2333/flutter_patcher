@@ -28,12 +28,39 @@ class SdkIdentity {
       };
 }
 
+/// A well-formed `verify` block: snapshot/device states with a skip reason
+/// only when skipped. Pending states are allowed here (other hosts' rows).
+bool verificationShape(dynamic verify) =>
+    verify is Map &&
+    const ['pending', 'passed'].contains(verify['snapshot']) &&
+    ((const ['pending', 'passed'].contains(verify['device']) &&
+            verify['device_reason'] == null) ||
+        (verify['device'] == 'skipped' &&
+            verify['device_reason'] == 'no_android_device'));
+
+bool verificationPassed(dynamic verify) =>
+    verificationShape(verify) &&
+    verify['snapshot'] == 'passed' &&
+    verify['device'] != 'pending';
+
+/// Rows this host downloads and checks: everything except gen_snapshots
+/// built for other hosts.
+Iterable<Map> hostFiles(Map<String, dynamic> manifest, HostIdentity host) =>
+    (manifest['files'] as List).cast<Map>().where((row) =>
+        row['role'] != 'gen_snapshot' ||
+        row['name'] == host.genSnapshotArtifact);
+
 void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
   void valid(bool condition, String message) =>
       require(condition, 'ENGINE_MANIFEST_INVALID', message);
   bool hash(dynamic value, RegExp pattern) =>
       value is String && pattern.hasMatch(value);
-  valid(value['schema'] is int && value['schema'] == 1,
+  // Engine schema 2 (WP-2.6) lists one gen_snapshot per build host; schema 1
+  // releases carry only linux-x64. Tools manifests stay at schema 1.
+  final schema = value['schema'];
+  valid(
+      schema is int &&
+          (schema == 1 || (kind == 'engine' && schema == 2)),
       'Unknown $kind manifest schema.');
   valid(
       value['flutter_version'] == sdk.version &&
@@ -56,36 +83,54 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
   final expected = kind == 'engine'
       ? {
           'engine': 'libflutter-arm64_v8a-release.jar',
-          'gen_snapshot': sdk.host.genSnapshotArtifact,
           'embedding': 'flutter_embedding_release.jar'
         }
       : {'tools': 'flutter_patcher_tools-${sdk.version}.dill'};
-  require(
-      files is List && files.length == expected.length,
-      kind == 'engine' ? 'ENGINE_ARTIFACT_MISSING' : 'TOOLS_ARTIFACT_MISSING',
-      'Missing required artifact roles.');
+  final missing =
+      kind == 'engine' ? 'ENGINE_ARTIFACT_MISSING' : 'TOOLS_ARTIFACT_MISSING';
+  valid(files is List, 'Invalid file list.');
+  if (kind == 'tools') {
+    require(
+        (files as List).length == 1, missing, 'Missing required artifact roles.');
+  }
   final seen = <String>{};
+  final snapshotHosts = <String>[];
+  Map? mine;
   for (final file in files as List) {
     valid(file is Map, 'Invalid file entry.');
     final row = file as Map;
-    valid(
-        row['role'] is String &&
-            expected.containsKey(row['role']) &&
-            seen.add(row['role'] as String),
-        'Unexpected or duplicate role.');
-    if (row['role'] == 'gen_snapshot') {
-      // Schema 1 releases carry one gen_snapshot. A release built for another
-      // host is not corrupt; it simply has nothing for this machine.
-      require(
-          row['name'] == expected['gen_snapshot'],
-          'ENGINE_ARTIFACT_MISSING',
-          'Engine release has no gen_snapshot for host ${sdk.host.key} '
-              '(release provides ${row['name']}).');
-      valid(row['host_os'] == sdk.host.os && row['host_arch'] == sdk.host.arch,
-          'Wrong gen_snapshot host.');
+    if (kind == 'engine' && row['role'] == 'gen_snapshot') {
+      final os = row['host_os'], arch = row['host_arch'];
+      valid(
+          os is String &&
+              arch is String &&
+              HostIdentity.implemented.contains('$os-$arch') &&
+              !snapshotHosts.contains('$os-$arch'),
+          'Unsupported or duplicate gen_snapshot host.');
+      final rowHost = HostIdentity(os as String, arch as String);
+      snapshotHosts.add(rowHost.key);
+      valid(rowHost.key == 'linux-x64' || schema == 2,
+          'Unsupported gen_snapshot host.');
+      valid(row['name'] == rowHost.genSnapshotArtifact,
+          'Unexpected artifact filename.');
+      if (schema == 2) {
+        valid(
+            row['built_at'] is String &&
+                DateTime.tryParse(row['built_at'] as String) != null &&
+                hash(row['builder_repo_commit'], hex40) &&
+                verificationShape(row['verify']),
+            'Invalid gen_snapshot record.');
+      }
+      if (rowHost.key == sdk.host.key) mine = row;
+    } else {
+      valid(
+          row['role'] is String &&
+              expected.containsKey(row['role']) &&
+              seen.add(row['role'] as String),
+          'Unexpected or duplicate role.');
+      valid(row['name'] == expected[row['role']],
+          'Unexpected artifact filename.');
     }
-    valid(
-        row['name'] == expected[row['role']], 'Unexpected artifact filename.');
     valid(row['size'] is int && row['size'] > 0 && hash(row['sha256'], hex64),
         'Invalid file size/hash.');
     if (row['role'] == 'engine' || row['role'] == 'embedding') {
@@ -111,6 +156,20 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
     }
   }
   if (kind == 'engine') {
+    require(seen.length == expected.length && snapshotHosts.isNotEmpty,
+        missing, 'Missing required artifact roles.');
+    valid(snapshotHosts.contains('linux-x64'), 'Missing primary gen_snapshot.');
+    // A release built for other hosts is not corrupt; it simply has nothing
+    // for this machine.
+    require(
+        mine != null,
+        missing,
+        'Engine release has no gen_snapshot for host ${sdk.host.key} '
+            '(release provides ${snapshotHosts.join(', ')}).');
+    if (schema == 2) {
+      valid(verificationPassed(mine!['verify']),
+          'gen_snapshot verification for ${sdk.host.key} did not pass.');
+    }
     valid(
         value['build_id'] is String &&
             RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
@@ -126,14 +185,7 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
                 .hasMatch(value['built_at']) &&
             DateTime.tryParse(value['built_at']) != null,
         'Invalid build timestamp.');
-    final verify = value['verify'];
-    valid(
-        verify is Map &&
-            verify['snapshot'] == 'passed' &&
-            ((verify['device'] == 'passed' &&
-                    verify['device_reason'] == null) ||
-                (verify['device'] == 'skipped' &&
-                    verify['device_reason'] == 'no_android_device')),
+    valid(verificationPassed(value['verify']),
         'Engine verification did not pass.');
   } else {
     valid(
@@ -146,7 +198,7 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
 Future<void> validateFiles(String directory, Map<String, dynamic> manifest,
     {HostIdentity? host}) async {
   host ??= HostIdentity.current();
-  for (final row in manifest['files'] as List) {
+  for (final row in hostFiles(manifest, host)) {
     final file = p.join(directory, row['name'] as String);
     await rejectLinks(file);
     require(
@@ -245,8 +297,9 @@ class ArtifactStore {
       {bool refresh = false}) async {
     require(!refresh || (kind == 'tools' && !downloads.offline),
         'CONFIG_INVALID', 'Tool refresh requires online mode.');
-    final directory = p.join(root, 'artifacts', sdk.version, kind);
+    final directory = _directory(sdk, kind);
     await rejectLinks(directory);
+    if (kind == 'engine') await _migrateLegacyEngineCache(sdk, directory);
     final source =
         '${base.toString().replaceAll(RegExp(r'/+$'), '')}/flutter-${sdk.version}/';
     final manifestName = '$kind.manifest.json';
@@ -272,7 +325,7 @@ class ArtifactStore {
         missingCode: missing, maxBytes: 1024 * 1024);
     final manifest = await readObject(p.join(staging, manifestName));
     checkManifest(manifest, kind, sdk);
-    for (final file in manifest['files'] as List) {
+    for (final file in hostFiles(manifest, sdk.host)) {
       await downloads.fetch(Uri.parse('$source${file['name']}'),
           p.join(staging, file['name'] as String),
           missingCode: missing, maxBytes: file['size'] as int);
@@ -284,6 +337,29 @@ class ArtifactStore {
     return manifest;
   }
 
+  /// Moves a pre-WP-2.6 cache (`engine/engine.manifest.json` directly under
+  /// the version) into this host's directory, so offline users keep their
+  /// validated artifacts. The normal validation then accepts or quarantines it.
+  Future<void> _migrateLegacyEngineCache(
+      SdkIdentity sdk, String directory) async {
+    final legacy = p.dirname(directory);
+    if (await Directory(directory).exists() ||
+        !await File(p.join(legacy, 'engine.manifest.json')).exists()) {
+      return;
+    }
+    await rejectLinks(legacy);
+    final parked = temporaryName(legacy);
+    await Directory(legacy).renameRetry(parked);
+    await Directory(legacy).create(recursive: true);
+    await Directory(parked).renameRetry(directory);
+  }
+
+  /// Engine artifacts are cached per host so a cache directory shared between
+  /// hosts (WSL2 and Windows, for example) never fights over gen_snapshot.
+  String _directory(SdkIdentity sdk, String kind) => kind == 'engine'
+      ? p.join(root, 'artifacts', sdk.version, 'engine', sdk.host.key)
+      : p.join(root, 'artifacts', sdk.version, kind);
+
   String file(SdkIdentity sdk, String kind, String name) =>
-      p.join(root, 'artifacts', sdk.version, kind, name);
+      p.join(_directory(sdk, kind), name);
 }

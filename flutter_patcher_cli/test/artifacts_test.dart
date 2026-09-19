@@ -21,6 +21,18 @@ Matcher failure(String code) =>
 class Fixture {
   final Map<String, List<int>> bytes = {};
   late Map<String, dynamic> engine, tools;
+
+  /// The same release as a schema 1 manifest: one linux-x64 gen_snapshot
+  /// without per-host verification fields.
+  Map<String, dynamic> schema1() {
+    final legacy = copy(engine);
+    legacy['schema'] = 1;
+    legacy['files'].removeLast();
+    for (final key in ['verify', 'built_at', 'builder_repo_commit']) {
+      legacy['files'][2].remove(key);
+    }
+    return legacy;
+  }
   Fixture() {
     final so = List<int>.filled(32, 0)
       ..setRange(0, 6, [127, 69, 76, 70, 2, 1])
@@ -32,6 +44,8 @@ class Fixture {
       ..addFile(
           ArchiveFile('io/flutter/embedding/engine/FlutterJNI.class', 1, [0])));
     bytes['gen_snapshot-linux-x64'] = snapshot;
+    // A second host's gen_snapshot (PE header) that a linux-x64 CLI must skip.
+    bytes['gen_snapshot-windows-x64.exe'] = [77, 90, ...List.filled(30, 0)];
     bytes['flutter_patcher_tools-3.47.2.dill'] = [144, 171, 205, 239, 1];
     Map<String, dynamic> record(String role, String name) => {
           'role': role,
@@ -40,7 +54,7 @@ class Fixture {
           'sha256': sha256.convert(bytes[name]!).toString()
         };
     final common = {
-      'schema': 1,
+      'schema': 2,
       'flutter_version': sdk.version,
       'engine_commit': sdk.engine,
       'builder_repo_commit': 'c' * 40,
@@ -79,12 +93,28 @@ class Fixture {
         {
           ...record('gen_snapshot', 'gen_snapshot-linux-x64'),
           'host_os': 'linux',
-          'host_arch': 'x64'
+          'host_arch': 'x64',
+          'built_at': '2026-09-07T16:28:58Z',
+          'builder_repo_commit': 'c' * 40,
+          'verify': {
+            'snapshot': 'passed',
+            'device': 'skipped',
+            'device_reason': 'no_android_device'
+          }
+        },
+        {
+          ...record('gen_snapshot', 'gen_snapshot-windows-x64.exe'),
+          'host_os': 'windows',
+          'host_arch': 'x64',
+          'built_at': '2026-09-19T08:00:00Z',
+          'builder_repo_commit': 'c' * 40,
+          'verify': {'snapshot': 'passed', 'device': 'passed', 'device_reason': null}
         }
       ]
     };
     tools = {
       ...common,
+      'schema': 1,
       'builder_repo_commit': 'f' * 40,
       'dart_version': sdk.dartVersion,
       'dart_sdk_commit': '1' * 40,
@@ -108,20 +138,48 @@ void main() {
     checkManifest(fixture.engine, 'engine', sdk);
     checkManifest(fixture.tools, 'tools', sdk);
   });
-  test('a release built for another host is missing, not corrupt', () {
+  test('schema 2 serves each listed host; other hosts are missing, not corrupt',
+      () {
     final windows = SdkIdentity(
         sdk.root, sdk.version, sdk.engine, sdk.dartVersion, sdk.framework,
         host: const HostIdentity('windows', 'x64'));
     expect(windows.host.genSnapshotArtifact, 'gen_snapshot-windows-x64.exe');
-    expect(() => checkManifest(fixture.engine, 'engine', windows),
-        throwsA(failure('ENGINE_ARTIFACT_MISSING')));
+    checkManifest(fixture.engine, 'engine', windows);
     checkManifest(fixture.tools, 'tools', windows);
+    final macos = SdkIdentity(
+        sdk.root, sdk.version, sdk.engine, sdk.dartVersion, sdk.framework,
+        host: const HostIdentity('macos', 'arm64'));
+    expect(() => checkManifest(fixture.engine, 'engine', macos),
+        throwsA(failure('ENGINE_ARTIFACT_MISSING')));
+    expect(hostFiles(fixture.engine, windows.host).map((r) => r['name']),
+        isNot(contains('gen_snapshot-linux-x64')));
+  });
+  test('schema 1 releases stay readable and are linux-x64 only', () {
+    final legacy = fixture.schema1();
+    checkManifest(legacy, 'engine', sdk);
+    final windows = SdkIdentity(
+        sdk.root, sdk.version, sdk.engine, sdk.dartVersion, sdk.framework,
+        host: const HostIdentity('windows', 'x64'));
+    expect(() => checkManifest(legacy, 'engine', windows),
+        throwsA(failure('ENGINE_ARTIFACT_MISSING')));
+    final wrongHost = fixture.schema1();
+    wrongHost['files'][2]['host_os'] = 'windows';
+    expect(() => checkManifest(wrongHost, 'engine', sdk),
+        throwsA(failure('ENGINE_MANIFEST_INVALID')));
   });
   final mutations = <String, void Function(Map<String, dynamic>)>{
-    'unknown schema': (m) => m['schema'] = 2,
+    'unknown schema': (m) => m['schema'] = 3,
+    'tools schema 2': (m) => m['schema'] = 1,
     'mixed engine': (m) => m['engine_commit'] = 'f' * 40,
     'wrong Flutter': (m) => m['flutter_version'] = '3.47.1',
     'wrong host': (m) => m['files'][2]['host_arch'] = 'arm64',
+    'duplicate host': (m) => m['files'][3] = m['files'][2],
+    'host verification pending': (m) =>
+        m['files'][2]['verify']['device'] = 'pending',
+    'host record without provenance': (m) =>
+        m['files'][3].remove('builder_repo_commit'),
+    'no primary gen_snapshot': (m) => m['files'].removeAt(2),
+    'host record without verify': (m) => m['files'][2].remove('verify'),
     'path traversal': (m) => m['files'][0]['name'] = '../escape.jar',
     'negative size': (m) => m['files'][0]['size'] = -1,
     'duplicate role': (m) => m['files'][2] = m['files'][0],
@@ -135,6 +193,13 @@ void main() {
   };
   for (final entry in mutations.entries) {
     test('rejects ${entry.key}', () {
+      if (entry.key == 'tools schema 2') {
+        final manifest = copy(fixture.tools);
+        manifest['schema'] = 2;
+        expect(() => checkManifest(manifest, 'tools', sdk),
+            throwsA(failure('ENGINE_MANIFEST_INVALID')));
+        return;
+      }
       final manifest = copy(fixture.engine);
       entry.value(manifest);
       expect(() => checkManifest(manifest, 'engine', sdk),
@@ -142,7 +207,7 @@ void main() {
     });
   }
   test('missing required artifact is explicit', () {
-    fixture.engine['files'].removeLast();
+    fixture.engine['files'].removeAt(1);
     expect(() => checkManifest(fixture.engine, 'engine', sdk),
         throwsA(failure('ENGINE_ARTIFACT_MISSING')));
   });
@@ -294,7 +359,7 @@ void main() {
       await expectLater(store.obtain('engine', sdk),
           throwsA(failure('ENGINE_ARTIFACT_MISSING')));
       expect(
-          Directory(p.join(temp.path, 'artifacts/3.47.2/engine')).existsSync(),
+          Directory(p.join(temp.path, 'artifacts/3.47.2/engine/linux-x64')).existsSync(),
           isFalse);
       omitSnapshot = false;
       await store.obtain('engine', sdk);
@@ -304,7 +369,54 @@ void main() {
       await expectLater(store.obtain('engine', sdk),
           throwsA(failure('ARTIFACT_HASH_MISMATCH')));
       expect(
-          Directory(p.join(temp.path, 'artifacts/3.47.2/engine')).existsSync(),
+          Directory(p.join(temp.path, 'artifacts/3.47.2/engine/linux-x64'))
+              .existsSync(),
+          isFalse);
+    });
+    test('a pre-WP-2.6 engine cache is migrated into the host directory',
+        () async {
+      final legacy = p.join(temp.path, 'artifacts', '3.47.2', 'engine');
+      await Directory(legacy).create(recursive: true);
+      for (final name in [
+        'libflutter-arm64_v8a-release.jar',
+        'flutter_embedding_release.jar',
+        'gen_snapshot-linux-x64'
+      ]) {
+        await File(p.join(legacy, name)).writeAsBytes(fixture.bytes[name]!);
+      }
+      await File(p.join(legacy, 'engine.manifest.json'))
+          .writeAsString(jsonEncode(fixture.schema1()));
+      final source =
+          '${store.base.toString().replaceAll(RegExp(r'/+$'), '')}/flutter-3.47.2/';
+      await File(p.join(legacy, 'source.json'))
+          .writeAsString(jsonEncode({'url': source}));
+      final offline = ArtifactStore(
+          temp.path, store.base, store.supportUri, Downloads(offline: true));
+      await offline.obtain('engine', sdk);
+      expect(File(p.join(legacy, 'engine.manifest.json')).existsSync(), isFalse);
+      expect(
+          File(p.join(legacy, 'linux-x64', 'gen_snapshot-linux-x64'))
+              .existsSync(),
+          isTrue);
+    });
+    test('only this host\'s gen_snapshot is downloaded and cached', () async {
+      await store.obtain('engine', sdk);
+      final cache = p.join(temp.path, 'artifacts', '3.47.2', 'engine', 'linux-x64');
+      expect(File(p.join(cache, 'gen_snapshot-linux-x64')).existsSync(), isTrue);
+      expect(File(p.join(cache, 'gen_snapshot-windows-x64.exe')).existsSync(),
+          isFalse);
+      expect(store.file(sdk, 'engine', 'gen_snapshot-linux-x64'),
+          p.join(cache, 'gen_snapshot-linux-x64'));
+      final windows = SdkIdentity(
+          sdk.root, sdk.version, sdk.engine, sdk.dartVersion, sdk.framework,
+          host: const HostIdentity('windows', 'x64'));
+      await store.obtain('engine', windows);
+      final windowsCache =
+          p.join(temp.path, 'artifacts/3.47.2/engine/windows-x64');
+      expect(
+          File(p.join(windowsCache, 'gen_snapshot-windows-x64.exe')).existsSync(),
+          isTrue);
+      expect(File(p.join(windowsCache, 'gen_snapshot-linux-x64')).existsSync(),
           isFalse);
     });
     test('corrupted cached file is quarantined and repaired online', () async {

@@ -69,7 +69,8 @@ flutter_patcher patch android --strategy bytecode --project /path/to/app \
 ```text
 ~/.flutter_patcher/
   support/                           支持表（按来源隔离）
-  artifacts/<version>/{engine,tools}/ 已校验的 Release 附件
+  artifacts/<version>/engine/<os>-<arch>/ 已校验的引擎附件（按构建主机分目录）
+  artifacts/<version>/tools/         已校验的工具附件
   flutter/<version>/                 平行 SDK
   mirrors/<version>/<build_id>/      本地 Maven 文件布局
   yaml/<version>/<input-hash>/       YAML、输入/输出哈希及隔离探针
