@@ -7,7 +7,7 @@ void main() {
       'acceptance workflow parses and separates public tests from trusted devices',
       () {
     final workflow =
-        loadYaml(File('../.github/workflows/test.yml').readAsStringSync())
+        loadYaml(File('../.github/workflows/ci.yml').readAsStringSync())
             as YamlMap;
     expect(workflow['permissions']['contents'], 'read');
     final jobs = workflow['jobs'] as YamlMap;

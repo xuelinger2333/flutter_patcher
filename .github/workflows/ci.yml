@@ -1,4 +1,4 @@
-name: Code and Android acceptance
+name: CI
 on:
   push:
     branches: [dev]
@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: wp9-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   versions:
@@ -24,17 +24,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: xuelinger2333/flutter_patcher_artifacts
-          ref: ${{ vars.WP9_ARTIFACTS_COMMIT }}
+          ref: ${{ vars.ARTIFACTS_COMMIT }}
           persist-credentials: false
       - id: versions
         env:
-          ARTIFACTS_COMMIT: ${{ vars.WP9_ARTIFACTS_COMMIT }}
+          ARTIFACTS_COMMIT: ${{ vars.ARTIFACTS_COMMIT }}
         run: |
           python3 - <<'PY'
           import json, os, re, subprocess
           from pathlib import Path
           pin = os.environ['ARTIFACTS_COMMIT']
-          assert re.fullmatch('[0-9a-f]{40}', pin), 'Set WP9_ARTIFACTS_COMMIT to the reviewed source commit'
+          assert re.fullmatch('[0-9a-f]{40}', pin), 'Set ARTIFACTS_COMMIT to the reviewed source commit'
           assert subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() == pin
           versions = [v.strip() for v in Path('supported_versions.txt').read_text().splitlines() if v.strip() and not v.startswith('#')]
           assert versions and len(versions) == len(set(versions))
@@ -66,21 +66,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y zstd
-          python3 -m venv "$RUNNER_TEMP/wp9-tests"
-          "$RUNNER_TEMP/wp9-tests/bin/pip" install -r test/acceptance/test-requirements.txt
-          export PATH="$RUNNER_TEMP/wp9-tests/bin:$PATH"
-          python3 test/acceptance/linux_tests.py --repo "$PWD" --dart "$(command -v dart)" --out "$PWD/.dart_tool/flutter_patcher/wp9-fast"
+          python3 -m venv "$RUNNER_TEMP/ci-tests"
+          "$RUNNER_TEMP/ci-tests/bin/pip" install -r test/acceptance/test-requirements.txt
+          export PATH="$RUNNER_TEMP/ci-tests/bin:$PATH"
+          python3 test/acceptance/linux_tests.py --repo "$PWD" --dart "$(command -v dart)" --out "$PWD/.dart_tool/flutter_patcher/ci-fast"
       - name: Native JVM regression
-        run: python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/wp9-native"
+        run: python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
       - run: python3 -m unittest discover -s test/acceptance -p 'test_*.py' -v
-      - run: echo 'Fast tests only; device and complete M1 acceptance are not implied.' >> "$GITHUB_STEP_SUMMARY"
+      - run: echo 'Fast tests only; device acceptance is not implied.' >> "$GITHUB_STEP_SUMMARY"
   host_a:
     needs: [versions, fast]
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.full_acceptance == true) ||
-      (github.event_name == 'push' && vars.WP9_DEVICE_CI == 'true')
-    runs-on: [self-hosted, linux, x64, wp9-build]
-    environment: wp9-acceptance
+      (github.event_name == 'push' && vars.DEVICE_ACCEPTANCE == 'true')
+    runs-on: [self-hosted, linux, x64, acceptance-build]
+    environment: device-acceptance
     timeout-minutes: 120
     strategy:
       max-parallel: 1
@@ -95,8 +95,8 @@ jobs:
           BINDING: ${{ matrix.binding }}
   host_b_device:
     needs: [versions, host_a]
-    runs-on: [self-hosted, linux, x64, wp9-device]
-    environment: wp9-acceptance
+    runs-on: [self-hosted, linux, x64, acceptance-device]
+    environment: device-acceptance
     timeout-minutes: 120
     strategy:
       max-parallel: 1
@@ -108,10 +108,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: xuelinger2333/flutter_patcher_artifacts
-          ref: ${{ vars.WP9_ARTIFACTS_COMMIT }}
-          path: .dart_tool/flutter_patcher/wp9-artifacts
+          ref: ${{ vars.ARTIFACTS_COMMIT }}
+          path: .dart_tool/flutter_patcher/artifacts
           persist-credentials: false
-      - run: python3 test/acceptance/ci.py --stage patch --version "$VERSION" --binding "$BINDING" --artifacts .dart_tool/flutter_patcher/wp9-artifacts
+      - run: python3 test/acceptance/ci.py --stage patch --version "$VERSION" --binding "$BINDING" --artifacts .dart_tool/flutter_patcher/artifacts
         env:
           VERSION: ${{ matrix.version }}
           BINDING: ${{ matrix.binding }}
