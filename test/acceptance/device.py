@@ -152,7 +152,10 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
             def log_message(self, *_): pass
         server = ThreadingHTTPServer(('127.0.0.1', 8765), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        installed = adb('shell', 'pm', 'path', package).strip().splitlines()
+        try:
+            installed = adb('shell', 'pm', 'path', package).strip().splitlines()
+        except subprocess.CalledProcessError:
+            installed = []  # not installed yet; pm path exits 1
         same_apk = False
         if len(installed) == 1 and installed[0].startswith('package:/data/app/'):
             digest = adb('shell', 'sha256sum', installed[0].removeprefix('package:')).split()[0]
