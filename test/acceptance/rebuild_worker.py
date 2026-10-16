@@ -67,7 +67,7 @@ def main():
         result['stage'] = 'corpus'; print('STAGE corpus', flush=True)
         call(['python3', generator, '--dart', dart, '--tool', tool,
               '--platform', sdk / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
-              '--interface', patch / 'cache/baselines' / data['fingerprint'] / 'dynamic_interface.yaml',
+              '--interface', Path(data['lean']['baseline_cache']['compile']) / 'dynamic_interface.yaml',
               '--fingerprint', data['fingerprint'], '--seq', '7', '--tier', data['lean']['tier'],
               '--out', root / 'modules'], code, root / 'modules.log')
         corpus = root / (binding + '-corpus')

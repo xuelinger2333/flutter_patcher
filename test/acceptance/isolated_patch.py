@@ -41,6 +41,8 @@ def main():
         assert json.loads(evidence['routes']) == []
         cache = Path('/home/acceptance/.flutter_patcher/provision/cache')
         assert not (cache / 'baselines' / prior['fingerprint']).exists()
+        assert not (cache / 'baselines' / 'compile' / prior['fingerprint']).exists()
+        assert not (cache / 'baselines' / 'release').exists()
         # CLI subprocesses use their own PUB_CACHE rather than the caller's.
         # Both caches originate from this rootfs's online provisioning only.
         shutil.copytree('/home/acceptance/pub-cache', cache / 'pub-cache', dirs_exist_ok=True)

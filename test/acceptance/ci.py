@@ -61,7 +61,7 @@ def main():
     modules = out / 'fault-modules'
     call([sys.executable, args.artifacts / 'tools/release/fault_modules.py', '--dart', dart,
           '--tool', tool, '--platform', flutter / 'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
-          '--interface', out / 'cache/baselines' / receipt['fingerprint'] / 'dynamic_interface.yaml',
+          '--interface', Path(receipt['lean']['baseline_cache']['compile']) / 'dynamic_interface.yaml',
           '--fingerprint', receipt['fingerprint'], '--seq', '7', '--tier', receipt['lean']['tier'],
           '--out', modules], repo, out / 'fault-modules.log')
     corpus = out / 'corpus'
