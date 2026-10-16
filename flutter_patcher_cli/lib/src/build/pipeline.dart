@@ -147,7 +147,7 @@ class BuildPipeline {
         final plugins = (config['packages'] as List)
             .where((r) => r['name'] == 'flutter_patcher');
         require(plugins.length == 1, 'BUILD_BOOTSTRAP_UNAVAILABLE',
-            'WP-8 flutter_patcher bootstrap dependency is required.');
+            'The application must depend on flutter_patcher to build a bytecode release.');
         final pluginRoot = File(packages)
             .uri
             .resolve(plugins.single['rootUri'] as String)
@@ -156,7 +156,7 @@ class BuildPipeline {
             await File(p.join(pluginRoot, 'lib/src/patch_bootstrap.dart'))
                 .exists(),
             'BUILD_BOOTSTRAP_UNAVAILABLE',
-            'WP-8 PatchBootstrap is not implemented; formal release build is unavailable.');
+            'The flutter_patcher dependency has no PatchBootstrap; use a version with bytecode support.');
         await installRuntimePackage(
             packages, package, request.target.substring(4));
       }

@@ -74,7 +74,7 @@ ArgParser parser() {
         help: 'Bytecode by default; SO uses the existing v1 workflow.');
   patch.addFlag('framework-reuse',
       help: 'Experimental: carry leaf framework libraries against a host built '
-          'with --framework-reuse. Off by default (WP-2.5 host-cost gate).');
+          'with --framework-reuse. Off by default.');
   final build = environmentOptions()
     ..addOption('host-policy',
         help:
@@ -88,7 +88,7 @@ ArgParser parser() {
         allowed: ['so', 'bytecode'],
         help: 'Bytecode by default; SO uses the existing v1 workflow.');
   build.addFlag('framework-reuse',
-      help: 'Experimental: keep the WP-2.5 host reuse surface alive (schema 4 '
+      help: 'Experimental: keep the framework reuse surface alive (schema 4 '
           'baseline). Off by default: it adds ~4.5 MiB to libapp.so.');
   final doctor = environmentOptions();
   final interfaces = environmentOptions()
@@ -199,8 +199,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
   final downloads = Downloads(offline: args['offline'] as bool);
   final report = <String, dynamic>{
     'command': generateInterface ? 'interface' : 'doctor',
-    'scope':
-        generateInterface ? 'WP-3 interface preparation' : 'WP-2 toolchain',
+    'scope': generateInterface ? 'interface preparation' : 'toolchain',
     'checks': checks
   };
   RandomAccessFile? lock;
@@ -401,14 +400,14 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     }
     final apk = args['apk'] as String?;
     if (apk == null) {
-      pending(
-          'apk_engine', 'No APK supplied; actual build injection awaits WP-5.');
+      pending('apk_engine',
+          'No APK supplied; pass --apk to check the engine inside a build.');
     } else {
       await check('apk_engine', () => verifyApk(apk, engine),
           'APK arm64 engine hash matches the selected engine manifest');
     }
     pending('device_a1',
-        'Device execution and the A1 update flow are outside WP-2.');
+        'Device execution and the update flow are not checked by doctor.');
     success = true;
   } on Failure catch (error) {
     checks.add({

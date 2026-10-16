@@ -199,7 +199,7 @@ class InterfacePipeline {
         iface,
         '--aot-only',
         '--prefix-library-uris',
-        'wp3_validation',
+        'interface_validation',
         if (request.mode == 'whole') ...[
           '--allow-dynamic-calls-in-dynamic-modules',
           '--extra-selectors-allowed-in-dynamic-calls=${wholeSelectors.join(',')}'

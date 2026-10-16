@@ -99,7 +99,7 @@ class PatchPipeline {
               ([2, 3, 4].contains(manifest['schema']) &&
                   manifest['runtime_bootstrap'] == true),
           'BASELINE_NOT_RELEASE',
-          'A formal WP-5 release baseline is required');
+          'A baseline archived by build android is required');
       final receipt = await readObject(p.join(baseline, 'build_receipt.json'));
       require(
           req.minBuild.toString() == receipt['version_code'],
@@ -112,7 +112,7 @@ class PatchPipeline {
               req.validationOnly ? null : receipt['public_key'] as String);
       final usage = await commands.run(sdk.dart, [tool, '--help']);
       require(usage.contains('compile-patch'), 'TOOLS_VERSION_UNSUPPORTED',
-          'CI tools with WP-6 support are required');
+          'Tools with compile-patch support are required; update the tools release');
       final partitionPath = p.join(baseline, 'framework_partition.json');
       final partition =
           manifest['schema'] == 4 ? await baselineObject(partitionPath) : null;
@@ -262,11 +262,11 @@ class PatchPipeline {
       if (resources) {
         final plugin = roots['flutter_patcher'] as Uri?;
         require(plugin != null, 'PATCH_OVERLAY_UNAVAILABLE',
-            'WP-7 flutter_patcher dependency is required');
+            'Resource patches require the flutter_patcher dependency');
         final helper =
             File.fromUri(plugin!.resolve('src/bootstrap/overlay.dart'));
         require(await helper.exists(), 'PATCH_OVERLAY_UNAVAILABLE',
-            'WP-7 overlay source is missing');
+            'The flutter_patcher dependency has no resource overlay; use a newer version');
         final generated = p.join(work, 'module', app, '__patch_overlay.dart');
         require(!await File(generated).exists(), 'PATCH_SOURCE_INVALID',
             'Application uses reserved __patch_overlay.dart');

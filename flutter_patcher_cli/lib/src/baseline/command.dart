@@ -18,7 +18,7 @@ ArgParser baselineOptions() => ArgParser()
       help: 'Completed baseline input directory; never modified.')
   ..addOption('metadata',
       help:
-          'WP-5 input metadata JSON (schema/version/engine/build_id/platform).')
+          'Baseline input metadata JSON (schema/version/engine/build_id/platform).')
   ..addOption('fingerprint')
   ..addOption('baseline-store',
       help: 'file://, s3:// or conditional-PUT HTTPS store.')

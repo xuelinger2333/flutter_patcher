@@ -18,7 +18,7 @@ Future<int> buildCommand(ArgResults args) async {
     require(args.rest.length == 1 && args.rest.single == 'android',
         'USAGE_ERROR', 'Use build android.');
     require(args['strategy'] == 'bytecode', 'BUILD_STRATEGY_UNSUPPORTED',
-        'WP-5 implements --strategy bytecode; the existing v1 so workflow is unchanged.');
+        'build supports --strategy bytecode only; so patches keep using the v1 workflow.');
     final host = requireSupportedHost();
     String required(String key) {
       final value = args[key] as String?;

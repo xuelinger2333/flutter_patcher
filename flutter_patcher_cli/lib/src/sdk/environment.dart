@@ -399,7 +399,7 @@ class EnvironmentBuilder {
         '${sdk.version}-${DateTime.now().microsecondsSinceEpoch}');
     await Directory(work).create(recursive: true);
     await File(p.join(work, 'main.dart'))
-        .writeAsString("void main() { print('WP2_PAIR_OK'); }\n");
+        .writeAsString("void main() { print('PAIR_OK'); }\n");
     await writeObject(p.join(work, 'package_config.json'),
         {'configVersion': 2, 'packages': []});
     final platform = sdkInput(sdk, managed,
