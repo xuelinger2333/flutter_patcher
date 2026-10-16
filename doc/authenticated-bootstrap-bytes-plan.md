@@ -29,4 +29,4 @@ phone configuration changes, push or publication. Primary agent uses gpu builds.
   locally. If whole still exceeds 200 ms, report the gap without changing the
   agreed archive checks or starting the native entry-parser redesign.
 
-Results: formal matrix 31/31, instrumentation 4/4, JVM 33/33; probe 60/60. Lean 65.343 ms meets 85 ms; whole 205.861 ms fails 200 ms (0/10). See test/acceptance/NATIVE_BYTES_REPORT.md.
+Results: formal matrix 31/31, instrumentation 4/4, JVM 33/33; probe 60/60. Lean 65.343 ms meets 85 ms; whole 205.861 ms fails 200 ms (0/10). The full report is kept in the git history.

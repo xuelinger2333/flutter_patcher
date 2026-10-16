@@ -104,8 +104,8 @@ That performance failure is separate
 from the functional matrix verdict. The analyzer also supports older runs with
 only the four broad timing stages.
 
-See [the measured whole-bootstrap diagnosis](WHOLE_BOOTSTRAP_PROFILE.md) for
-results, measurement limits and the recommended optimization order.
+The measured whole-bootstrap diagnosis (results, measurement limits and the
+recommended optimization order) is kept in the git history.
 
 The current [tier-specific budget decision](../../doc/bootstrap-performance-budget.md)
 also records why interleaving three hashers is not equivalent to doing one hash,
