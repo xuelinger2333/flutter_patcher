@@ -12,6 +12,7 @@ import 'bootstrap.dart';
 import 'runtime_package.dart';
 import 'outputs.dart';
 import 'host_policy.dart';
+import 'virtual_paths.dart';
 import 'dart:convert';
 
 class BuildRequest {
@@ -126,6 +127,10 @@ class BuildPipeline {
           'CI tools with build inspection are required.');
       final frameworkReuseTool =
           request.frameworkReuse && usage.contains('gen-framework-partition');
+      // Older tools cannot read back virtual source URIs; they keep the
+      // path-dependent baseline kernel.
+      final virtualTool = usage.contains('--filesystem-root');
+      VirtualPackages? virtual;
       final project =
           await workspace.copyPackage(request.project, application: true);
       final pubspec =
@@ -180,8 +185,9 @@ class BuildPipeline {
                 '--no-aot',
                 '--no-tfa',
                 '--no-link-platform',
+                if (virtual != null) ...virtual.compilerArgs,
                 '--packages',
-                packages,
+                virtual?.packagesUri ?? packages,
                 if (iface != null) ...['--dynamic-interface', iface],
                 if (dump != null) ...[
                   '--dump-detailed-dynamic-interface',
@@ -289,10 +295,15 @@ class BuildPipeline {
       ]);
       await validateDetails(baseline, await hashFile(iface));
       phase = 'baseline-kernel';
+      if (virtualTool) {
+        virtual = await VirtualPackages.write(
+            packages, [p.absolute(work), p.absolute(cache)]);
+      }
       await compile(p.join(baseline, 'app.dill'),
           iface: iface, dump: p.join(baseline, 'compiler_interface.json'));
       await call([
         'inspect-build',
+        if (virtual != null) ...virtual.compilerArgs,
         '--dill',
         p.join(baseline, 'app.dill'),
         '--packages',
@@ -395,6 +406,7 @@ class BuildPipeline {
       }
       await call([
         'inspect-build',
+        if (virtual != null) ...virtual.compilerArgs,
         '--dill',
         p.join(baseline, 'app.dill'),
         '--packages',
