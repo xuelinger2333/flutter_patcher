@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
@@ -176,20 +177,24 @@ class Commands {
     try {
       // Windows batch launchers (flutter.bat, aws.cmd) only start through the
       // command interpreter; native executables never go through a shell.
+      // `cmd /c` strips the outer quotes of a line that starts with a quoted
+      // launcher path, so a launcher under a path with spaces breaks once an
+      // argument is quoted too; a leading `call` keeps every quote intact.
       final extension = p.extension(executable).toLowerCase();
-      process = await Process.start(executable, args,
+      final batch =
+          Platform.isWindows && (extension == '.bat' || extension == '.cmd');
+      process = await Process.start(batch ? 'cmd.exe' : executable,
+          batch ? ['/c', 'call', executable, ...args] : args,
           workingDirectory: cwd,
           environment: {...environment, ...?extraEnvironment},
-          includeParentEnvironment: false,
-          runInShell: Platform.isWindows &&
-              (extension == '.bat' || extension == '.cmd'));
+          includeParentEnvironment: false);
     } on ProcessException catch (error) {
       throw Failure(code, 'Cannot start $executable: ${error.message}');
     }
     if (inputBytes != null) process.stdin.add(inputBytes);
     final inputClosed = process.stdin.close();
-    final output = process.stdout.transform(utf8.decoder).join();
-    final diagnostic = process.stderr.transform(utf8.decoder).join();
+    final output = collectOutput(process.stdout);
+    final diagnostic = collectOutput(process.stderr);
     int result;
     try {
       result = await process.exitCode.timeout(timeout);
@@ -203,6 +208,21 @@ class Commands {
     final out = await output;
     final err = await diagnostic;
     return CommandResult(result, out, err);
+  }
+}
+
+/// Tools print UTF-8, but Windows reports its own errors in the ANSI code page
+/// (GBK on a Chinese system); undecodable output must never abort a command.
+Future<String> collectOutput(Stream<List<int>> stream) async {
+  final bytes = await stream.fold<BytesBuilder>(
+      BytesBuilder(copy: false), (all, chunk) => all..add(chunk));
+  final data = bytes.takeBytes();
+  try {
+    return utf8.decode(data);
+  } on FormatException {
+    return Platform.isWindows
+        ? systemEncoding.decode(data)
+        : utf8.decode(data, allowMalformed: true);
   }
 }
 
