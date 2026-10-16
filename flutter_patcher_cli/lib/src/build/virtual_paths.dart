@@ -12,6 +12,8 @@ const virtualScheme = 'org-dartlang-root';
 /// outside every root, or one an earlier root would shadow, keeps its file
 /// URI: still correct, only not reproducible.
 class VirtualPackages {
+  static const _name = 'package_config.virtual.json';
+
   /// Multi-root directories, in gen_kernel's lookup order.
   final List<String> roots;
 
@@ -19,6 +21,9 @@ class VirtualPackages {
   final String packagesUri;
 
   VirtualPackages._(this.roots, this.packagesUri);
+
+  /// The rewritten config on disk.
+  String get path => p.join(roots.first, _name);
 
   List<String> get compilerArgs => [
         '--filesystem-scheme',
@@ -36,10 +41,9 @@ class VirtualPackages {
       final location = source.uri.resolve(row['rootUri'] as String);
       rows.add({...row, 'rootUri': _virtual(location, roots) ?? '$location'});
     }
-    const name = 'package_config.virtual.json';
-    await File(p.join(roots.first, name))
+    await File(p.join(roots.first, _name))
         .writeAsString(jsonEncode({...config, 'packages': rows}));
-    return VirtualPackages._(roots, '$virtualScheme:///$name');
+    return VirtualPackages._(roots, '$virtualScheme:///$_name');
   }
 
   /// The virtual URI for [location], from the first root containing it.

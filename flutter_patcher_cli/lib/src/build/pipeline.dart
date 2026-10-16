@@ -345,7 +345,10 @@ class BuildPipeline {
         });
         await nativeAsset.writeAsString(hostTrust);
       }
-      final target = p.join(project, '.dart_tool/flutter_patcher/main.dart');
+      // Inside the runtime package the entry compiles as a package: URI; a
+      // file URI would embed this run's work path in libapp.so.
+      final target =
+          p.join(project, '.dart_tool/flutter_patcher/runtime/lib/main.dart');
       if (!request.pipelineValidationOnly) {
         await File(target).parent.create(recursive: true);
         await File(target).writeAsString(bootstrapSource(
@@ -420,7 +423,10 @@ class BuildPipeline {
       final kernel = await readObject(p.join(baseline, 'kernel_receipt.json'));
       // Preserve the actual host compiler's authoritative expanded interface.
       await File(hostDump).copy(p.join(baseline, 'compiler_interface.json'));
-      await File(packages).copy(p.join(baseline, 'package_config.json'));
+      // Patches read only package names from it; the virtual copy keeps
+      // per-run work paths out of the archived baseline.
+      await File(virtual?.path ?? packages)
+          .copy(p.join(baseline, 'package_config.json'));
       final receipt = <String, dynamic>{
         ...apkInfo,
         ...kernel,
