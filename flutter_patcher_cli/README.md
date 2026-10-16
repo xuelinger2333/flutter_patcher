@@ -95,6 +95,9 @@ YAML 缓存键包含版本、engine/framework commit、所用 Flutter 源文件�
 | `--baseline` | 解包目录的 manifest 与文件一致，是 release 基线，且绑定所选 SDK/engine 构建 |
 | `--version-code`、`--flavor` 与 `--baseline-store` | 拉取侧车及其基线并完整校验，侧车绑定一致且基线匹配所选 engine 构建 |
 | `--apk` | ZIP 内 `lib/arm64-v8a/libflutter.so` 大小/哈希匹配 manifest；不安装或运行 APK |
+| `--project` | 项目 Dart 源码是否含 CRLF 换行；含有时给出 `warning`（`build` 也会警告并把文件列表写入 receipt） |
+
+源码身份按字节比较、不做换行归一化：Windows 上 Git 默认 `core.autocrlf=true`，同一提交的 CRLF 与 LF 检出会得到不同指纹，补丁也必须从换行一致的检出构建，否则所有文件都视为改动、原生文件报 `PATCH_NATIVE_CHANGE`。跨主机协作时在 `.gitattributes` 加 `* text=auto eol=lf`。项目内与排除目录（`build`、`.dart_tool` 等）仅大小写不同的目录会被拒绝（`BUILD_PROJECT_INVALID`），因为不区分大小写的文件系统会把构建产物写进去。
 
 `--artifacts-url`、`--supported-versions-url` 是维护/测试用覆盖项，普通用户只需选择 Flutter SDK。下载允许 HTTPS，HTTP 仅允许 loopback 测试服务。错误报告不会提供自行编译引擎的路径。
 

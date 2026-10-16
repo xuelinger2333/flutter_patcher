@@ -19,6 +19,17 @@ void require(bool condition, String code, String message) {
   if (!condition) throw Failure(code, message);
 }
 
+/// Rejects a directory whose name matches an excluded one only up to case.
+/// On a case-insensitive file system tools would write generated output into
+/// it, so its contents would differ between hosts; every host rejects it.
+void rejectCaseVariant(String name, Iterable<String> excluded, String code) {
+  final lower = name.toLowerCase();
+  for (final reserved in excluded) {
+    require(name == reserved || lower != reserved.toLowerCase(), code,
+        'Directory "$name" differs from the excluded "$reserved" only by case.');
+  }
+}
+
 /// Resolve the shared CLI cache policy; callers still reject symlinks before I/O.
 String managedCache(String? requested, {String? home, String? project}) {
   home ??= Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];

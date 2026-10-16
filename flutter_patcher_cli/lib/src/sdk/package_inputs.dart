@@ -71,6 +71,10 @@ Future<Map<String, dynamic>> packageInputs(String config,
           require(file is! Link, 'PACKAGE_INPUT_INVALID',
               'Native package contains a symlink');
           if (file is Directory) {
+            rejectCaseVariant(
+                p.basename(file.path),
+                const ['build', '.gradle', '.dart_tool', '.git', '.cxx'],
+                'PACKAGE_INPUT_INVALID');
             await visit(file);
           }
           if (file is File) {

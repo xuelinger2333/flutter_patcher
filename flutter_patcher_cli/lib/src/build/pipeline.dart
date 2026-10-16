@@ -8,6 +8,7 @@ import '../sdk/package_inputs.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
 import 'workspace.dart';
+import 'line_endings.dart';
 import 'bootstrap.dart';
 import 'runtime_package.dart';
 import 'outputs.dart';
@@ -132,6 +133,8 @@ class BuildPipeline {
       VirtualPackages? virtual;
       final project =
           await workspace.copyPackage(request.project, application: true);
+      final crlf = await crlfDartSources(project);
+      if (crlf.isNotEmpty) stderr.writeln('WARNING: ${crlfWarning(crlf)}');
       final pubspec =
           loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
               as Map;
@@ -438,7 +441,9 @@ class BuildPipeline {
         'interface_sha256': await hashFile(iface),
         'fingerprint': identity,
         'public_key': request.pipelineValidationOnly ? null : request.publicKey,
-        'package_inputs': sourceInputs
+        'package_inputs': sourceInputs,
+        'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
+        'crlf_dart_sources': crlf
       };
       await writeObject(p.join(baseline, 'build_receipt.json'), receipt);
       await workspace.verifyOriginals();

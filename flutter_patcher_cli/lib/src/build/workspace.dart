@@ -26,6 +26,10 @@ class BuildWorkspace {
       await Directory(to).create(recursive: true);
       await for (final entry in Directory(from).list(followLinks: false)) {
         if (excluded.contains(p.basename(entry.path))) continue;
+        if (entry is Directory) {
+          rejectCaseVariant(
+              p.basename(entry.path), excluded, 'BUILD_PROJECT_INVALID');
+        }
         final target = p.join(to, p.basename(entry.path));
         if (entry is Directory) {
           await copy(entry.path, target);
