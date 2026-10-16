@@ -1,3 +1,0 @@
-# Preserve archived evidence bytes on every checkout, including Windows.
-records/** -text -diff
-reports/** -text -diff

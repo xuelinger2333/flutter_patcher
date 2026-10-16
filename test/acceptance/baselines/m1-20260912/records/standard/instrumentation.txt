@@ -1,8 +1,0 @@
-
-com.flutter_patcher.flutter_patcher.Ed25519DeviceTest:....
-
-Time: 0.208
-
-OK (4 tests)
-
-

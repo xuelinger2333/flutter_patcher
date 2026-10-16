@@ -137,4 +137,4 @@ dart analyze
 dart test
 ```
 
-测试使用本地 HTTP 和合成二进制，覆盖 manifest 错配、校验失败、下载中断、缓存恢复、支持表刷新、YAML 输入变化和命令错误。真实 Release/SDK 验收见 [WP2-acceptance.md](docs/WP2-acceptance.md)。
+测试使用本地 HTTP 和合成二进制，覆盖 manifest 错配、校验失败、下载中断、缓存恢复、支持表刷新、YAML 输入变化和命令错误。
