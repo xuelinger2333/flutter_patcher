@@ -1,17 +1,17 @@
 {
   "ssh_host": "gpu",
   "remote_root": "/root/.flutter_patcher/source-regressions",
-  "flutter": "/root/.flutter_patcher/artifacts-builder/cache/flutter-3.47.2",
+  "flutter": "/opt/flutter",
   "version": "3.47.2",
-  "served_artifacts": "/root/.flutter_patcher/development/served-pinned",
-  "tools_sha256": "448fd8e8d3bfe52c875a98838a4abc0a022f9256332cc6a0c7deefbbd73753f9",
-  "fault_modules": "/root/.flutter_patcher/development/artifacts/tools/release/fault_modules.py",
-  "fault_modules_sha256": "4189c230779d3513c43939469169a69032598960c17cbef748d50a2e703befef",
+  "served_artifacts": "/root/.flutter_patcher/served",
+  "tools_sha256": "6427c8ddaf8843f0fc1e3e53db3b590015e55756b4427ec2d056505f8bd04e0a",
+  "fault_modules": "/root/.flutter_patcher/artifacts-repository/tools/release/fault_modules.py",
+  "fault_modules_sha256": "847dd8e8f4e438e4a92eef925defeb0a9ddd966874f700e374937e3c3d1fce88",
   "build_env": {
     "ANDROID_HOME": "/opt/android-sdk",
-    "PUB_CACHE": "/root/.flutter_patcher/development/pub-cache"
+    "PUB_CACHE": "/root/.flutter_patcher/pub-cache"
   },
   "binding": "standard",
   "serial": "AF2Q025C05004551",
-  "local_dart": "D:/DevTools/flutter/bin/cache/dart-sdk/bin/dart.exe"
+  "local_dart": "D:/DevTools/fvm/versions/versions/3.47.2/bin/cache/dart-sdk/bin/dart.exe"
 }

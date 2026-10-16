@@ -11,8 +11,11 @@ device. Copy it to an ignored local file to use another environment. This comman
 uses SSH/SCP for isolated builds only; it does not push Git, publish releases,
 alter phone settings or launch emulators. Python 3.12+ is required for safe archive
 extraction, along with the configured Linux Flutter/Android SDK, Python test
-dependencies, and fixed artifact/generator files. Installation can require normal
-on-device approval.
+dependencies, and fixed artifact/generator files. `served_artifacts` is a builder
+directory holding `supported_versions.txt` and the release assets under
+`flutter-<version>/`; `tools_sha256` and `fault_modules_sha256` pin the tools dill
+and the artifacts repository's `tools/release/fault_modules.py`. Installation can
+require normal on-device approval.
 
 The command snapshots current tracked and non-ignored untracked files (including
 uncommitted product changes), hashes their bytes, and transfers that snapshot to
