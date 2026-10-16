@@ -38,10 +38,12 @@ Future<int> keysCommand(ArgResults args) async {
   // mkdir is exclusive, unlike Directory.create: competing initializers cannot
   // both succeed. On POSIX mode 700 is applied at creation, before any secret
   // is written; on Windows the directory is created exclusively by cmd's
-  // built-in mkdir and then its ACL is cut down to the current user.
+  // built-in mkdir and then its ACL is cut down to the current user. POSIX
+  // tools are run by absolute path so neither PATH nor a planted binary
+  // decides how the key directory is created.
   final claim = host.isWindows
       ? await Process.run('cmd', ['/c', 'mkdir', out])
-      : await Process.run('mkdir', ['-m', '700', '--', out]);
+      : await Process.run('/bin/mkdir', ['-m', '700', '--', out]);
   require(claim.exitCode == 0, 'KEYS_OUTPUT_UNAVAILABLE',
       'Cannot exclusively create key directory (already exists or is not writable): $out');
   if (host.isWindows) {
@@ -59,7 +61,8 @@ Future<int> keysCommand(ArgResults args) async {
   try {
     await privateFile.create();
     if (host.isPosix) {
-      final mode = await Process.run('chmod', ['600', '--', privateFile.path]);
+      final mode =
+          await Process.run('/bin/chmod', ['600', '--', privateFile.path]);
       require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
           'Cannot protect private-key permissions.');
     }
