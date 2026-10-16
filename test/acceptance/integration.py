@@ -17,7 +17,8 @@ import sys
 import zipfile
 
 # WP-2.6: the harness runs on Windows hosts too; only launcher names and the
-# machine identity source differ.
+# machine identity source differ. Every generated source file is
+# written with LF so both hosts hash identical bytes (fingerprint parity).
 WINDOWS = sys.platform == 'win32'
 
 
@@ -45,6 +46,18 @@ def call(args, cwd, log):
         raise RuntimeError(f'Command failed; see {log}')
 
 
+def normalize_line_endings(project):
+    """Match a repository checkout: a stock Windows SDK (autocrlf) templates
+    CRLF, which the host's native-source provenance would record as a change.
+    Windows scripts keep CRLF, as Flutter's own .gitattributes requires."""
+    for file in project.rglob('*'):
+        if not file.is_file() or file.suffix in {'.bat', '.cmd', '.ps1'}:
+            continue
+        data = file.read_bytes()
+        if b'\r\n' in data and b'\0' not in data:
+            file.write_bytes(data.replace(b'\r\n', b'\n'))
+
+
 def configure_android(project):
     """Bound only our generated fixtures; isolated runs must not accumulate 8G daemons."""
     file = project / 'android/gradle.properties'
@@ -52,7 +65,7 @@ def configure_android(project):
                 'org.gradle.workers.max': '2', 'org.gradle.daemon': 'false',
                 'kotlin.compiler.execution.strategy': 'in-process'}
     lines = [line for line in file.read_text().splitlines() if line.partition('=')[0] not in settings]
-    file.write_text('\n'.join(lines + [key + '=' + value for key, value in settings.items()]) + '\n')
+    file.write_text('\n'.join(lines + [key + '=' + value for key, value in settings.items()]) + '\n', newline='\n')
 
 
 def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_store,
@@ -69,12 +82,13 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
     seed = out / 'TEST_ONLY_seed.base64'
     public = out / 'TEST_ONLY_public.base64'
     seed.write_text(base64.b64encode(bytes.fromhex(
-        '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60')).decode())
+        '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60')).decode(), newline='\n')
     public.write_text(base64.b64encode(bytes.fromhex(
-        'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a')).decode())
+        'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a')).decode(), newline='\n')
     project = out / 'app'
     call([launcher, 'create', '--platforms', 'android', '--org', 'com.example',
           '--project-name', 'wp9_acceptance', project], repo, out / 'create.log')
+    normalize_line_endings(project)
     configure_android(project)
     dependencies = {'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': str(repo)}}
     specification = {'name': 'wp9_acceptance', 'version': '1.0.0+1',
@@ -94,14 +108,14 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
     if not custom_binding:
         source = source.replace('class AcceptanceBinding extends WidgetsFlutterBinding {}', '')
         source = source.replace('WidgetsBinding.instance is AcceptanceBinding', 'false')
-    (project / 'lib/main.dart').write_text(source)
+    (project / 'lib/main.dart').write_text(source, newline='\n')
     (project / 'assets').mkdir()
-    (project / 'assets/message.txt').write_text('original')
+    (project / 'assets/message.txt').write_text('original', newline='\n')
     # Only our newly created fixture is modified; never an existing user project.
     manifest = project / 'android/app/src/main/AndroidManifest.xml'
     manifest.write_text(manifest.read_text().replace('<application',
-        '<uses-permission android:name="android.permission.INTERNET"/>\n<application android:usesCleartextTraffic="true"', 1))
-    (project / 'pubspec.yaml').write_text(json.dumps(specification, indent=2))
+        '<uses-permission android:name="android.permission.INTERNET"/>\n<application android:usesCleartextTraffic="true"', 1), newline='\n')
+    (project / 'pubspec.yaml').write_text(json.dumps(specification, indent=2), newline='\n')
     call([launcher, 'pub', 'get'], project, out / 'pub.log')
     call([dart, 'pub', 'get'], repo / 'flutter_patcher_cli', out / 'cli-pub.log')
     call([dart, cli, 'doctor', *common, '--json'], repo, out / 'doctor.log')
@@ -123,7 +137,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         report.update(fingerprint=built['fingerprint'], build=built)
         if font_original is not None:
             # Font review needs the formal host, not additional size/legacy APKs.
-            (out / 'handoff.json').write_text(json.dumps(report, indent=2) + '\n')
+            (out / 'handoff.json').write_text(json.dumps(report, indent=2) + '\n', newline='\n')
             return report
         # Matched ordinary-build control, same SDK/project/ABI. No patcher bootstrap.
         call([launcher, 'build', 'apk', '--release', '--target-platform', 'android-arm64'],
@@ -139,7 +153,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         sizes['threshold_bytes'] = None
         sizes['status'] = 'threshold_pending_review'
         report['size'] = sizes
-        (project / 'lib/main.dart').write_text(source.replace("const revision = 'original';", "const revision = 'so';"))
+        (project / 'lib/main.dart').write_text(source.replace("const revision = 'original';", "const revision = 'so';"), newline='\n')
         call([launcher, 'build', 'apk', '--release', '--target-platform', 'android-arm64'],
              project, out / 'legacy-build.log')
         with zipfile.ZipFile(normal) as z:
@@ -169,14 +183,14 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
             if tier == 'whole':
                 extra = out / 'extra'
                 (extra / 'lib').mkdir(parents=True)
-                (extra / 'pubspec.yaml').write_text('name: wp9_extra\nenvironment:\n  sdk: ">=3.13.0 <4.0.0"\n')
-                (extra / 'lib/extra.dart').write_text("String message() => 'whole';\n")
+                (extra / 'pubspec.yaml').write_text('name: wp9_extra\nenvironment:\n  sdk: ">=3.13.0 <4.0.0"\n', newline='\n')
+                (extra / 'lib/extra.dart').write_text("String message() => 'whole';\n", newline='\n')
                 dependencies['wp9_extra'] = {'path': str(extra)}
                 main = "import 'package:wp9_extra/extra.dart' as extra;\n" + main.replace(
                     "const revision = 'whole';", 'final revision = extra.message();')
-            (project / 'lib/main.dart').write_text(main)
-            (project / 'assets/message.txt').write_text(tier)
-            (project / 'pubspec.yaml').write_text(json.dumps(specification, indent=2))
+            (project / 'lib/main.dart').write_text(main, newline='\n')
+            (project / 'assets/message.txt').write_text(tier, newline='\n')
+            (project / 'pubspec.yaml').write_text(json.dumps(specification, indent=2), newline='\n')
             call([launcher, 'pub', 'get'], project, out / f'{tier}-pub.log')
             call([dart, cli, 'patch', 'android', '--strategy', 'bytecode', *common,
                   '--project', project, '--fingerprint', prior['fingerprint'], '--seq', str(seq),
@@ -190,7 +204,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
                   '--version-code', '1'], repo, out / f'{tier}-publish.log')
             report[tier] = patch
         call([dart, cli, 'publish', '--action', 'withdraw', '--out', out / 'mock'], repo, out / 'withdraw.log')
-    (out / 'handoff.json').write_text(json.dumps(report, indent=2) + '\n')
+    (out / 'handoff.json').write_text(json.dumps(report, indent=2) + '\n', newline='\n')
     return report
 
 
