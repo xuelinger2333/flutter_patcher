@@ -245,12 +245,6 @@ internal object LoaderHook {
     }
 }
 
-/**
- * 自定义 FlutterLoader：通过 `--aot-shared-library-name` 参数让 Flutter Engine
- * 从补丁路径加载 libapp.so，替代 APK 内置版本。
- *
- * `--aot-shared-library-name=<path>` 从 Flutter 1.x 开始一直稳定存在，跨大版本兼容。
- */
 internal fun patchedAssetLookupKey(patchAssetsPath: String, asset: String): String {
     return "${patchAssetsPath.trimEnd('/')}/${asset.trimStart('/')}"
 }
@@ -263,6 +257,12 @@ internal fun patchedPackageAssetLookupKey(
     return patchedAssetLookupKey(patchAssetsPath, "packages/$packageName/$asset")
 }
 
+/**
+ * 自定义 FlutterLoader：通过 `--aot-shared-library-name` 参数让 Flutter Engine
+ * 从补丁路径加载 libapp.so，替代 APK 内置版本。
+ *
+ * `--aot-shared-library-name=<path>` 从 Flutter 1.x 开始一直稳定存在，跨大版本兼容。
+ */
 internal class PatchedFlutterLoader(
     private val patchSoPath: String,
     private val patchAssetsPath: String? = null,

@@ -406,7 +406,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
       await check('apk_engine', () => verifyApk(apk, engine),
           'APK arm64 engine hash matches the selected engine manifest');
     }
-    pending('device_a1',
+    pending('device',
         'Device execution and the update flow are not checked by doctor.');
     success = true;
   } on Failure catch (error) {

@@ -98,7 +98,7 @@ class BaselineRepository {
         return target;
       });
 
-  /// WP-5 passes its completed output. No compilation or input mutation here.
+  /// Archives a completed build output. No compilation or input mutation here.
   Future<Map<String, dynamic>> save(String input, Map<String, dynamic> metadata,
       {required String flavor,
       required String versionCode,

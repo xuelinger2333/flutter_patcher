@@ -27,7 +27,7 @@ The formats stay unchanged:
 
 Invalid lengths, malformed public keys, small-order keys and invalid signatures
 are rejected. The bytecode API 33 minimum and the legacy `strictSignature`
-policy below API 33 are unchanged by this compatibility fix.
+policy below API 33 are unchanged.
 
 `Ed25519VerifierTest` tests RFC 8032 and desktop interoperability. The Android
 instrumentation test `Ed25519DeviceTest` exercises the production FPTC and legacy

@@ -131,7 +131,7 @@ open class FlutterPatcherApplication : FlutterApplication() {
                         // 钩子把补丁判崩 + record(DROPPED_CIRCUIT_BREAKER) + 删补丁，
                         // 但进程没死、UI 没建出来；用户划掉重开后这一次进入本分支，
                         // 写 NO_PATCH 会让 DiagCard 看不到 trip 信息。
-                        // 后续装上新补丁时，line 127 会写 PATCHED 自然覆盖，sticky 自动解除。
+                        // 后续装上新补丁时，下方 PATCHED 分支会自然覆盖，sticky 自动解除。
                         val existing = BootDiagnosticStore.read(context)
                         val existingStatus = existing?.get("status") as? String
                         val shouldPreserve = existingStatus != null &&

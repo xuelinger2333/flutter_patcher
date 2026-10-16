@@ -4,10 +4,10 @@ import '../core.dart';
 import 'framework_carry.dart';
 import 'sources.dart';
 
-/// WP-2.5 host framework reuse for whole-tier patches.
+/// Host framework reuse for whole-tier patches.
 ///
 /// Experimental and off by default (`--framework-reuse`): the host reuse
-/// surface failed the frozen host-cost gate, so the default remains the
+/// surface enlarges the host's libapp.so, so the default remains the
 /// two-tier lean / full-whole selection. Everything here is only reached when
 /// the request opts in and the baseline carries a schema 4 partition.
 
@@ -27,7 +27,7 @@ Future<void> writeWholeInterface(String path, Map interfaceYaml,
   });
 }
 
-/// Framework libraries the lean check needed (M0).
+/// Framework libraries the lean check needed.
 ///
 /// A lean rejection can happen before the framework libraries are emitted,
 /// so `module_libraries` alone is not a complete description. Allocation and
@@ -59,15 +59,15 @@ Set<String> frameworkCandidates(Map<String, dynamic> firstReport) {
   return candidate;
 }
 
-/// Decides whether M0 can be carried against the release partition.
+/// Decides whether those libraries can be carried against the partition.
 class FrameworkReusePlan {
   /// Carriable libraries listed by the partition.
   final Set<String> available;
 
-  /// M0 without host barrels (barrels declare nothing and are always host).
+  /// Candidates without host barrels (they declare nothing; always host).
   final Set<String> effective;
 
-  /// M0 members the partition does not allow to travel.
+  /// Candidates the partition does not allow to travel.
   final Set<String> missing;
   FrameworkReusePlan._(this.available, this.effective, this.missing);
 

@@ -8,16 +8,13 @@ import org.json.JSONObject
 /**
  * 上次冷启动时补丁加载结果的持久化存储。
  *
- * 现状：补丁能否生效取决于 `CrashGuard` / `PatchManager.getValidPatchPath` /
- * `LoaderHook.install` 三处决策，事件只写 logcat。线上业务只能事后通过
- * [PatchManager.currentVersion] 间接推测"补丁是不是又没了"，监控/告警接不上。
- *
- * 本对象在每次冷启动时把"补丁的加载结果 + 上下文"一次性覆写到
- * SharedPreferences，Dart 侧通过 `FlutterPatcher.lastBootDiagnostic` 查询。
+ * 补丁能否生效取决于 `CrashGuard` / `PatchManager.getValidPatch` /
+ * `LoaderHook.install` 三处决策。本对象在每次冷启动时把"补丁的加载结果 + 上下文"
+ * 一次性覆写到 SharedPreferences，Dart 侧通过 `FlutterPatcher.lastBootDiagnostic` 查询。
  *
  * # 写入时机
- * - [FlutterPatcherApplication.attachPatcher] 三个出口（patched / hookFailed / noPatch / unknown）
- * - [PatchManager.getValidPatchPath] 通过传入的 onDrop 闭包写入（versionCode/md5/sig/meta）
+ * - [FlutterPatcherApplication.attachPatcher] 各出口（patched / hookFailed / noPatch / unknown）
+ * - [PatchManager.getValidPatch] 通过传入的 onDrop 闭包写入（versionCode/md5/sig/meta）
  * - [CrashGuard.shouldLoadPatch] 通过传入的 onDrop 闭包写入（circuit breaker）
  *
  * # 跨边界约定

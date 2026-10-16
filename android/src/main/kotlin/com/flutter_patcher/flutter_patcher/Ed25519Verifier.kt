@@ -7,8 +7,7 @@ import java.security.MessageDigest
  * Verification-only Ed25519 (RFC 8032 sections 5.1.3 and 5.1.7).
  * Uses platform integer arithmetic and SHA-512, never an Ed25519 JCA provider.
  * Arithmetic is variable-time: all inputs are public. Do not reuse for signing.
- * Require canonical encodings and a nonidentity prime-order public key,
- * preserving the previous validatePublicKeyFull policy.
+ * Require canonical encodings and a nonidentity prime-order public key.
  */
 internal object Ed25519Verifier {
     private val zero = BigInteger.ZERO

@@ -1,4 +1,4 @@
-"""Run immutable WP-9 corpus through real APK/API/cold starts, never adb-inject files."""
+"""Run the immutable fault corpus through real APK/API/cold starts, never adb-inject files."""
 import argparse
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -103,7 +103,7 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
     publisher_log = None
     def publish(file=None):
         if cli is None or dart is None:
-            raise ValueError('Production CLI and Dart paths are required for the A1 mock flow')
+            raise ValueError('Production CLI and Dart paths are required for the mock publish flow')
         command = [str(dart), str(cli), 'publish', '--out', str(out / 'mock')]
         command += ['--patch', str(file), '--version-code', '1'] if file else ['--action', 'withdraw']
         subprocess.run(command, check=True, stdout=publisher_log, stderr=subprocess.STDOUT)
@@ -316,8 +316,8 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 timing['original'] = baseline_timing
                 timing['median_added_ms'] = timing['median'] - baseline_timing['median']
                 timing['alert_over_85ms'] = timing['median_added_ms'] > 85
-                # Keep legacy 85-ms diagnostics for historical comparisons, but
-                # use tier-specific absolute bootstrap time for the current budget.
+                # The 85-ms fields are diagnostics only; the budget verdict uses
+                # tier-specific absolute bootstrap time.
                 timing['bootstrap_budget_us'] = 85000 if row['tier'] == 'lean' else 250000
                 timing['bootstrap_over_budget'] = any(s['total_us'] > timing['bootstrap_budget_us']
                                                      for s in timing['bootstrap'])

@@ -51,7 +51,7 @@ def main():
                 print('::warning::Empty-app size measured; threshold still requires review')
         return
     if not receipt['independent_machine']:
-        raise RuntimeError('A1 requires a second machine/VM, not another directory on host A')
+        raise RuntimeError('Cross-host acceptance requires a second machine/VM, not another directory on the build host')
     tool = out / f'cache/artifacts/{args.version}/tools/flutter_patcher_tools-{args.version}.dill'
     tool_manifest = json.loads((tool.parent / 'tools.manifest.json').read_text())
     artifact_commit = subprocess.check_output(['git', '-C', str(args.artifacts), 'rev-parse', 'HEAD'], text=True).strip()
@@ -84,10 +84,10 @@ def main():
                    'com.example.acceptance_app', out / 'lower-api', compatibility=True,
                    custom_binding=args.binding == 'custom')
     shutil.copyfile(out / 'device/device.json', exchange / 'device.json')
-    # Passing this job proves its listed scope, not all A1-A11/performance obligations.
+    # Passing this job proves its listed scope, not every acceptance or performance obligation.
     (exchange / 'scope.json').write_text(json.dumps({'cross_machine': 'passed',
-        'fault_device_suite': 'passed', 'm1_complete': False,
-        'pending': [item for item in ['A10 two-build device comparison', 'font visual review',
+        'fault_device_suite': 'passed', 'all_obligations_complete': False,
+        'pending': [item for item in ['repeat-build device comparison', 'font visual review',
                     'size threshold review' if config.get('size_threshold_bytes') is None else None,
                     'lower API device' if not config.get('lower_api_serial') else None] if item is not None]}))
 

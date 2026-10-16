@@ -49,8 +49,7 @@ internal object PatcherConfig {
      * 默认 1：补丁连续启动失败 1 次即立刻丢弃 + 入黑名单（fail-fast）。
      *
      * 设计依据：补丁加载后崩溃是明确"补丁有问题"信号，不应该再赌一次让用户多崩
-     * 一次。0.1 之前默认是 2，行为是"崩 2 次才回滚"，已确认对用户体验更糟。
-     * 业务侧若想保留旧行为，显式传 `FlutterPatcher.init(maxCrashCount: 2)`。
+     * 一次。需要容忍更多次失败时显式传 `FlutterPatcher.init(maxCrashCount: 2)`。
      */
     const val DEFAULT_MAX_CRASH = 1
     const val DEFAULT_STRICT_SIG = true

@@ -27,7 +27,7 @@ The timestamped `.dart_tool/flutter_patcher/regression/` output contains a top-l
 build evidence and `matrix/result.json`. Every failed stage exits nonzero and
 keeps its evidence; old outputs are not reused as current results. Local source
 changes after snapshot creation belong to the next run. This is a same-builder
-regression, not independent-host M1 acceptance.
+regression, not cross-host acceptance.
 
 If the device disconnects after a successful build, reconnect it and add
 `--resume-built PATH_TO_PRIOR_RUN` to the same command. This verifies and extracts
@@ -36,12 +36,7 @@ tests. The report explicitly says `resume_frozen_build`; it tests the old frozen
 source, never claims to test later product edits. The failed attempt stays intact.
 Omit this flag whenever product code changed and a fresh build is required.
 
-On this Windows workstation, if `python` points to the Microsoft Store alias,
-use the bundled interpreter without changing PATH:
-
-```powershell
-& "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe" test/acceptance/rebuild_regression.py --config test/acceptance/regression-config.example.json
-```
+Any Python 3.12+ interpreter works, for example `uv run python test/acceptance/rebuild_regression.py …`.
 
 ## Rerun an already built APK and corpus
 
@@ -52,10 +47,10 @@ reused; a changed APK still requires installation. This is recorded in the resul
 This command does not change battery/startup settings or start an emulator.
 
 ```powershell
-python test/acceptance/run_matrix.py --inputs .dart_tool/flutter_patcher/ed25519-fix/standard-inputs --serial AF2Q025C05004551 --dart D:/DevTools/flutter/bin/cache/dart-sdk/bin/dart.exe
+python test/acceptance/run_matrix.py --inputs PATH_TO_INPUTS --serial SERIAL --dart PATH_TO_DART
 ```
 
-Replace `--inputs` with the extracted matching acceptance bundle. It must contain
+`--inputs` is the extracted matching acceptance bundle. It must contain
 `standard-build/handoff.json`, `standard-build/release/app-release.apk`, and
 `standard-corpus/` with its 31-case `corpus.json`. Use `--binding custom` for the
 equivalent `custom-build`/`custom-corpus` layout. The archived input tests that APK;
@@ -84,7 +79,7 @@ and reject the quarantined patch on reinstallation.
 The suite covers valid lean/whole controls, envelope/signature rejection,
 sequence replay, archive/entry rejection and crash/hang quarantine. Timing
 budget alerts remain separate: a passing functional matrix does not prove the
-tier-specific startup budgets, cross-machine acceptance, or complete M1 readiness.
+tier-specific startup budgets or cross-machine acceptance.
 Do not interact with the test app during the run. Installation may require the
 phone's normal confirmation. No automatic retries or skipped cases are used.
 
@@ -104,20 +99,17 @@ That performance failure is separate
 from the functional matrix verdict. The analyzer also supports older runs with
 only the four broad timing stages.
 
-The measured whole-bootstrap diagnosis (results, measurement limits and the
-recommended optimization order) is kept in the git history.
-
-The current [tier-specific budget decision](../../doc/bootstrap-performance-budget.md)
+The [tier-specific budget decision](../../doc/bootstrap-performance-budget.md)
 also records why interleaving three hashers is not equivalent to doing one hash,
-and keeps framework host-interface reuse outside this milestone. Native channel
-traces now separate codec, worker queue, lock wait and main-thread reply queue;
+and keeps framework host-interface reuse out of scope. Native channel
+traces separate codec, worker queue, lock wait and main-thread reply queue;
 the analyzer reports those nested spans separately from the additive bootstrap
 breakdown to avoid double-counting.
 
 Native-bytes transport uses bootstrap profile schema 2. It removes Dart file
 reopening and the payload/full-file SHA counters; entry SHA and CRC remain.
 The analyzer requires the `native-bytes-v1` transport marker and still reads
-schema-1 historical runs. A missing required counter is an error, not zero work.
+schema-1 runs. A missing required counter is an error, not zero work.
 See [the authenticated-byte design](../../doc/authenticated-bootstrap-bytes-design.md).
 
 ## Standalone cold/post-frame channel probe

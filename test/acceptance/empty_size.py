@@ -1,4 +1,4 @@
-"""Build matched empty applications for the SPEC libapp size regression."""
+"""Build matched empty applications for the libapp size regression."""
 import argparse
 import json
 from pathlib import Path

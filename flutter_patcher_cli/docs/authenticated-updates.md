@@ -1,8 +1,8 @@
 # Authenticated bytecode updates
 
-This opt-in workflow is under WP-2.3 acceptance. Existing hosts without a policy
-retain the legacy API. It requires an Android API 33+ arm64 host and the default
-application process.
+This workflow is opt-in. Hosts built without a policy keep the unsigned update
+API. It requires an Android API 33+ arm64 host and the default application
+process.
 
 ## Host identity
 
@@ -36,16 +36,17 @@ Native verifies the exact signed envelope, saves its authorization, downloads th
 payload and rechecks current authorization before committing. The result reports
 `publish` or `withdraw`; installation takes effect at the next cold start.
 
-Read signed responses directly, not through the legacy unsigned checkUpdate
-helper. The publisher catalog is storage metadata: a delivery service must select
+Read signed responses directly, not through the unsigned checkUpdate helper.
+The publisher catalog is storage metadata: a delivery service must select
 the exact signed `wire` for the requested scope. Never turn catalog fields into a
 new unsigned response. HTTPS redirects and URL user-info are rejected. Signed
 response bodies are limited to 24 KB; payloads use the signed size and a 120-second
 read deadline.
 
-In this mode bare applyPatch/applyPatchBytes and legacy SO loading are rejected.
-Authenticated SO delivery is not implemented. SO remains available in legacy
-hosts. There is no automatic downgrade on authentication failure.
+In this mode bare applyPatch/applyPatchBytes and unsigned SO loading are
+rejected. Authenticated SO delivery is not implemented. SO remains available in
+hosts built without a policy. There is no automatic downgrade on authentication
+failure.
 
 ## Root-authorized publication key changes
 

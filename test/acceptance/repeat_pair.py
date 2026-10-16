@@ -1,4 +1,4 @@
-"""A10 gate: compare real engine directories and bind both device runs to their APKs."""
+"""Repeat-build gate: compare real engine directories and bind both device runs to their APKs."""
 import argparse
 import hashlib
 import json
@@ -38,7 +38,7 @@ def verify(artifacts, first, second):
         raise ValueError('Two distinct build executions are required')
     subprocess.run([sys.executable, str(artifacts / 'engine/scripts/artifacts.py'), 'compare',
                     str(manifests[0][0]), str(manifests[1][0])], check=True)
-    return {'A10': 'passed', 'build_ids': [row[1]['build_id'] for row in manifests]}
+    return {'repeat_build': 'passed', 'build_ids': [row[1]['build_id'] for row in manifests]}
 
 
 if __name__ == '__main__':
@@ -49,6 +49,6 @@ if __name__ == '__main__':
     try:
         report = verify(args.artifacts, args.first, args.second)
     except Exception as error:
-        report = {'A10': 'not_passed', 'reason': str(error)}
+        report = {'repeat_build': 'not_passed', 'reason': str(error)}
     with args.out.open('x') as stream: json.dump(report, stream, indent=2)
-    raise SystemExit(0 if report['A10'] == 'passed' else 2)
+    raise SystemExit(0 if report['repeat_build'] == 'passed' else 2)

@@ -3,7 +3,7 @@ import 'dart:async';
 import '../../bin/mock_server.dart' as mock_server;
 
 Future<int> main(List<String> args) {
-  // Keep the old example entrypoint as a thin compatibility wrapper.
+  // Positional-argument wrapper around bin/mock_server.dart.
   return mock_server.main([
     '--dist',
     if (args.isNotEmpty) args[0] else 'dist',

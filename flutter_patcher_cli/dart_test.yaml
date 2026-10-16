@@ -1,4 +1,4 @@
-# Host-scoped test tags (WP-2.6). Run a subset with `dart test -t <tag>` or
+# Host-scoped test tags. Run a subset with `dart test -t <tag>` or
 # exclude one with `dart test -x <tag>`.
 tags:
   openssl:

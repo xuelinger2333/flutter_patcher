@@ -3,7 +3,7 @@
 The current CLI defaults `build android` and `patch android` to bytecode.
 Use the existing v1 workflow explicitly for SO patches; `--strategy so` remains
 recognized but the current bytecode CLI does not implement that workflow.
-Bytecode host builds currently require Linux x64 and a supported SDK. An
+Bytecode host builds require a Linux x64 or Windows x64 host and a supported SDK. An
 unsupported host reports an error; it does not silently switch strategies.
 
 Patch generation checks lean first. Dependency changes, a failed lean check,
@@ -26,9 +26,6 @@ SHA; retaining them does not undo the FFI implementation or byte delivery change
 Bootstrap budgets are lean 85 ms and whole 250 ms. One observed startup is not
 proof of long-term performance stability.
 
-Superseded FFI echo/boot experiments and the unsuccessful interleaved hash
-benchmark are removed from the current tree. Their sources remain in the local
-pre-ffi-baseline-20260915 tag. Historical reports and acceptance records remain.
 Real-device multi-engine/detach, missing-symbol, and live-worker timeout/cancel
 coverage of the production bridge remains outstanding; the fault matrix alone
 does not establish those guarantees.

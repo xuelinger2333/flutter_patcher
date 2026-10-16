@@ -11,7 +11,7 @@ import java.io.File
 /**
  * 熔断器：防止补丁导致启动崩溃时无限重启。
  *
- * 状态机（解耦版）：
+ * 状态机：
  * 1. Application.attachBaseContext → [markBooting] 写 patch_loading=true（commit 同步）+ pid
  * 2. Dart 首帧 → [markBootSuccess] 立即清 patch_loading=false + crash_count=0；
  *    **保留** last_booting_pid 给下次冷启动的 ExitInfo 查询

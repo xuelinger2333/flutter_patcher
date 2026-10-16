@@ -6,3 +6,5 @@ analyzer:
   exclude:
     # Workspace scratch space; experiment sources there are not part of the package.
     - temp/**
+    - build/**
+    - android/**

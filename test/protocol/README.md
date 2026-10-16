@@ -21,8 +21,7 @@ The signing message is UTF-8 `flutter_patcher.manifest.v1\n` followed by the exa
 canonical payload bytes. The payload is sorted, compact, flat ASCII JSON with
 string values. The envelope is compact JSON in payload/signature order with
 canonical padded Base64 values. Unknown fields, repeated keys and alternative
-encodings are rejected. The local design specification resides under `plan/`;
-that directory remains excluded from version control.
+encodings are rejected.
 
 From the CLI package directory run `dart test test/publish_protocol_test.dart`.
 From the repository run `flutter test test/signed_manifest_test.dart`.

@@ -24,9 +24,8 @@ class BuildRequest {
   /// Internal integration harness only; deliberately not a CLI option.
   final bool pipelineValidationOnly;
 
-  /// WP-2.5 host reuse surface. Off by default (schema 3 baseline): the
-  /// surface failed the frozen host-cost gate (+4.5 MiB libapp.so). On keeps
-  /// the experimental schema 4 path available for same-source comparison.
+  /// Experimental framework reuse surface (schema 4 baseline). Off by
+  /// default (schema 3 baseline) because the surface enlarges libapp.so.
   final bool frameworkReuse;
   BuildRequest(
       {required this.project,

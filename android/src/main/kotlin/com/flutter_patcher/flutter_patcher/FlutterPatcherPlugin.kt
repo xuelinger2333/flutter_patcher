@@ -32,7 +32,7 @@ import io.flutter.plugin.common.MethodChannel.Result
  * - currentVersion() -> String?
  * - lastBootDiagnostic() -> Map? — 上次冷启动补丁加载诊断（见 BootDiagnosticStore）
  * - cacheDir() -> String — 插件可写的临时目录，供 Dart applyPatchBytes 内部 staging 使用
- * - appVersionCode() -> Long — 当前宿主 APK versionCode，A3 便捷查询
+ * - appVersionCode() -> Long — 当前宿主 APK versionCode
  * - deviceAbi() -> String — 当前设备首选 ABI，用于服务端按 ABI 分发补丁
  * - blacklist() -> List<Map> — 已知"装上就出事"的补丁本地黑名单
  * - clearBlacklist() — 清空黑名单（仅调试 / 显式恢复用）

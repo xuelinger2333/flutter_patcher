@@ -3,13 +3,13 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 
-/// Build-host identity (WP-2.6 §3.1).
+/// Build-host identity.
 ///
-/// `verified` hosts passed the phase D acceptance; `implemented` hosts have
-/// code paths but no acceptance record yet and are refused by the gate until
-/// they are promoted. Everything host-specific (executable suffixes, the
-/// Flutter SDK toolchain directory, the gen_snapshot artifact name) is derived
-/// here so the rest of the CLI never spells out `linux-x64`.
+/// `verified` hosts are supported; `implemented` hosts have code paths but
+/// are not yet verified and are refused by the gate. Everything host-specific
+/// (executable suffixes, the Flutter SDK toolchain directory, the gen_snapshot
+/// artifact name) is derived here so the rest of the CLI never spells out
+/// `linux-x64`.
 class HostIdentity {
   /// `linux`, `windows` or `macos` (Dart's `Platform.operatingSystem`).
   final String os;
@@ -82,7 +82,7 @@ class HostIdentity {
 String? hostHome() =>
     Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
-/// Single gate replacing the former `Platform.isLinux` + `uname -m` pairs.
+/// The single host-support gate for every command.
 HostIdentity requireSupportedHost() {
   final host = HostIdentity.current();
   require(

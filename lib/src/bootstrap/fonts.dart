@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
-/// Called by WP-8 after archive authentication and before the patched main.
+/// Called by the boot runner after archive authentication and before the
+/// patched main.
 /// Load all faces of one family together; registering faces separately can
 /// replace an earlier registration of that same family.
 Future<void> patcherLoadFonts(Map<String, List<Uint8List>> families) async {

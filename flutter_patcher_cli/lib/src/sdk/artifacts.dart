@@ -55,7 +55,7 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
       require(condition, 'ENGINE_MANIFEST_INVALID', message);
   bool hash(dynamic value, RegExp pattern) =>
       value is String && pattern.hasMatch(value);
-  // Engine schema 2 (WP-2.6) lists one gen_snapshot per build host; schema 1
+  // Engine schema 2 lists one gen_snapshot per build host; schema 1
   // releases carry only linux-x64. Tools manifests stay at schema 1.
   final schema = value['schema'];
   valid(
@@ -337,7 +337,7 @@ class ArtifactStore {
     return manifest;
   }
 
-  /// Moves a pre-WP-2.6 cache (`engine/engine.manifest.json` directly under
+  /// Moves a flat engine cache (`engine/engine.manifest.json` directly under
   /// the version) into this host's directory, so offline users keep their
   /// validated artifacts. The normal validation then accepts or quarantines it.
   Future<void> _migrateLegacyEngineCache(

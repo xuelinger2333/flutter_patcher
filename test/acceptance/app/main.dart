@@ -35,7 +35,6 @@ Future<void> main() async {
                 body: Column(children: [
               Text('Acceptance:$revision:${snapshot.data ?? "pending"}'),
               const Icon(Icons.home),
-              // WP25_FEATURE is replaced only in the WP-2.5 patch fixtures.
             ])));
   })));
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 8766);

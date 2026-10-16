@@ -1,7 +1,8 @@
-# Production publication protocol (WP-2.2)
+# Production publication protocol
 
-Production publication currently runs on Linux x64/WSL2 with OpenSSL and an AWS
-CLI that supports `s3api put-object --if-match` and `--if-none-match`. Existing
+Production publication runs on the supported build hosts (Linux x64/WSL2 and
+Windows x64). S3 stores need an AWS CLI that supports
+`s3api put-object --if-match` and `--if-none-match`. Existing
 `publish --out ... --action stage|serve|withdraw` remains a local mock.
 
 ```sh
@@ -70,16 +71,16 @@ configuration, bucket creation and bucket enumeration are not part of this comma
 
 The publication key is separate from the host's FPTC key. Configuring a public key
 here proves only that signing uses its matching private key; it does not install
-that key into existing hosts. WP-2.3 provides host trust configuration and device
-consumption. The original SO workflow remains available; this new production
-pipeline currently accepts bytecode only.
+that key into existing hosts; host trust configuration and device consumption
+are described in [authenticated-updates.md](authenticated-updates.md). The SO
+workflow remains available; this production pipeline accepts bytecode only.
 
 ## Objects and transaction contract
 
 - `objects/<operation>/<sha256>.fptc`: immutable, generation-specific payload.
 - `catalog.json`: application identity, operation journal, release records and
   `heads` mapping a target scope hash to the current release operation.
-- Each release record contains the exact WP-2.1 signed `wire` envelope. The
+- Each release record contains the exact signed `wire` envelope. The
   catalog itself is storage metadata, not an authenticated device manifest.
 
 The update service/adapter must select the correct `heads` entry and return its
@@ -147,7 +148,7 @@ unregistered objects and orphan objects are not silently garbage-collected.
 replays, signatures and the native policy vectors. `publication_baseline_test.dart`
 uses a synthetic signed fixture with a real baseline archive and CLI entrypoint.
 `publication_s3_test.dart` requires an isolated S3 endpoint and test credentials;
-the legacy S3 baseline tests run against that endpoint as well.
+the S3 tests in `baseline_store_test.dart` run against that endpoint as well.
 `publication_cloud_test.dart` is opt-in and restricted to a separately authorized
 `flutterpatcher/cloud-test/<random>` namespace. It is not an automatic CI job.
 

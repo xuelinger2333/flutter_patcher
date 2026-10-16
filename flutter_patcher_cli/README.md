@@ -1,12 +1,13 @@
-# flutter_patcher_cli · M1
+# flutter_patcher_cli
 
-M2 WP-2.2 已新增显式生产发布入口，默认命令仍是本地 mock。
+`publish` 默认是本地 mock；`publish --production` 是显式生产发布入口，
 预览/条件提交、S3/R2、签名撤回与保留清理见
-[生产发布说明](docs/production-publish.md)。设备端新清单接线仍待 WP-2.3。
+[生产发布说明](docs/production-publish.md)。
+宿主信任策略、`trust` 命令和设备端签名清单见[认证更新说明](docs/authenticated-updates.md)。
 
-本包负责为当前 Flutter 版本准备补丁工具链和新宿主的动态接口。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前支持 `doctor`、`interface`、`baseline`、字节码 `build` / `patch`、本地 mock `publish` 和 `keys init`。后面的 WP 阶段说明保留各阶段的历史边界；实际命令以当前帮助为准。
+本包负责为当前 Flutter 版本准备补丁工具链和新宿主的动态接口。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前支持 `doctor`、`interface`、`baseline`、字节码 `build` / `patch`、`publish`、`trust` 和 `keys init`；完整选项以 `--help` 为准。
 
-M1 支持 Linux x64（含 x64 WSL2），目标 Android arm64。需要已初始化的 stock Flutter SDK、Git 和首次下载所需的网络。原生 Windows/macOS 会明确报错；不支持的 Flutter 版本不会转入自行编译流程。
+支持的构建主机为 Linux x64（含 x64 WSL2）和 Windows x64，目标 Android arm64。需要已初始化的 stock Flutter SDK、Git、PATH 中的 zstd 和首次下载所需的网络。Windows 上缓存路径不能超过 80 个字符。macOS 等其他主机会明确报错；不支持的 Flutter 版本不会转入自行编译流程。
 
 ```bash
 cd flutter_patcher_cli
@@ -22,7 +23,7 @@ dart run bin/flutter_patcher.dart doctor --offline --json
 
 ## 初始化正式签名密钥
 
-在 Linux x64/WSL2 上运行，需 PATH 中的 OpenSSL 支持 Ed25519；此命令不需要 Flutter SDK，也不访问网络。
+在支持的构建主机上运行；密钥由内置 Ed25519 实现生成，不需要 OpenSSL 或 Flutter SDK，也不访问网络。
 
 ```bash
 flutter_patcher keys init
@@ -32,9 +33,9 @@ flutter_patcher keys init --out "$HOME/.flutter_patcher/keys/my-app"
 
 不指定 `--out` 时，默认目录为 `~/.flutter_patcher/keys`。生成
 `private-key.base64`（32 字节 Ed25519 seed 的 Base64）和
-`public-key.base64`（32 字节公钥的 Base64）。目录权限为 700，私钥为 600；
-私钥不打印到终端，也不写入临时 DER 文件。输出的一行 JSON 只有文件路径、
-格式和公钥 SHA256 指纹。目录内 `.gitignore` 排除私钥文件。
+`public-key.base64`（32 字节公钥的 Base64）。POSIX 上目录权限为 700，私钥为 600；
+Windows 上目录 ACL 只授予当前用户。私钥不打印到终端，也不写入临时 DER 文件。
+输出的一行 JSON 只有文件路径、格式和公钥 SHA256 指纹。目录内 `.gitignore` 排除私钥文件。
 
 已有文件、目录或符号链接一律拒绝覆盖；重复运行不会轮换或覆盖旧密钥。
 私钥文件不加密，请妥善备份并限制访问，不要把它随 APK 或源码分发。
@@ -54,13 +55,13 @@ flutter_patcher patch android --strategy bytecode --project /path/to/app \
   --seq 1 --version-code 1 --out /path/to/new-patch
 ```
 
-验收脚本的公开 RFC 8032 测试密钥只用于测试，不能用于正式宿主。
+测试使用的公开 RFC 8032 测试密钥不能用于正式宿主。
 
 ## 自动准备的内容
 
 1. 读取 `flutter --version --machine`，核对 SDK 的缓存状态、Flutter/Dart/engine 身份和 artifacts 仓库唯一支持表。
-2. 从 `flutter_patcher_artifacts` 的 `flutter-<version>` Release 获取两份 manifest、引擎 jar、Linux gen_snapshot、embedding jar 和单个工具 dill。检查 schema、版本、角色、大小、SHA-256、二进制架构及 jar 内部 SO。两条独立流水线允许不同 builder commit。
-3. clone 精确匹配的 Flutter framework commit 到平行 SDK，先执行 stock `precache --android`，再替换该副本的 gen_snapshot，并准备含 jar/POM 的本地 Maven 镜像。APK 构建如何接入镜像属于 WP-5。
+2. 从 `flutter_patcher_artifacts` 的 `flutter-<version>` Release 获取两份 manifest、引擎 jar、当前构建主机的 gen_snapshot、embedding jar 和单个工具 dill。检查 schema、版本、角色、大小、SHA-256、二进制架构及 jar 内部 SO。两条独立流水线允许不同 builder commit。
+3. clone 精确匹配的 Flutter framework commit 到平行 SDK，先执行 stock `precache --android`，再替换该副本的 gen_snapshot，并准备含 jar/POM 的本地 Maven 镜像；`build` 通过 `FLUTTER_STORAGE_BASE_URL` 让 APK 构建使用该镜像。
 4. 调用 CI 编好的 dill，检查工具入口和 `bytecode` 子命令；用所选 SDK 的 Flutter 源码编译一个隔离的探针 kernel，生成协议和平台私有 YAML。这里编译的是探针，工具 dill 始终直接下载。
 5. 用匹配的 frontend 和下载的 gen_snapshot 实际编译最小 arm64 AOT ELF，验证编译器链可调用。
 
@@ -85,22 +86,22 @@ YAML 缓存键包含版本、engine/framework commit、所用 Flutter 源文件�
 
 ## doctor 的边界
 
-退出码：`0` 工具链及显式提供的检查通过；`1` 诊断失败；`2` 参数错误或未实现命令。JSON 中 `status: toolchain_ready` 仅表示 WP-2 工具链就绪。缺少项目上下文会显示 `not_run`；`all_checks_complete` 保持 `false`，不代表完整 M1/A1 已验收。
+退出码：`0` 工具链及显式提供的检查通过；`1` 诊断失败；`2` 参数错误。JSON 中 `status: toolchain_ready` 仅表示工具链就绪。缺少项目上下文会显示 `not_run`；设备执行和更新流程不由 doctor 检查（`device` 项始终为 `not_run`），因此 `all_checks_complete` 始终为 `false`。
 
-| 可选参数 | 本阶段实际检查 |
+| 可选参数 | 实际检查 |
 |---|---|
 | `--public-key`、`--private-key` | 两文件存在且非空，不验证密码学格式或签名 |
-| `--baseline-store` | `file://` 目录可读，或 HTTPS HEAD 成功；不实现归档读写 |
-| `--baseline` | 解包目录中四个必需文件存在；完整基线身份校验留给 WP-4 |
-| `--version-code`、`--flavor` 与 file store | 对应侧车存在且含合法指纹字段；不宣称已验证内容绑定 |
+| `--baseline-store` | `file://` 目录存在、`s3://` bucket 可访问或 HTTPS HEAD 成功；写权限在保存时检查 |
+| `--baseline` | 解包目录的 manifest 与文件一致，是 release 基线，且绑定所选 SDK/engine 构建 |
+| `--version-code`、`--flavor` 与 `--baseline-store` | 拉取侧车及其基线并完整校验，侧车绑定一致且基线匹配所选 engine 构建 |
 | `--apk` | ZIP 内 `lib/arm64-v8a/libflutter.so` 大小/哈希匹配 manifest；不安装或运行 APK |
 
 `--artifacts-url`、`--supported-versions-url` 是维护/测试用覆盖项，普通用户只需选择 Flutter SDK。下载允许 HTTPS，HTTP 仅允许 loopback 测试服务。错误报告不会提供自行编译引擎的路径。
 
-## WP-3 接口准备
+## 接口准备
 
-这是后续 build/patch 管线的接口准备能力和维护入口，不修改已发布基线。
-需要含 WP-3 子命令的 CI 工具 dill；当前公开 WP-2 工具缺少这些命令时会明确报错。
+`interface` 是为新宿主准备动态接口的维护入口，不修改已发布基线。
+需要含接口准备子命令的 CI 工具 dill；缓存的工具缺少这些命令时报 `TOOLS_VERSION_UNSUPPORTED`。
 源码实现不会自动覆盖现有 Release，审核后的新工具发布仍使用同一 Flutter 版本的单 dill。
 工具发布更新后，执行 `flutter_patcher doctor --refresh-tools` 在线校验并替换工具缓存；
 刷新失败保留原缓存，不刷新引擎。工具哈希变化会使 SDK YAML 缓存失效。

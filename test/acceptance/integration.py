@@ -1,4 +1,4 @@
-"""Two independently runnable M1 stages. The handoff contains no build cache.
+"""Two independently runnable cross-host acceptance stages. The handoff contains no build cache.
 
 build runs on host A; patch runs on host B using its own checkout/SDK/cache.
 Only the dedicated test project, public receipt and baseline store are shared.
@@ -16,7 +16,7 @@ import subprocess
 import sys
 import zipfile
 
-# WP-2.6: the harness runs on Windows hosts too; only launcher names and the
+# The harness runs on Windows hosts too; only launcher names and the
 # machine identity source differ. Every generated source file is
 # written with LF so both hosts hash identical bytes (fingerprint parity).
 WINDOWS = sys.platform == 'win32'

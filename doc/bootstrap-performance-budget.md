@@ -1,4 +1,4 @@
-# Bootstrap performance budget decision (updated 2026-09-15)
+# Bootstrap performance budget decision
 
 Lean is the normal patch path: **85 ms**. Whole is the compatibility fallback
 within the same authenticated baseline: **250 ms**. These are targets, not an
@@ -20,25 +20,24 @@ device/OS, artifact/source identity and measurement conditions. Do not relabel a
 old failed performance record; analysis under this policy must state the policy.
 Functional matrix success is independent of these performance verdicts.
 
-The 2026-09-15 compact acceptance runs all 31 scenarios once for standard and
+Compact acceptance runs all 31 scenarios once for standard and
 custom, without additional performance loops or redundant cold starts. It keeps
 necessary activation, withdrawal and fault-recovery starts. Single observed
 bootstrap timings are reported against lean 85 ms / whole 250 ms, not presented
-as a ten-sample stability result. Earlier 200 ms verdicts remain historical.
+as a ten-sample stability result.
 
-`plan/SPEC_M1.md` is updated locally with the same decision. This tracked document
-preserves it because the plan directory is ignored by Git. Runtime policy lives
-in `lib/src/bootstrap/budget.dart`; `analyze_bootstrap.py --assert-budget` checks
-both tiers. Legacy `*_over_85ms` fields remain historical diagnostics; use
-`bootstrap_over_budget` with `bootstrap_budget_us` for the current verdict.
+Runtime policy lives in `lib/src/bootstrap/budget.dart`;
+`analyze_bootstrap.py --assert-budget` checks both tiers. The `*_over_85ms`
+fields are diagnostics only; use `bootstrap_over_budget` with
+`bootstrap_budget_us` for the verdict.
 
-## Current scope and deferred work
+## Scope and deferred work
 
 - Implement equivalent table-based CRC and measure checksum alternatives.
 - Preserve exact-byte native attestation and all validation ordering/constraints.
 - Split native dispatch/codec/thread/lock/return spans before changing scheduling.
 - Whole framework reuse through a broader generated host interface is a separate
-  compatibility design task **after M1.5**, not part of the current milestone.
+  compatibility design task and is out of scope for now.
   It requires safe class/interface identity, dependency/version boundaries,
   private/platform YAML generation and cross-version tests; it is not achieved
   by just retaining more libraries in whole-interface.yaml.
@@ -54,10 +53,9 @@ messages: payload, complete envelope and manifest entries. Feeding multiple
 hashers from one chunk loop does not eliminate their independent compression
 work. The module is only a subrange of the ZIP payload, not the same message.
 
-The archived `test/acceptance/hash_scan_benchmark.dart` in the local
-`pre-ffi-baseline-20260915` tag compares sequential and interleaved
-32-KiB chunk feeding of the three real whole-file ranges, validates equal digests,
-warms up four rounds and alternates order over twelve measured rounds. A local
+A benchmark comparing sequential and interleaved
+32-KiB chunk feeding of the three real whole-file ranges validated equal digests,
+warmed up four rounds and alternated order over twelve measured rounds. A
 Windows AOT run measured 38.283 versus 37.2345 ms median (about 2.7% difference).
 This is host evidence, not an Android claim or a statistically established gain.
 The experiment does not justify changing production verification ordering for

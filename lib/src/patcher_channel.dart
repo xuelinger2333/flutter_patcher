@@ -73,7 +73,7 @@ class PatcherChannel {
   }
 
   /// 插件可写的缓存目录绝对路径，供 `applyPatchBytes` 内部 staging 用。
-  /// 与现有 `PatchManager.patchDir` 隔离（一个是临时 staging，一个是终态补丁）。
+  /// 与 `PatchManager.patchDir` 隔离（一个是临时 staging，一个是终态补丁）。
   static Future<String?> cacheDir() async {
     return channel.invokeMethod<String>('cacheDir');
   }

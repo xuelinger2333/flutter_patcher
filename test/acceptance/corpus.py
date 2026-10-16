@@ -1,4 +1,4 @@
-"""Generate signed WP-9 cases from real patches. OpenSSL is the signing oracle.
+"""Generate signed fault cases from real patches. OpenSSL is the signing oracle.
 
 No SDK compilation here. --modules contains CI-built malformed-entry bytecode.
 All output is immutable; a new directory is required on every run.

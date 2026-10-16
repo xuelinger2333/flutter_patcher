@@ -8,7 +8,8 @@ import 'package:flutter/widgets.dart';
 Widget patcherWrap(Widget child) =>
     DefaultAssetBundle(bundle: patcherOverlayBundle(), child: child);
 
-/// Module-local state. WP-8 supplies only authenticated archive bytes here.
+/// Module-local state. The boot runner supplies only authenticated archive
+/// bytes here.
 final Map<String, Uint8List> _assets = {};
 AssetBundle? _bundle;
 AssetBundle? _whole;

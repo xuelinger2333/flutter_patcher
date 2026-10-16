@@ -102,7 +102,7 @@ internal object SignatureVerifier {
      *
      * 注意：[expectedMd5] 为空时整体跳过 MD5 与签名校验，直接返回
      * [VerifyResult.OK]（调用方明确选择"不下发 md5"，仅依赖 HTTPS）。
-     * 启动路径目前仍依赖 meta.effectiveMd5 非空，故启动期不会走到这条分支；
+     * 启动路径要求 meta.effectiveMd5 非空，故启动期不会走到这条分支；
      * 该分支主要服务于 [PatchManager.applyPatch] 期间的重复使用。
      */
     fun verifyDetailed(
