@@ -123,7 +123,8 @@ class EnvironmentBuilder {
     if (await File(marker).exists()) {
       final state = await readObject(marker);
       ready = state['framework_commit'] == sdk.framework &&
-          state['engine_commit'] == sdk.engine;
+          state['engine_commit'] == sdk.engine &&
+          (!sdk.host.isWindows || state['checkout_eol'] == 'lf');
     }
     if (!ready) {
       require(!offline, 'SDK_NOT_READY',
@@ -133,12 +134,21 @@ class EnvironmentBuilder {
       final staging = temporaryName(target);
       // The framework checkout has paths beyond MAX_PATH under dev/; Windows
       // git needs core.longpaths (fvm sets the same option on its clones).
-      final longPaths = sdk.host.isWindows ? ['-c', 'core.longpaths=true'] : <String>[];
+      final longPaths =
+          sdk.host.isWindows ? ['-c', 'core.longpaths=true'] : <String>[];
+      // app.dill embeds framework source text and offsets, so a CRLF checkout
+      // (Git for Windows ships core.autocrlf=true, and Flutter marks *.dart as
+      // text) gives a different fingerprint than the same SDK on Linux. Pin LF
+      // in the clone's own config, before checkout and for later git commands.
+      final lineEndings = sdk.host.isWindows
+          ? ['--config', 'core.autocrlf=false', '--config', 'core.eol=lf']
+          : <String>[];
       await commands.run(
           'git',
           [
             ...longPaths,
             'clone',
+            ...lineEndings,
             '--depth',
             '1',
             '--branch',
@@ -168,8 +178,8 @@ class EnvironmentBuilder {
               sdk.engine,
           'SDK_PREPARE_FAILED',
           'Managed SDK engine revision differs.');
-      await writeObject(
-          p.join(staging, '.flutter-patcher-sdk.json'), sdk.toJson());
+      await writeObject(p.join(staging, '.flutter-patcher-sdk.json'),
+          {...sdk.toJson(), 'checkout_eol': 'lf'});
       await Directory(staging).renameRetry(target);
     }
     final commit =
