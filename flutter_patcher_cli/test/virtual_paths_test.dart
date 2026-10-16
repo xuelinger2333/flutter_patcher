@@ -8,7 +8,7 @@ void main() {
   late Directory temp;
   late String cache, work;
   setUp(() async {
-    temp = await Directory.systemTemp.createTemp('wp26-virtual-');
+    temp = await Directory.systemTemp.createTemp('virtual-paths-');
     cache = p.join(temp.path, 'cache');
     work = p.join(cache, 'builds', 'run.pending-1-2');
     await Directory(p.join(work, 'project', '.dart_tool'))

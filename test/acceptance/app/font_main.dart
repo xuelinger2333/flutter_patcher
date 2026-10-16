@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';
 
 const revision = 'original';
-const customBinding = bool.fromEnvironment('WP9_CUSTOM_BINDING');
+const customBinding = bool.fromEnvironment('CUSTOM_BINDING');
 
 class AcceptanceBinding extends WidgetsFlutterBinding {}
 
@@ -33,7 +33,7 @@ Future<void> main() async {
           body: SafeArea(child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('WP9:$revision:${snapshot.data ?? "pending"}'),
+              Text('Acceptance:$revision:${snapshot.data ?? "pending"}'),
               const SizedBox(height: 32),
               const Text('TEXT FONT REVIEW', style: TextStyle(fontSize: 18)),
               const SizedBox(height: 24),

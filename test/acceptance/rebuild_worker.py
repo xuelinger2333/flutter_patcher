@@ -73,7 +73,7 @@ def main():
         corpus = root / (binding + '-corpus')
         generate(patch / 'lean/patch.fptc', patch / 'whole/patch.fptc', root / 'modules',
                  base64.b64decode((patch / 'TEST_ONLY_seed.base64').read_text()), corpus)
-        os.environ['WP9_CORPUS'] = str(corpus)
+        os.environ['FLUTTER_PATCHER_TEST_CORPUS'] = str(corpus)
         result['stage'] = 'native_tests'; print('STAGE native_tests', flush=True)
         call(['python3', code / 'test/acceptance/native_tests.py', '--repo', code,
               '--flutter', sdk / 'bin/flutter', '--out', root / 'native-host'], code, root / 'native.log')

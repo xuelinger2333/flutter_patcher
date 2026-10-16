@@ -1,4 +1,4 @@
-"""Build an isolated WP23 host and matching patches with newly generated keys.
+"""Build an isolated authenticated-update host and matching patches with newly generated keys.
 
 Run on Linux; output must be new. Keys remain in the private output directory.
 """
@@ -31,9 +31,9 @@ def run(repo, flutter, artifacts, out, custom=False):
         keys[role] = base64.b64encode(public[-32:]).decode()
     app = out/'app'
     call([flutter/'bin/flutter', 'create', '--empty', '--platforms', 'android', '--org', 'com.example',
-          '--project-name', 'wp23_acceptance', app], repo, out/'create.log')
+          '--project-name', 'authenticated_app', app], repo, out/'create.log')
     configure_android(app)
-    spec = dict(name='wp23_acceptance', version='1.0.0+1', environment={'sdk': '>=3.13.0 <4.0.0'},
+    spec = dict(name='authenticated_app', version='1.0.0+1', environment={'sdk': '>=3.13.0 <4.0.0'},
                 dependencies={'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': str(repo)}},
                 flutter={'uses-material-design': True})
     (app/'pubspec.yaml').write_text(json.dumps(spec))
@@ -46,7 +46,7 @@ def run(repo, flutter, artifacts, out, custom=False):
     manifest = app/'android/app/src/main/AndroidManifest.xml'
     manifest.write_text(manifest.read_text().replace('<application',
         '<uses-permission android:name="android.permission.INTERNET"/>\n<application', 1))
-    policy = dict(schema='1', application_id='com.example.wp23_acceptance', version_code='1',
+    policy = dict(schema='1', application_id='com.example.authenticated_app', version_code='1',
                   channel='acceptance', flavor='default', abi='arm64-v8a', strategy='bytecode',
                   fptc_key=keys['patch'], root_key=keys['root'], keys='release:'+keys['publisher'])
     (out/'host-policy.json').write_text(json.dumps(policy, sort_keys=True, separators=(',', ':')))

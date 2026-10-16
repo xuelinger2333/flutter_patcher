@@ -108,8 +108,8 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
         command += ['--patch', str(file), '--version-code', '1'] if file else ['--action', 'withdraw']
         subprocess.run(command, check=True, stdout=publisher_log, stderr=subprocess.STDOUT)
     try:
-        if package != 'com.example.wp9_acceptance':
-            raise ValueError('Only the dedicated com.example.wp9_acceptance application may be reset')
+        if package != 'com.example.acceptance_app':
+            raise ValueError('Only the dedicated com.example.acceptance_app application may be reset')
         if adb('get-state').strip() != 'device':
             raise RuntimeError('Android device required')
         api = int(adb('shell', 'getprop', 'ro.build.version.sdk').strip())

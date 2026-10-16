@@ -142,8 +142,8 @@ def generate(lean, whole, modules, seed, out):
         files = dict(original)
         manifest = json.loads(files['patch_manifest.json'])
         if name == 'asset-hash':
-            files['assets/wp9.txt'] = b'wp9'
-            manifest['assets'].append({'key': 'wp9.txt', 'path': 'assets/wp9.txt',
+            files['assets/fixture.txt'] = b'fixture'
+            manifest['assets'].append({'key': 'fixture.txt', 'path': 'assets/fixture.txt',
                                        'length': 3, 'sha256': '0' * 64})
             layer, reason = 'archive', 'Entry digest'
         else:
@@ -156,7 +156,7 @@ def generate(lean, whole, modules, seed, out):
                 manifest.update(assets=[], fonts=[])
             layer, reason = ('archive', 'Bytecode magic') if name == 'module-truncated' else (
                 'boot', {'entry-short': 'PatchEntry length', 'entry-not-function': 'PatchEntry contract',
-                         'main-throws': 'WP9 intentional boot failure',
+                         'main-throws': 'intentional boot failure',
                          'main-hangs': 'Previous process crashed'}[name])
         files['patch_manifest.json'] = json.dumps(manifest, separators=(',', ':')).encode()
         emit(name, envelope(stored(list(files.items()))), layer, reason)

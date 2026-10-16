@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 class PublishManifestTest {
     private fun hex(s: String) = s.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     @Test fun sharedVectors() {
-        val file = System.getenv("WP21_VECTORS")?.let { File(it) }
+        val file = System.getenv("FLUTTER_PATCHER_TEST_VECTORS")?.let { File(it) }
             ?: File(projectRoot(), "test/protocol/manifest-v1.json")
         val vectors = JSONArray(file.readText())
         for (i in 0 until vectors.length()) {
@@ -48,7 +48,7 @@ class PublishManifestTest {
     private fun projectRoot(): File {
         var path = File(System.getProperty("user.dir")).absoluteFile
         while (!File(path, "test/protocol/manifest-v1.json").isFile) {
-            path = path.parentFile ?: error("Set WP21_VECTORS to shared vectors")
+            path = path.parentFile ?: error("Set FLUTTER_PATCHER_TEST_VECTORS to shared vectors")
         }
         return path
     }

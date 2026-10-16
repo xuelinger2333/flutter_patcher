@@ -8,7 +8,7 @@ import 'package:flutter_patcher_cli/src/core.dart';
 void main() {
   test('runtime wrapper has stable source and lives only under isolated config',
       () async {
-    final root = await Directory.systemTemp.createTemp('wp8-runtime-');
+    final root = await Directory.systemTemp.createTemp('runtime-package-');
     final sources = <String>[];
     for (final sub in ['build', 'patch']) {
       final config = p.join(root.path, sub, '.dart_tool/package_config.json');

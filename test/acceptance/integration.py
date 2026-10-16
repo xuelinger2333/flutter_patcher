@@ -87,11 +87,11 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
         'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a')).decode(), newline='\n')
     project = out / 'app'
     call([launcher, 'create', '--platforms', 'android', '--org', 'com.example',
-          '--project-name', 'wp9_acceptance', project], repo, out / 'create.log')
+          '--project-name', 'acceptance_app', project], repo, out / 'create.log')
     normalize_line_endings(project)
     configure_android(project)
     dependencies = {'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': str(repo)}}
-    specification = {'name': 'wp9_acceptance', 'version': '1.0.0+1',
+    specification = {'name': 'acceptance_app', 'version': '1.0.0+1',
         'environment': {'sdk': '>=3.13.0 <4.0.0'}, 'dependencies': dependencies,
         'flutter': {'uses-material-design': True, 'assets': ['assets/message.txt']}}
     source = (repo / 'test/acceptance/app/main.dart').read_text()
@@ -183,10 +183,10 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
             if tier == 'whole':
                 extra = out / 'extra'
                 (extra / 'lib').mkdir(parents=True)
-                (extra / 'pubspec.yaml').write_text('name: wp9_extra\nenvironment:\n  sdk: ">=3.13.0 <4.0.0"\n', newline='\n')
+                (extra / 'pubspec.yaml').write_text('name: acceptance_extra\nenvironment:\n  sdk: ">=3.13.0 <4.0.0"\n', newline='\n')
                 (extra / 'lib/extra.dart').write_text("String message() => 'whole';\n", newline='\n')
-                dependencies['wp9_extra'] = {'path': str(extra)}
-                main = "import 'package:wp9_extra/extra.dart' as extra;\n" + main.replace(
+                dependencies['acceptance_extra'] = {'path': str(extra)}
+                main = "import 'package:acceptance_extra/extra.dart' as extra;\n" + main.replace(
                     "const revision = 'whole';", 'final revision = extra.message();')
             (project / 'lib/main.dart').write_text(main, newline='\n')
             (project / 'assets/message.txt').write_text(tier, newline='\n')

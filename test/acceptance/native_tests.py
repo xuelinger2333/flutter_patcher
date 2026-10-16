@@ -9,9 +9,9 @@ from integration import configure_android
 def run(repo, flutter, out):
     if out.exists(): raise ValueError('A fresh generated host is required')
     subprocess.run([str(flutter), 'create', '--empty', '--platforms', 'android',
-                    '--project-name', 'wp9_jvm', str(out)], check=True)
+                    '--project-name', 'jvm_app', str(out)], check=True)
     configure_android(out)
-    spec = {'name': 'wp9_jvm', 'environment': {'sdk': '>=3.13.0 <4.0.0'},
+    spec = {'name': 'jvm_app', 'environment': {'sdk': '>=3.13.0 <4.0.0'},
             'dependencies': {'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': str(repo)}}}
     (out / 'pubspec.yaml').write_text(json.dumps(spec))
     subprocess.run([str(flutter), 'pub', 'get'], cwd=out, check=True)

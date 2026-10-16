@@ -12,7 +12,7 @@ import urllib.request
 
 def run(apk, so, serial, out):
     out.mkdir(parents=True, exist_ok=False)
-    package = 'com.example.wp9_acceptance'
+    package = 'com.example.acceptance_app'
     report = {'scope': 'v1_so_device', 'status': 'failed', 'cases': []}
     payload = so.read_bytes()
     active = True
@@ -20,7 +20,7 @@ def run(apk, so, serial, out):
         def do_GET(self):
             if self.path == '/patch': data = payload
             elif self.path == '/check':
-                data = json.dumps({'hasUpdate': True, 'patch': {'version': 'wp9-so',
+                data = json.dumps({'hasUpdate': True, 'patch': {'version': 'so-fixture',
                     'patchUrl': 'http://127.0.0.1:8765/patch', 'targetVersionCode': 1,
                     'md5': hashlib.md5(payload).hexdigest()}} if active else
                     {'hasUpdate': False, 'rollback': True}).encode()

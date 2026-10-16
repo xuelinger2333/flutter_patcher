@@ -10,8 +10,8 @@ import kotlin.test.assertFailsWith
 
 class BytecodeCorpusTest {
     @Test fun independentOpenSslCorpusReachesTheExpectedLayer() {
-        val root = System.getenv("WP9_CORPUS")
-        assumeTrue(root != null, "WP9_CORPUS is required for the corpus integration job")
+        val root = System.getenv("FLUTTER_PATCHER_TEST_CORPUS")
+        assumeTrue(root != null, "FLUTTER_PATCHER_TEST_CORPUS is required for the corpus integration job")
         val suite = JSONObject(File(root!!, "corpus.json").readText())
         val key = Base64.getDecoder().decode(suite.getString("public_key"))
         val cases = suite.getJSONArray("cases")

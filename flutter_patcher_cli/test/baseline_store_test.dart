@@ -15,7 +15,7 @@ void main() {
   final objects = <String, List<int>>{};
   var rejectPut = false, redirect = false, rejectAuth = false;
   setUp(() async {
-    temp = await Directory.systemTemp.createTemp('wp4-http-');
+    temp = await Directory.systemTemp.createTemp('baseline-store-test-');
     objects.clear();
     rejectPut = false;
     redirect = false;
@@ -108,9 +108,10 @@ void main() {
       () async {
     final commands = Commands(temp.path);
     commands.environment['FLUTTER_PATCHER_S3_ENDPOINT'] =
-        Platform.environment['WP4_S3_TEST_ENDPOINT']!;
+        Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT']!;
     final s3 = S3BaselineStore(
-        Uri.parse('s3://wp4-test/${DateTime.now().microsecondsSinceEpoch}'),
+        Uri.parse(
+            's3://flutter-patcher-test/${DateTime.now().microsecondsSinceEpoch}'),
         commands);
     await s3.probe();
     final input = p.join(temp.path, 'input');
@@ -131,10 +132,10 @@ void main() {
         throwsA(isA<Failure>()
             .having((e) => e.code, 'code', 'BASELINE_CONTENT_CONFLICT')));
     final unavailable =
-        S3BaselineStore(Uri.parse('s3://missing-wp4-bucket'), commands);
+        S3BaselineStore(Uri.parse('s3://missing-test-bucket'), commands);
     await expectLater(unavailable.probe(), throwsA(isA<Failure>()));
   },
-      skip: Platform.environment['WP4_S3_TEST_ENDPOINT'] == null
+      skip: Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT'] == null
           ? 'Set isolated S3 emulator endpoint and test-only AWS credentials'
           : false,
       timeout: const Timeout(Duration(minutes: 3)));

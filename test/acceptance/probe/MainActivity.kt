@@ -1,4 +1,4 @@
-package com.example.wp9_acceptance
+package com.example.acceptance_app
 
 import android.os.Handler
 import android.os.Looper
@@ -16,7 +16,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(engine)
         val profiler = BootChannelProfiler()
         val main = Handler(Looper.getMainLooper())
-        MethodChannel(engine.dartExecutor.binaryMessenger, "wp9_probe", profiler.codec)
+        MethodChannel(engine.dartExecutor.binaryMessenger, "channel_probe", profiler.codec)
             .setMethodCallHandler { call, result ->
                 val trace = profiler.take()!!
                 val mode = call.argument<String>("mode")!!

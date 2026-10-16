@@ -23,13 +23,13 @@ def main():
     parser.add_argument('--binding', choices=['standard', 'custom'], default='standard')
     parser.add_argument('--artifacts', type=Path, required=True)
     args = parser.parse_args()
-    config = json.loads(Path(os.environ['WP9_RUNNER_CONFIG']).read_text())[args.version]
+    config = json.loads(Path(os.environ['FLUTTER_PATCHER_RUNNER_CONFIG']).read_text())[args.version]
     run_id = os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
     if not all(c.isdigit() or c == '-' for c in run_id): raise ValueError('Invalid run id')
     repo = Path(__file__).resolve().parents[2]
     flutter = Path(config['flutter'])
     exchange = Path(config['exchange']) / run_id / args.version / args.binding
-    out = Path.home() / '.flutter_patcher/wp9-ci' / run_id / args.version / args.binding / args.stage
+    out = Path.home() / '.flutter_patcher/ci' / run_id / args.version / args.binding / args.stage
     shared = exchange / 'handoff.json'
     baseline_store = config['baseline_store'].rstrip('/') + '/' + run_id + '/' + args.version + '/' + args.binding
     parsed_store = urlparse(baseline_store)
@@ -67,12 +67,12 @@ def main():
     corpus = out / 'corpus'
     generate(out / 'lean/patch.fptc', out / 'whole/patch.fptc', modules,
              base64.b64decode((out / 'TEST_ONLY_seed.base64').read_text()), corpus)
-    os.environ['WP9_CORPUS'] = str(corpus)
+    os.environ['FLUTTER_PATCHER_TEST_CORPUS'] = str(corpus)
     call([flutter / 'bin/flutter', 'test', 'test/acceptance/corpus_check.dart'], repo, out / 'corpus-dart.log')
     call(['bash', 'gradlew', ':flutter_patcher:testDebugUnitTest', '--console=plain'],
          out / 'app/android', out / 'native.log')
     device_run(exchange / 'app-release.apk', corpus, config['serial'],
-               'com.example.wp9_acceptance', out / 'device', custom_binding=args.binding == 'custom',
+               'com.example.acceptance_app', out / 'device', custom_binding=args.binding == 'custom',
                cli=repo / 'flutter_patcher_cli/bin/flutter_patcher.dart', dart=dart)
     for timing_file in (out / 'device').glob('*-timing.json'):
         timing = json.loads(timing_file.read_text())
@@ -81,7 +81,7 @@ def main():
     legacy_run(exchange / 'ordinary.apk', exchange / 'legacy-libapp.so', config['serial'], out / 'legacy')
     if config.get('lower_api_serial'):
         device_run(exchange / 'app-release.apk', corpus, config['lower_api_serial'],
-                   'com.example.wp9_acceptance', out / 'lower-api', compatibility=True,
+                   'com.example.acceptance_app', out / 'lower-api', compatibility=True,
                    custom_binding=args.binding == 'custom')
     shutil.copyfile(out / 'device/device.json', exchange / 'device.json')
     # Passing this job proves its listed scope, not all A1-A11/performance obligations.

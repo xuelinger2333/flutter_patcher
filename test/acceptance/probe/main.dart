@@ -19,7 +19,7 @@ Future<void> sample(String phase, String mode) async {
       MethodCall('bootPayload', {'mode': mode, 'request': id}));
   final encode = watch.elapsedMicroseconds;
   final done = Completer<void>();
-  PlatformDispatcher.instance.sendPlatformMessage('wp9_probe', message,
+  PlatformDispatcher.instance.sendPlatformMessage('channel_probe', message,
       (response) {
     final callback = watch.elapsedMicroseconds;
     try {

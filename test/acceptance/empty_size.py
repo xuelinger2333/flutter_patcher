@@ -12,9 +12,9 @@ def run(repo, flutter, out, cache, artifacts_url, support_url, threshold_bytes=N
     out.mkdir(parents=True, exist_ok=False)
     app = out / 'app'
     call([flutter / 'bin/flutter', 'create', '--empty', '--platforms', 'android',
-          '--project-name', 'wp9_empty', app], repo, out / 'create.log')
+          '--project-name', 'empty_app', app], repo, out / 'create.log')
     configure_android(app)
-    (app / 'pubspec.yaml').write_text(json.dumps({'name': 'wp9_empty', 'version': '1.0.0+1',
+    (app / 'pubspec.yaml').write_text(json.dumps({'name': 'empty_app', 'version': '1.0.0+1',
         'environment': {'sdk': '>=3.13.0 <4.0.0'}, 'dependencies': {
             'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': str(repo)}}}))
     (app / 'lib/main.dart').write_text("import 'package:flutter/widgets.dart';\nvoid main() { runApp(const SizedBox.shrink()); }\n")

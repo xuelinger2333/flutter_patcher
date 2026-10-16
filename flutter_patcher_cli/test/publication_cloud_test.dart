@@ -8,9 +8,9 @@ import 'package:flutter_patcher_cli/src/publish/retention.dart';
 void main() {
   test('authorized flutterpatcher prefix: R2 CAS, publication gate and cleanup',
       () async {
-    final prefix = Platform.environment['WP22_R2_PREFIX']!;
-    expect(RegExp(r'^wp22-acceptance/[a-f0-9]{32}$').hasMatch(prefix), true);
-    final root = await Directory.systemTemp.createTemp('wp22-cloud-');
+    final prefix = Platform.environment['FLUTTER_PATCHER_TEST_R2_PREFIX']!;
+    expect(RegExp(r'^cloud-test/[a-f0-9]{32}$').hasMatch(prefix), true);
+    final root = await Directory.systemTemp.createTemp('publication-cloud-');
     addTearDown(() => root.delete(recursive: true));
     final commands = Commands(root.path);
     final uri = Uri.parse(
@@ -19,7 +19,7 @@ void main() {
     final b = S3PublishStore(uri, commands, '${root.path}/b');
     expect(await a.list(), isEmpty);
     expect(await a.read('catalog.json'), isNull);
-    final tx = PublicationTransaction(a, 'com.example.wp22');
+    final tx = PublicationTransaction(a, 'com.example.publication');
     final name = 'objects/${'a' * 32}/${digest([7])}.fptc';
     final receipt =
         await tx.run('a' * 32, {'cloud_fixture': true}, (catalog) async {
@@ -55,7 +55,7 @@ void main() {
     expect(await a.read(name), isNull);
     expect(await a.list(), ['catalog.json']);
   },
-      skip: Platform.environment['WP22_R2_PREFIX'] == null
+      skip: Platform.environment['FLUTTER_PATCHER_TEST_R2_PREFIX'] == null
           ? 'Explicitly authorized R2 test prefix required'
           : false,
       timeout: const Timeout(Duration(minutes: 5)));

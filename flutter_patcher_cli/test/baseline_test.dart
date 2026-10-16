@@ -83,7 +83,7 @@ void main() {
   late CountingStore store;
   late BaselineRepository repository;
   setUp(() async {
-    temp = await Directory.systemTemp.createTemp('wp4-test-');
+    temp = await Directory.systemTemp.createTemp('flutter-patcher-test-');
     input = p.join(temp.path, 'input');
     await fixture(input);
     storePath = p.join(temp.path, 'store');
@@ -220,7 +220,7 @@ void main() {
         () async {
       final package = Directory.current.path;
       final firstCache = p.join(package,
-          '.dart_tool/flutter_patcher/wp4-cli-${DateTime.now().microsecondsSinceEpoch}');
+          '.dart_tool/flutter_patcher/baseline-cli-${DateTime.now().microsecondsSinceEpoch}');
       final secondCache = '$firstCache-second';
       final descriptor = p.join(temp.path, 'metadata.json');
       await writeObject(descriptor, metadata());

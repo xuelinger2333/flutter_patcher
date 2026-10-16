@@ -35,7 +35,7 @@ void main() {
   test(
       'package URI rewriting copies source and does not rewrite host dependency',
       () async {
-    final root = (await Directory.systemTemp.createTemp('wp6-remap-')).path;
+    final root = (await Directory.systemTemp.createTemp('patch-remap-')).path;
     for (final name in ['app', 'host']) {
       await Directory(p.join(root, name, 'lib')).create(recursive: true);
       await File(p.join(root, name, 'lib/main.dart')).writeAsString(
@@ -62,7 +62,7 @@ void main() {
         contains('package:app/a.dart'));
   });
   test('native package provenance sees changes outside Dart sources', () async {
-    final root = (await Directory.systemTemp.createTemp('wp6-native-')).path;
+    final root = (await Directory.systemTemp.createTemp('patch-native-')).path;
     await File(p.join(root, 'pubspec.yaml')).writeAsString(
         'name: plugin\nversion: 1.0.0\nflutter:\n  plugin: {}\n');
     await Directory(p.join(root, 'android')).create();
@@ -98,7 +98,7 @@ void main() {
     expect(after['plugin']['native'], true);
   });
   test('framework carry rewrites only selected framework directives', () async {
-    final root = (await Directory.systemTemp.createTemp('wp25-carry-')).path;
+    final root = (await Directory.systemTemp.createTemp('patch-carry-')).path;
     final sdk = p.join(root, 'sdk');
     final source = p.join(sdk, 'packages/flutter/lib/src/demo.dart');
     await File(source).parent.create(recursive: true);
@@ -136,7 +136,7 @@ void main() {
   test(
       'real Ed25519 envelope verifies and detects tampering without a private file',
       () async {
-    final root = (await Directory.systemTemp.createTemp('wp6-sign-')).path;
+    final root = (await Directory.systemTemp.createTemp('patch-sign-')).path;
     final commands = Commands(root);
     final key = signingKey(base64Encode(List.filled(32, 1)));
     final module = File(p.join(root, 'module.bc'));

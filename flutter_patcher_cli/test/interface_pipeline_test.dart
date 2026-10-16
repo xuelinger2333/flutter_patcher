@@ -73,7 +73,7 @@ void main() {
   late InterfacePipeline pipeline;
   late InterfaceRequest request;
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('wp3-pipeline-');
+    root = await Directory.systemTemp.createTemp('interface-pipeline-');
     compiler = CompilerFixture(root.path);
     for (final name in [
       'app.dill',

@@ -46,7 +46,7 @@ use the bundled interpreter without changing PATH:
 ## Rerun an already built APK and corpus
 
 Use Python 3, ADB, Dart and an unlocked API 33+ arm64 device. The dedicated
-`com.example.wp9_acceptance` APK is installed and its data is reset between cases.
+`com.example.acceptance_app` APK is installed and its data is reset between cases.
 If the installed base APK has exactly the requested SHA256, installation is
 reused; a changed APK still requires installation. This is recorded in the result.
 This command does not change battery/startup settings or start an emulator.

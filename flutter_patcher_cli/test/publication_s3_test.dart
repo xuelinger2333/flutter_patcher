@@ -8,13 +8,13 @@ void main() {
   test(
       'real AWS CLI conditional writes, identity readback, listing and deletion',
       () async {
-    final root = await Directory.systemTemp.createTemp('wp22-s3-');
+    final root = await Directory.systemTemp.createTemp('publication-s3-');
     addTearDown(() => root.delete(recursive: true));
     final commands = Commands(root.path);
     commands.environment['FLUTTER_PATCHER_S3_ENDPOINT'] =
-        Platform.environment['WP4_S3_TEST_ENDPOINT']!;
+        Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT']!;
     final uri = Uri.parse(
-        's3://wp4-test/publication-${DateTime.now().microsecondsSinceEpoch}');
+        's3://flutter-patcher-test/publication-${DateTime.now().microsecondsSinceEpoch}');
     final a = S3PublishStore(uri, commands, '${root.path}/a');
     final b = S3PublishStore(uri, commands, '${root.path}/b');
     expect(await a.read('catalog.json'), isNull);
@@ -35,7 +35,7 @@ void main() {
     await a.delete(name);
     expect(await a.read(name), isNull);
   },
-      skip: Platform.environment['WP4_S3_TEST_ENDPOINT'] == null
+      skip: Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT'] == null
           ? 'Set isolated S3 endpoint and test credentials'
           : false,
       timeout: const Timeout(Duration(minutes: 3)));

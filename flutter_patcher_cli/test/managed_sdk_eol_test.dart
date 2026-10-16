@@ -26,7 +26,8 @@ class GitRecorder extends Commands {
 void main() {
   const windows = HostIdentity('windows', 'x64');
   late Directory temp;
-  setUp(() async => temp = await Directory.systemTemp.createTemp('wp26-eol-'));
+  setUp(() async =>
+      temp = await Directory.systemTemp.createTemp('managed-sdk-eol-'));
   tearDown(() => temp.delete(recursive: true));
 
   ArtifactStore store() => ArtifactStore(

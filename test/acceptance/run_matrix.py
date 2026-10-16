@@ -60,7 +60,7 @@ def main():
         logger = subprocess.Popen(['adb', '-s', args.serial, 'logcat', '-T', '1', '-v', 'threadtime',
                                    'ActivityManager:I', 'AndroidRuntime:E', 'flutter:I', '*:S'], stdout=log)
         try:
-            run(apk.resolve(), corpus.resolve(), args.serial, 'com.example.wp9_acceptance', out,
+            run(apk.resolve(), corpus.resolve(), args.serial, 'com.example.acceptance_app', out,
                 custom_binding=args.binding == 'custom',
                 functional_only=args.functional_only,
                 compact=args.compact,

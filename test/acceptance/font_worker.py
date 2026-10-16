@@ -23,7 +23,7 @@ def main():
     for name, expected in receipt['files'].items():
         assert hashlib.sha256((code / name).read_bytes()).hexdigest() == expected, name
     sdk = Path('/root/.flutter_patcher/artifacts-builder/cache/flutter-3.47.2')
-    os.environ.update(ANDROID_HOME='/opt/android-sdk', PUB_CACHE='/root/.flutter_patcher/wp2-development/pub-cache')
+    os.environ.update(ANDROID_HOME='/opt/android-sdk', PUB_CACHE='/root/.flutter_patcher/development/pub-cache')
     os.environ['PATH'] = str(sdk / 'bin') + ':' + os.environ['PATH']
     fonts = root / 'fonts'; fonts.mkdir()
     original = fonts / 'original.ttf'; replacement = fonts / 'replacement.ttf'
@@ -34,7 +34,7 @@ def main():
               'fonts': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [original, replacement]},
               'bindings': {}}
     server = ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(
-        SimpleHTTPRequestHandler, directory='/root/.flutter_patcher/wp9-development/served-pinned'))
+        SimpleHTTPRequestHandler, directory='/root/.flutter_patcher/development/served-pinned'))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f'http://127.0.0.1:{server.server_port}'
     try:

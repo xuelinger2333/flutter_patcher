@@ -41,7 +41,7 @@ void main() {
     expect(jsonEncode(report), contains('HOST_UNSUPPORTED'));
   },
       skip: HostIdentity.verified.contains(HostIdentity.current().key)
-          ? 'Runs only on hosts outside the WP-2.6 matrix'
+          ? 'Runs only on hosts outside the supported matrix'
           : false);
   test('verified hosts pass the gate; others are refused with the matrix', () {
     expect(HostIdentity.verified, containsAll(['linux-x64', 'windows-x64']));

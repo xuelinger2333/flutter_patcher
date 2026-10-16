@@ -33,7 +33,7 @@ class FakeCompiler extends Commands {
 void main() {
   test('YAML cache binds SDK source and tool hashes and repairs corruption',
       () async {
-    final temp = await Directory.systemTemp.createTemp('wp2-yaml-');
+    final temp = await Directory.systemTemp.createTemp('yaml-cache-');
     addTearDown(() => temp.delete(recursive: true));
     final root = p.join(temp.path, 'sdk');
     Future<File> seed(String relative, String text) async {

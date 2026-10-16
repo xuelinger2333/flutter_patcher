@@ -6,9 +6,9 @@ import 'package:flutter_patcher/src/bootstrap/patch_archive.dart';
 import 'package:flutter_patcher/src/bootstrap/runner.dart';
 
 void main() {
-  final directory = Platform.environment['WP9_CORPUS'];
+  final directory = Platform.environment['FLUTTER_PATCHER_TEST_CORPUS'];
   if (directory == null) {
-    throw StateError('WP9_CORPUS is required; no silent skip');
+    throw StateError('FLUTTER_PATCHER_TEST_CORPUS is required; no silent skip');
   }
   final suite =
       jsonDecode(File('$directory/corpus.json').readAsStringSync()) as Map;
@@ -38,7 +38,7 @@ void main() {
           call: (method, args) async {
             if (method == 'bootPayload') {
               return {
-                'attempt': 'wp9',
+                'attempt': 'fixture',
                 'transportVersion': 1,
                 'envelopeBytes': bytes
               };
@@ -59,7 +59,7 @@ void main() {
                   row['id'] == 'entry-not-function'
                       ? 42
                       : () {
-                          throw StateError('WP9 intentional boot failure');
+                          throw StateError('intentional boot failure');
                         },
                   null
                 ],

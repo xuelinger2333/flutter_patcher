@@ -15,7 +15,7 @@ Future<void> main() async {
   var frame = false;
   WidgetsBinding.instance.addPostFrameCallback((_) { frame = true; });
   runApp(MaterialApp(home: Scaffold(body: Column(children: [
-    Text('WP23:$revision'), const Icon(Icons.home),
+    Text('Authenticated:$revision'), const Icon(Icons.home),
   ]))));
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 8767);
   server.listen((request) async {

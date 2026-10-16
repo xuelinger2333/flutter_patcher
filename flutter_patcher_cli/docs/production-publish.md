@@ -149,7 +149,7 @@ uses a synthetic signed fixture with a real baseline archive and CLI entrypoint.
 `publication_s3_test.dart` requires an isolated S3 endpoint and test credentials;
 the legacy S3 baseline tests run against that endpoint as well.
 `publication_cloud_test.dart` is opt-in and restricted to a separately authorized
-`flutterpatcher/wp22-acceptance/<random>` namespace. It is not an automatic CI job.
+`flutterpatcher/cloud-test/<random>` namespace. It is not an automatic CI job.
 
 No APK rebuilding, device installation, key rotation, or remote Git/release
 publication is performed by these storage tests.

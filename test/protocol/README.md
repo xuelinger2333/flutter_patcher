@@ -27,4 +27,4 @@ that directory remains excluded from version control.
 From the CLI package directory run `dart test test/publish_protocol_test.dart`.
 From the repository run `flutter test test/signed_manifest_test.dart`.
 Android runs `PublishManifestTest` in the normal plugin JVM suite; set
-`WP21_VECTORS` to an absolute vector path if the test host is outside the repo.
+`FLUTTER_PATCHER_TEST_VECTORS` to an absolute vector path if the test host is outside the repo.

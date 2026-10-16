@@ -33,6 +33,7 @@ class Fixture {
     }
     return legacy;
   }
+
   Fixture() {
     final so = List<int>.filled(32, 0)
       ..setRange(0, 6, [127, 69, 76, 70, 2, 1])
@@ -108,7 +109,11 @@ class Fixture {
           'host_arch': 'x64',
           'built_at': '2026-09-19T08:00:00Z',
           'builder_repo_commit': 'c' * 40,
-          'verify': {'snapshot': 'passed', 'device': 'passed', 'device_reason': null}
+          'verify': {
+            'snapshot': 'passed',
+            'device': 'passed',
+            'device_reason': null
+          }
         }
       ]
     };
@@ -127,7 +132,7 @@ void main() {
   late Directory temp;
   late Fixture fixture;
   setUp(() async {
-    temp = await Directory.systemTemp.createTemp('wp2-test-');
+    temp = await Directory.systemTemp.createTemp('artifacts-test-');
     fixture = Fixture();
   });
   tearDown(() async {
@@ -359,7 +364,8 @@ void main() {
       await expectLater(store.obtain('engine', sdk),
           throwsA(failure('ENGINE_ARTIFACT_MISSING')));
       expect(
-          Directory(p.join(temp.path, 'artifacts/3.47.2/engine/linux-x64')).existsSync(),
+          Directory(p.join(temp.path, 'artifacts/3.47.2/engine/linux-x64'))
+              .existsSync(),
           isFalse);
       omitSnapshot = false;
       await store.obtain('engine', sdk);
@@ -373,7 +379,7 @@ void main() {
               .existsSync(),
           isFalse);
     });
-    test('a pre-WP-2.6 engine cache is migrated into the host directory',
+    test('an engine cache without a host directory is migrated into one',
         () async {
       final legacy = p.join(temp.path, 'artifacts', '3.47.2', 'engine');
       await Directory(legacy).create(recursive: true);
@@ -393,7 +399,8 @@ void main() {
       final offline = ArtifactStore(
           temp.path, store.base, store.supportUri, Downloads(offline: true));
       await offline.obtain('engine', sdk);
-      expect(File(p.join(legacy, 'engine.manifest.json')).existsSync(), isFalse);
+      expect(
+          File(p.join(legacy, 'engine.manifest.json')).existsSync(), isFalse);
       expect(
           File(p.join(legacy, 'linux-x64', 'gen_snapshot-linux-x64'))
               .existsSync(),
@@ -401,8 +408,10 @@ void main() {
     });
     test('only this host\'s gen_snapshot is downloaded and cached', () async {
       await store.obtain('engine', sdk);
-      final cache = p.join(temp.path, 'artifacts', '3.47.2', 'engine', 'linux-x64');
-      expect(File(p.join(cache, 'gen_snapshot-linux-x64')).existsSync(), isTrue);
+      final cache =
+          p.join(temp.path, 'artifacts', '3.47.2', 'engine', 'linux-x64');
+      expect(
+          File(p.join(cache, 'gen_snapshot-linux-x64')).existsSync(), isTrue);
       expect(File(p.join(cache, 'gen_snapshot-windows-x64.exe')).existsSync(),
           isFalse);
       expect(store.file(sdk, 'engine', 'gen_snapshot-linux-x64'),
@@ -414,7 +423,8 @@ void main() {
       final windowsCache =
           p.join(temp.path, 'artifacts/3.47.2/engine/windows-x64');
       expect(
-          File(p.join(windowsCache, 'gen_snapshot-windows-x64.exe')).existsSync(),
+          File(p.join(windowsCache, 'gen_snapshot-windows-x64.exe'))
+              .existsSync(),
           isTrue);
       expect(File(p.join(windowsCache, 'gen_snapshot-linux-x64')).existsSync(),
           isFalse);

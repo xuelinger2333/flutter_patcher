@@ -19,7 +19,7 @@ args = parser.parse_args()
 args.out.mkdir(parents=True, exist_ok=False)
 result = {'status': 'failed', 'apk_sha256': hashlib.sha256(args.apk.read_bytes()).hexdigest(),
           'runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'samples': []}
-package = 'com.example.wp9_acceptance'
+package = 'com.example.acceptance_app'
 def adb(*command):
     return subprocess.check_output(['adb', '-s', args.serial, *command], text=True,
                                    stderr=subprocess.STDOUT, timeout=180)

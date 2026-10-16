@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';
 
 const revision = 'original';
-const customBinding = bool.fromEnvironment('WP9_CUSTOM_BINDING');
+const customBinding = bool.fromEnvironment('CUSTOM_BINDING');
 
 class AcceptanceBinding extends WidgetsFlutterBinding {}
 
@@ -33,7 +33,7 @@ Future<void> main() async {
         }),
         builder: (context, snapshot) => Scaffold(
                 body: Column(children: [
-              Text('WP9:$revision:${snapshot.data ?? "pending"}'),
+              Text('Acceptance:$revision:${snapshot.data ?? "pending"}'),
               const Icon(Icons.home),
               // WP25_FEATURE is replaced only in the WP-2.5 patch fixtures.
             ])));

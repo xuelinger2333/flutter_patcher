@@ -9,7 +9,7 @@ import 'package:flutter_patcher_cli/src/core.dart';
 
 void main() {
   test('resource manifest mismatch is rejected before signing', () async {
-    final dir = await Directory.systemTemp.createTemp('wp7-package-');
+    final dir = await Directory.systemTemp.createTemp('resources-package-');
     addTearDown(() => dir.delete(recursive: true));
     final module = File(p.join(dir.path, 'module.bc'));
     await module.writeAsBytes([1]);
@@ -60,7 +60,7 @@ void main() {
   });
   test('changed image brings variants and merges only selected metadata',
       () async {
-    final dir = await Directory.systemTemp.createTemp('wp7-resources-');
+    final dir = await Directory.systemTemp.createTemp('resources-');
     addTearDown(() => dir.delete(recursive: true));
     final manifest = {
       'a': [
@@ -112,7 +112,7 @@ void main() {
     await expectLater(bad.collect(baseline, []), throwsA(isA<Failure>()));
   });
   test('dynamic or missing icon fonts cannot silently disappear', () async {
-    final dir = await Directory.systemTemp.createTemp('wp7-fonts-');
+    final dir = await Directory.systemTemp.createTemp('resources-fonts-');
     addTearDown(() => dir.delete(recursive: true));
     final patch =
         PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);

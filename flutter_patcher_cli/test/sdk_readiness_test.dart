@@ -25,7 +25,7 @@ void main() {
   }
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('wp2-sdk-test-');
+    root = await Directory.systemTemp.createTemp('sdk-readiness-');
     for (final item in {
       'bin/internal/engine.version': 'engine',
       'bin/cache/engine.stamp': 'engine',
@@ -45,15 +45,13 @@ void main() {
   test('the stock Windows launcher stamp ":" is accepted only with its bug',
       () async {
     await write('bin/cache/flutter_tools.stamp', '":"');
-    await expectLater(
-        checkSdkReady(root.path, GitIdentity(root.path)),
+    await expectLater(checkSdkReady(root.path, GitIdentity(root.path)),
         throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')));
     await write('bin/internal/shared.bat',
         "FOR /f %%r IN ('PUSHD %FLUTTER_ROOT% ^& \$git rev-parse HEAD') DO (");
     await checkSdkReady(root.path, GitIdentity(root.path));
     await write('bin/cache/flutter_tools.stamp', '"other:"');
-    await expectLater(
-        checkSdkReady(root.path, GitIdentity(root.path)),
+    await expectLater(checkSdkReady(root.path, GitIdentity(root.path)),
         throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')));
   });
   for (final path in [

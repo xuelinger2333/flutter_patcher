@@ -27,7 +27,7 @@ class PomDownload extends Downloads {
 void main() {
   test('embedding POM retains dependencies and detects damaged offline cache',
       () async {
-    final root = (await Directory.systemTemp.createTemp('wp5-pom-')).path;
+    final root = (await Directory.systemTemp.createTemp('build-pom-')).path;
     final path = p.join(root, 'embedding.pom');
     const pom =
         '<project><groupId>io.flutter</groupId><artifactId>flutter_embedding_release</artifactId>'
@@ -44,7 +44,8 @@ void main() {
   });
   test('path dependencies and overrides are copied; originals remain intact',
       () async {
-    final root = (await Directory.systemTemp.createTemp('wp5-workspace-')).path;
+    final root =
+        (await Directory.systemTemp.createTemp('build-workspace-')).path;
     for (final name in ['app', 'dep', 'override']) {
       await Directory(p.join(root, name)).create();
       await File(p.join(root, name, 'pubspec.yaml'))
@@ -84,7 +85,7 @@ void main() {
   });
   test('only tool-owned Flutter Gradle entries are retired, preserving bytes',
       () async {
-    final root = (await Directory.systemTemp.createTemp('wp5-gradle-')).path;
+    final root = (await Directory.systemTemp.createTemp('build-gradle-')).path;
     for (final group in ['io.flutter', 'org.example']) {
       final file =
           File(p.join(root, 'caches/modules-2/files-2.1', group, 'artifact'));
@@ -118,7 +119,8 @@ void main() {
   });
   test('schema 2 archive preserves compiler evidence and rejects receipt drift',
       () async {
-    final root = (await Directory.systemTemp.createTemp('wp5-baseline-')).path;
+    final root =
+        (await Directory.systemTemp.createTemp('build-baseline-')).path;
     await base.fixture(root);
     final meta = {...base.metadata(), 'schema': 2, 'runtime_bootstrap': false};
     await writeObject(

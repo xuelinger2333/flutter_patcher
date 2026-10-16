@@ -18,12 +18,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('authentic subset font loads before application main', () async {
     final bytes =
-        await File(Platform.environment['WP7_FONT_FILE']!).readAsBytes();
+        await File(Platform.environment['FLUTTER_PATCHER_TEST_FONT']!).readAsBytes();
     await patcherLoadFonts({
-      'WP7Subset': [bytes]
+      'OverlaySubset': [bytes]
     });
     await expectLater(patcherLoadFonts({'empty': []}), throwsArgumentError);
-  }, skip: Platform.environment['WP7_FONT_FILE'] == null);
+  }, skip: Platform.environment['FLUTTER_PATCHER_TEST_FONT'] == null);
   test('overlay handles text, buffers and fallback without mutating input',
       () async {
     final host = _Host(), bytes = Uint8List.fromList([110, 101, 119]);

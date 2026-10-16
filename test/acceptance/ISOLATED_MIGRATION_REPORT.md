@@ -71,7 +71,7 @@ source SHA256 为 `f5a03ef2629491d6f2a88494ee13225454d5255107760dee123b092210e8e
 用于验证下载、生效、自定义 binding、资源更新、撤回和回退；不称为 31 项矩阵。
 
 ```powershell
-python test/acceptance/device.py --apk .dart_tool/flutter_patcher/regression/20260911-232309-e766a632/inputs/custom-build/release/app-release.apk --corpus .dart_tool/flutter_patcher/isolation/20260912 --out .dart_tool/flutter_patcher/isolation/20260912/device-resume-1 --serial AF2Q025C05004551 --package com.example.wp9_acceptance --custom-binding --cli D:/DevProjects/flutter_patcher/flutter_patcher_cli/bin/flutter_patcher.dart --dart D:/DevTools/flutter/bin/cache/dart-sdk/bin/dart.exe
+python test/acceptance/device.py --apk .dart_tool/flutter_patcher/regression/20260911-232309-e766a632/inputs/custom-build/release/app-release.apk --corpus .dart_tool/flutter_patcher/isolation/20260912 --out .dart_tool/flutter_patcher/isolation/20260912/device-resume-1 --serial AF2Q025C05004551 --package com.example.acceptance_app --custom-binding --cli D:/DevProjects/flutter_patcher/flutter_patcher_cli/bin/flutter_patcher.dart --dart D:/DevTools/flutter/bin/cache/dart-sdk/bin/dart.exe
 ```
 
 Windows Python 若为 Store 别名，使用既有 bundled Python。

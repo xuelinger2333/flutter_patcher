@@ -32,12 +32,12 @@ project = out / 'app'
 def call(command):
     subprocess.run([str(v) for v in command], cwd=out, check=True)
 call([flutter / 'bin/flutter', 'create', '--platforms', 'android', '--org', 'com.example',
-      '--project-name', 'wp9_acceptance', project])
+      '--project-name', 'acceptance_app', project])
 template = Path(__file__).resolve().parent
-(project / 'pubspec.yaml').write_text(json.dumps({'name': 'wp9_acceptance', 'version': '1.0.0+1',
+(project / 'pubspec.yaml').write_text(json.dumps({'name': 'acceptance_app', 'version': '1.0.0+1',
     'environment': {'sdk': '>=3.13.0 <4.0.0'}, 'dependencies': {'flutter': {'sdk': 'flutter'}, 'crypto': '^3.0.6'}}))
 (project / 'lib/main.dart').write_bytes((template / 'main.dart').read_bytes())
-kotlin = project / 'android/app/src/main/kotlin/com/example/wp9_acceptance'
+kotlin = project / 'android/app/src/main/kotlin/com/example/acceptance_app'
 shutil.copyfile(template / 'MainActivity.kt', kotlin / 'MainActivity.kt')
 native = run / 'source/android/src/main/kotlin/com/flutter_patcher/flutter_patcher'
 hashes = {}
@@ -45,7 +45,7 @@ for name in ['BootChannelProfiler.kt', 'BytecodeEnvelope.kt', 'Ed25519Verifier.k
     source = (native / name).read_bytes()
     hashes[name] = hashlib.sha256(source).hexdigest()
     text = source.decode().replace('package com.flutter_patcher.flutter_patcher',
-        'package com.example.wp9_acceptance', 1)
+        'package com.example.acceptance_app', 1)
     (kotlin / name).write_text(text)
 assets = project / 'android/app/src/main/assets'; assets.mkdir()
 corpus = run / 'standard-corpus'
