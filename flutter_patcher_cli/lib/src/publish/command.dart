@@ -98,7 +98,7 @@ Future<int> productionPublish(ArgResults args) async {
           'PUBLISH_CONFIG_INVALID',
           'Publication and baseline namespaces must not overlap');
     }
-    final identity = await publicationBaseline(
+    final release = await resolvePublication(
         BaselineStore.open(baselineUri, commands), fields, work.path);
     for (final key in ['private_key', 'public_key']) {
       await rejectLinks(request[key] as String);
@@ -112,7 +112,8 @@ Future<int> productionPublish(ArgResults args) async {
             publicKey:
                 await File(request['public_key'] as String).readAsString(),
             createdAt: request['created_at'].toString(),
-            baseline: identity,
+            baseline: release.identity,
+            target: release.target,
             patch: bytes,
             commit: args['commit'] == true,
             pin: request['pin'] == true);

@@ -1,38 +1,129 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import '../baseline/archive.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
+import '../baseline/split.dart';
 import '../baseline/store.dart';
 import '../core.dart';
 import '../crypto/signing.dart';
 import 'protocol.dart';
 import 'transaction.dart';
 
+/// The verified baseline identity of the target release, and the target a
+/// patch for it must carry. Legacy releases keep their original identity
+/// shape: it is part of the intent digest of operations that may be pending.
+class PublicationRelease {
+  final Map<String, dynamic> identity;
+  final Map<String, dynamic>? target;
+  PublicationRelease(this.identity, this.target);
+}
+
 /// Always fetch into a fresh cache: a local hit must not mask a missing remote baseline.
-Future<Map<String, dynamic>> publicationBaseline(
+Future<PublicationRelease> resolvePublication(
     BaselineStore store, Map<String, String> fields, String work,
     {BaselineArchive? archive}) async {
   final repo = BaselineRepository(p.join(work, 'baseline-cache'), store,
       archive: archive);
-  final link =
-      await repo.verifyRelease(fields['flavor']!, fields['version_code']!);
-  require(link['fingerprint'] == fields['fingerprint'],
+  final release = await repo.resolve(fields['flavor']!, fields['version_code']!,
+      abi: fields['abi'] ?? 'arm64-v8a');
+  require(release.compile['runtime_bootstrap'] != false, 'BASELINE_NOT_RELEASE',
+      'Pipeline validation baseline has no runtime bootstrap and is not a release.');
+  require(release.fingerprint == fields['fingerprint'],
       'PUBLISH_TARGET_MISMATCH', 'Release fingerprint differs');
-  final root = p.join(work, 'baseline-cache', fields['fingerprint']);
-  final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
+  final receipt = release.receipt;
   require(
       receipt['application_id'] == fields['application_id'] &&
           receipt['version_code'] == fields['version_code'] &&
           receipt['public_key'] is String,
       'PUBLISH_TARGET_MISMATCH',
       'Verified host identity/public key differs');
-  return {
+  if (release.legacy) {
+    return PublicationRelease({
+      'receipt': receipt,
+      'baseline': await verifyBaseline(release.compileRoot),
+      'fingerprint': fields['fingerprint']
+    }, release.target);
+  }
+  return PublicationRelease({
     'receipt': receipt,
-    'baseline': await verifyBaseline(root),
+    'compile': release.compile,
+    'release': release.release,
     'fingerprint': fields['fingerprint']
-  };
+  }, release.target);
+}
+
+Future<Map<String, dynamic>> publicationBaseline(
+        BaselineStore store, Map<String, String> fields, String work,
+        {BaselineArchive? archive}) async =>
+    (await resolvePublication(store, fields, work, archive: archive)).identity;
+
+/// The signed `target` of a patch package, or null when it has none.
+Map<String, dynamic>? patchTarget(Uint8List bytes) {
+  try {
+    final entry = ZipDecoder()
+        .decodeBytes(bytes.sublist(146))
+        .findFile('patch_manifest.json');
+    final manifest = entry == null
+        ? null
+        : jsonDecode(utf8.decode(entry.content as List<int>));
+    final target = manifest is Map ? manifest['target'] : null;
+    return target is Map ? Map<String, dynamic>.from(target) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// A schema 5 release accepts only patches pinned to it; a legacy release
+/// (one fingerprint per release) also accepts unpinned patches.
+void checkPatchTarget(Uint8List patch, Map<String, dynamic> baseline,
+    Map<String, dynamic>? expected) {
+  final pinned = baseline.containsKey('release');
+  if (pinned) {
+    expected =
+        releaseTarget(Map<String, dynamic>.from(baseline['release'] as Map));
+  }
+  final actual = patchTarget(patch);
+  if (actual == null) {
+    require(!pinned, 'PUBLISH_TARGET_MISMATCH',
+        'Patch is not pinned to a release; create it with this CLI version');
+    return;
+  }
+  require(expected != null && canonical(actual) == canonical(expected),
+      'PUBLISH_TARGET_MISMATCH', 'Patch was created for a different release');
+}
+
+/// Releases built from the same Dart sources share a fingerprint, and the
+/// device keeps one patch sequence per fingerprint: a new patch must exceed
+/// every sequence already published for another release of that fingerprint.
+void sharedFingerprintPolicy(Map<String, String> f, Map catalog) {
+  if (f['action'] != 'publish') return;
+  var high = 0;
+  for (final record in (catalog['releases'] as Map).values) {
+    if (record is! Map || record['fingerprint'] != f['fingerprint']) continue;
+    Map signed;
+    try {
+      signed = jsonDecode(utf8.decode(base64Decode(
+          (jsonDecode(record['wire'] as String) as Map)['payload']
+              as String))) as Map;
+    } catch (_) {
+      // A rejection here releases the operation gate; a raw error would not.
+      throw Failure('PUBLISH_SEQUENCE_CONFLICT',
+          'A catalog record for this fingerprint is malformed; its sequence cannot be checked');
+    }
+    if (signed['flavor'] == f['flavor'] &&
+        signed['version_code'] == f['version_code']) {
+      continue;
+    }
+    final seq = record['high_seq'] ?? 0;
+    require(seq is int, 'PUBLISH_SEQUENCE_CONFLICT',
+        'A catalog record for this fingerprint has no valid sequence');
+    if (seq as int > high) high = seq;
+  }
+  require(int.parse(f['patch_seq']!) > high, 'PUBLISH_SEQUENCE_CONFLICT',
+      'Patch sequence must exceed $high, already published for another release with this fingerprint');
 }
 
 Future<void> verifyPublicationPatch(Uint8List bytes, Map<String, String> fields,
@@ -106,6 +197,7 @@ class PublicationPipeline {
       required String publicKey,
       required String createdAt,
       required Map<String, dynamic> baseline,
+      Map<String, dynamic>? target,
       Uint8List? patch,
       bool commit = false,
       bool pin = false}) async {
@@ -141,6 +233,7 @@ class PublicationPipeline {
           baseline['receipt']['public_key'] as String,
           p.join(work, 'patch-verify'),
           commands);
+      checkPatchTarget(patch, baseline, target);
     } else {
       require(
           patch == null, 'PUBLISH_CONFIG_INVALID', 'Withdrawal has no payload');
@@ -173,13 +266,17 @@ class PublicationPipeline {
           'PUBLISH_CONFLICT',
           'Operation was reused or rejected; prepare a fresh operation');
     }
-    if (completed == null) {
+    // A resumed pending operation is checked inside the transaction, where a
+    // rejection also releases its gate.
+    final resumed = pending != null && pending['operation'] == operation;
+    if (completed == null && !resumed) {
       publicationPolicy(
           f,
           previous == null
               ? null
               : (catalog['releases'] as Map)[previous] as Map,
           expectedRevision);
+      sharedFingerprintPolicy(f, catalog);
     }
     if (!commit) {
       return {
@@ -197,6 +294,7 @@ class PublicationPipeline {
       final old =
           oldId == null ? null : (current['releases'] as Map)[oldId] as Map;
       publicationPolicy(f, old, expectedRevision);
+      sharedFingerprintPolicy(f, current);
       if (patch != null) {
         final existing = await transaction.store.read(name!);
         if (existing == null) {

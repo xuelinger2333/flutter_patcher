@@ -58,9 +58,7 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
   // Engine schema 2 lists one gen_snapshot per build host; schema 1
   // releases carry only linux-x64. Tools manifests stay at schema 1.
   final schema = value['schema'];
-  valid(
-      schema is int &&
-          (schema == 1 || (kind == 'engine' && schema == 2)),
+  valid(schema is int && (schema == 1 || (kind == 'engine' && schema == 2)),
       'Unknown $kind manifest schema.');
   valid(
       value['flutter_version'] == sdk.version &&
@@ -90,8 +88,8 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
       kind == 'engine' ? 'ENGINE_ARTIFACT_MISSING' : 'TOOLS_ARTIFACT_MISSING';
   valid(files is List, 'Invalid file list.');
   if (kind == 'tools') {
-    require(
-        (files as List).length == 1, missing, 'Missing required artifact roles.');
+    require((files as List).length == 1, missing,
+        'Missing required artifact roles.');
   }
   final seen = <String>{};
   final snapshotHosts = <String>[];
@@ -156,8 +154,8 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
     }
   }
   if (kind == 'engine') {
-    require(seen.length == expected.length && snapshotHosts.isNotEmpty,
-        missing, 'Missing required artifact roles.');
+    require(seen.length == expected.length && snapshotHosts.isNotEmpty, missing,
+        'Missing required artifact roles.');
     valid(snapshotHosts.contains('linux-x64'), 'Missing primary gen_snapshot.');
     // A release built for other hosts is not corrupt; it simply has nothing
     // for this machine.
@@ -165,7 +163,7 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
         mine != null,
         missing,
         'Engine release has no gen_snapshot for host ${sdk.host.key} '
-            '(release provides ${snapshotHosts.join(', ')}).');
+        '(release provides ${snapshotHosts.join(', ')}).');
     if (schema == 2) {
       valid(verificationPassed(mine!['verify']),
           'gen_snapshot verification for ${sdk.host.key} did not pass.');

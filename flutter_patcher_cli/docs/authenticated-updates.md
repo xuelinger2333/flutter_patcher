@@ -24,8 +24,12 @@ Only public keys belong here. Keep the root seed offline. Use separately generat
 `keys init` directories for patch, publisher and trust root roles.
 
 The CLI places the policy in the native APK, verifies its packaged bytes, and
-binds its SHA256 to a schema-3 baseline/v2 fingerprint. Policy changes require a
-new host APK and matching baseline. Schemas 1/2 keep their existing fingerprints.
+binds its SHA256 to a v2 fingerprint. The policy is stored in the compile object
+of the archived baseline; archiving checks that its application_id, version_code,
+flavor, abi and fptc_key equal the release being archived. Because the policy
+names one release, every policy build has its own fingerprint and compile object.
+Policy changes require a new host APK and matching baseline. Builds without a
+policy keep their existing fingerprints.
 The APK fixes the scope and FPTC key; Dart init/saveConfig cannot replace them.
 
 ## Device flow

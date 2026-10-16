@@ -36,7 +36,8 @@ Future<int> patchCommand(ArgResults args) async {
         p.absolute(args['project'] as String? ?? Directory.current.path);
     final request = PatchRequest(
         project: project,
-        fingerprint: value('fingerprint'),
+        fingerprint: args['fingerprint'] as String?,
+        flavor: args['flavor'] as String? ?? 'default',
         privateKey: await File(value('private-key')).readAsString(),
         output: p.absolute(args['out'] as String? ??
             p.join(project, '.dart_tool/flutter_patcher/patches',

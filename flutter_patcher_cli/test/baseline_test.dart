@@ -7,6 +7,7 @@ import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/baseline/archive.dart';
 import 'package:flutter_patcher_cli/src/baseline/manifest.dart';
 import 'package:flutter_patcher_cli/src/baseline/repository.dart';
+import 'package:flutter_patcher_cli/src/baseline/split.dart';
 import 'package:flutter_patcher_cli/src/baseline/store.dart';
 
 Map<String, dynamic> metadata() => {
@@ -55,6 +56,55 @@ Future<void> fixture(String root) async {
       await createManifest(root, metadata()));
 }
 
+const testSeed = 'nWGxne/9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A=';
+const testPublicKey = '11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=';
+
+/// Metadata of a completed build output (what build android archives).
+Map<String, dynamic> buildMetadata() =>
+    {...metadata(), 'schema': 2, 'runtime_bootstrap': true};
+
+/// [fixture] plus the build evidence a schema 2 build output carries.
+Future<void> buildFixture(String root, {String versionCode = '42'}) async {
+  await fixture(root);
+  await writeObject(p.join(root, 'compiler_interface.json'), {
+    'callable': [
+      {'library': 'package:app/main.dart', 'class': 'Widget'}
+    ]
+  });
+  await writeReceipt(root, versionCode: versionCode);
+}
+
+/// Rewrites build_receipt.json from the current files; [overrides] win.
+Future<void> writeReceipt(String root,
+    {String versionCode = '42',
+    Map<String, dynamic> overrides = const {}}) async {
+  final m = metadata();
+  final iface = await hashFile(p.join(root, 'dynamic_interface.yaml'));
+  await writeObject(p.join(root, 'build_receipt.json'), {
+    'schema': 1,
+    'application_id': 'com.example.app',
+    'version_code': versionCode,
+    'apk_sha256': 'd' * 64,
+    'libapp_sha256': await hashFile(p.join(root, 'libapp.so')),
+    'resources': {'schema': 1, 'files': {}, 'manifest': {}},
+    'app_only': true,
+    'libraries': 1,
+    'source_files': 1,
+    'main_library': 'package:app/main.dart',
+    'runtime_bootstrap': true,
+    'interface_sha256': iface,
+    'fingerprint': fingerprint(await hashFile(p.join(root, 'app.dill')),
+        m['engine_commit'] as String, iface, m['flutter_version'] as String),
+    'public_key': testPublicKey,
+    'package_inputs': {
+      'app': {'native': false, 'native_files': {}}
+    },
+    'build_host': {'os': 'windows', 'arch': 'x64'},
+    'crlf_dart_sources': [],
+    ...overrides,
+  });
+}
+
 class CountingStore implements BaselineStore {
   final BaselineStore inner;
   int reads = 0;
@@ -85,7 +135,7 @@ void main() {
   setUp(() async {
     temp = await Directory.systemTemp.createTemp('flutter-patcher-test-');
     input = p.join(temp.path, 'input');
-    await fixture(input);
+    await buildFixture(input);
     storePath = p.join(temp.path, 'store');
     await Directory(storePath).create();
     store = CountingStore(FileBaselineStore(storePath));
@@ -207,14 +257,15 @@ void main() {
   });
   group('real zstd archives', () {
     test('wrong selected SDK does not quarantine an intact cache', () async {
-      final saved = await repository.save(input, metadata(),
+      final saved = await repository.save(input, buildMetadata(),
           flavor: 'prod', versionCode: '42');
       final id = saved['fingerprint'] as String;
       await expectLater(
-          repository.fetch(id, sdkRoot: p.join(temp.path, 'wrong-sdk')),
+          repository.fetchCompile(id, sdkRoot: p.join(temp.path, 'wrong-sdk')),
           throwsA(isA<Failure>()));
-      expect(await Directory(p.join(repository.cache, id)).exists(), true);
-      await verifyBaseline(p.join(repository.cache, id));
+      expect(await Directory(p.join(repository.cache, 'compile', id)).exists(),
+          true);
+      await verifyCompile(p.join(repository.cache, 'compile', id));
     });
     test('CLI save/fetch/verify and archive failure have meaningful exit codes',
         () async {
@@ -223,11 +274,30 @@ void main() {
           '.dart_tool/flutter_patcher/baseline-cli-${DateTime.now().microsecondsSinceEpoch}');
       final secondCache = '$firstCache-second';
       final descriptor = p.join(temp.path, 'metadata.json');
-      await writeObject(descriptor, metadata());
+      await writeObject(descriptor, buildMetadata());
       Future<ProcessResult> cli(List<String> args) => Process.run(
           Platform.resolvedExecutable,
           [p.join(package, 'bin/flutter_patcher.dart'), 'baseline', ...args],
           workingDirectory: package);
+      final legacyDescriptor = p.join(temp.path, 'legacy-metadata.json');
+      await writeObject(legacyDescriptor, metadata());
+      final legacy = await cli([
+        '--action',
+        'save',
+        '--baseline',
+        input,
+        '--metadata',
+        legacyDescriptor,
+        '--baseline-store',
+        Uri.directory(storePath).toString(),
+        '--version-code',
+        '42',
+        '--cache-dir',
+        firstCache
+      ]);
+      expect(legacy.exitCode, isNot(0));
+      expect((jsonDecode(legacy.stderr as String) as Map)['code'],
+          'BASELINE_SCHEMA_UNSUPPORTED');
       final saved = await cli([
         '--action',
         'save',
@@ -238,7 +308,7 @@ void main() {
         '--baseline-store',
         Uri.directory(storePath).toString(),
         '--version-code',
-        '8',
+        '42',
         '--cache-dir',
         firstCache
       ]);
@@ -263,7 +333,7 @@ void main() {
       ]);
       expect(wrongSdk.exitCode, isNot(0));
       expect(
-          await File(p.join(storePath, 'release-default-99-arm64-v8a.json'))
+          await File(p.join(storePath, 'release-default-99-arm64-v8a.tar.zst'))
               .exists(),
           false);
       final fetched = await cli([
@@ -277,6 +347,9 @@ void main() {
         secondCache
       ]);
       expect(fetched.exitCode, 0, reason: '${fetched.stderr}');
+      final compileCache =
+          (jsonDecode(fetched.stdout as String) as Map)['cache'] as String;
+      expect(p.split(compileCache).reversed.take(2), [id, 'compile']);
       final offline = await cli([
         '--action',
         'fetch',
@@ -287,6 +360,22 @@ void main() {
         secondCache
       ]);
       expect(offline.exitCode, 0, reason: '${offline.stderr}');
+      final verified =
+          await cli(['--action', 'verify', '--baseline', compileCache]);
+      expect(verified.exitCode, 0, reason: '${verified.stderr}');
+      expect((jsonDecode(verified.stdout as String) as Map)['kind'], 'compile');
+      final release = await cli([
+        '--action',
+        'release',
+        '--version-code',
+        '42',
+        '--baseline-store',
+        Uri.directory(storePath).toString(),
+        '--cache-dir',
+        secondCache
+      ]);
+      expect(release.exitCode, 0, reason: '${release.stderr}');
+      expect((jsonDecode(release.stdout as String) as Map)['fingerprint'], id);
       final failed = await cli([
         '--action',
         'save',
@@ -295,7 +384,7 @@ void main() {
         '--metadata',
         descriptor,
         '--version-code',
-        '9',
+        '42',
         '--baseline-store',
         Uri.directory(p.join(temp.path, 'missing-store')).toString(),
         '--cache-dir',
@@ -304,78 +393,99 @@ void main() {
       expect(failed.exitCode, isNot(0));
       expect((jsonDecode(failed.stderr as String) as Map)['status'], 'failed');
     });
-    test('save, independent cache fetch, offline hit and sidecar binding',
+    test('save, independent cache fetch, offline hit and release binding',
         () async {
-      final saved = await repository.save(input, metadata(),
+      final saved = await repository.save(input, buildMetadata(),
           flavor: 'prod', versionCode: '42');
       final id = saved['fingerprint'] as String;
+      expect(saved['release_status'], 'created');
       final other = BaselineRepository(p.join(temp.path, 'cache-b'), store);
-      final root = await other.fetch(id);
-      expect(canonical(await verifyBaseline(root)),
-          canonical(await verifyBaseline(input)));
+      final root = await other.fetchCompile(id);
+      expect(canonical(await verifyCompile(root)),
+          canonical(await verifyCompile(saved['compile']['cache'] as String)));
       final before = store.reads;
-      expect(await other.fetch(id), root);
+      expect(await other.fetchCompile(id), root);
       expect(store.reads, before);
       expect(
           await BaselineRepository(p.join(temp.path, 'cache-b'), null)
-              .fetch(id),
+              .fetchCompile(id),
           root);
       expect((await other.verifyRelease('prod', '42'))['fingerprint'], id);
-      await repository.save(input, metadata(),
+      final again = await repository.save(input, buildMetadata(),
           flavor: 'prod', versionCode: '42');
+      expect(again['release_status'], 'existing');
     });
-    test('same fingerprint with a different libapp never overwrites', () async {
-      final saved = await repository.save(input, metadata(),
+    test('a new libapp is a new release; the same slot never changes',
+        () async {
+      final saved = await repository.save(input, buildMetadata(),
           flavor: 'prod', versionCode: '42');
-      final object =
-          p.join(storePath, 'baseline-${saved['fingerprint']}.tar.zst');
+      final object = p.join(storePath, 'release-prod-42-arm64-v8a.tar.zst');
       final hash = await hashFile(object);
       await File(p.join(input, 'libapp.so')).writeAsString('different binary');
+      await writeReceipt(input,
+          versionCode: '42', overrides: {'apk_sha256': 'e' * 64});
       await expectLater(
-          repository.save(input, metadata(), flavor: 'prod', versionCode: '43'),
+          repository.save(input, buildMetadata(),
+              flavor: 'prod', versionCode: '42'),
           throwsA(isA<Failure>()
-              .having((e) => e.code, 'code', 'BASELINE_CONTENT_CONFLICT')));
+              .having((e) => e.code, 'code', 'BASELINE_RELEASE_CONFLICT')
+              .having(
+                  (e) => e.message, 'message', contains('files.libapp.so'))));
       expect(await hashFile(object), hash);
-      expect(
-          await File(p.join(storePath, 'release-prod-43-arm64-v8a.json'))
-              .exists(),
-          false);
+      await writeReceipt(input,
+          versionCode: '43', overrides: {'apk_sha256': 'e' * 64});
+      final next = await repository.save(input, buildMetadata(),
+          flavor: 'prod', versionCode: '43');
+      expect(next['fingerprint'], saved['fingerprint']);
+      expect(next['compile']['status'], 'existing');
+      expect(next['release_status'], 'created');
     });
-    test('upload failure leaves no successful sidecar or promoted cache',
+    test('upload failure leaves no successful release or promoted cache',
         () async {
       store.failPut = true;
       await expectLater(
-          repository.save(input, metadata(), flavor: 'prod', versionCode: '42'),
+          repository.save(input, buildMetadata(),
+              flavor: 'prod', versionCode: '42'),
           throwsA(isA<Failure>()));
       expect(
-          await File(p.join(storePath, 'release-prod-42-arm64-v8a.json'))
+          await File(p.join(storePath, 'release-prod-42-arm64-v8a.tar.zst'))
               .exists(),
           false);
       final id = (await verifyBaseline(input))['fingerprint'] as String;
-      expect(await Directory(p.join(repository.cache, id)).exists(), false);
+      expect(await Directory(p.join(repository.cache, 'compile', id)).exists(),
+          false);
     });
     test('damaged cache is quarantined and restored from archive', () async {
-      final saved = await repository.save(input, metadata(),
+      final saved = await repository.save(input, buildMetadata(),
           flavor: 'prod', versionCode: '42');
       final id = saved['fingerprint'] as String;
-      await File(p.join(repository.cache, id, 'app.dill'))
+      await File(p.join(repository.cache, 'compile', id, 'app.dill'))
           .writeAsString('broken');
-      await verifyBaseline(await repository.fetch(id));
+      await verifyCompile(await repository.fetchCompile(id));
       expect(
-          (await Directory(repository.cache).list().toList())
+          (await Directory(p.join(repository.cache, 'compile')).list().toList())
               .any((e) => e.path.contains('.invalid-')),
           true);
     });
-    test('changed sidecar cannot bind a valid archive to another build',
+    test('a tampered release object cannot bind a valid compile object',
         () async {
-      await repository.save(input, metadata(),
+      await repository.save(input, buildMetadata(),
           flavor: 'prod', versionCode: '42');
-      final path = p.join(storePath, 'release-prod-42-arm64-v8a.json');
-      final link = await baselineObject(path);
-      link['libapp_sha256'] = 'f' * 64;
-      await writeObject(path, link);
+      final path = p.join(storePath, 'release-prod-42-arm64-v8a.tar.zst');
+      final codec = BaselineArchive();
+      final raw = p.join(temp.path, 'release.tar');
+      await codec.codec(path, raw, decode: true);
+      final bytes = await File(raw).readAsBytes();
+      // The first entry is libapp.so; flip one payload byte.
+      bytes[512] ^= 1;
+      await File(raw).writeAsBytes(bytes);
+      await File(path).delete();
+      await codec.codec(raw, path);
       await expectLater(
-          repository.verifyRelease('prod', '42'), throwsA(isA<Failure>()));
+          BaselineRepository(p.join(temp.path, 'cache-c'), store)
+              .verifyRelease('prod', '42'),
+          throwsA(isA<Failure>()
+              .having((e) => e.code, 'code', 'BASELINE_INVALID')));
     });
     test('unsafe tar name and links rejected before extraction', () async {
       final codec = BaselineArchive();

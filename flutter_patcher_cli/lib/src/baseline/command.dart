@@ -6,6 +6,7 @@ import '../core.dart';
 import '../sdk/host.dart';
 import 'manifest.dart';
 import 'repository.dart';
+import 'split.dart';
 import 'store.dart';
 
 ArgParser baselineOptions() => ArgParser()
@@ -15,7 +16,8 @@ ArgParser baselineOptions() => ArgParser()
   ..addOption('action',
       allowed: ['save', 'fetch', 'verify', 'release'], defaultsTo: 'verify')
   ..addOption('baseline',
-      help: 'Completed baseline input directory; never modified.')
+      help:
+          'save: completed build output (never modified); verify: extracted legacy, compile or release object.')
   ..addOption('metadata',
       help:
           'Baseline input metadata JSON (schema/version/engine/build_id/platform).')
@@ -60,12 +62,18 @@ Future<int> baselineCommand(ArgResults args) async {
             versionCode: required('version-code'),
             abi: required('abi'));
       case 'fetch':
-        final root =
-            await repository.fetch(required('fingerprint'), sdkRoot: sdk);
+        final fingerprint = required('fingerprint');
+        String root;
+        try {
+          root = await repository.fetchCompile(fingerprint, sdkRoot: sdk);
+        } on Failure catch (e) {
+          if (e.code != 'BASELINE_NOT_FOUND') rethrow;
+          root = await repository.fetch(fingerprint, sdkRoot: sdk);
+        }
         result = {
           'status': 'baseline_verified',
           'cache': root,
-          ...await verifyBaseline(root, sdkRoot: sdk)
+          ...await verifyBaselineDir(root, sdkRoot: sdk)
         };
       case 'release':
         result = {
@@ -77,7 +85,7 @@ Future<int> baselineCommand(ArgResults args) async {
       default:
         result = {
           'status': 'baseline_verified',
-          ...await verifyBaseline(required('baseline'),
+          ...await verifyBaselineDir(required('baseline'),
               expected: args['fingerprint'] as String?, sdkRoot: sdk)
         };
     }

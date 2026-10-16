@@ -9,8 +9,8 @@ import 'sdk/environment.dart';
 import 'interfaces/pipeline.dart';
 import 'baseline/archive.dart' show zstdInstallHint;
 import 'baseline/command.dart';
-import 'baseline/manifest.dart';
 import 'baseline/repository.dart';
+import 'baseline/split.dart';
 import 'baseline/store.dart';
 import 'build/command.dart';
 import 'build/line_endings.dart';
@@ -52,10 +52,13 @@ ArgParser environmentOptions() => ArgParser()
   ..addOption('baseline-store',
       help: 'Optional file://, s3:// or HTTPS baseline store to probe.')
   ..addOption('baseline',
-      help: 'Optional extracted baseline directory for full integrity checks.')
+      help:
+          'Optional extracted baseline (legacy, compile or release object) for full integrity checks.')
   ..addOption('version-code',
-      help: 'Optional versionCode for a release sidecar binding check.')
-  ..addOption('flavor', help: 'Flavor used in the release sidecar filename.')
+      help: 'Optional versionCode for a release baseline binding check.')
+  ..addOption('flavor',
+      help:
+          'Release flavor; patch uses "default" when omitted, doctor needs it for the release check.')
   ..addOption('apk',
       help: 'Optional existing APK whose engine should be checked.');
 
@@ -64,7 +67,9 @@ ArgParser parser() {
     ..addOption('project')
     ..addOption('target', defaultsTo: 'lib/main.dart')
     ..addOption('out')
-    ..addOption('fingerprint')
+    ..addOption('fingerprint',
+        help:
+            'Optional; must match the release. Required only for a legacy baseline without a release binding.')
     ..addOption('seq')
     ..addOption('previous-seq')
     ..addMultiOption('assets',
@@ -383,13 +388,16 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
       pending('baseline_files', 'No extracted baseline supplied.');
     } else {
       await check('baseline_files', () async {
-        final m = await verifyBaseline(baseline, sdkRoot: sdk.root);
-        require(m['runtime_bootstrap'] != false, 'BASELINE_NOT_RELEASE',
+        final m = await verifyBaselineDir(baseline, sdkRoot: sdk.root);
+        // A release object names its compile identity; a compile object has
+        // no build_id, which belongs to the release.
+        final identity = m['kind'] == 'release' ? m['compile'] as Map : m;
+        require(identity['runtime_bootstrap'] != false, 'BASELINE_NOT_RELEASE',
             'Pipeline validation baseline is not a runtime-enabled release.');
         require(
-            m['flutter_version'] == sdk.version &&
-                m['engine_commit'] == sdk.engine &&
-                m['build_id'] == engine['build_id'],
+            identity['flutter_version'] == sdk.version &&
+                identity['engine_commit'] == sdk.engine &&
+                (m['kind'] == 'compile' || m['build_id'] == engine['build_id']),
             'BASELINE_FINGERPRINT_MISMATCH',
             'Baseline differs from selected Flutter/engine build.');
       }, 'Baseline manifest, files, interface detail, fingerprint and SDK/engine binding verified');
@@ -418,7 +426,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
                 data['build_id'] == engine['build_id'],
             'BASELINE_FINGERPRINT_MISMATCH',
             'Release baseline differs from selected engine build.');
-      }, 'Release sidecar is bound to a verified baseline and selected engine build');
+      }, 'Release baseline (schema 5 release object or legacy sidecar) is bound to a verified baseline and selected engine build');
     }
     final apk = args['apk'] as String?;
     if (apk == null) {

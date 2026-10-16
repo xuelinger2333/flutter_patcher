@@ -26,8 +26,10 @@ abstract class BaselineStore {
   }
 }
 
+/// Legacy `baseline-<fp>` + sidecar `release-….json`; schema 5 `compile-<fp>`,
+/// `release-….tar.zst` and the APK attestation `apk-<sha256>.json`.
 void objectName(String name) => require(
-    RegExp(r'^(baseline-[0-9a-f]{64}\.tar\.zst|release-[A-Za-z0-9_-]+-[0-9]+-arm64-v8a\.json)$')
+    RegExp(r'^((baseline|compile)-[0-9a-f]{64}\.tar\.zst|release-[A-Za-z0-9_-]+-[0-9]+-arm64-v8a\.(json|tar\.zst)|apk-[0-9a-f]{64}\.json)$')
         .hasMatch(name),
     'CONFIG_INVALID',
     'Invalid baseline object name.');

@@ -92,8 +92,11 @@ class PublicationTransaction {
     } on Failure catch (error) {
       // These checks run before any side effects. Release a stale plan's gate
       // and retain its rejection so a new operation can be planned safely.
-      if (!{'PUBLISH_CONFLICT', 'PUBLISH_RETENTION_STALE'}
-          .contains(error.code)) {
+      if (!{
+        'PUBLISH_CONFLICT',
+        'PUBLISH_SEQUENCE_CONFLICT',
+        'PUBLISH_RETENTION_STALE'
+      }.contains(error.code)) {
         rethrow;
       }
       working.remove('pending');

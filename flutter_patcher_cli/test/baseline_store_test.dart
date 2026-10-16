@@ -3,10 +3,10 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'host_tools.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
-import 'package:flutter_patcher_cli/src/baseline/manifest.dart';
 import 'package:flutter_patcher_cli/src/baseline/repository.dart';
+import 'package:flutter_patcher_cli/src/baseline/split.dart';
 import 'package:flutter_patcher_cli/src/baseline/store.dart';
-import 'baseline_test.dart' show fixture, metadata;
+import 'baseline_test.dart' show buildFixture, buildMetadata, writeReceipt;
 
 void main() {
   late Directory temp;
@@ -92,15 +92,25 @@ void main() {
   });
   test('HTTP complete archive roundtrip into independent cache', () async {
     final input = p.join(temp.path, 'input');
-    await fixture(input);
+    await buildFixture(input, versionCode: '1');
     final first = BaselineRepository(p.join(temp.path, 'one'), store);
-    final saved = await first.save(input, metadata(),
+    final saved = await first.save(input, buildMetadata(),
         flavor: 'default', versionCode: '1');
+    expect(objects.keys.map((k) => k.split('/').last).toSet(), {
+      'compile-${saved['fingerprint']}.tar.zst',
+      'release-default-1-arm64-v8a.tar.zst',
+      'apk-${'d' * 64}.json'
+    });
     final second = BaselineRepository(p.join(temp.path, 'two'), store);
-    final restored = await second.fetch(saved['fingerprint'] as String);
-    expect(canonical(await verifyBaseline(restored)),
-        canonical(await verifyBaseline(input)));
-    await first.save(input, metadata(), flavor: 'default', versionCode: '1');
+    final restored = await second.fetchCompile(saved['fingerprint'] as String);
+    expect(manifestDigest(await verifyCompile(restored)),
+        saved['compile']['manifest_sha256']);
+    expect((await second.verifyRelease('default', '1'))['fingerprint'],
+        saved['fingerprint']);
+    final again = await first.save(input, buildMetadata(),
+        flavor: 'default', versionCode: '1');
+    expect(again['release_status'], 'existing');
+    expect(again['attestation']['status'], 'existing');
   }, tags: 'zstd', skip: skipUnless('zstd') ?? false);
 
   test(
@@ -115,22 +125,32 @@ void main() {
         commands);
     await s3.probe();
     final input = p.join(temp.path, 'input');
-    await fixture(input);
+    await buildFixture(input, versionCode: '1');
     final first = BaselineRepository(p.join(temp.path, 's3-one'), s3);
-    final saved = await first.save(input, metadata(),
+    final saved = await first.save(input, buildMetadata(),
         flavor: 'default', versionCode: '1');
-    await first.save(input, metadata(), flavor: 'default', versionCode: '1');
+    await first.save(input, buildMetadata(),
+        flavor: 'default', versionCode: '1');
     final second = BaselineRepository(p.join(temp.path, 's3-two'), s3);
-    await verifyBaseline(await second.fetch(saved['fingerprint'] as String));
+    await verifyCompile(
+        await second.fetchCompile(saved['fingerprint'] as String));
     expect(
         await s3.get(
             'baseline-${'e' * 64}.tar.zst', p.join(temp.path, 'missing')),
         false);
     await File(p.join(input, 'libapp.so')).writeAsString('new');
+    await writeReceipt(input,
+        versionCode: '1', overrides: {'apk_sha256': 'e' * 64});
     await expectLater(
-        first.save(input, metadata(), flavor: 'default', versionCode: '2'),
+        first.save(input, buildMetadata(), flavor: 'default', versionCode: '1'),
         throwsA(isA<Failure>()
-            .having((e) => e.code, 'code', 'BASELINE_CONTENT_CONFLICT')));
+            .having((e) => e.code, 'code', 'BASELINE_RELEASE_CONFLICT')));
+    await writeReceipt(input,
+        versionCode: '2', overrides: {'apk_sha256': 'e' * 64});
+    expect(
+        (await first.save(input, buildMetadata(),
+            flavor: 'default', versionCode: '2'))['release_status'],
+        'created');
     final unavailable =
         S3BaselineStore(Uri.parse('s3://missing-test-bucket'), commands);
     await expectLater(unavailable.probe(), throwsA(isA<Failure>()));

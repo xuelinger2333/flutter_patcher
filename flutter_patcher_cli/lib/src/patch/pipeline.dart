@@ -20,14 +20,19 @@ class PatchFailure extends Failure {
 }
 
 class PatchRequest {
-  final String project, fingerprint, privateKey, output, target;
+  final String project, privateKey, output, target, flavor;
+
+  /// Optional; when given it must match the resolved release, and it selects
+  /// a legacy baseline that has no release binding.
+  final String? fingerprint;
   final int seq, minBuild;
   final int? previousSeq;
   final bool validationOnly, offline, frameworkReuse;
   final List<String> assets;
   PatchRequest(
       {required this.project,
-      required this.fingerprint,
+      this.fingerprint,
+      this.flavor = 'default',
       required this.privateKey,
       required this.output,
       required this.seq,
@@ -40,13 +45,14 @@ class PatchRequest {
       this.frameworkReuse = false});
   Future<void> validate() async {
     require(
-        baselineHash.hasMatch(fingerprint) &&
+        (fingerprint == null || baselineHash.hasMatch(fingerprint!)) &&
+            RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(flavor) &&
             seq > 0 &&
             seq <= 0xffffffff &&
             minBuild > 0 &&
             (previousSeq == null || (previousSeq! >= 0 && seq > previousSeq!)),
         'PATCH_CONFIG_INVALID',
-        'Invalid fingerprint, build number or sequence');
+        'Invalid fingerprint, flavor, build number or sequence');
     require(
         target.startsWith('lib/') &&
             !target.split('/').contains('..') &&
@@ -85,10 +91,14 @@ class PatchPipeline {
     var phase = 'baseline';
     final reports = <Map<String, dynamic>>[];
     try {
-      final baseline =
-          await baselines.fetch(req.fingerprint, sdkRoot: sdk.root);
-      final manifest = await verifyBaseline(baseline,
-          expected: req.fingerprint, sdkRoot: sdk.root);
+      final resolved = await baselines.resolve(
+          req.flavor, req.minBuild.toString(),
+          expectedFingerprint: req.fingerprint, sdkRoot: sdk.root);
+      final fingerprint = resolved.fingerprint;
+      // Compile inputs come from the compile object; package names, receipt
+      // fields and build_id from the release object.
+      final baseline = resolved.compileRoot, release = resolved.releaseRoot;
+      final manifest = resolved.compile;
       require(
           manifest['flutter_version'] == sdk.version &&
               manifest['engine_commit'] == sdk.engine,
@@ -96,11 +106,11 @@ class PatchPipeline {
           'SDK differs from baseline');
       require(
           req.validationOnly ||
-              ([2, 3, 4].contains(manifest['schema']) &&
+              ([2, 3, 4, 5].contains(manifest['schema']) &&
                   manifest['runtime_bootstrap'] == true),
           'BASELINE_NOT_RELEASE',
           'A baseline archived by build android is required');
-      final receipt = await readObject(p.join(baseline, 'build_receipt.json'));
+      final receipt = resolved.receipt;
       require(
           req.minBuild.toString() == receipt['version_code'],
           'PATCH_BASELINE_INCOMPATIBLE',
@@ -114,8 +124,9 @@ class PatchPipeline {
       require(usage.contains('compile-patch'), 'TOOLS_VERSION_UNSUPPORTED',
           'Tools with compile-patch support are required; update the tools release');
       final partitionPath = p.join(baseline, 'framework_partition.json');
-      final partition =
-          manifest['schema'] == 4 ? await baselineObject(partitionPath) : null;
+      final partition = manifest.containsKey('framework_partition_sha256')
+          ? await baselineObject(partitionPath)
+          : null;
       phase = 'sources';
       final workspace = BuildWorkspace(work);
       final project =
@@ -132,7 +143,7 @@ class PatchPipeline {
           cwd: project);
       final config = p.join(project, '.dart_tool/package_config.json');
       final oldRoots =
-          await packageRoots(p.join(baseline, 'package_config.json'));
+          await packageRoots(p.join(release, 'package_config.json'));
       final pubspec =
           loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
               as Map;
@@ -297,8 +308,8 @@ class PatchPipeline {
       Future<Map<String, dynamic>> compile(bool emit,
           {bool reuse = false}) async {
         phase = '$tier-${emit ? 'emit' : 'check'}';
-        await File(entry).writeAsString(patchEntry(names[app]!,
-            req.target.substring(4), req.seq, req.fingerprint, tier,
+        await File(entry).writeAsString(patchEntry(
+            names[app]!, req.target.substring(4), req.seq, fingerprint, tier,
             resources: resources));
         final input = p.join(work, '$phase-request.json'),
             output = p.join(work, '$phase-report.json');
@@ -306,7 +317,7 @@ class PatchPipeline {
           'tier': tier,
           'emit': emit,
           'seq': req.seq,
-          'fingerprint': req.fingerprint,
+          'fingerprint': fingerprint,
           'entry': 'package:${names[app]}/__patch_entry.dart',
           'packages': carryPackages ?? remap['packages'],
           'baseline': p.join(baseline, 'app.dill'),
@@ -437,24 +448,25 @@ class PatchPipeline {
           metadata: {
             'format_version': 1,
             'patch_seq': req.seq,
-            'fingerprint': req.fingerprint,
+            'fingerprint': fingerprint,
             'tier': tier,
             'flutter_version': sdk.version,
             'engine_commit': sdk.engine,
-            'build_id': manifest['build_id'],
+            'build_id': resolved.buildId,
+            // Signed: publication accepts the patch for this release only.
+            if (resolved.target != null) 'target': resolved.target,
             if (frameworkReuseInfo != null)
               'framework_reuse': frameworkReuseInfo
           });
       await workspace.verifyOriginals();
-      await verifyBaseline(baseline,
-          expected: req.fingerprint, sdkRoot: sdk.root);
+      await baselines.recheck(resolved, sdkRoot: sdk.root);
       final report = <String, Object?>{
         'status':
             req.validationOnly ? 'patch_pipeline_validated' : 'patch_created',
         'platform': 'android',
         'abi': 'arm64-v8a',
         'strategy': 'bytecode',
-        'fingerprint': req.fingerprint,
+        'fingerprint': fingerprint,
         'patch_seq': req.seq,
         'min_build': req.minBuild,
         'tier': tier,
@@ -473,6 +485,11 @@ class PatchPipeline {
         'checks': reports,
         'device_verified': false,
         'release_baseline_verified': !req.validationOnly,
+        'release': resolved.report,
+        'baseline_cache': {
+          'compile': resolved.compileRoot,
+          'release': resolved.releaseRoot
+        },
         'work': work
       };
       final pending = temporaryName(p.absolute(req.output));

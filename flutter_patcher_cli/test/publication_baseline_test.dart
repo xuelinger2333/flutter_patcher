@@ -7,10 +7,31 @@ import 'package:flutter_patcher_cli/src/core.dart';
 import 'package:flutter_patcher_cli/src/baseline/repository.dart';
 import 'package:flutter_patcher_cli/src/baseline/store.dart';
 import 'package:flutter_patcher_cli/src/publish/pipeline.dart';
-import 'package:flutter_patcher_cli/src/publish/transaction.dart';
-import 'package:flutter_patcher_cli/src/crypto/signing.dart';
+import 'package:flutter_patcher_cli/src/patch/package.dart';
 import 'package:flutter_patcher_cli/src/cli.dart';
 import 'baseline_test.dart' as base;
+
+/// A signed patch package, as patch android writes it; [target] pins it to
+/// one release.
+Future<Uint8List> testPatch(String dir, String fingerprint, int seq,
+    {Map<String, dynamic>? target}) async {
+  final work = await Directory(dir).createTemp('patch-');
+  final module = p.join(work.path, 'module.bc');
+  await File(module).writeAsBytes(List.filled(128, 1));
+  final packed = await packPatch(
+      module: module,
+      work: work.path,
+      metadata: {
+        'format_version': 1,
+        'patch_seq': seq,
+        'fingerprint': fingerprint,
+        'tier': 'lean',
+        if (target != null) 'target': target,
+      },
+      key: signingKey(base.testSeed),
+      commands: Commands(work.path));
+  return File(packed['file'] as String).readAsBytes();
+}
 
 void main() {
   test(
@@ -45,7 +66,7 @@ void main() {
     });
     await Directory(p.join(temp.path, 'store')).create();
     final store = FileBaselineStore(p.join(temp.path, 'store'));
-    await BaselineRepository(p.join(temp.path, 'save'), store)
+    final saved = await BaselineRepository(p.join(temp.path, 'save'), store)
         .save(input, metadata, flavor: 'default', versionCode: '1');
     final fields = {
       'application_id': 'com.example.app',
@@ -61,18 +82,13 @@ void main() {
         publicationBaseline(store, {...fields, 'application_id': 'other.app'},
             p.join(temp.path, 'wrong')),
         throwsA(isA<Failure>()));
-    final h = (ByteData(82)
-          ..setUint32(0, 0x46505443)
-          ..setUint16(4, 1)
-          ..setUint32(38, 1)
-          ..setUint64(42, 1))
-        .buffer
-        .asUint8List();
-    h.setRange(6, 38, hexBytes(fp));
-    h.setRange(50, 82, hexBytes(digest([7])));
-    final signature = signMessage([...h, 7], seed, public);
     final patch = File(p.join(temp.path, 'patch.fptc'));
-    await patch.writeAsBytes([...h, ...signature, 7]);
+    await patch.writeAsBytes(await testPatch(temp.path, fp, 1, target: {
+      'flavor': 'default',
+      'version_code': '1',
+      'abi': 'arm64-v8a',
+      'release_manifest_sha256': saved['release']['manifest_sha256'],
+    }));
     final priv = File(p.join(temp.path, 'private'));
     await priv.writeAsString(seed);
     final pub = File(p.join(temp.path, 'public'));
@@ -130,13 +146,14 @@ void main() {
         await runCli(
             ['publish', '--production', '--request', req.path, '--commit']),
         0);
-    await File(p.join(temp.path, 'store', 'baseline-$fp.tar.zst')).delete();
+    await File(p.join(temp.path, 'store', 'compile-$fp.tar.zst')).delete();
     await expectLater(
         publicationBaseline(store, fields, p.join(temp.path, 'new-fetch')),
         throwsA(isA<Failure>()));
     // The previous successful cache still exists, but a fresh verification cannot use it.
     expect(
-        await Directory(p.join(temp.path, 'fetch', 'baseline-cache', fp))
+        await Directory(
+                p.join(temp.path, 'fetch', 'baseline-cache', 'compile', fp))
             .exists(),
         true);
   }, tags: 'zstd', skip: skipUnless('zstd') ?? false);

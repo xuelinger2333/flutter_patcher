@@ -57,10 +57,28 @@ revision after conflict; inspect the current publication and prepare a new reque
 
 `store` must be a dedicated application namespace. Use `file:///...` for local
 integration. Do not overlap a file publication namespace with its baseline store.
-Old baseline archives remain unchanged. Their sidecar and full archive must exist
-remotely; each operation verifies them through a fresh cache, including the
-application/version/public key in the integrity-protected build receipt.
-The existing baseline fingerprint and FPTC signature are verified before upload.
+The target release is resolved by `flavor` + `version_code`: a schema 5 release
+object and the compile object it references, or a legacy sidecar and its full
+archive. Both must exist remotely; each operation verifies them through a fresh
+cache, including the application/version/public key in the release receipt (or
+the legacy build receipt). The release fingerprint and FPTC signature are
+verified before upload.
+
+A patch for a schema 5 release must carry a signed `target` (flavor, version
+code, ABI, release manifest digest) in its `patch_manifest.json` that names this
+release; otherwise publication fails with `PUBLISH_TARGET_MISMATCH`. Unpinned
+patches are accepted only for legacy releases. Releases built from the same Dart
+sources share a fingerprint, and the device keeps one patch sequence per
+fingerprint, so `patch_seq` must exceed every sequence already published for
+another release with that fingerprint (`PUBLISH_SEQUENCE_CONFLICT`). When a
+schema 5 release and an equivalent legacy sidecar both exist, the legacy identity
+is used, so the intent digest of an operation prepared earlier does not change.
+
+The baseline store must report a missing object as HTTP 404 or S3 `NoSuchKey`.
+Release resolution checks for objects that normally do not exist (a legacy
+sidecar beside a schema 5 release); a store that answers 403/AccessDenied instead,
+such as an S3 role without `s3:ListBucket`, fails with
+`BASELINE_STORE_UNREACHABLE` naming the object.
 
 S3 authentication uses the normal AWS environment/profile chain. For R2 or an
 S3-compatible service set `FLUTTER_PATCHER_S3_ENDPOINT` to its HTTPS service

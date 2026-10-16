@@ -33,12 +33,12 @@ List<String> manifestDifferences(
       for (final k in {...a.keys, ...b.keys}.toList()..sort())
         if (canonical(a[k]) != canonical(b[k]))
           if (k == 'files' && a[k] is Map && b[k] is Map) ...[
-            for (final name in {
-              ...baselineFiles,
-              ...buildBaselineFiles,
-              'host_policy.json',
-              'framework_partition.json'
-            })
+            for (final name
+                in {
+              ...(a[k] as Map).keys.cast<String>(),
+              ...(b[k] as Map).keys.cast<String>()
+            }.toList()
+                  ..sort())
               if (canonical(a[k][name]) != canonical(b[k][name])) 'files.$name'
           ] else
             k,
@@ -104,6 +104,27 @@ String fingerprint(
       .toString();
 }
 
+final buildIdPattern = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+
+void validateSdkRelease(Map<String, dynamic> m) => valid(
+    _version.hasMatch('${m['flutter_version']}') &&
+        _commit.hasMatch('${m['engine_commit']}'),
+    'Invalid baseline Flutter version/engine.');
+
+/// Flutter release, engine and SDK-relative platform: what patch compilation
+/// needs from the selected SDK.
+void validateSdkIdentity(Map<String, dynamic> m) {
+  validateSdkRelease(m);
+  final platform = m['platform'];
+  valid(
+      platform is Map &&
+          platform['path'] ==
+              'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill' &&
+          baselineHash.hasMatch('${platform['sha256']}'),
+      'Invalid SDK-relative platform identity.');
+}
+
 void validateMetadata(Map<String, dynamic> m) {
   valid(
       (m['schema'] == 3) ||
@@ -134,13 +155,7 @@ void validateMetadata(Map<String, dynamic> m) {
             m['runtime_bootstrap'] == true,
         'Framework partition identity missing.');
   }
-  final platform = m['platform'];
-  valid(
-      platform is Map &&
-          platform['path'] ==
-              'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill' &&
-          baselineHash.hasMatch('${platform['sha256']}'),
-      'Invalid SDK-relative platform identity.');
+  validateSdkIdentity(m);
 }
 
 Future<void> validateDetails(String root, String interfaceHash) async {
@@ -201,12 +216,12 @@ Future<void> validateDetails(String root, String interfaceHash) async {
       'Detailed interface entries differ from YAML.');
 }
 
-Future<Map<String, dynamic>> createManifest(
-    String root, Map<String, dynamic> metadata) async {
-  validateMetadata(metadata);
+/// Hashes each payload file; every one must exist, be nonempty and no link.
+Future<Map<String, dynamic>> hashPayload(
+    String root, Iterable<String> names) async {
   final files = <String, dynamic>{};
   var total = 0;
-  for (final name in payloadFiles(metadata)) {
+  for (final name in names) {
     final path = p.join(root, name);
     await rejectLinks(path);
     valid(await File(path).exists() && await File(path).length() > 0,
@@ -218,23 +233,16 @@ Future<Map<String, dynamic>> createManifest(
       'size': await File(path).length()
     };
   }
-  await validateDetails(
-      root, files['dynamic_interface.yaml']['sha256'] as String);
-  if (metadata['schema'] == 3 ||
-      (metadata['schema'] == 4 && metadata.containsKey('host_policy_sha256'))) {
-    final policy = HostPolicy.parse(
-        await File(p.join(root, 'host_policy.json')).readAsString());
-    valid(policy.digest == metadata['host_policy_sha256'],
-        'Host policy identity differs.');
-    final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
-    valid(
-        receipt['host_policy_sha256'] == policy.digest &&
-            receipt['application_id'] == policy.fields['application_id'] &&
-            receipt['version_code'] == policy.fields['version_code'] &&
-            receipt['public_key'] == policy.fields['fptc_key'],
-        'Host policy receipt differs.');
-  }
-  if ([2, 3, 4].contains(metadata['schema'])) {
+  return files;
+}
+
+/// Content checks for the files patch compilation reads besides app.dill.
+Future<void> validateCompileFiles(String root,
+    {required String interfaceHash,
+    bool compilerInterface = true,
+    String? partitionHash}) async {
+  await validateDetails(root, interfaceHash);
+  if (compilerInterface) {
     final compiler =
         await baselineObject(p.join(root, 'compiler_interface.json'));
     valid(
@@ -243,28 +251,7 @@ Future<Map<String, dynamic>> createManifest(
                 v is List &&
                 v.every((r) => r is Map && r.values.every((x) => x is String))),
         'Malformed compiler interface dump.');
-    final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
-    valid(
-        receipt['runtime_bootstrap'] == metadata['runtime_bootstrap'] &&
-            receipt['fingerprint'] ==
-                fingerprint(
-                    files['app.dill']['sha256'] as String,
-                    metadata['engine_commit'] as String,
-                    files['dynamic_interface.yaml']['sha256'] as String,
-                    metadata['flutter_version'] as String,
-                    hostPolicyHash: metadata['host_policy_sha256'] as String?,
-                    frameworkPartitionHash:
-                        metadata['framework_partition_sha256'] as String?) &&
-            receipt['app_only'] == true &&
-            receipt['interface_sha256'] ==
-                files['dynamic_interface.yaml']['sha256'] &&
-            receipt['libapp_sha256'] == files['libapp.so']['sha256'] &&
-            baselineHash.hasMatch('${receipt['apk_sha256']}'),
-        'Build receipt binding differs.');
   }
-  final packages = await baselineObject(p.join(root, 'package_config.json'));
-  valid(packages['configVersion'] == 2 && packages['packages'] is List,
-      'Invalid package configuration.');
   final sources = await baselineObject(p.join(root, 'source_hashes.json'));
   valid(
       sources['schema'] == 1 &&
@@ -293,7 +280,7 @@ Future<Map<String, dynamic>> createManifest(
               RegExp(r'^(package:|dart:).+::[^:]+$').hasMatch(v)) &&
           classes.toSet().length == classes.length,
       'Invalid/duplicate allocation class identity.');
-  if (metadata['schema'] == 4) {
+  if (partitionHash != null) {
     final partition =
         await baselineObject(p.join(root, 'framework_partition.json'));
     valid(
@@ -304,9 +291,62 @@ Future<Map<String, dynamic>> createManifest(
         'Invalid framework partition.');
     valid(
         await hashFile(p.join(root, 'framework_partition.json')) ==
-            metadata['framework_partition_sha256'],
+            partitionHash,
         'Framework partition hash differs.');
   }
+}
+
+Future<void> validatePackages(String root) async {
+  final packages = await baselineObject(p.join(root, 'package_config.json'));
+  valid(packages['configVersion'] == 2 && packages['packages'] is List,
+      'Invalid package configuration.');
+}
+
+Future<Map<String, dynamic>> createManifest(
+    String root, Map<String, dynamic> metadata) async {
+  validateMetadata(metadata);
+  final files = await hashPayload(root, payloadFiles(metadata));
+  await validateCompileFiles(root,
+      interfaceHash: files['dynamic_interface.yaml']['sha256'] as String,
+      compilerInterface: [2, 3, 4].contains(metadata['schema']),
+      partitionHash: metadata['schema'] == 4
+          ? metadata['framework_partition_sha256'] as String
+          : null);
+  if (metadata['schema'] == 3 ||
+      (metadata['schema'] == 4 && metadata.containsKey('host_policy_sha256'))) {
+    final policy = HostPolicy.parse(
+        await File(p.join(root, 'host_policy.json')).readAsString());
+    valid(policy.digest == metadata['host_policy_sha256'],
+        'Host policy identity differs.');
+    final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
+    valid(
+        receipt['host_policy_sha256'] == policy.digest &&
+            receipt['application_id'] == policy.fields['application_id'] &&
+            receipt['version_code'] == policy.fields['version_code'] &&
+            receipt['public_key'] == policy.fields['fptc_key'],
+        'Host policy receipt differs.');
+  }
+  if ([2, 3, 4].contains(metadata['schema'])) {
+    final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
+    valid(
+        receipt['runtime_bootstrap'] == metadata['runtime_bootstrap'] &&
+            receipt['fingerprint'] ==
+                fingerprint(
+                    files['app.dill']['sha256'] as String,
+                    metadata['engine_commit'] as String,
+                    files['dynamic_interface.yaml']['sha256'] as String,
+                    metadata['flutter_version'] as String,
+                    hostPolicyHash: metadata['host_policy_sha256'] as String?,
+                    frameworkPartitionHash:
+                        metadata['framework_partition_sha256'] as String?) &&
+            receipt['app_only'] == true &&
+            receipt['interface_sha256'] ==
+                files['dynamic_interface.yaml']['sha256'] &&
+            receipt['libapp_sha256'] == files['libapp.so']['sha256'] &&
+            baselineHash.hasMatch('${receipt['apk_sha256']}'),
+        'Build receipt binding differs.');
+  }
+  await validatePackages(root);
   return {
     'schema': metadata['schema'],
     if (metadata['schema'] == 3 ||
@@ -349,7 +389,7 @@ Future<Map<String, dynamic>> verifyBaseline(String root,
 
 Future<void> verifyPlatform(
     Map<String, dynamic> metadata, String sdkRoot) async {
-  validateMetadata(metadata);
+  validateSdkIdentity(metadata);
   final platform = Map<String, dynamic>.from(metadata['platform'] as Map);
   final file = p.join(sdkRoot, platform['path'] as String);
   valid(await File(file).exists() && await hashFile(file) == platform['sha256'],

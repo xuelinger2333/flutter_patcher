@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import 'manifest.dart';
+import 'split.dart';
 
 /// Baseline archives are zstd streams; the codec is an external `zstd` on PATH
 /// on every host (Facebook's reference CLI, same flags everywhere).
@@ -14,8 +15,9 @@ String get zstdInstallHint => Platform.isWindows
         ? 'Install zstd on PATH (brew install zstd).'
         : 'Install zstd on PATH (apt/dnf install zstd).';
 
-/// Strict flat ustar subset: only the seven payload files and the manifest.
-/// No links, directories, extensions, traversal, duplicate or unlisted entries.
+/// Strict flat ustar subset: only the payload files of one object kind and its
+/// manifest. No links, directories, extensions, traversal, duplicate or
+/// unlisted entries.
 class BaselineArchive {
   final String zstd;
   final int maxBytes;
@@ -59,15 +61,14 @@ class BaselineArchive {
   }
 
   Future<void> pack(String root, String output) async {
-    final manifest = await verifyBaseline(root);
+    final entries = await verifiedEntries(root);
     final raw = '$output.tar';
     await rejectLinks(raw);
     valid(!await File(raw).exists(), 'Archive staging already exists.');
     final sink = File(raw).openWrite();
     var total = 1024;
     try {
-      for (final name in [...payloadFiles(manifest), 'baseline.manifest.json']
-        ..sort()) {
+      for (final name in entries) {
         final file = File(p.join(root, name));
         final size = await file.length();
         total += 512 + ((size + 511) ~/ 512) * 512;
@@ -105,7 +106,12 @@ class BaselineArchive {
     await codec(raw, output);
   }
 
-  Future<void> unpack(String archive, String output) async {
+  /// [kind] is `legacy`, `compile` or `release`.
+  Future<void> unpack(String archive, String output,
+      {String kind = 'legacy'}) async {
+    final allowed = archiveEntries[kind] ?? names,
+        required = requiredEntries[kind] ??
+            [...baselineFiles, 'baseline.manifest.json'];
     await rejectLinks(output);
     valid(
         !await FileSystemEntity.isDirectory(output) &&
@@ -148,7 +154,7 @@ class BaselineArchive {
         valid(sum == checksum, 'Tar header checksum mismatch.');
         final name = field(0, 100);
         valid(
-            names.contains(name) &&
+            allowed.contains(name) &&
                 seen.add(name) &&
                 (h[156] == 48 || h[156] == 0) &&
                 field(157, 257).isEmpty &&
@@ -180,8 +186,7 @@ class BaselineArchive {
             pad.length == (512 - size % 512) % 512 && pad.every((b) => b == 0),
             'Invalid tar padding.');
       }
-      valid(seen.containsAll([...baselineFiles, 'baseline.manifest.json']),
-          'Missing baseline archive entries.');
+      valid(seen.containsAll(required), 'Missing baseline archive entries.');
     } on Failure {
       rethrow;
     } catch (_) {
@@ -189,8 +194,7 @@ class BaselineArchive {
     } finally {
       await input.close();
     }
-    final manifest = await verifyBaseline(output);
-    valid(seen.length == payloadFiles(manifest).length + 1,
+    valid(seen.length == (await verifiedEntries(output)).length,
         'Unexpected baseline schema entries.');
   }
 }

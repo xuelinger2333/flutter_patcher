@@ -42,7 +42,7 @@ Windows 上目录 ACL 只授予当前用户。私钥不打印到终端，也不�
 同一宿主的后续补丁必须继续使用匹配的私钥；另生成一对密钥不会给旧宿主换钥。
 
 将输出路径直接传给现有流程：宿主构建使用 `--public-key`，补丁使用
-`--private-key`。以下目录、序号和指纹需替换为实际项目值：
+`--private-key`。以下目录和序号需替换为实际项目值：
 
 ```bash
 flutter_patcher build android --strategy bytecode --project /path/to/app \
@@ -51,11 +51,78 @@ flutter_patcher build android --strategy bytecode --project /path/to/app \
 
 flutter_patcher patch android --strategy bytecode --project /path/to/app \
   --private-key "$HOME/.flutter_patcher/keys/private-key.base64" \
-  --baseline-store file:///path/to/baselines --fingerprint BUILD_FINGERPRINT \
+  --baseline-store file:///path/to/baselines \
   --seq 1 --version-code 1 --out /path/to/new-patch
 ```
 
+补丁按 `--flavor`（省略时为 `default`）和 `--version-code` 找到已归档的发布，
+指纹由该发布决定。`--fingerprint` 可选：给出时必须与发布一致，否则报
+`BASELINE_FINGERPRINT_MISMATCH`；只有没有发布绑定的旧基线才需要用它按指纹查找。
+以前只传 `--fingerprint` 的脚本：若该 flavor/versionCode 已有发布，指纹必须与之一致；
+旧基线按指纹找到的补丁不绑定发布（无签名 `target`）。
+
 测试使用的公开 RFC 8032 测试密钥不能用于正式宿主。
+
+## 基线存储
+
+`build android` 把基线拆成两个对象写入 `--baseline-store`，只创建、不覆盖：
+
+```text
+compile-<fingerprint>.tar.zst                 编译对象：app.dill、接口、compiler_interface、
+                                              allocate_finalized、source_hashes、
+                                              host_policy?、framework_partition?、compile_receipt
+release-<flavor>-<versionCode>-arm64-v8a.tar.zst
+                                              发布对象：libapp.so、package_config.json、
+                                              release_receipt（application_id、public_key、
+                                              resources、package_inputs、build_id）
+apk-<apk_sha256>.json                         APK 证明：apk_sha256、build_host、CRLF 列表
+```
+
+编译对象由指纹决定，同一 Dart 源码构建的多个发布共享它；发布对象按 manifest 摘要引用
+编译对象。`apk_sha256`、`build_host`、`crlf_dart_sources` 每次重建都可能不同，
+不参与任何身份比较，只写入 `build.json` 和 APK 证明对象。
+
+重建规则：
+
+- 同一 flavor/versionCode 重建，除上述易变证据外全部一致：成功，`release_status` 为
+  `existing`，不重写对象，只为新 APK 写一份证明。
+- 同一 flavor/versionCode 但内容不同（libapp.so、公钥、资源、依赖等）：
+  `BASELINE_RELEASE_CONFLICT`，提示不同字段；请提升 versionCode。
+- 仅原生改动的新 versionCode：复用同一编译对象，新增一个发布对象。
+- 同一指纹但编译类文件不同：`BASELINE_CONTENT_CONFLICT`，不写发布对象。
+- 该槽位已有旧格式侧车 `release-<flavor>-<versionCode>-arm64-v8a.json`：按旧基线的拆分视图比较，
+  等价则 `existing_legacy` 且不写入，否则 `BASELINE_RELEASE_CONFLICT`。旧侧车与新发布对象
+  并存且不一致时，读取报 `BASELINE_RELEASE_AMBIGUOUS`。
+
+保存时还检查 build receipt 的 versionCode 与归档的发布一致；有宿主策略时，策略中的
+application_id、version_code、flavor、abi、fptc_key 必须与发布一致。
+
+旧格式（`baseline-<fingerprint>.tar.zst` + 侧车，schema 1–4）仍可被 patch、publish、doctor
+和 `baseline` 读取；只写新格式。旧版 CLI 读不到新对象，CI 与开发机需同步升级；自建 HTTPS
+store 若有对象名白名单，需放行 `compile-*`、`release-*.tar.zst` 和 `apk-*.json`。
+同一指纹的旧 `baseline-<fingerprint>.tar.zst` 与新 `compile-<fingerprint>.tar.zst` 可以并存。
+旧侧车无法读取（指向缺失或损坏的旧基线）时，不阻止解析同槽位的新发布对象，结果中给出
+`warnings`；旧侧车与新发布对象等价时按旧格式解析，生产发布保持旧的身份结构。
+
+store 必须把不存在的对象报告为 HTTP 404 或 S3 `NoSuchKey`：保存与解析靠"对象不存在"
+决定读写什么。把缺失对象报告为 403/AccessDenied 的 store（如没有 `s3:ListBucket` 的 S3
+角色、部分 CDN）会以 `BASELINE_STORE_UNREACHABLE` 失败，错误信息给出对象名。
+
+缓存目录 `~/.flutter_patcher/baselines` 被所有项目和 store 共用。联网时发布对象总以
+store 为准：缓存只在与 store 中对象一致时使用，否则隔离为 `.invalid-*` 后重新下载；
+身份（flavor/versionCode/ABI，大小写敏感）不符的缓存同样隔离。离线时直接信任上次校验过的缓存。
+APK 证明对象只是证据：已存在但内容不同（如同一 APK 在另一主机上重建）时报告
+`existing_differs`，写入失败报告 `failed`，都不会使构建失败。
+
+补丁绑定到一个发布：`patch_manifest.json` 的签名 `target` 记录 flavor、versionCode、ABI
+和发布 manifest 摘要，`publish --production` 拒绝发往其他发布（`PUBLISH_TARGET_MISMATCH`）；
+没有 `target` 的补丁只能发布到旧格式发布。设备按指纹记录补丁序号，因此共享指纹的发布
+共用一个序号空间：生产发布要求新序号大于同指纹其他发布已发布的最大序号
+（`PUBLISH_SEQUENCE_CONFLICT`）。
+
+`baseline` 子命令：`--action save` 只写新格式，schema 1 输入报 `BASELINE_SCHEMA_UNSUPPORTED`；
+`fetch --fingerprint` 优先取编译对象，没有时回退旧基线；`release` 解析两种格式；
+`verify --baseline DIR` 按目录中的 manifest（`baseline`/`compile`/`release.manifest.json`）分派。
 
 ## 自动准备的内容
 
@@ -74,6 +141,9 @@ flutter_patcher patch android --strategy bytecode --project /path/to/app \
   artifacts/<version>/tools/         已校验的工具附件
   flutter/<version>/                 平行 SDK
   mirrors/<version>/<build_id>/      本地 Maven 文件布局
+  baselines/compile/<fingerprint>/   已校验的编译对象
+  baselines/release/<flavor>-<versionCode>-arm64-v8a/ 已校验的发布对象
+  baselines/<fingerprint>/           旧格式基线
   yaml/<version>/<input-hash>/       YAML、输入/输出哈希及隔离探针
   pub-cache/                         隔离 Dart 包缓存
   verification/                      最小 AOT 冒烟结果
@@ -92,8 +162,8 @@ YAML 缓存键包含版本、engine/framework commit、所用 Flutter 源文件�
 |---|---|
 | `--public-key`、`--private-key` | 两文件存在且非空，不验证密码学格式或签名 |
 | `--baseline-store` | `file://` 目录存在、`s3://` bucket 可访问或 HTTPS HEAD 成功；写权限在保存时检查 |
-| `--baseline` | 解包目录的 manifest 与文件一致，是 release 基线，且绑定所选 SDK/engine 构建 |
-| `--version-code`、`--flavor` 与 `--baseline-store` | 拉取侧车及其基线并完整校验，侧车绑定一致且基线匹配所选 engine 构建 |
+| `--baseline` | 按目录中的 manifest 校验旧基线、编译对象或发布对象：文件一致、是 release 基线，且绑定所选 SDK/engine（编译对象不含 build_id） |
+| `--version-code`、`--flavor` 与 `--baseline-store` | 解析该发布（新发布对象或旧侧车）并完整校验其基线，且匹配所选 engine 构建 |
 | `--apk` | ZIP 内 `lib/arm64-v8a/libflutter.so` 大小/哈希匹配 manifest；不安装或运行 APK |
 | `--project` | 项目 Dart 源码是否含 CRLF 换行；含有时给出 `warning`（`build` 也会警告并把文件列表写入 receipt） |
 
