@@ -81,7 +81,8 @@ Future<int> patchCommand(ArgResults args) async {
             store.file(
                 sdk, 'tools', 'flutter_patcher_tools-${sdk.version}.dill'),
             cache,
-            baselines)
+            baselines,
+            engine: engine)
         .patch(request);
     stdout.writeln(jsonEncode({'command': 'patch', ...result}));
     return 0;

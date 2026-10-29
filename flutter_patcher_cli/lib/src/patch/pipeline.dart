@@ -12,6 +12,7 @@ import 'sources.dart';
 import 'package.dart';
 import 'resources.dart';
 import 'tier_policy.dart';
+import 'so_pipeline.dart';
 
 class PatchFailure extends Failure {
   final Map<String, Object?> details;
@@ -67,13 +68,46 @@ class PatchRequest {
   }
 }
 
+/// Rejects native changes against the release's [previous] package inputs and
+/// records each changed pure-Dart dependency in [changed]; true if any did.
+bool nativeInputChanges(
+    Map current, Map previous, String app, List<String> changed) {
+  require(
+      canonical(current[app]?['native_files']) ==
+          canonical(previous[app]?['native_files']),
+      'PATCH_NATIVE_CHANGE',
+      'Application native sources changed; rebuild host');
+  var any = false;
+  for (final name in {
+    ...current.keys.cast<String>(),
+    ...previous.keys.cast<String>()
+  }) {
+    if (name == app) continue;
+    final now = current[name], before = previous[name];
+    if (canonical(now) == canonical(before)) continue;
+    require(
+        now?['native'] != true &&
+            before?['native'] != true &&
+            (now?['native_files'] as Map? ?? {}).isEmpty &&
+            (before?['native_files'] as Map? ?? {}).isEmpty,
+        'PATCH_NATIVE_CHANGE',
+        'Native plugin/build hook changed: $name');
+    any = true;
+    changed.add('dependency:$name');
+  }
+  return any;
+}
+
 class PatchPipeline {
   final Commands commands;
   final SdkIdentity sdk;
   final String managed, tool, cache;
   final BaselineRepository baselines;
+
+  /// The engine release record; needed only to rebuild an SO host's APK.
+  final Map<String, dynamic>? engine;
   PatchPipeline(this.commands, this.sdk, this.managed, this.tool, this.cache,
-      this.baselines);
+      this.baselines, {this.engine});
   Future<Map<String, Object?>> patch(PatchRequest req) async {
     await req.validate();
     for (final protected in [sdk.root, managed]) {
@@ -92,8 +126,10 @@ class PatchPipeline {
       final resolved = await baselines.resolve(
           req.flavor, req.minBuild.toString(),
           expectedFingerprint: req.fingerprint, sdkRoot: sdk.root);
-      require(resolved.strategy == 'bytecode', 'PATCH_STRATEGY_UNSUPPORTED',
-          'SO releases are patched by the SO pipeline.');
+      if (resolved.strategy == 'so') {
+        phase = 'so';
+        return await patchSo(req, resolved, work);
+      }
       final fingerprint = resolved.fingerprint;
       // Compile inputs come from the compile object; package names, receipt
       // fields and build_id from the release object.
@@ -158,29 +194,8 @@ class PatchPipeline {
       final changed = <String>[];
       var dependencyChanged = false;
       if (oldState is Map) {
-        require(
-            canonical(packageState[app]?['native_files']) ==
-                canonical(oldState[app]?['native_files']),
-            'PATCH_NATIVE_CHANGE',
-            'Application native sources changed; rebuild host');
-        for (final name in {
-          ...packageState.keys,
-          ...oldState.keys.cast<String>()
-        }) {
-          if (name == app) continue;
-          final current = packageState[name], previous = oldState[name];
-          if (canonical(current) != canonical(previous)) {
-            require(
-                current?['native'] != true &&
-                    previous?['native'] != true &&
-                    (current?['native_files'] as Map? ?? {}).isEmpty &&
-                    (previous?['native_files'] as Map? ?? {}).isEmpty,
-                'PATCH_NATIVE_CHANGE',
-                'Native plugin/build hook changed: $name');
-            dependencyChanged = true;
-            changed.add('dependency:$name');
-          }
-        }
+        dependencyChanged =
+            nativeInputChanges(packageState, oldState, app, changed);
       }
       final hashes =
           (await readObject(p.join(baseline, 'source_hashes.json')))['files']
@@ -429,19 +444,7 @@ class PatchPipeline {
         },
         'work': work
       };
-      final pending = temporaryName(p.absolute(req.output));
-      await Directory(pending).create(recursive: true);
-      await File(artifact['file'] as String).copy(p.join(
-          pending, req.validationOnly ? 'validation.fptc' : 'patch.fptc'));
-      await writeObject(p.join(pending, 'patch.json'), report);
-      await rejectLinks(req.output);
-      require(
-          await FileSystemEntity.type(req.output, followLinks: false) ==
-              FileSystemEntityType.notFound,
-          'PATCH_CONFIG_INVALID',
-          'Output appeared during compilation');
-      await Directory(pending).renameRetry(p.absolute(req.output));
-      return {...report, 'output': p.absolute(req.output)};
+      return await writeOutput(req, artifact['file'] as String, report);
     } catch (error) {
       await writeObject(p.join(work, 'failure.json'), {
         'phase': phase,
@@ -453,5 +456,23 @@ class PatchPipeline {
       }
       rethrow;
     }
+  }
+
+  /// Moves the envelope and report into the request's new output directory.
+  Future<Map<String, Object?>> writeOutput(
+      PatchRequest req, String artifact, Map<String, Object?> report) async {
+    final pending = temporaryName(p.absolute(req.output));
+    await Directory(pending).create(recursive: true);
+    await File(artifact).copy(p.join(
+        pending, req.validationOnly ? 'validation.fptc' : 'patch.fptc'));
+    await writeObject(p.join(pending, 'patch.json'), report);
+    await rejectLinks(req.output);
+    require(
+        await FileSystemEntity.type(req.output, followLinks: false) ==
+            FileSystemEntityType.notFound,
+        'PATCH_CONFIG_INVALID',
+        'Output appeared during compilation');
+    await Directory(pending).renameRetry(p.absolute(req.output));
+    return {...report, 'output': p.absolute(req.output)};
   }
 }

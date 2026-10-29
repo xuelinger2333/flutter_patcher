@@ -90,13 +90,29 @@ Future<Map<String, Object?>> packPatch(
           zip.every((f) => f.compression == CompressionType.none),
       'PATCH_PACKAGE_INVALID',
       'Only STORED entries are allowed');
+  return {
+    ...await sealPatch(
+        payload: payload,
+        fingerprint: metadata['fingerprint'] as String,
+        seq: metadata['patch_seq'] as int,
+        key: key,
+        work: work),
+    'manifest': manifest
+  };
+}
+
+/// Wraps [payload] in a signed FPTC v1 envelope at `<work>/patch.fptc`.
+Future<Map<String, Object?>> sealPatch(
+    {required List<int> payload,
+    required String fingerprint,
+    required int seq,
+    required List<int> key,
+    required String work}) async {
   final header = ByteData(82)
     ..setUint32(0, 0x46505443)
     ..setUint16(4, 1);
-  header.buffer
-      .asUint8List()
-      .setRange(6, 38, hexBytes(metadata['fingerprint'] as String));
-  header.setUint32(38, metadata['patch_seq'] as int);
+  header.buffer.asUint8List().setRange(6, 38, hexBytes(fingerprint));
+  header.setUint32(38, seq);
   header.setUint64(42, payload.length);
   header.buffer.asUint8List().setRange(50, 82, sha256.convert(payload).bytes);
   // The signed bytes, signature and DER public key stay in the work directory
@@ -117,6 +133,5 @@ Future<Map<String, Object?>> packPatch(
     'file': output,
     'sha256': await hashFile(output),
     'bytes': await File(output).length(),
-    'manifest': manifest
   };
 }

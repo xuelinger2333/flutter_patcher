@@ -87,7 +87,7 @@ class BuildPipeline {
         'Build paths cannot contain commas/newlines.');
     final workspace = BuildWorkspace(work);
     var phase = 'prepare';
-    final run = _runner(work, () => phase);
+    final run = runner(work, () => phase);
 
     Future<void> call(List<String> args) async {
       await run(sdk.dart, [tool, ...args]);
@@ -284,7 +284,7 @@ class BuildPipeline {
       final sourceInputs = await packageInputs(packages, application: package);
       final hostTrust = request.hostPolicy == null
           ? null
-          : await _writeHostTrust(project, baseline, request.hostPolicy!, identity);
+          : await writeHostTrust(project, baseline, request.hostPolicy!, identity);
       // Inside the runtime package the entry compiles as a package: URI; a
       // file URI would embed this run's work path in libapp.so.
       final target =
@@ -297,13 +297,13 @@ class BuildPipeline {
       phase = 'apk';
       final trace = p.join(work, 'precompiler-trace.json'),
           hostDump = p.join(work, 'host_compiler_interface.json');
-      final apk = await _assembleApk(run, project, request,
+      final apk = await assembleApk(run, project, request,
           request.pipelineValidationOnly ? request.target : target, [
         '--extra-front-end-options=--dynamic-interface=$iface,--dump-detailed-dynamic-interface=$hostDump',
         '--extra-gen-snapshot-options=--trace-precompiler-to=$trace'
       ]);
       phase = 'verify-apk';
-      final apkInfo = await _verifyApk(apk, baseline, request, hostTrust);
+      final apkInfo = await verifyApk(apk, baseline, request, hostTrust);
       await call([
         'inspect-build',
         if (virtual != null) ...virtual.compilerArgs,
@@ -393,7 +393,7 @@ class BuildPipeline {
     await Directory(work).create(recursive: true);
     final workspace = BuildWorkspace(work);
     var phase = 'prepare';
-    final run = _runner(work, () => phase);
+    final run = runner(work, () => phase);
     try {
       final project =
           await workspace.copyPackage(request.project, application: true);
@@ -416,11 +416,11 @@ class BuildPipeline {
           sdk.version, sdk.engine, engine['build_id'] as String, policy.digest);
       final sourceInputs = await packageInputs(packages, application: package);
       final hostTrust =
-          await _writeHostTrust(project, release, policy, identity);
+          await writeHostTrust(project, release, policy, identity);
       phase = 'apk';
-      final apk = await _assembleApk(run, project, request, request.target, const []);
+      final apk = await assembleApk(run, project, request, request.target, const []);
       phase = 'verify-apk';
-      final apkInfo = await _verifyApk(apk, release, request, hostTrust);
+      final apkInfo = await verifyApk(apk, release, request, hostTrust);
       final virtual = await VirtualPackages.write(
           packages, [p.absolute(work), p.absolute(cache)]);
       await File(virtual.path).copy(p.join(release, 'package_config.json'));
@@ -464,7 +464,7 @@ class BuildPipeline {
       'Output cannot be inside the selected SDK.');
 
   /// Runs one build step, logged under [work] as `<n>-<phase>.log`.
-  _Run _runner(String work, String Function() phase) {
+  StepRunner runner(String work, String Function() phase) {
     var index = 0;
     return (executable, args, {cwd, env}) async {
       final result = await commands.runResult(executable, args,
@@ -479,7 +479,7 @@ class BuildPipeline {
 
   /// Writes host_policy.json into [policyDir] and the packaged host trust
   /// asset into [project]; returns the asset text.
-  Future<String> _writeHostTrust(String project, String policyDir,
+  Future<String> writeHostTrust(String project, String policyDir,
       HostPolicy policy, String identity) async {
     await File(p.join(policyDir, 'host_policy.json'))
         .writeAsString(policy.canonical);
@@ -498,7 +498,7 @@ class BuildPipeline {
   }
 
   /// `flutter build apk` with the managed engine mirror; returns the APK path.
-  Future<String> _assembleApk(_Run run, String project, BuildRequest request,
+  Future<String> assembleApk(StepRunner run, String project, BuildRequest request,
       String target, List<String> extra) async {
     final gradle = p.join(cache, 'gradle');
     await Directory(gradle).create(recursive: true);
@@ -534,7 +534,7 @@ class BuildPipeline {
   }
 
   /// Verifies the APK, extracts libapp.so into [dir] and binds it to the request.
-  Future<Map<String, dynamic>> _verifyApk(String apk, String dir,
+  Future<Map<String, dynamic>> verifyApk(String apk, String dir,
       BuildRequest request, String? hostTrust) async {
     final apkInfo = await verifyBuildApk(apk, dir, aapt, commands, engine,
         expectedHostTrust: hostTrust);
@@ -572,5 +572,5 @@ class BuildPipeline {
       });
 }
 
-typedef _Run = Future<String> Function(String executable, List<String> args,
+typedef StepRunner = Future<String> Function(String executable, List<String> args,
     {String? cwd, Map<String, String>? env});
