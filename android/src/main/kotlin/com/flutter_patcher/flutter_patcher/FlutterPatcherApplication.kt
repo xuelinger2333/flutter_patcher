@@ -60,9 +60,12 @@ open class FlutterPatcherApplication : FlutterApplication() {
             val appVc = PatcherConfig.currentVersionCode(context)
 
             return try {
-                // An authenticated bytecode host cannot load an old SO candidate
-                // through the pre-engine legacy loader.
-                if (HostTrustConfig.load(context) != null) return false
+                // An authenticated host never loads a legacy patch; an SO host
+                // loads only its own authorized candidate.
+                HostTrustConfig.load(context)?.let { host ->
+                    if (host.strategy != "so") return false
+                    return bootAuthenticatedSo(context, SoPatchManager(context, host))
+                }
                 // 在熔断/校验丢弃前预读 (version, downloadMd5)，等会儿入黑名单要用。
                 // 即便文件后续被删，这里捕获的字符串仍有效。
                 val patchManager = PatchManager(context)
@@ -194,6 +197,18 @@ open class FlutterPatcherApplication : FlutterApplication() {
                 )
                 false
             }
+        }
+
+        private fun bootAuthenticatedSo(context: Context, so: SoPatchManager): Boolean {
+            val patch = so.boot() ?: return false
+            val ok = LoaderHook.install(context, patch.soPath, patch.assetsBundlePath, patch.assetsArchivePath, mutableListOf())
+            if (!ok) {
+                SoPatchManager.cancel(context)
+                BootDiagnosticStore.record(context = context, status = BootDiagnosticStore.HOOK_INSTALL_FAILED,
+                    appVersionCode = PatcherConfig.currentVersionCode(context),
+                    message = "FlutterLoader reflection failed; patch retained")
+            }
+            return ok
         }
     }
 

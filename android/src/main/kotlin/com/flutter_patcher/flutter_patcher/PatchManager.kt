@@ -302,6 +302,20 @@ internal class PatchManager(
 
     fun currentVersion(): String = readMeta()?.optString("version", "") ?: ""
 
+    /** Candidate id an authenticated install recorded; null for legacy patches. */
+    fun candidate(): String? = readMeta()?.optString("candidate", "")?.ifEmpty { null }
+
+    /** Materializes an already authenticated v2 package; no download, MD5 or signature input. */
+    fun installVerified(payload: File, version: String, candidate: String): ApplyResult = synchronized(APPLY_LOCK) {
+        if (!isZipPayload(payload)) return ApplyResult.failure(ApplyErrorCode.ASSET_PACKAGE_INVALID, "SO payload must be a v2 package")
+        patchDir.mkdirs()
+        val result = try {
+            installPackagePatch(payload, version, downloadMd5 = "", effectiveMd5 = SignatureVerifier.md5(payload),
+                signature = "", targetVersionCode = PatcherConfig.currentVersionCode(context), candidate = candidate)
+        } finally { stagingDir.deleteRecursively() }
+        result ?: ApplyResult.SUCCESS
+    }
+
     fun currentMeta(): Pair<String, String>? {
         val meta = readMeta() ?: return null
         val version = meta.optString("version", "")
@@ -488,6 +502,7 @@ internal class PatchManager(
         effectiveMd5: String,
         signature: String,
         targetVersionCode: Long,
+        candidate: String? = null,
     ): ApplyResult? {
         return try {
             ZipFile(payload).use { zip ->
@@ -563,6 +578,7 @@ internal class PatchManager(
                     put(PatcherConfig.META_KEY_TARGET_VERSION_CODE, targetVersionCode)
                     put("hasAssets", false)
                     put("installed_at", System.currentTimeMillis())
+                    if (candidate != null) put("candidate", candidate)
                 }
                 return finalizePatch(stagedSo, null, null, meta)
             }
@@ -601,6 +617,7 @@ internal class PatchManager(
                 put("hasAssets", true)
                 put("assetMode", "overlay")
                 put("installed_at", System.currentTimeMillis())
+                if (candidate != null) put("candidate", candidate)
             }
             return finalizePatch(stagedSo, stagingAssets, stagedAssetsArchive, meta)
             }

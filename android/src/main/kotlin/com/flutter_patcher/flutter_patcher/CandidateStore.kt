@@ -49,19 +49,26 @@ internal class CandidateStore(private val context: Context, private val strategy
 
     fun isBlacklisted(meta: JSONObject) = prefs.getBoolean("bad:${id(meta)}", false)
 
-    /** Writes the verified bytes and makes them active; [meta] must pass the high-water mark. */
-    fun save(meta: JSONObject, bytes: ByteArray) {
-        val fingerprint = meta.getString("fingerprint")
-        val seq = meta.getLong("seq")
+    fun requireNewer(meta: JSONObject) {
         val old = active()
-        val repeated = old != null && id(old) == id(meta)
-        require(repeated || seq > prefs.getLong("high:$fingerprint", 0)) { "Patch sequence must exceed accepted high-water mark" }
-        check(directory.isDirectory || directory.mkdirs()) { "Cannot create $strategy directory" }
-        val temporary = File(directory, UUID.randomUUID().toString() + ".pending")
-        FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }
-        check(temporary.renameTo(file(meta))) { "Cannot commit $strategy file" }
+        require((old != null && id(old) == id(meta)) ||
+            meta.getLong("seq") > prefs.getLong("high:${meta.getString("fingerprint")}", 0)) {
+            "Patch sequence must exceed accepted high-water mark"
+        }
+    }
+
+    /** Makes [meta] active, keeping [bytes] as its envelope file when given. */
+    fun save(meta: JSONObject, bytes: ByteArray?) {
+        requireNewer(meta)
+        val fingerprint = meta.getString("fingerprint")
+        if (bytes != null) {
+            check(directory.isDirectory || directory.mkdirs()) { "Cannot create $strategy directory" }
+            val temporary = File(directory, UUID.randomUUID().toString() + ".pending")
+            FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }
+            check(temporary.renameTo(file(meta))) { "Cannot commit $strategy file" }
+        }
         commit(prefs.edit().putString("active", meta.toString())
-            .putLong("high:$fingerprint", maxOf(seq, prefs.getLong("high:$fingerprint", 0))))
+            .putLong("high:$fingerprint", maxOf(meta.getLong("seq"), prefs.getLong("high:$fingerprint", 0))))
     }
 
     fun markLoading(meta: JSONObject) = commit(prefs.edit().putString("attempt_meta", meta.toString())

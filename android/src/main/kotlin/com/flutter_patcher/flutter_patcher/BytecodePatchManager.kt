@@ -195,6 +195,7 @@ internal class BytecodePatchManager(private val context: Context) {
             val meta = store.candidate(fingerprint!!, seq, hash, version, authorization)
             if (store.isBlacklisted(meta))
                 return@synchronized ApplyResult.failure(ApplyErrorCode.BLACKLISTED, "Bytecode candidate is blacklisted")
+            store.requireNewer(meta)
             progress("finalizing", bytes.size.toLong(), bytes.size.toLong())
             store.save(meta, bytes)
             ApplyResult.SUCCESS

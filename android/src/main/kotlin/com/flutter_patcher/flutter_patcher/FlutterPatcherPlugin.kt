@@ -50,6 +50,8 @@ class FlutterPatcherPlugin :
     private lateinit var eventChannel: EventChannel
     private lateinit var appContext: Context
     private lateinit var bytecode: BytecodePatchManager
+    // Loaded off the main thread on first use; null unless this is an authenticated SO host.
+    private val so by lazy { HostTrustConfig.load(appContext)?.takeIf { it.strategy == "so" }?.let { SoPatchManager(appContext, it) } }
     private var bootstrapBridge: BootstrapBridge? = null
     private val bootProfiler = BootChannelProfiler()
     private var renderer: FlutterRenderer? = null
@@ -130,6 +132,7 @@ class FlutterPatcherPlugin :
                     bytecodeCall(result) { bytecode.success(call.argument<String>("attempt")); null }
                     return
                 }
+                SoPatchManager.success(appContext)
                 CrashGuard(appContext).markBootSuccess()
                 result.success(null)
             }
@@ -138,13 +141,16 @@ class FlutterPatcherPlugin :
                 // hook; bind that existing RPC to the currently armed attempt.
                 val token = call.argument<String>("attempt") ?: bytecode.frameToken
                 bytecodeCall(result) { bytecode.error(token, call.argument<String>("message"), call.argument<Boolean>("quarantine") == true); null }
-            } else handleReportDartBootError(call, result)
+            } else if (SoPatchManager.error(appContext, call.argument<String>("message"))) result.success(null)
+            else handleReportDartBootError(call, result)
             "applyPatch" -> handleApplyPatch(call, result)
             "applySignedManifest" -> authenticatedCall(result) {
-                bytecode.applyManifest(call.argument<String>("wire") ?: "", ::emitProgress)
+                val wire = call.argument<String>("wire") ?: ""
+                so?.applyManifest(wire, ::emitProgress) ?: bytecode.applyManifest(wire, ::emitProgress)
             }
             "updatePublicationTrust" -> authenticatedCall(result) {
-                bytecode.updateTrust(call.argument<String>("wire") ?: "")
+                val wire = call.argument<String>("wire") ?: ""
+                so?.updateTrust(wire) ?: bytecode.updateTrust(wire)
                 mapOf("ok" to true)
             }
             "rollback" -> handleRollback(result)
@@ -153,10 +159,12 @@ class FlutterPatcherPlugin :
             "cacheDir" -> result.success(appContext.cacheDir.absolutePath)
             "appVersionCode" -> result.success(PatcherConfig.currentVersionCode(appContext))
             "deviceAbi" -> result.success(Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
-            "blacklist" -> bytecodeCall(result) { BlacklistStore.entries(appContext) + bytecode.blacklist() }
+            "blacklist" -> bytecodeCall(result) {
+                BlacklistStore.entries(appContext) + bytecode.blacklist() + (so?.blacklist() ?: emptyList())
+            }
             "clearBlacklist" -> {
                 BlacklistStore.clear(appContext)
-                bytecodeCall(result) { bytecode.clearBlacklist(); null }
+                bytecodeCall(result) { bytecode.clearBlacklist(); so?.clearBlacklist(); null }
             }
             else -> result.notImplemented()
         }
@@ -265,6 +273,7 @@ class FlutterPatcherPlugin :
     private fun handleRollback(result: Result) {
         Thread {
             try {
+                so?.rollback()
                 PatchManager(appContext).rollback()
                 bytecode.rollback()
             } catch (e: Exception) {
