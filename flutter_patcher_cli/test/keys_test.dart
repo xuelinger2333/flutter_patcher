@@ -85,10 +85,9 @@ void main() {
       final result = await cli(['init', '--out', out]);
       expect(result.exitCode, 0, reason: '${result.stderr}');
       final report = jsonDecode(result.stdout as String) as Map;
-      final secret =
-          File(report['private_key'] as String).readAsStringSync().trim();
-      final public =
-          File(report['public_key'] as String).readAsStringSync().trim();
+      // Use the files exactly as written, trailing newline included.
+      final secret = File(report['private_key'] as String).readAsStringSync();
+      final public = File(report['public_key'] as String).readAsStringSync();
       final work = Directory(p.join(root.path, 'work'))..createSync();
       final commands = Commands(root.path);
       final key = signingKey(secret, expectedPublic: public);

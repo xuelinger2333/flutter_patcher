@@ -20,7 +20,8 @@ Uint8List signingKey(String raw, {String? expectedPublic}) {
   require(
       seed.length == 32, 'PATCH_KEY_INVALID', 'Ed25519 seed must be 32 bytes');
   final public = base64Encode(ed25519PublicKey(seed));
-  require(expectedPublic == null || public == expectedPublic,
+  // Key files from keys init end with a newline.
+  require(expectedPublic == null || public == expectedPublic.trim(),
       'PATCH_KEY_MISMATCH', 'Signing key does not match the release bootstrap');
   return seed;
 }
