@@ -13,6 +13,9 @@
 
 ### Removed
 
+- `dart run flutter_patcher:pack` 与 `bin/mock_server.dart` 移入 CLI，成为
+  `flutter_patcher pack` 与 `flutter_patcher mock-server`，参数不变。插件不再依赖
+  `archive` 与 `args`，运行时依赖只剩 `plugin_platform_interface` 与 `crypto`。
 - 移除 `build android` 与 `patch android` 的实验选项 `--framework-reuse`。它为
   宿主保留的接口使 `libapp.so` 增大约 4.5 MiB，超出 1.5 MiB 的预算，因此从未成为
   默认行为。用它构建的基线（schema 4）现在会以 `BASELINE_SCHEMA_UNSUPPORTED` 被

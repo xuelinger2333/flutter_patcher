@@ -1,3 +1,5 @@
+// `flutter_patcher mock-server`: the v1 SO mock update server for hosts
+// without a host policy, with the options of the former bin/mock_server.dart.
 import 'dart:convert';
 import 'dart:io';
 
@@ -64,7 +66,7 @@ class MockPatchServer {
   }
 }
 
-Future<int> main(List<String> argv) async {
+Future<int> mockServerMain(List<String> argv) async {
   final parser = buildArgParser();
   final ArgResults args;
   try {

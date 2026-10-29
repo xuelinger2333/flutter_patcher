@@ -33,8 +33,6 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  # tools/mock_server.dart 算 md5 用，仅 dev 工具脚本依赖，不进 release apk
-  crypto: ^3.0.3
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

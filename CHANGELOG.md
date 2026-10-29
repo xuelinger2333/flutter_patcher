@@ -12,6 +12,10 @@
 
 ### Removed
 
+- `dart run flutter_patcher:pack` and `bin/mock_server.dart` moved into the
+  CLI as `flutter_patcher pack` and `flutter_patcher mock-server`, with the
+  same options. The plugin no longer depends on `archive` or `args`; its
+  runtime dependencies are `plugin_platform_interface` and `crypto`.
 - The experimental `--framework-reuse` option of `build android` and
   `patch android`. Its host surface added about 4.5 MiB to `libapp.so`,
   above the 1.5 MiB budget, so it never became a default. Baselines built
