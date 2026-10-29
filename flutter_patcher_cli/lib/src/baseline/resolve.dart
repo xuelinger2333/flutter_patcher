@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import 'manifest.dart';
@@ -11,7 +12,7 @@ class ResolvedRelease {
   final String format;
   final String flavor, versionCode, abi, fingerprint, compileRoot, releaseRoot;
 
-  /// Compile manifest, or the whole legacy manifest.
+  /// Compile manifest, the whole legacy manifest, or an SO release's identity.
   final Map<String, dynamic> compile;
 
   /// release_receipt.json, or the legacy build_receipt.json (empty for
@@ -44,6 +45,7 @@ class ResolvedRelease {
             ? null
             : release ?? projection?.release;
   bool get legacy => format != 'release';
+  String get strategy => (_release?['strategy'] as String?) ?? 'bytecode';
   String get slot => releaseSlot(flavor, versionCode, abi);
 
   /// Null for a schema 1 baseline or a release addressed by fingerprint.
@@ -115,7 +117,26 @@ extension ReleaseResolution on BaselineRepository {
       String flavor, String versionCode, String abi, String? sdkRoot) async {
     final root = await fetchReleaseObject(flavor, versionCode, abi);
     if (root == null) return null;
-    final ref = (await verifyReleaseObject(root))['compile'] as Map;
+    final own = await verifyReleaseObject(root);
+    if (own['strategy'] == 'so') {
+      final identity = Map<String, dynamic>.from(own['identity'] as Map);
+      if (sdkRoot != null) {
+        require(identity['engine_commit'] == (await File(p.join(sdkRoot, 'bin/internal/engine.version')).readAsString()).trim(),
+            'BASELINE_INVALID', 'Selected SDK engine differs.');
+      }
+      return ResolvedRelease(
+          format: 'release',
+          flavor: flavor,
+          versionCode: versionCode,
+          abi: abi,
+          fingerprint: identity['fingerprint'] as String,
+          compileRoot: root,
+          releaseRoot: root,
+          compile: identity,
+          release: own,
+          receipt: await baselineObject(p.join(root, 'release_receipt.json')));
+    }
+    final ref = own['compile'] as Map;
     final fp = ref['fingerprint'] as String;
     final compileRoot = await fetchCompile(fp,
         sdkRoot: sdkRoot, manifestSha: ref['manifest_sha256'] as String);
@@ -210,12 +231,13 @@ extension ReleaseResolution on BaselineRepository {
       'engine_commit': r.compile['engine_commit'],
       'build_id': r.buildId,
       'libapp_sha256': r.receipt['libapp_sha256'],
-      'runtime_bootstrap': r.compile['runtime_bootstrap'],
+      if (r.strategy == 'so') 'strategy': 'so'
+      else 'runtime_bootstrap': r.compile['runtime_bootstrap'],
       if (r.compile.containsKey('host_policy_sha256'))
         'host_policy_sha256': r.compile['host_policy_sha256'],
       'release': 'release-${r.slot}.tar.zst',
       'release_manifest_sha256': r.releaseSha,
-      'compile_manifest_sha256': manifestDigest(r.compile),
+      if (r.strategy != 'so') 'compile_manifest_sha256': manifestDigest(r.compile),
       if (warnings.isNotEmpty) 'warnings': warnings,
     };
   }
@@ -227,8 +249,9 @@ extension ReleaseResolution on BaselineRepository {
           expected: r.fingerprint, sdkRoot: sdkRoot);
       return;
     }
-    final compile = await verifyCompile(r.compileRoot,
-        expected: r.fingerprint, sdkRoot: sdkRoot);
+    final compile = r.strategy == 'so'
+        ? null
+        : await verifyCompile(r.compileRoot, expected: r.fingerprint, sdkRoot: sdkRoot);
     final release = await verifyReleaseObject(r.releaseRoot,
         compile: compile, compileRoot: r.compileRoot);
     valid(canonical(release) == canonical(r.release),

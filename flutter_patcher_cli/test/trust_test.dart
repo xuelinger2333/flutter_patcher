@@ -33,7 +33,7 @@ void main() {
   test('policy forbids unknown fields and invalid target/key inputs', () {
     for (final change in [
       {'verified': 'true'},
-      {'strategy': 'so'},
+      {'strategy': 'legacy'},
       {'fptc_key': 'bad'},
       {'version_code': '01'},
       {'abi': 'x86_64'},
@@ -41,6 +41,7 @@ void main() {
     ]) {
       expect(() => HostPolicy({...policy, ...change}), throwsFormatException);
     }
+    expect(HostPolicy({...policy, 'strategy': 'so'}).fields['strategy'], 'so');
   });
   test('trust domain and complete key set grammar', () {
     final fields = {

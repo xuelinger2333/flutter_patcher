@@ -278,11 +278,11 @@ class BaselineRepository {
     final compile = await locked(
         'compile-$fp',
         () => _store('compile-$fp.tar.zst', compileDir, 'compile',
-            p.join(cache, 'compile', fp), split, staging));
+            p.join(cache, 'compile', fp), split.compile, null, staging));
     final release = await locked(
         'release-$slot',
         () => _store('release-$slot.tar.zst', releaseDir, 'release',
-            p.join(cache, 'release', slot), split, staging));
+            p.join(cache, 'release', slot), split.release, split.releaseReceipt, staging));
     return {
       ...summary,
       'release_status': release['status'],
@@ -292,10 +292,78 @@ class BaselineRepository {
     };
   }
 
+  /// Archives an SO host as one release object holding its own host policy.
+  /// [input] has libapp.so, package_config.json and host_policy.json.
+  Future<Map<String, dynamic>> saveSo(
+      String input, Map<String, dynamic> receipt, HostPolicy policy,
+      {required String flutterVersion,
+      required String engineCommit,
+      required String buildId}) async {
+    final fields = policy.fields;
+    final flavor = fields['flavor']!, versionCode = fields['version_code']!;
+    final slot = releaseSlot(flavor, versionCode, fields['abi']!);
+    require(fields['strategy'] == 'so', 'BUILD_CONFIG_INVALID', 'Host policy strategy is not so.');
+    final staging = await work(), dir = p.join(staging, 'release');
+    await Directory(dir).create();
+    for (final name in [...releaseFiles, 'host_policy.json']) {
+      await rejectLinks(p.join(input, name));
+      await File(p.join(input, name)).copy(p.join(dir, name));
+    }
+    final releaseReceipt = <String, dynamic>{
+      'schema': 1,
+      'flavor': flavor,
+      'version_code': versionCode,
+      'abi': fields['abi'],
+      for (final k in ['application_id', 'public_key', 'libapp_sha256', 'resources', 'package_inputs'])
+        k: receipt[k],
+      'build_id': buildId,
+    };
+    await File(p.join(dir, 'release_receipt.json')).writeAsBytes(encodeObject(releaseReceipt));
+    final release = <String, dynamic>{
+      'schema': 5,
+      'kind': 'release',
+      'strategy': 'so',
+      'flavor': flavor,
+      'version_code': versionCode,
+      'abi': fields['abi'],
+      'application_id': fields['application_id'],
+      'build_id': buildId,
+      'identity': {
+        'fingerprint': soFingerprint(flutterVersion, engineCommit, buildId, policy.digest),
+        'flutter_version': flutterVersion,
+        'engine_commit': engineCommit,
+        'host_policy_sha256': policy.digest,
+      },
+      'files': await hashPayload(dir, soReleasePayload),
+    };
+    await writeObject(p.join(dir, 'release.manifest.json'), release);
+    valid(canonical(await verifyReleaseObject(dir)) == canonical(release), 'SO release object does not verify.');
+    final stored = await locked(
+        'release-$slot',
+        () => _store('release-$slot.tar.zst', dir, 'release',
+            p.join(cache, 'release', slot), release, releaseReceipt, staging));
+    return {
+      'status': 'baseline_archived',
+      'baseline_schema': 5,
+      'strategy': 'so',
+      'fingerprint': releaseFingerprint(release),
+      'flutter_version': flutterVersion,
+      'engine_commit': engineCommit,
+      'build_id': buildId,
+      'libapp_sha256': releaseReceipt['libapp_sha256'],
+      'flavor': flavor,
+      'version_code': versionCode,
+      'abi': fields['abi'],
+      'release_status': stored['status'],
+      'release': stored,
+      'attestation': await _attest(receipt, slot, manifestDigest(release), staging),
+    };
+  }
+
   /// Create-only upload; an existing object must be equivalent.
   Future<Map<String, dynamic>> _store(String object, String dir, String kind,
-      String target, SplitBaseline split, String staging) async {
-    final manifest = kind == 'compile' ? split.compile : split.release;
+      String target, Map<String, dynamic> manifest,
+      Map<String, dynamic>? releaseReceipt, String staging) async {
     final packed = p.join(staging, object);
     await archive.pack(dir, packed);
     String status;
@@ -329,7 +397,7 @@ class BaselineRepository {
             canonical(prior) == canonical(manifest),
             'BASELINE_RELEASE_CONFLICT',
             '${object.replaceFirst('.tar.zst', '')} is already archived with different content: '
-                '${releaseDifferences(prior, priorReceipt, manifest, split.releaseReceipt).join(', ')}; bump versionCode.');
+                '${releaseDifferences(prior, priorReceipt, manifest, releaseReceipt!).join(', ')}; bump versionCode.');
       }
       status = 'existing';
     }

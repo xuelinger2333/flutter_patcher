@@ -95,6 +95,21 @@ String fingerprint(
   return base;
 }
 
+/// An SO host has no compile object: its release, engine and policy identify it.
+String soFingerprint(
+    String flutter, String engine, String buildId, String hostPolicyHash) {
+  valid(
+      _version.hasMatch(flutter) &&
+          _commit.hasMatch(engine) &&
+          buildIdPattern.hasMatch(buildId) &&
+          baselineHash.hasMatch(hostPolicyHash),
+      'Invalid SO fingerprint fields.');
+  return sha256
+      .convert(utf8.encode(
+          'flutter-patcher-so-v1\n$flutter\n$engine\n$buildId\n$hostPolicyHash\n'))
+      .toString();
+}
+
 final buildIdPattern = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
 

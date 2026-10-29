@@ -41,6 +41,13 @@ List<String> compilePayload(Map<String, dynamic> m) => [
       'compile_receipt.json',
     ];
 const releasePayload = [...releaseFiles, 'release_receipt.json'];
+const soReleasePayload = [...releasePayload, 'host_policy.json'];
+List<String> releaseObjectPayload(Map<String, dynamic> m) =>
+    m['strategy'] == 'so' ? soReleasePayload : releasePayload;
+
+/// Fingerprint a release object belongs to, for either strategy.
+String releaseFingerprint(Map<String, dynamic> m) =>
+    (m['identity'] ?? m['compile'])['fingerprint'] as String;
 
 /// Archive entries per object kind; a compile archive cannot carry libapp.so
 /// and a release archive cannot carry app.dill.
@@ -51,7 +58,7 @@ final archiveEntries = <String, List<String>>{
     'compile_receipt.json',
     'compile.manifest.json'
   ]..sort(),
-  'release': [...releasePayload, 'release.manifest.json']..sort(),
+  'release': [...soReleasePayload, 'release.manifest.json']..sort(),
 };
 final requiredEntries = <String, List<String>>{
   'compile': [...compileFiles, 'compile_receipt.json', 'compile.manifest.json'],
@@ -254,24 +261,30 @@ Future<Map<String, dynamic>> verifyCompile(String root,
 }
 
 /// Verifies a release object on its own; with [compile] also its reference to
-/// that compile object, and with [compileRoot] the host policy binding.
+/// that compile object, and with [compileRoot] the host policy binding. An SO
+/// release carries its own policy and always verifies that binding.
 Future<Map<String, dynamic>> verifyReleaseObject(String root,
     {Map<String, dynamic>? compile, String? compileRoot}) async {
   await rejectLinks(root);
   final m = await baselineObject(p.join(root, 'release.manifest.json'));
   valid(m['schema'] == 5 && m['kind'] == 'release', 'Not a release object.');
   releaseSlot('${m['flavor']}', '${m['version_code']}', '${m['abi']}');
-  final ref = m['compile'];
+  final so = m['strategy'] == 'so';
+  valid(!m.containsKey('strategy') || so, 'Unknown release strategy.');
+  final ref = m[so ? 'identity' : 'compile'];
   valid(
       m['application_id'] is String &&
           buildIdPattern.hasMatch('${m['build_id']}') &&
           ref is Map &&
           baselineHash.hasMatch('${ref['fingerprint']}') &&
-          baselineHash.hasMatch('${ref['manifest_sha256']}') &&
-          ref['runtime_bootstrap'] is bool,
+          (so
+              ? ref.length == 4 &&
+                  baselineHash.hasMatch('${ref['host_policy_sha256']}')
+              : baselineHash.hasMatch('${ref['manifest_sha256']}') &&
+                  ref['runtime_bootstrap'] is bool),
       'Invalid release object identity.');
   validateSdkRelease(Map<String, dynamic>.from(ref as Map));
-  final files = await hashPayload(root, releasePayload);
+  final files = await hashPayload(root, releaseObjectPayload(m));
   await validatePackages(root);
   final receipt = await baselineObject(p.join(root, 'release_receipt.json'));
   valid(
@@ -291,12 +304,13 @@ Future<Map<String, dynamic>> verifyReleaseObject(String root,
     for (final k in [
       'schema',
       'kind',
+      if (so) 'strategy',
       'flavor',
       'version_code',
       'abi',
       'application_id',
       'build_id',
-      'compile'
+      so ? 'identity' : 'compile'
     ])
       k: m[k],
     'files': files,
@@ -307,18 +321,27 @@ Future<Map<String, dynamic>> verifyReleaseObject(String root,
     valid(canonical(ref) == canonical(compileReference(compile)),
         'Release references a different compile object.');
   }
-  if (compile != null &&
-      compileRoot != null &&
-      compile.containsKey('host_policy_sha256')) {
+  final policyRoot = so
+      ? root
+      : (compile != null && compileRoot != null && compile.containsKey('host_policy_sha256'))
+          ? compileRoot
+          : null;
+  if (policyRoot != null) {
     final policy = HostPolicy.parse(
-            await File(p.join(compileRoot, 'host_policy.json')).readAsString())
-        .fields;
+        await File(p.join(policyRoot, 'host_policy.json')).readAsString());
+    final fields = policy.fields;
     valid(
-        policy['application_id'] == m['application_id'] &&
-            policy['version_code'] == m['version_code'] &&
-            policy['flavor'] == m['flavor'] &&
-            policy['abi'] == m['abi'] &&
-            policy['fptc_key'] == receipt['public_key'],
+        fields['application_id'] == m['application_id'] &&
+            fields['version_code'] == m['version_code'] &&
+            fields['flavor'] == m['flavor'] &&
+            fields['abi'] == m['abi'] &&
+            fields['fptc_key'] == receipt['public_key'] &&
+            (!so ||
+                (fields['strategy'] == 'so' &&
+                    policy.digest == ref['host_policy_sha256'] &&
+                    ref['fingerprint'] ==
+                        soFingerprint('${ref['flutter_version']}',
+                            '${ref['engine_commit']}', '${m['build_id']}', policy.digest))),
         'Host policy differs from the release.');
   }
   return computed;
@@ -340,7 +363,7 @@ Future<Map<String, dynamic>> verifyBaselineDir(String root,
     case 'release':
       final m = await verifyReleaseObject(root);
       require(
-          expected == null || m['compile']['fingerprint'] == expected,
+          expected == null || releaseFingerprint(m) == expected,
           'BASELINE_FINGERPRINT_MISMATCH',
           'Requested fingerprint differs from baseline.');
       return m;
@@ -354,7 +377,7 @@ Future<List<String>> verifiedEntries(String root) async {
   final m = await verifyBaselineDir(root);
   return switch (m['kind']) {
     'compile' => [...compilePayload(m), 'compile.manifest.json'],
-    'release' => [...releasePayload, 'release.manifest.json'],
+    'release' => [...releaseObjectPayload(m), 'release.manifest.json'],
     _ => [...payloadFiles(m), 'baseline.manifest.json'],
   }
     ..sort();

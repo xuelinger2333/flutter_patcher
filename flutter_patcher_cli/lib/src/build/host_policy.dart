@@ -17,7 +17,7 @@ class HostPolicy {
     if (fields.length != expected.length ||
         !fields.keys.every(expected.contains) ||
         fields['schema'] != '1' ||
-        fields['strategy'] != 'bytecode') {
+        !{'bytecode', 'so'}.contains(fields['strategy'])) {
       throw const FormatException('Host policy fields/schema/strategy');
     }
     PublishManifest({
