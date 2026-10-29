@@ -128,27 +128,7 @@ open class FlutterPatcherApplication : FlutterApplication() {
                 }
                 if (patch == null) {
                     Log.d(TAG, "no usable patch, boot with built-in libapp.so")
-                    if (!diagRecorded) {
-                        // DROPPED_* 是用户最关心的"上次为啥被丢弃"信息，不应被这次
-                        // 无信息量的 NO_PATCH 覆盖。典型场景：上一次冷启动里 Dart 错误
-                        // 钩子把补丁判崩 + record(DROPPED_CIRCUIT_BREAKER) + 删补丁，
-                        // 但进程没死、UI 没建出来；用户划掉重开后这一次进入本分支，
-                        // 写 NO_PATCH 会让 DiagCard 看不到 trip 信息。
-                        // 后续装上新补丁时，下方 PATCHED 分支会自然覆盖，sticky 自动解除。
-                        val existing = BootDiagnosticStore.read(context)
-                        val existingStatus = existing?.get("status") as? String
-                        val shouldPreserve = existingStatus != null &&
-                            existingStatus.startsWith("DROPPED_")
-                        if (!shouldPreserve) {
-                            BootDiagnosticStore.record(
-                                context = context,
-                                status = BootDiagnosticStore.NO_PATCH,
-                                appVersionCode = appVc,
-                            )
-                        } else {
-                            Log.d(TAG, "preserved existing $existingStatus over NO_PATCH")
-                        }
-                    }
+                    if (!diagRecorded) BootDiagnosticStore.recordNoPatch(context, appVc)
                     return false
                 }
 

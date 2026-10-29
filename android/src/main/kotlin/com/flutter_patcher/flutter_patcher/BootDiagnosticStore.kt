@@ -103,6 +103,19 @@ internal object BootDiagnosticStore {
     }
 
     /**
+     * 记录本次没有加载补丁。上次的 DROPPED_* / *_BOOT_FAILED 说明补丁为何被丢弃，
+     * 比 NO_PATCH 更有用，予以保留；下次 PATCHED 会自然覆盖。
+     */
+    fun recordNoPatch(context: Context, appVersionCode: Long?) {
+        val previous = read(context)?.get(FIELD_STATUS) as? String
+        if (previous != null && (previous.startsWith("DROPPED_") || previous.endsWith("_BOOT_FAILED"))) {
+            Log.d(TAG, "preserved $previous over NO_PATCH")
+            return
+        }
+        record(context, NO_PATCH, appVersionCode = appVersionCode)
+    }
+
+    /**
      * 读取最近一次 record。
      *
      * @return 诊断 Map，可直接交给 MethodChannel 发到 Dart 侧；

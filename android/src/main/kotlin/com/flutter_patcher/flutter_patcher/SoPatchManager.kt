@@ -73,6 +73,7 @@ internal class SoPatchManager(private val context: Context, private val host: Ho
         val patches = PatchManager(context)
         val meta = store.activeFor(fingerprint)
         if (meta == null) {
+            store.noPatch()
             if (patches.candidate() != null) patches.rollback()
             return@synchronized null
         }

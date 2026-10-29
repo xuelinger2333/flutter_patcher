@@ -55,7 +55,7 @@ internal class BytecodePatchManager(private val context: Context) {
             return@synchronized null
         }
         store.recoverAttempt()
-        val meta = store.activeFor(fp) ?: return@synchronized null
+        val meta = store.activeFor(fp) ?: run { store.noPatch(); return@synchronized null }
         try {
             val authorizationStartUs = elapsedUs()
             authenticated?.checkBoot(meta)

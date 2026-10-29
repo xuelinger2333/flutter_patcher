@@ -98,6 +98,8 @@ internal class CandidateStore(private val context: Context, private val strategy
             appVersionCode = PatcherConfig.currentVersionCode(context), crashCount = count, message = message)
     }
 
+    fun noPatch() = BootDiagnosticStore.recordNoPatch(context, PatcherConfig.currentVersionCode(context))
+
     fun blacklist(): List<Map<String, Any?>> = prefs.all.filter { it.key.startsWith("bad:") && it.value == true }
         .map { mapOf("version" to it.key.removePrefix("bad:"), "md5" to "", "reason" to "BOOT_CRASH", "strategy" to strategy) }
 
