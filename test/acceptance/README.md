@@ -1,5 +1,22 @@
 # Real-device fault matrix
 
+## Authenticated host on a local device
+
+```powershell
+python test/acceptance/authenticated_device.py --strategy so --flutter-sdk PATH --serial SERIAL
+```
+
+Runs on Windows or Linux with a JDK, the Android SDK and an unlocked API 28+
+arm64 device. Use `--strategy bytecode` for a bytecode host. Each run creates
+fresh keys, a TLS certificate trusted only by the fixture app, builds the host,
+patches Dart code (and an asset for `so`), publishes a signed manifest to a
+local HTTPS origin reached through `adb reverse`, then verifies on the device:
+tampered signature rejected, install, two patched cold starts, no refresh of
+the same manifest, rollback, and no replay after rollback. Output and
+`result.json` go to a fresh `.dart_tool/flutter_patcher/authenticated/`
+directory; the process exits nonzero on failure. After a device problem, rerun
+only the device steps with `--resume-built --out THAT_DIR`. Installation may
+need on-device confirmation.
 ## Rebuild current product sources and regress
 
 ```powershell
