@@ -3,9 +3,6 @@ package com.flutter_patcher.flutter_patcher
 import android.content.Context
 import android.os.Build
 import android.util.Base64
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URI
 import java.util.UUID
 import org.json.JSONObject
 
@@ -36,12 +33,12 @@ internal class BytecodePatchManager(private val context: Context) {
       return synchronized(lock) {
         val profileStart = System.nanoTime()
         fun elapsedUs() = (System.nanoTime() - profileStart) / 1000
-        host?.let {
-            require(it.strategy == "bytecode") { "Host strategy is not bytecode" }
-            HostTrustConfig.requireOwner(context)
-            require(fp == it.scope["fingerprint"] &&
-                Base64.decode(publicKey, Base64.DEFAULT).contentEquals(it.fptcKey)) { "Bootstrap differs from immutable host" }
-        }
+        // Bytecode runs only on a host whose policy authorizes it.
+        val host = host ?: error("Bytecode requires a host policy")
+        require(host.strategy == "bytecode") { "Host strategy is not bytecode" }
+        HostTrustConfig.requireOwner(context)
+        require(fp == host.scope["fingerprint"] &&
+            Base64.decode(publicKey, Base64.DEFAULT).contentEquals(host.fptcKey)) { "Bootstrap differs from immutable host" }
         val policyUs = elapsedUs() // [PROFILE] Includes lazy APK policy loading.
         if (fingerprint != null || processClaimed) return@synchronized null
         processClaimed = true
@@ -123,25 +120,21 @@ internal class BytecodePatchManager(private val context: Context) {
         store.clearAttempt()
     }
 
-    fun apply(args: Map<String, Any?>, progress: ProgressCallback): ApplyResult {
-        require(host == null) { "Authenticated manifest required" }
-        return install(args, progress)
-    }
 
     fun applyManifest(wire: String, progress: ProgressCallback): Map<String, Any?> {
         val auth = authenticated ?: error("Host has no authenticated policy")
-        val decision = synchronized(lock) { auth.accept(wire) }
+        val decision = synchronized(lock) { auth.verify(wire) }
         if (decision.action == "withdraw") {
-            synchronized(lock) { invalidateUnauthorized(auth) }
+            synchronized(lock) { auth.accept(wire); invalidateUnauthorized(auth) }
             return mapOf("action" to "withdraw", "ok" to true)
         }
         progress("downloading", 0, decision.fields.getValue("size").toLong())
+        // Accept only an intact payload, so a failed download stays retryable.
         val bytes = AuthenticatedUpdates.download(decision.fields)
         return synchronized(lock) {
+            auth.accept(wire)
             val fields = auth.checkCommit(wire).fields
-            val result = install(mapOf("version" to fields.getValue("patch_seq"),
-                "patchUrl" to fields.getValue("url"), "sha256" to fields.getValue("sha256"),
-                "patch_seq" to fields.getValue("patch_seq").toLong()), progress, bytes, wire)
+            val result = install(fields, bytes, wire, progress)
             result.toMap() + mapOf("action" to "publish")
         }
     }
@@ -162,41 +155,19 @@ internal class BytecodePatchManager(private val context: Context) {
         if (!authorized) rollback()
     }
 
-    private fun install(args: Map<String, Any?>, progress: ProgressCallback,
-        authenticatedBytes: ByteArray? = null, authorization: String? = null): ApplyResult = synchronized(lock) {
+    /** Installs downloaded [bytes] that the signed manifest [wire] authorizes. */
+    private fun install(fields: Map<String, String>, bytes: ByteArray, wire: String,
+        progress: ProgressCallback): ApplyResult = synchronized(lock) {
         if (Build.VERSION.SDK_INT < 28 || fingerprint == null || key == null)
             return@synchronized ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, "A bootstrapped Android API 28+ host is required")
         try {
-            val version = args["version"] as? String ?: ""
-            val url = args["patchUrl"] as? String ?: ""
-            require(version.isNotEmpty() && url.isNotEmpty()) { "Version and URL required" }
-            val vc = PatcherConfig.currentVersionCode(context)
-            require(args["targetVersionCode"] == null || (args["targetVersionCode"] as Number).toLong() == vc) { "Target version mismatch" }
-            progress("downloading", 0, -1)
-            val uri = URI(url)
-            val bytes = authenticatedBytes ?: if (uri.scheme == "file") {
-                val file = File(uri).canonicalFile
-                require(file.toPath().startsWith(context.cacheDir.canonicalFile.toPath())) { "Staged file must be in application cache" }
-                CandidateStore.readBounded(file.inputStream())
-            } else {
-                require(uri.scheme == "https" || uri.scheme == "http") { "Unsupported URL" }
-                val connection = uri.toURL().openConnection() as HttpURLConnection
-                try {
-                    connection.connectTimeout = 15000
-                    connection.readTimeout = 30000
-                    require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
-                    CandidateStore.readBounded(connection.inputStream)
-                } finally { connection.disconnect() }
-            }
             progress("verifying", bytes.size.toLong(), bytes.size.toLong())
             val seq: Long
             try { seq = BytecodeEnvelope.verify(bytes, fingerprint!!, key!!) }
             catch (e: Exception) { return@synchronized ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, e.message) }
             val hash = BytecodeEnvelope.digest(bytes)
-            require(args["sha256"] == null || args["sha256"] == hash) { "Transport SHA256 mismatch" }
-            require(args["fingerprint"] == null || args["fingerprint"] == fingerprint) { "Metadata fingerprint mismatch" }
-            require(args["patch_seq"] == null || (args["patch_seq"] as Number).toLong() == seq) { "Metadata sequence mismatch" }
-            val meta = store.candidate(fingerprint!!, seq, hash, version, authorization)
+            require(fields["sha256"] == hash && fields["patch_seq"]?.toLong() == seq) { "Manifest differs from payload" }
+            val meta = store.candidate(fingerprint!!, seq, hash, fields.getValue("patch_seq"), wire)
             if (store.isBlacklisted(meta))
                 return@synchronized ApplyResult.failure(ApplyErrorCode.BLACKLISTED, "Bytecode candidate is blacklisted")
             store.requireNewer(meta)

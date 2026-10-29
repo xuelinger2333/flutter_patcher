@@ -262,10 +262,11 @@ class FlutterPatcherPlugin :
                 emitProgress(phase, received, total)
             }
             val applyResult = try {
+                // Without a host policy only legacy SO patches apply; bytecode
+                // needs a signed manifest on a bytecode host.
                 require(HostTrustConfig.load(appContext) == null) { "Authenticated manifest required" }
-                if (args["strategy"] == "bytecode") bytecode.apply(args, progress)
-                else if (args["strategy"] != null && args["strategy"] != "legacy")
-                    ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, "Unknown patch strategy")
+                if (args["strategy"] != null && args["strategy"] != "legacy")
+                    ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, "Only legacy patches apply without a host policy")
                 else PatchManager(appContext, progress).applyPatch(args)
             } catch (e: Exception) {
                 Log.e(TAG, "applyPatch error", e)

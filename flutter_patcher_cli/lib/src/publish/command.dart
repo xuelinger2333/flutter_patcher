@@ -10,16 +10,22 @@ import 'retention.dart';
 import 'store.dart';
 import 'transaction.dart';
 
+ArgParser publishOptions() => ArgParser()
+  ..addFlag('help', abbr: 'h', negatable: false)
+  ..addFlag('production',
+      negatable: false, help: 'Required; publishes the request to its store.')
+  ..addFlag('commit',
+      negatable: false,
+      help: 'Commit a production request; otherwise preview only.')
+  ..addOption('request', help: 'Production request JSON file.')
+  ..addOption('receipt', help: 'New output JSON file for production result.');
+
 Future<int> productionPublish(ArgResults args) async {
   requireSupportedHost();
   require(
-      !['action', 'port', 'patch', 'version-code'].any(args.wasParsed),
+      args['production'] == true && args.rest.isEmpty && args['request'] != null,
       'PUBLISH_CONFIG_INVALID',
-      'Mock options cannot be combined with --production; use request fields');
-  require(
-      args.rest.isEmpty && args['request'] != null && args['out'] == null,
-      'PUBLISH_CONFIG_INVALID',
-      'Use --production --request FILE; --out is mock-only');
+      'Use publish --production --request FILE [--commit]');
   final request = await readObject(args['request'] as String);
   require(
       request['kind'] == null ||

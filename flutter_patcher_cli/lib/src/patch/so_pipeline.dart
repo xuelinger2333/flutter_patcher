@@ -19,7 +19,7 @@ extension SoPatch on PatchPipeline {
   /// libapp.so and the flutter assets that differ from the release.
   Future<Map<String, Object?>> patchSo(
       PatchRequest req, ResolvedRelease resolved, String work) async {
-    require(!req.validationOnly && req.assets.isEmpty, 'PATCH_CONFIG_INVALID',
+    require(req.assets.isEmpty, 'PATCH_CONFIG_INVALID',
         'SO patches select changed assets themselves.');
     final receipt = resolved.receipt;
     require(

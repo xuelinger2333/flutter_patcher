@@ -15,7 +15,6 @@ import 'baseline/store.dart';
 import 'build/command.dart';
 import 'build/line_endings.dart';
 import 'patch/command.dart';
-import 'mock/command.dart';
 import 'keys/command.dart';
 import 'legacy/mock_server.dart';
 import 'legacy/pack.dart';
@@ -79,7 +78,7 @@ ArgParser parser() {
   final build = environmentOptions()
     ..addOption('host-policy',
         help:
-            'Canonical public policy enabling authenticated updates; its strategy (so or bytecode) selects the host kind.')
+            'Required. Canonical public host policy; its strategy (so or bytecode) selects the host kind.')
     ..addOption('project',
         help: 'Application source directory; builds use an isolated copy.')
     ..addOption('target', defaultsTo: 'lib/main.dart')
@@ -132,7 +131,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android [options]\nflutter_patcher patch android [options]\nflutter_patcher publish --out <local-mock-directory> [options]\nflutter_patcher pack [options]          (v1 SO, hosts without a host policy)\nflutter_patcher mock-server [options]   (v1 SO, hosts without a host policy)\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android [options]\nflutter_patcher patch android [options]\nflutter_patcher publish --production --request <file> [--commit]\nflutter_patcher pack [options]          (v1 SO, hosts without a host policy)\nflutter_patcher mock-server [options]   (v1 SO, hosts without a host policy)\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
@@ -164,21 +163,13 @@ Future<int> runCli(List<String> arguments) async {
       return await patchCommand(parsed.command!);
     }
     if (parsed.command!.name == 'publish') {
-      if (parsed.command!['production'] == true) {
-        try {
-          return await productionPublish(parsed.command!);
-        } on Failure {
-          rethrow;
-        } catch (_) {
-          throw Failure('PUBLISH_FAILED',
-              'Publication failed; check configuration and operation receipt');
-        }
-      }
       try {
-        return await publishCommand(parsed.command!);
-      } on IOException catch (error) {
-        throw Failure('MOCK_IO_ERROR',
-            'Local mock operation failed (${error.runtimeType})');
+        return await productionPublish(parsed.command!);
+      } on Failure {
+        rethrow;
+      } catch (_) {
+        throw Failure('PUBLISH_FAILED',
+            'Publication failed; check configuration and operation receipt');
       }
     }
     require(parsed.rest.isEmpty && parsed.command!.rest.isEmpty, 'USAGE_ERROR',

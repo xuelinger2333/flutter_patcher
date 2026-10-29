@@ -2,8 +2,8 @@
 
 Production publication runs on the supported build hosts (Linux x64/WSL2 and
 Windows x64). S3 stores need an AWS CLI that supports
-`s3api put-object --if-match` and `--if-none-match`. Existing
-`publish --out ... --action stage|serve|withdraw` remains a local mock.
+`s3api put-object --if-match` and `--if-none-match`. The former local mock
+(`publish --out`) has been removed.
 
 ```sh
 flutter_patcher publish --production --request publish.json --receipt preview.json

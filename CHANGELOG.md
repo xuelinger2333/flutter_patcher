@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Authenticated `.so` hosts: a host policy with `"strategy":"so"` makes
+  `build android` produce an SO host whose patches (`libapp.so` plus changed
+  assets) install only from signed publish manifests, with the same replay,
+  withdrawal and key-rotation protection as bytecode hosts. On any host built
+  with a policy, `checkUpdate` fetches a signed manifest and `applyPatch`
+  applies it.
+
 ### Changed
 
 - The minimum supported Flutter version is now 3.32.0 (Dart 3.8.0), and
@@ -21,6 +30,23 @@
   above the 1.5 MiB budget, so it never became a default. Baselines built
   with it (schema 4) are now rejected with `BASELINE_SCHEMA_UNSUPPORTED`;
   rebuild the host. Other baselines and their fingerprints are unchanged.
+- Bytecode patches without a host policy. `build android` now requires
+  `--host-policy`, and a bytecode host installs patches only from a signed
+  manifest. Removed with it: `PatchInfo.strategy`, `sha256`, `fingerprint`
+  and `patchSeq`; the `strategy` parameter of `applyPatchBytes`; and the
+  CLI's local mock publisher (`publish --out`), so `publish` requires
+  `--production`. `patch android` rejects bytecode baselines built without a
+  policy with `BASELINE_NOT_RELEASE`; rebuild the host with a policy. Hosts
+  without a policy keep the v1 `.so` path (`pack`, `mock-server`).
+
+### Fixed
+
+- On authenticated hosts, a publication whose download failed (for example a
+  corrupted payload) can be retried with the same manifest. The manifest was
+  previously accepted before the download, so the retry looked like no update
+  until the next publication.
+- On authenticated hosts, `lastBootDiagnostic` reports `noPatch` after a
+  rollback or withdrawal instead of the previous patched start.
 
 ## 0.1.4
 

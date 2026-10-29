@@ -27,7 +27,7 @@ class PatchRequest {
   final String? fingerprint;
   final int seq, minBuild;
   final int? previousSeq;
-  final bool validationOnly, offline;
+  final bool offline;
   final List<String> assets;
   PatchRequest(
       {required this.project,
@@ -40,7 +40,6 @@ class PatchRequest {
       this.previousSeq,
       this.assets = const [],
       this.target = 'lib/main.dart',
-      this.validationOnly = false,
       this.offline = false});
   Future<void> validate() async {
     require(
@@ -156,22 +155,22 @@ class PatchPipeline {
               manifest['engine_commit'] == sdk.engine,
           'PATCH_BASELINE_INCOMPATIBLE',
           'SDK differs from baseline');
+      // Bytecode patches install only on hosts with a host policy.
       require(
-          req.validationOnly ||
-              ([2, 3, 5].contains(manifest['schema']) &&
-                  manifest['runtime_bootstrap'] == true),
+          [3, 5].contains(manifest['schema']) &&
+              manifest['runtime_bootstrap'] == true &&
+              manifest['host_policy_sha256'] is String,
           'BASELINE_NOT_RELEASE',
-          'A baseline archived by build android is required');
+          'A baseline archived by build android --host-policy is required');
       final receipt = resolved.receipt;
       require(
           req.minBuild.toString() == receipt['version_code'],
           'PATCH_BASELINE_INCOMPATIBLE',
           'Minimum build must match the target release');
-      require(req.validationOnly || receipt['public_key'] is String,
-          'PATCH_KEY_MISMATCH', 'Release public key is missing');
+      require(receipt['public_key'] is String, 'PATCH_KEY_MISMATCH',
+          'Release public key is missing');
       final key = signingKey(req.privateKey,
-          expectedPublic:
-              req.validationOnly ? null : receipt['public_key'] as String);
+          expectedPublic: receipt['public_key'] as String);
       final usage = await commands.run(sdk.dart, [tool, '--help']);
       require(usage.contains('compile-patch'), 'TOOLS_VERSION_UNSUPPORTED',
           'Tools with compile-patch support are required; update the tools release');
@@ -196,14 +195,12 @@ class PatchPipeline {
           loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
               as Map;
       final app = pubspec['name'] as String;
-      if (!req.validationOnly) {
-        await installRuntimePackage(config, app, req.target.substring(4));
-      }
+      await installRuntimePackage(config, app, req.target.substring(4));
       final roots = await packageRoots(config);
       final packageState = await packageInputs(config, application: app);
       final oldState = receipt['package_inputs'];
       require(
-          req.validationOnly || oldState is Map,
+          oldState is Map,
           'PATCH_BASELINE_INCOMPATIBLE',
           'Baseline lacks dependency/native provenance; rebuild host');
       final own = {app, ...roots.keys.where((k) => !oldRoots.containsKey(k))};
@@ -280,7 +277,7 @@ class PatchPipeline {
       final payload = PatchResources(bundle, work, commands, managed);
       final oldResources = receipt['resources'];
       require(
-          oldResources is Map || req.validationOnly,
+          oldResources is Map,
           'PATCH_BASELINE_INCOMPATIBLE',
           'Baseline lacks resource inventory; rebuild host');
       await payload.collect(
@@ -432,8 +429,7 @@ class PatchPipeline {
       await workspace.verifyOriginals();
       await baselines.recheck(resolved, sdkRoot: sdk.root);
       final report = <String, Object?>{
-        'status':
-            req.validationOnly ? 'patch_pipeline_validated' : 'patch_created',
+        'status': 'patch_created',
         'platform': 'android',
         'abi': 'arm64-v8a',
         'strategy': 'bytecode',
@@ -452,7 +448,7 @@ class PatchPipeline {
         'bytes': artifact['bytes'],
         'checks': reports,
         'device_verified': false,
-        'release_baseline_verified': !req.validationOnly,
+        'release_baseline_verified': true,
         'release': resolved.report,
         'baseline_cache': {
           'compile': resolved.compileRoot,
@@ -479,8 +475,7 @@ class PatchPipeline {
       PatchRequest req, String artifact, Map<String, Object?> report) async {
     final pending = temporaryName(p.absolute(req.output));
     await Directory(pending).create(recursive: true);
-    await File(artifact).copy(p.join(
-        pending, req.validationOnly ? 'validation.fptc' : 'patch.fptc'));
+    await File(artifact).copy(p.join(pending, 'patch.fptc'));
     await writeObject(p.join(pending, 'patch.json'), report);
     await rejectLinks(req.output);
     require(

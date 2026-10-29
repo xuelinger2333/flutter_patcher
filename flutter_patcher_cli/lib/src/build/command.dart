@@ -39,10 +39,8 @@ Future<int> buildCommand(ArgResults args) async {
             p.join(project, '.dart_tool/flutter_patcher/releases',
                 DateTime.now().microsecondsSinceEpoch.toString())),
         publicKey: key,
-        hostPolicy: args['host-policy'] == null
-            ? null
-            : HostPolicy.parse(
-                await File(args['host-policy'] as String).readAsString()),
+        hostPolicy: HostPolicy.parse(
+            await File(required('host-policy')).readAsString()),
         target: args['target'] as String,
         flavor: args['flavor'] as String?,
         versionCode: args['version-code'] as String?);
@@ -89,7 +87,7 @@ Future<int> buildCommand(ArgResults args) async {
             aapt,
             engine,
             BaselineRepository(p.join(cache, 'baselines'), baselineStore));
-    final result = request.hostPolicy?.fields['strategy'] == 'so'
+    final result = request.hostPolicy.fields['strategy'] == 'so'
         ? await pipeline.buildSo(request)
         : await pipeline.build(request);
     stdout.writeln(jsonEncode({'command': 'build', ...result}));

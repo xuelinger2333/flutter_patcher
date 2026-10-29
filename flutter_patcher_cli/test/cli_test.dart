@@ -34,6 +34,27 @@ void main() {
       expect(result.stderr, contains('USAGE_ERROR'));
     }
   });
+  test('build needs a host policy and publish is production-only', () async {
+    final temp = await Directory.systemTemp.createTemp('cli-policy-');
+    final key = File('${temp.path}/public.base64')..writeAsStringSync('k');
+    final build = await cli([
+      'build',
+      'android',
+      '--public-key',
+      key.path,
+      '--out',
+      '${temp.path}/out'
+    ]);
+    final publish = await cli(['publish', '--request', key.path]);
+    await temp.delete(recursive: true);
+    expect(build.exitCode, 2);
+    expect(build.stderr, contains('Missing --host-policy'));
+    expect(publish.exitCode, 2);
+    expect(publish.stderr, contains('PUBLISH_CONFIG_INVALID'));
+  },
+      skip: HostIdentity.verified.contains(HostIdentity.current().key)
+          ? false
+          : 'Needs a supported host');
   test('unsupported host emits a structured failure', () async {
     final result = await cli(['doctor', '--json', '--offline']);
     expect(result.exitCode, 1);

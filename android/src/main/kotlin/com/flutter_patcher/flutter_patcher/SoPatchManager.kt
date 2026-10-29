@@ -47,14 +47,16 @@ internal class SoPatchManager(private val context: Context, private val host: Ho
     private val fingerprint = host.scope.getValue("fingerprint")
 
     fun applyManifest(wire: String, progress: ProgressCallback): Map<String, Any?> {
-        val decision = synchronized(lock) { auth.accept(wire) }
+        val decision = synchronized(lock) { auth.verify(wire) }
         if (decision.action == "withdraw") {
-            synchronized(lock) { invalidateUnauthorized() }
+            synchronized(lock) { auth.accept(wire); invalidateUnauthorized() }
             return mapOf("action" to "withdraw", "ok" to true)
         }
         progress("downloading", 0, decision.fields.getValue("size").toLong())
+        // Accept only an intact payload, so a failed download stays retryable.
         val bytes = AuthenticatedUpdates.download(decision.fields)
         return synchronized(lock) {
+            auth.accept(wire)
             install(bytes, auth.checkCommit(wire).fields, wire, progress).toMap() + mapOf("action" to "publish")
         }
     }

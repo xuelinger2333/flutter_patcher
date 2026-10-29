@@ -4,6 +4,13 @@
 
 ## 未发布
 
+### Added
+
+- 带认证的 `.so` 宿主：宿主策略写 `"strategy":"so"` 时，`build android` 构建 SO 宿主，
+  它的补丁（`libapp.so` 加上变化的资源）只能通过签名的发布清单安装，和字节码宿主
+  一样具备防回放、撤回与密钥轮换保护。凡是带策略构建的宿主，`checkUpdate` 都会获取
+  签名清单，`applyPatch` 负责应用它。
+
 ### Changed
 
 - 最低支持的 Flutter 版本提高到 3.32.0（Dart 3.8.0），`.so` 与字节码两条
@@ -20,6 +27,19 @@
   宿主保留的接口使 `libapp.so` 增大约 4.5 MiB，超出 1.5 MiB 的预算，因此从未成为
   默认行为。用它构建的基线（schema 4）现在会以 `BASELINE_SCHEMA_UNSUPPORTED` 被
   拒绝，需要重新构建宿主。其他基线及其指纹不受影响。
+- 移除不带宿主策略的字节码补丁。`build android` 现在必须提供 `--host-policy`，
+  字节码宿主只接受签名清单下发的补丁。随之移除：`PatchInfo.strategy`、`sha256`、
+  `fingerprint` 与 `patchSeq`；`applyPatchBytes` 的 `strategy` 参数；CLI 的本地
+  mock 发布（`publish --out`），因此 `publish` 必须带 `--production`。`patch android`
+  会以 `BASELINE_NOT_RELEASE` 拒绝不带策略构建的字节码基线，需要带策略重新构建宿主。
+  不带策略的宿主继续使用 v1 `.so` 路径（`pack`、`mock-server`）。
+
+### Fixed
+
+- 带认证的宿主上，下载失败（例如补丁内容损坏）的发布现在可以用同一份清单重试。
+  之前清单在下载前就被接受，重试时被当成"没有更新"，只能等下一次发布。
+- 带认证的宿主在回滚或撤回之后，`lastBootDiagnostic` 报告 `noPatch`，不再停留在
+  上一次带补丁的启动。
 
 ## 0.1.4
 

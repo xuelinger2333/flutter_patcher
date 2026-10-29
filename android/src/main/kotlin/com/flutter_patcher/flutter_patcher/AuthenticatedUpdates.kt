@@ -17,6 +17,11 @@ internal class AuthenticatedUpdates(context: Context, val host: HostTrustConfig)
         store.write(state.copy(manifest = decision.next))
         return decision
     }
+    /** Verifies [wire] against the accepted state without persisting it. */
+    fun verify(wire: String): PublishManifest.Decision {
+        val state = store.read()
+        return PublishManifest.verify(wire, store.keys(state), host.scope, BuildConfig.PATCHER_VERSION, state.manifest)
+    }
     /** Verifies [wire] without persisting it; `fresh` when accepting it would change state. */
     fun inspect(wire: String): Map<String, Any?> {
         val state = store.read()
