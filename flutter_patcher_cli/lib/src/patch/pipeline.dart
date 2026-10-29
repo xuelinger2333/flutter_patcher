@@ -68,13 +68,28 @@ class PatchRequest {
   }
 }
 
+/// The part of a package input that reaches an Android build: android/
+/// without test sources or Markdown, and hook/. Both sides are filtered at
+/// comparison time, so baselines recorded with every native file stay valid.
+Object? _androidBuildInputs(Object? entry) => entry is! Map
+    ? entry
+    : {
+        ...entry,
+        'native_files': {
+          for (final e in ((entry['native_files'] as Map?) ?? const {}).entries)
+            if (RegExp(r'^(android/(?!(.*/)?src/(test|androidTest)/).*(?<!\.md)$|hook/)')
+                .hasMatch(e.key as String))
+              e.key: e.value
+        }
+      };
+
 /// Rejects native changes against the release's [previous] package inputs and
 /// records each changed pure-Dart dependency in [changed]; true if any did.
 bool nativeInputChanges(
     Map current, Map previous, String app, List<String> changed) {
   require(
-      canonical(current[app]?['native_files']) ==
-          canonical(previous[app]?['native_files']),
+      canonical((_androidBuildInputs(current[app]) as Map?)?['native_files']) ==
+          canonical((_androidBuildInputs(previous[app]) as Map?)?['native_files']),
       'PATCH_NATIVE_CHANGE',
       'Application native sources changed; rebuild host');
   var any = false;
@@ -83,7 +98,8 @@ bool nativeInputChanges(
     ...previous.keys.cast<String>()
   }) {
     if (name == app) continue;
-    final now = current[name], before = previous[name];
+    final now = _androidBuildInputs(current[name]) as Map?,
+        before = _androidBuildInputs(previous[name]) as Map?;
     if (canonical(now) == canonical(before)) continue;
     require(
         now?['native'] != true &&

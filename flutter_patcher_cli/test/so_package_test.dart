@@ -78,8 +78,28 @@ void main() {
     final previous = {
       'app': {'native_files': {}},
       'dart_only': {'version': '1'},
-      'plugin': {'native': true, 'version': '1'},
+      'plugin': {
+        'native': true,
+        'version': '1',
+        'native_files': {'android/src/main/A.kt': 'a'}
+      },
     };
+    // Test sources, docs and other platforms never reach the Android build.
+    expect(
+        nativeInputChanges({
+          ...previous,
+          'plugin': {
+            'native': true,
+            'version': '1',
+            'native_files': {
+              'android/src/main/A.kt': 'a',
+              'android/src/test/T.kt': 't',
+              'android/README.md': 'd',
+              'ios/Classes/P.swift': 's'
+            }
+          }
+        }, previous, 'app', []),
+        isFalse);
     final changed = <String>[];
     expect(
         nativeInputChanges({
