@@ -2,11 +2,8 @@ package com.flutter_patcher.flutter_patcher
 
 import android.content.Context
 import android.os.Build
-import android.os.Process
 import android.util.Base64
 import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.UUID
@@ -18,8 +15,7 @@ internal class BytecodePatchManager(private val context: Context) {
         private val lock = Any()
         private var processClaimed = false
     }
-    private val prefs = context.getSharedPreferences("flutter_patcher_bytecode", Context.MODE_PRIVATE)
-    private val directory = File(context.filesDir, "flutter_patcher_bytecode")
+    private val store = CandidateStore(context, "bytecode")
     private val host by lazy { HostTrustConfig.load(context) }
     private val authenticated by lazy { host?.let { AuthenticatedUpdates(context, it) } }
     @Volatile var bootstrapped = false
@@ -53,29 +49,16 @@ internal class BytecodePatchManager(private val context: Context) {
         fingerprint = fp
         key = raw
         if (Build.VERSION.SDK_INT < 33) {
-            diagnostic("BYTECODE_UNSUPPORTED", "Bytecode verification requires Android API 33")
+            store.diagnostic("BYTECODE_UNSUPPORTED", "Bytecode verification requires Android API 33")
             return@synchronized null
         }
-        val prior = prefs.getString("attempt_meta", null)
-        if (prior != null) {
-            val meta = JSONObject(prior)
-            if (CrashGuard(context).previousSessionCrashed(prefs.getBoolean("loading", false),
-                    prefs.getInt("pid", -1))) recordFailure(meta, "Previous process crashed")
-            commit(prefs.edit().remove("attempt_meta").remove("pid").putBoolean("loading", false))
-        }
-        val meta = active() ?: return@synchronized null
-        if (meta.getString("fingerprint") != fp || meta.getLong("versionCode") != PatcherConfig.currentVersionCode(context)) {
-            commit(prefs.edit().remove("active"))
-            diagnostic(BootDiagnosticStore.DROPPED_VERSION_CODE_MISMATCH, "Host identity changed")
-            return@synchronized null
-        }
-        if (prefs.getBoolean("bad:${id(meta)}", false)) return@synchronized null
+        store.recoverAttempt()
+        val meta = store.activeFor(fp) ?: return@synchronized null
         try {
             val authorizationStartUs = elapsedUs()
             authenticated?.checkBoot(meta)
             val preparedUs = elapsedUs()
-            val file = File(directory, meta.getString("sha256") + ".fptc")
-            val bytes = readBounded(file.inputStream())
+            val bytes = CandidateStore.readBounded(store.file(meta).inputStream())
             val readUs = elapsedUs()
             val seq = BytecodeEnvelope.verify(bytes, fp, raw)
             val verifiedUs = elapsedUs()
@@ -95,7 +78,7 @@ internal class BytecodePatchManager(private val context: Context) {
                     "envelope_verify" to verifiedUs - readUs, "file_digest" to digestUs - verifiedUs,
                     "total" to elapsedUs()))
         } catch (error: Exception) {
-            recordFailure(meta, error.message ?: "Candidate rejected")
+            store.recordFailure(meta, error.message ?: "Candidate rejected")
             null
         }
       }
@@ -106,9 +89,8 @@ internal class BytecodePatchManager(private val context: Context) {
         val meta = offeredMeta ?: return@synchronized false
         try { authenticated?.checkBoot(meta) } catch (_: Exception) { return@synchronized false }
         // A rollback or a newly installed candidate invalidates a prepared offer.
-        if (active()?.let { id(it) } != id(meta)) return@synchronized false
-        commit(prefs.edit().putString("attempt_meta", meta.toString())
-            .putBoolean("loading", true).putInt("pid", Process.myPid()))
+        if (store.active()?.let { store.id(it) } != store.id(meta)) return@synchronized false
+        store.markLoading(meta)
         val started = attempt?.start(token) == true
         if (started) frameToken = token
         started
@@ -118,8 +100,8 @@ internal class BytecodePatchManager(private val context: Context) {
         // Untokened legacy init/first-frame reports cannot settle a v2 attempt.
         if (token == null || attempt?.succeed(token) != true) return@synchronized
         val meta = offeredMeta ?: return@synchronized
-        commit(prefs.edit().putBoolean("loading", false).putInt("crashes:${id(meta)}", 0))
-        diagnostic(BootDiagnosticStore.PATCHED, "Bytecode first frame", meta)
+        store.markSuccess(meta)
+        store.diagnostic(BootDiagnosticStore.PATCHED, "Bytecode first frame", meta)
     }
 
     fun firstFrame(token: String) = synchronized(lock) { success(token) }
@@ -130,13 +112,13 @@ internal class BytecodePatchManager(private val context: Context) {
             // init() and bootstrap may report the same error in either order.
             // A later fatal report escalates disposition, never the crash count.
             if (quarantine && attempt?.failed == true) {
-                offeredMeta?.let { recordFailure(it, message ?: "Unsafe startup", true, false) }
+                offeredMeta?.let { store.recordFailure(it, message ?: "Unsafe startup", true, false) }
             }
             return@synchronized
         }
         frameToken = null
-        offeredMeta?.let { recordFailure(it, message ?: "Dart boot failure", quarantine) }
-        commit(prefs.edit().remove("attempt_meta").remove("pid").putBoolean("loading", false))
+        offeredMeta?.let { store.recordFailure(it, message ?: "Dart boot failure", quarantine) }
+        store.clearAttempt()
     }
 
     fun apply(args: Map<String, Any?>, progress: ProgressCallback): ApplyResult {
@@ -169,7 +151,7 @@ internal class BytecodePatchManager(private val context: Context) {
     }
 
     private fun invalidateUnauthorized(auth: AuthenticatedUpdates) {
-        val candidate = active() ?: return
+        val candidate = store.active() ?: return
         val authorized = try { auth.checkBoot(candidate); true } catch (_: Exception) { false }
         if (!authorized) rollback()
     }
@@ -189,7 +171,7 @@ internal class BytecodePatchManager(private val context: Context) {
             val bytes = authenticatedBytes ?: if (uri.scheme == "file") {
                 val file = File(uri).canonicalFile
                 require(file.toPath().startsWith(context.cacheDir.canonicalFile.toPath())) { "Staged file must be in application cache" }
-                readBounded(file.inputStream())
+                CandidateStore.readBounded(file.inputStream())
             } else {
                 require(uri.scheme == "https" || uri.scheme == "http") { "Unsupported URL" }
                 val connection = uri.toURL().openConnection() as HttpURLConnection
@@ -197,7 +179,7 @@ internal class BytecodePatchManager(private val context: Context) {
                     connection.connectTimeout = 15000
                     connection.readTimeout = 30000
                     require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
-                    readBounded(connection.inputStream)
+                    CandidateStore.readBounded(connection.inputStream)
                 } finally { connection.disconnect() }
             }
             progress("verifying", bytes.size.toLong(), bytes.size.toLong())
@@ -208,22 +190,11 @@ internal class BytecodePatchManager(private val context: Context) {
             require(args["sha256"] == null || args["sha256"] == hash) { "Transport SHA256 mismatch" }
             require(args["fingerprint"] == null || args["fingerprint"] == fingerprint) { "Metadata fingerprint mismatch" }
             require(args["patch_seq"] == null || (args["patch_seq"] as Number).toLong() == seq) { "Metadata sequence mismatch" }
-            val meta = JSONObject().put("fingerprint", fingerprint).put("seq", seq)
-                .put("sha256", hash).put("version", version).put("versionCode", vc)
-            if (authorization != null) meta.put("authorization", authorization)
-            if (prefs.getBoolean("bad:${id(meta)}", false))
+            val meta = store.candidate(fingerprint!!, seq, hash, version, authorization)
+            if (store.isBlacklisted(meta))
                 return@synchronized ApplyResult.failure(ApplyErrorCode.BLACKLISTED, "Bytecode candidate is blacklisted")
-            val old = active()
-            val repeated = old != null && id(old) == id(meta)
-            require(repeated || seq > prefs.getLong("high:$fingerprint", 0)) { "Patch sequence must exceed accepted high-water mark" }
             progress("finalizing", bytes.size.toLong(), bytes.size.toLong())
-            check(directory.isDirectory || directory.mkdirs()) { "Cannot create bytecode directory" }
-            val temporary = File(directory, UUID.randomUUID().toString() + ".pending")
-            FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }
-            val target = File(directory, "$hash.fptc")
-            check(temporary.renameTo(target)) { "Cannot commit bytecode file" }
-            commit(prefs.edit().putString("active", meta.toString())
-                .putLong("high:$fingerprint", maxOf(seq, prefs.getLong("high:$fingerprint", 0))))
+            store.save(meta, bytes)
             ApplyResult.SUCCESS
         } catch (e: java.io.IOException) { ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message) }
           catch (e: Exception) { ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, e.message) }
@@ -231,55 +202,15 @@ internal class BytecodePatchManager(private val context: Context) {
 
     fun rollback() = synchronized(lock) {
         if (host != null) HostTrustConfig.requireOwner(context)
-        // Keep high-water marks and blacklist across explicit rollback.
-        commit(prefs.edit().remove("active").remove("attempt_meta").remove("pid").putBoolean("loading", false))
+        store.clearActive()
         offered = null
         attempt = null
         frameToken = null
     }
-    fun currentVersion(): String? = synchronized(lock) { active()?.optString("version") }
-    fun blacklist(): List<Map<String, Any?>> = synchronized(lock) {
-        prefs.all.filter { it.key.startsWith("bad:") && it.value == true }
-            .map { mapOf("version" to it.key.removePrefix("bad:"), "md5" to "", "reason" to "BOOT_CRASH", "strategy" to "bytecode") }
-    }
+    fun currentVersion(): String? = synchronized(lock) { store.active()?.optString("version") }
+    fun blacklist(): List<Map<String, Any?>> = synchronized(lock) { store.blacklist() }
     fun clearBlacklist() = synchronized(lock) {
         if (host != null) HostTrustConfig.requireOwner(context)
-        val edit = prefs.edit()
-        prefs.all.keys.filter { it.startsWith("bad:") || it.startsWith("crashes:") }.forEach { edit.remove(it) }
-        commit(edit)
-    }
-    private fun active(): JSONObject? = prefs.getString("active", null)?.let { JSONObject(it) }
-    private fun id(meta: JSONObject) = "${meta.getString("fingerprint")}:${meta.getLong("seq")}:${meta.getString("sha256")}"
-    private fun recordFailure(meta: JSONObject, message: String, quarantine: Boolean = false, increment: Boolean = true) {
-        val id = id(meta)
-        val count = prefs.getInt("crashes:$id", 0) + if (increment) 1 else 0
-        val tripped = quarantine || count >= PatcherConfig.maxCrashCount(context)
-        val edit = prefs.edit().putInt("crashes:$id", count)
-        if (prefs.getString("attempt_meta", null)?.let { id(JSONObject(it)) } == id) {
-            // Counting and consuming the old attempt are one durable write.
-            edit.remove("attempt_meta").remove("pid").putBoolean("loading", false)
-        }
-        if (tripped) {
-            edit.putBoolean("bad:$id", true)
-            if (active()?.let { id(it) } == id) edit.remove("active")
-        }
-        commit(edit)
-        diagnostic(if (tripped) BootDiagnosticStore.DROPPED_CIRCUIT_BREAKER else "BYTECODE_BOOT_FAILED", message, meta, count)
-    }
-    private fun diagnostic(status: String, message: String, meta: JSONObject? = null, count: Int = 0) {
-        BootDiagnosticStore.record(context, status, patchVersion = meta?.optString("version"),
-            appVersionCode = PatcherConfig.currentVersionCode(context), crashCount = count, message = message)
-    }
-    private fun commit(edit: android.content.SharedPreferences.Editor) { check(edit.commit()) { "Cannot commit bytecode state" } }
-    private fun readBounded(stream: InputStream): ByteArray = stream.use {
-        val out = java.io.ByteArrayOutputStream()
-        val buffer = ByteArray(65536)
-        while (true) {
-            val count = it.read(buffer)
-            if (count < 0) break
-            require(out.size().toLong() + count <= BytecodeEnvelope.MAX_BYTES) { "Patch too large" }
-            out.write(buffer, 0, count)
-        }
-        out.toByteArray()
+        store.clearBlacklist()
     }
 }
