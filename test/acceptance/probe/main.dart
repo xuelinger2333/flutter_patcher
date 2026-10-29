@@ -1,8 +1,9 @@
 // Separate probe APK: this entry never starts a production boot transaction.
+// probe/run.py reads its prefixed lines from logcat, so print stays unthrottled.
+// ignore_for_file: avoid_print
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

@@ -172,24 +172,27 @@ void main() {
             if (method == 'bootPayload') {
               if (scenario == 'missing') return null;
               if (scenario == 'timeout') return late.future;
-              if (scenario == 'legacy')
+              if (scenario == 'legacy') {
                 return {
                   'attempt': 'token',
                   'path': 'file',
                   'sha256': sha256.convert(bytes).toString()
                 };
-              if (scenario == 'wrong-version')
+              }
+              if (scenario == 'wrong-version') {
                 return {
                   'attempt': 'token',
                   'transportVersion': 2,
                   'envelopeBytes': bytes
                 };
-              if (scenario == 'wrong-bytes')
+              }
+              if (scenario == 'wrong-bytes') {
                 return {
                   'attempt': 'token',
                   'transportVersion': 1,
                   'envelopeBytes': bytes.toList()
                 };
+              }
               return {
                 'attempt': 'token',
                 'transportVersion': 1,

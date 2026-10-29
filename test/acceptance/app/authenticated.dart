@@ -1,7 +1,6 @@
 // Dedicated network acceptance fixture. Its loopback API is not plugin code.
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';

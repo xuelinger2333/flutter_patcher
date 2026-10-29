@@ -52,8 +52,9 @@ class PatchBootstrap {
         original: original,
         fingerprint: fingerprint,
         publicKeyBase64: publicKeyBase64);
-    if (stopObserving != null)
+    if (stopObserving != null) {
       Timer(const Duration(seconds: 5), stopObserving!);
+    }
     // Android FlutterRenderer confirms the first frame for the armed attempt.
     // This works for both host and whole-module bindings without creating one.
   }
