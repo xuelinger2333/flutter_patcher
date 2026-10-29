@@ -1,5 +1,15 @@
 > Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
 
+## Unreleased
+
+### Changed
+
+- The minimum supported Flutter version is now 3.32.0 (Dart 3.8.0), and
+  the `.so` and bytecode workflows share this floor. Flutter 3.32 is the
+  first release whose engine build exposes Dart dynamic modules, which the
+  bytecode workflow requires. `pub get` now rejects older Flutter SDKs
+  instead of failing later in the Android build.
+
 ## 0.1.4
 
 ### Fixed

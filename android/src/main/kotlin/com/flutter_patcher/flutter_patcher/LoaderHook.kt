@@ -19,11 +19,6 @@ import java.util.concurrent.ExecutorService
  * ## 已验证字段名（按 Flutter 版本）
  * | Flutter 版本 | FlutterInjector 字段 | ensureInitializationComplete 签名         |
  * |-------------|----------------------|-------------------------------------------|
- * | 3.19.x      | `flutterLoader`      | (Context, @Nullable String[])             |
- * | 3.22.x      | `flutterLoader`      | (Context, @Nullable String[])             |
- * | 3.24.x      | `flutterLoader`      | (Context, @Nullable String[])             |
- * | 3.27.x      | `flutterLoader`      | (Context, @Nullable String[])             |
- * | 3.29.x      | `flutterLoader`      | (Context, @Nullable String[])             |
  * | 3.32.x      | `flutterLoader`      | (Context, @Nullable String[])             |
  * | 3.35.x      | `flutterLoader`      | (Context, @Nullable String[])             |
  * | 3.38.x      | `flutterLoader`      | (Context, @Nullable String[])             |

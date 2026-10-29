@@ -2,6 +2,15 @@
 
 [English](CHANGELOG.md) | **简体中文**
 
+## 未发布
+
+### Changed
+
+- 最低支持的 Flutter 版本提高到 3.32.0（Dart 3.8.0），`.so` 与字节码两条
+  流程使用同一下限。Flutter 3.32 是第一个在引擎构建中提供 Dart 动态模块的
+  版本，字节码流程依赖这项能力。更旧的 Flutter SDK 现在会在 `pub get` 时
+  被拒绝，而不是等到 Android 构建阶段才失败。
+
 ## 0.1.4
 
 ### Fixed

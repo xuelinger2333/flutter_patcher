@@ -76,8 +76,8 @@ flutter install
 | 项目 | 要求 |
 |---|---|
 | 平台 | Android only |
-| Dart SDK | `>=3.0.0 <4.0.0` |
-| Flutter | `>=3.3.0`；loader hook 已验证 3.19 ~ 3.44 |
+| Dart SDK | `>=3.8.0 <4.0.0` |
+| Flutter | `>=3.32.0`；loader hook 已验证 3.32 ~ 3.44 |
 | Android `minSdk` | 24 |
 | Android `compileSdk` | 36 |
 | ABI | `armeabi-v7a` / `arm64-v8a` / `x86_64` |
