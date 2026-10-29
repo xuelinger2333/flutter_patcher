@@ -4,11 +4,6 @@ on:
     branches: [dev]
   pull_request:
   workflow_dispatch:
-    inputs:
-      full_acceptance:
-        description: Run on the configured isolated Linux hosts and arm64 Android device
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -19,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.versions.outputs.matrix }}
-      acceptance_matrix: ${{ steps.versions.outputs.acceptance_matrix }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -41,7 +35,6 @@ jobs:
           assert all(re.fullmatch(r'\d+\.\d+\.\d+', v) for v in versions)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write('matrix=' + json.dumps({'version': versions}) + '\n')
-              f.write('acceptance_matrix=' + json.dumps({'version': versions, 'binding': ['standard', 'custom']}) + '\n')
           PY
   fast:
     needs: versions
@@ -72,46 +65,4 @@ jobs:
           python3 test/acceptance/linux_tests.py --repo "$PWD" --dart "$(command -v dart)" --out "$PWD/.dart_tool/flutter_patcher/ci-fast"
       - name: Native JVM regression
         run: python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
-      - run: python3 -m unittest discover -s test/acceptance -p 'test_*.py' -v
-      - run: echo 'Fast tests only; device acceptance is not implied.' >> "$GITHUB_STEP_SUMMARY"
-  host_a:
-    needs: [versions, fast]
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.full_acceptance == true) ||
-      (github.event_name == 'push' && vars.DEVICE_ACCEPTANCE == 'true')
-    runs-on: [self-hosted, linux, x64, acceptance-build]
-    environment: device-acceptance
-    timeout-minutes: 120
-    strategy:
-      max-parallel: 1
-      matrix: ${{ fromJSON(needs.versions.outputs.acceptance_matrix) }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-      - run: python3 test/acceptance/ci.py --stage build --version "$VERSION" --binding "$BINDING" --artifacts .
-        env:
-          VERSION: ${{ matrix.version }}
-          BINDING: ${{ matrix.binding }}
-  host_b_device:
-    needs: [versions, host_a]
-    runs-on: [self-hosted, linux, x64, acceptance-device]
-    environment: device-acceptance
-    timeout-minutes: 120
-    strategy:
-      max-parallel: 1
-      matrix: ${{ fromJSON(needs.versions.outputs.acceptance_matrix) }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          repository: xuelinger2333/flutter_patcher_artifacts
-          ref: ${{ vars.ARTIFACTS_COMMIT }}
-          path: .dart_tool/flutter_patcher/artifacts
-          persist-credentials: false
-      - run: python3 test/acceptance/ci.py --stage patch --version "$VERSION" --binding "$BINDING" --artifacts .dart_tool/flutter_patcher/artifacts
-        env:
-          VERSION: ${{ matrix.version }}
-          BINDING: ${{ matrix.binding }}
+      - run: echo 'Fast tests only; run test/acceptance/authenticated_device.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"

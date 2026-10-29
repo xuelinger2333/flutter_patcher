@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';
 
 const revision = 'original';
+// A crash patch throws before its first frame; crash protection must recover.
+// (exit() is not a crash: Android records it as a deliberate self exit.)
+const crash = false;
 const testCa = r"""__TEST_CA__""";
 
 class _TestTrust extends HttpOverrides {
@@ -20,6 +23,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = _TestTrust();
   await FlutterPatcher.init();
+  if (crash) throw StateError('crash patch');
   final asset = await rootBundle.loadString('assets/msg.txt');
   runApp(MaterialApp(
       home: Scaffold(body: Center(child: Text('revision: $revision\n$asset')))));
