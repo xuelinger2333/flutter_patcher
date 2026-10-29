@@ -13,7 +13,8 @@ import 'resources.dart';
     required List<int> libapp,
     required Map release,
     required String version,
-    required int targetVersionCode}) {
+    required int targetVersionCode,
+    required Map<String, dynamic>? target}) {
   final current = resourceReceipt(apk);
   final oldFiles = release['files'] as Map, newFiles = current['files'] as Map;
   final oldManifest = release['manifest'] as Map,
@@ -41,6 +42,8 @@ import 'resources.dart';
         'schemaVersion': 2,
         'version': version,
         'targetVersionCode': targetVersionCode,
+        // Signed: publication accepts the patch for this release only.
+        if (target != null) 'target': target,
         'lib': {
           'arm64-v8a': {
             'path': 'lib/arm64-v8a/libapp.so',

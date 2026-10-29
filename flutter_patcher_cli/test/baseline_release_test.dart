@@ -213,7 +213,8 @@ void main() {
           'version_code': '42',
           'flavor': 'prod',
           'abi': 'arm64-v8a',
-          'fingerprint': fp
+          'fingerprint': fp,
+          'strategy': 'bytecode'
         };
         final identity = await publicationBaseline(
             store, fields, p.join(temp.path, 'publish'));

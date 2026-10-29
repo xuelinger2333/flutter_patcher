@@ -88,7 +88,8 @@ extension SoPatch on PatchPipeline {
         libapp: libapp,
         release: receipt['resources'] as Map,
         version: '${req.seq}',
-        targetVersionCode: req.minBuild);
+        targetVersionCode: req.minBuild,
+        target: resolved.target);
     if (info['libapp_sha256'] != receipt['libapp_sha256']) changed.add('libapp.so');
     changed.addAll(package.changed);
     require(changed.isNotEmpty, 'PATCH_NO_CHANGES',

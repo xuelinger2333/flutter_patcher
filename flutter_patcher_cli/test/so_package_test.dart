@@ -33,7 +33,8 @@ void main() {
       libapp: utf8.encode('libapp'),
       release: release,
       version: '3',
-      targetVersionCode: 42);
+      targetVersionCode: 42,
+      target: {'flavor': 'prod'});
 
   test('unchanged resources package only libapp.so', () {
     final result = pack(apk({'images/a.png': 'a'}, manifest));

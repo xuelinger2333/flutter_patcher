@@ -33,6 +33,8 @@ Future<PublicationRelease> resolvePublication(
       'Pipeline validation baseline has no runtime bootstrap and is not a release.');
   require(release.fingerprint == fields['fingerprint'],
       'PUBLISH_TARGET_MISMATCH', 'Release fingerprint differs');
+  require(release.strategy == fields['strategy'], 'PUBLISH_TARGET_MISMATCH',
+      'Release strategy differs');
   final receipt = release.receipt;
   require(
       receipt['application_id'] == fields['application_id'] &&
@@ -60,12 +62,13 @@ Future<Map<String, dynamic>> publicationBaseline(
         {BaselineArchive? archive}) async =>
     (await resolvePublication(store, fields, work, archive: archive)).identity;
 
-/// The signed `target` of a patch package, or null when it has none.
-Map<String, dynamic>? patchTarget(Uint8List bytes) {
+/// The signed `target` of a patch package, or null when it has none. An SO
+/// package carries it in its v2 manifest.json, a bytecode one in
+/// patch_manifest.json; a package of the other strategy has none.
+Map<String, dynamic>? patchTarget(Uint8List bytes, String strategy) {
   try {
-    final entry = ZipDecoder()
-        .decodeBytes(bytes.sublist(146))
-        .findFile('patch_manifest.json');
+    final entry = ZipDecoder().decodeBytes(bytes.sublist(146)).findFile(
+        strategy == 'so' ? 'manifest.json' : 'patch_manifest.json');
     final manifest = entry == null
         ? null
         : jsonDecode(utf8.decode(entry.content as List<int>));
@@ -78,14 +81,14 @@ Map<String, dynamic>? patchTarget(Uint8List bytes) {
 
 /// A schema 5 release accepts only patches pinned to it; a legacy release
 /// (one fingerprint per release) also accepts unpinned patches.
-void checkPatchTarget(Uint8List patch, Map<String, dynamic> baseline,
-    Map<String, dynamic>? expected) {
+void checkPatchTarget(Uint8List patch, String strategy,
+    Map<String, dynamic> baseline, Map<String, dynamic>? expected) {
   final pinned = baseline.containsKey('release');
   if (pinned) {
     expected =
         releaseTarget(Map<String, dynamic>.from(baseline['release'] as Map));
   }
-  final actual = patchTarget(patch);
+  final actual = patchTarget(patch, strategy);
   if (actual == null) {
     require(!pinned, 'PUBLISH_TARGET_MISMATCH',
         'Patch is not pinned to a release; create it with this CLI version');
@@ -205,8 +208,7 @@ class PublicationPipeline {
         RegExp(r'^[a-f0-9]{32}$').hasMatch(operation),
         'PUBLISH_CONFIG_INVALID',
         'Operation must be 32 lowercase hex characters');
-    require(fields['strategy'] == 'bytecode', 'PUBLISH_UNSUPPORTED',
-        'Production pipeline currently requires bytecode');
+
     require(int.tryParse(createdAt) != null && int.parse(createdAt) >= 0,
         'PUBLISH_CONFIG_INVALID', 'Stable created_at epoch seconds required');
     require(
@@ -233,7 +235,7 @@ class PublicationPipeline {
           baseline['receipt']['public_key'] as String,
           p.join(work, 'patch-verify'),
           commands);
-      checkPatchTarget(patch, baseline, target);
+      checkPatchTarget(patch, f['strategy']!, baseline, target);
     } else {
       require(
           patch == null, 'PUBLISH_CONFIG_INVALID', 'Withdrawal has no payload');

@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
@@ -8,6 +10,9 @@ import 'package:flutter_patcher_cli/src/baseline/manifest.dart';
 import 'package:flutter_patcher_cli/src/baseline/repository.dart';
 import 'package:flutter_patcher_cli/src/baseline/split.dart';
 import 'package:flutter_patcher_cli/src/build/host_policy.dart';
+import 'package:flutter_patcher_cli/src/patch/package.dart';
+import 'package:flutter_patcher_cli/src/patch/so_package.dart';
+import 'package:flutter_patcher_cli/src/publish/pipeline.dart';
 import 'baseline_test.dart' as base;
 import 'release_fixture.dart';
 
@@ -79,6 +84,43 @@ void main() {
     expect((await saveSo())['release_status'], 'existing');
     await File(p.join(f.input, 'libapp.so')).writeAsString('other binary');
     await expectLater(saveSo(), fails('BASELINE_RELEASE_CONFLICT'));
+  });
+
+  test('publication accepts only SO packages pinned to the SO release',
+      () async {
+    final fp = (await saveSo())['fingerprint'] as String;
+    Map<String, String> fields(String strategy) => {
+          'application_id': 'com.example.app',
+          'version_code': '42',
+          'flavor': 'prod',
+          'abi': 'arm64-v8a',
+          'fingerprint': fp,
+          'strategy': strategy
+        };
+    await expectLater(
+        resolvePublication(f.store, fields('bytecode'), p.join(f.temp.path, 'b')),
+        fails('PUBLISH_TARGET_MISMATCH'));
+    final release =
+        await resolvePublication(f.store, fields('so'), p.join(f.temp.path, 's'));
+    final work = (await f.temp.createTemp('seal-')).path;
+    final sealed = await sealPatch(
+        payload: soPackage(
+                apk: Archive(),
+                libapp: [1],
+                release: {'files': {}, 'manifest': {}},
+                version: '1',
+                targetVersionCode: 42,
+                target: release.target)
+            .bytes,
+        fingerprint: fp,
+        seq: 1,
+        key: signingKey(base.testSeed),
+        work: work);
+    final patch =
+        Uint8List.fromList(await File(sealed['file'] as String).readAsBytes());
+    checkPatchTarget(patch, 'so', release.identity, release.target);
+    expect(() => checkPatchTarget(patch, 'bytecode', release.identity, release.target),
+        throwsA(isA<Failure>()));
   });
 
   test('policy strategy, key and identity must match the SO release', () async {

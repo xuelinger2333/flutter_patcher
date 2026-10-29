@@ -72,7 +72,8 @@ void main() {
       'application_id': 'com.example.app',
       'version_code': '1',
       'flavor': 'default',
-      'fingerprint': fp
+      'fingerprint': fp,
+      'strategy': 'bytecode'
     };
     expect(
         (await publicationBaseline(

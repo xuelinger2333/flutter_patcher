@@ -35,7 +35,8 @@ void main() {
             'version_code': vc,
             'flavor': 'prod',
             'abi': 'arm64-v8a',
-            'fingerprint': fp
+            'fingerprint': fp,
+            'strategy': 'bytecode'
           },
           p.join(f.temp.path,
               'publish-$vc-${DateTime.now().microsecondsSinceEpoch}'));
