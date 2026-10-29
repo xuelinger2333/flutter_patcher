@@ -27,7 +27,7 @@ def run(repo, flutter, out, cache, artifacts_url, support_url, threshold_bytes=N
     key.write_text('11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=')
     (out / 'store').mkdir()
     call([flutter / 'bin/cache/dart-sdk/bin/dart', repo / 'flutter_patcher_cli/bin/flutter_patcher.dart',
-          'build', 'android', '--strategy', 'bytecode', '--flutter-sdk', flutter,
+          'build', 'android', '--flutter-sdk', flutter,
           '--cache-dir', cache, '--artifacts-url', artifacts_url, '--supported-versions-url', support_url,
           '--project', app, '--public-key', key, '--baseline-store', (out / 'store').as_uri(),
           '--version-code', '1', '--out', out / 'release'], repo, out / 'patcher.log')

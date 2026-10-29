@@ -128,7 +128,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
     if source_identity:
         report['source_sha256'] = source_identity['source_sha256']
     if stage == 'build':
-        call([dart, cli, 'build', 'android', '--strategy', 'bytecode', *common,
+        call([dart, cli, 'build', 'android', *common,
               '--project', project, '--baseline-store', baseline_store, '--public-key', public,
               '--version-code', '1', '--out', out / 'release'], repo, out / 'build.log')
         built = json.loads((out / 'release/build.json').read_text())
@@ -192,7 +192,7 @@ def execute(stage, flutter, repo, out, artifacts_url, support_url, baseline_stor
             (project / 'assets/message.txt').write_text(tier, newline='\n')
             (project / 'pubspec.yaml').write_text(json.dumps(specification, indent=2), newline='\n')
             call([launcher, 'pub', 'get'], project, out / f'{tier}-pub.log')
-            call([dart, cli, 'patch', 'android', '--strategy', 'bytecode', *common,
+            call([dart, cli, 'patch', 'android', *common,
                   '--project', project, '--fingerprint', prior['fingerprint'], '--seq', str(seq),
                   '--version-code', '1', '--baseline-store', baseline_store, '--private-key', seed,
                   '--out', out / tier], repo, out / f'{tier}-patch.log')

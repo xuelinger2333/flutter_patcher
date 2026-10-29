@@ -92,6 +92,8 @@ class PatchPipeline {
       final resolved = await baselines.resolve(
           req.flavor, req.minBuild.toString(),
           expectedFingerprint: req.fingerprint, sdkRoot: sdk.root);
+      require(resolved.strategy == 'bytecode', 'PATCH_STRATEGY_UNSUPPORTED',
+          'SO releases are patched by the SO pipeline.');
       final fingerprint = resolved.fingerprint;
       // Compile inputs come from the compile object; package names, receipt
       // fields and build_id from the release object.

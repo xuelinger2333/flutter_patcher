@@ -73,23 +73,15 @@ ArgParser parser() {
     ..addOption('seq')
     ..addOption('previous-seq')
     ..addMultiOption('assets',
-        help: 'Asset keys to override; omitted selects changed assets.')
-    ..addOption('strategy',
-        defaultsTo: 'bytecode',
-        allowed: ['so', 'bytecode'],
-        help: 'Bytecode by default; SO uses the existing v1 workflow.');
+        help: 'Asset keys to override; omitted selects changed assets.');
   final build = environmentOptions()
     ..addOption('host-policy',
         help:
-            'Canonical public policy enabling authenticated bytecode updates.')
+            'Canonical public policy enabling authenticated updates; its strategy (so or bytecode) selects the host kind.')
     ..addOption('project',
         help: 'Application source directory; builds use an isolated copy.')
     ..addOption('target', defaultsTo: 'lib/main.dart')
-    ..addOption('out', help: 'New APK/report output directory.')
-    ..addOption('strategy',
-        defaultsTo: 'bytecode',
-        allowed: ['so', 'bytecode'],
-        help: 'Bytecode by default; SO uses the existing v1 workflow.');
+    ..addOption('out', help: 'New APK/report output directory.');
   final doctor = environmentOptions()
     ..addOption('project',
         help: 'Optional application directory whose Dart line endings are '
@@ -131,7 +123,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android --strategy bytecode [options]\nflutter_patcher patch android --strategy bytecode [options]\nflutter_patcher publish --out <local-mock-directory> [options]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android [options]\nflutter_patcher patch android [options]\nflutter_patcher publish --out <local-mock-directory> [options]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {

@@ -6,7 +6,7 @@ process.
 
 ## Host identity
 
-Build with `build android --strategy bytecode --host-policy policy.json` and the
+Build with `build android --host-policy policy.json` and the
 usual baseline-store/public-key options. Policy is compact, sorted-key JSON with
 string values and no trailing newline. Its exact fields are:
 

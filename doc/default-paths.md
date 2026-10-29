@@ -1,8 +1,8 @@
 # Default build and bootstrap behavior
 
-The current CLI defaults `build android` and `patch android` to bytecode.
-Use the existing v1 workflow explicitly for SO patches; `--strategy so` remains
-recognized but the current bytecode CLI does not implement that workflow.
+The host policy's `strategy` (`so` or `bytecode`) selects what `build android`
+produces; `patch android` and `publish` follow the archived release. A build
+without a host policy produces a bytecode host.
 Bytecode host builds require a Linux x64 or Windows x64 host and a supported SDK. An
 unsupported host reports an error; it does not silently switch strategies.
 

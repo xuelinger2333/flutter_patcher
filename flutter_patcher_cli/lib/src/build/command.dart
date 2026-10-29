@@ -17,8 +17,7 @@ Future<int> buildCommand(ArgResults args) async {
   try {
     require(args.rest.length == 1 && args.rest.single == 'android',
         'USAGE_ERROR', 'Use build android.');
-    require(args['strategy'] == 'bytecode', 'BUILD_STRATEGY_UNSUPPORTED',
-        'build supports --strategy bytecode only; so patches keep using the v1 workflow.');
+
     final host = requireSupportedHost();
     String required(String key) {
       final value = args[key] as String?;
@@ -80,7 +79,7 @@ Future<int> buildCommand(ArgResults args) async {
         refresh: args['refresh-tools'] == true);
     final environment = EnvironmentBuilder(cache, commands, offline: offline);
     final managed = await environment.prepare(sdk, artifacts, engine);
-    final result = await BuildPipeline(
+    final pipeline = BuildPipeline(
             commands,
             sdk,
             managed,
@@ -89,8 +88,10 @@ Future<int> buildCommand(ArgResults args) async {
             cache,
             aapt,
             engine,
-            BaselineRepository(p.join(cache, 'baselines'), baselineStore))
-        .build(request);
+            BaselineRepository(p.join(cache, 'baselines'), baselineStore));
+    final result = request.hostPolicy?.fields['strategy'] == 'so'
+        ? await pipeline.buildSo(request)
+        : await pipeline.build(request);
     stdout.writeln(jsonEncode({'command': 'build', ...result}));
     return 0;
   } catch (error) {

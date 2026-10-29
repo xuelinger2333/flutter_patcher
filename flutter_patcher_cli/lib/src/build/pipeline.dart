@@ -79,11 +79,7 @@ class BuildPipeline {
 
   Future<Map<String, dynamic>> build(BuildRequest request) async {
     await request.validate();
-    require(
-        !p.equals(p.absolute(request.output), p.absolute(sdk.root)) &&
-            !p.isWithin(p.absolute(sdk.root), p.absolute(request.output)),
-        'BUILD_CONFIG_INVALID',
-        'Output cannot be inside the selected SDK.');
+    _requireOutsideSdk(request.output);
     final work = temporaryName(p.join(cache, 'builds/run'));
     await rejectLinks(work);
     await Directory(work).create(recursive: true);
@@ -91,19 +87,7 @@ class BuildPipeline {
         'Build paths cannot contain commas/newlines.');
     final workspace = BuildWorkspace(work);
     var phase = 'prepare';
-    var commandIndex = 0;
-    Future<String> run(String executable, List<String> args,
-        {String? cwd, Map<String, String>? env}) async {
-      final result = await commands.runResult(executable, args,
-          cwd: cwd,
-          extraEnvironment: env,
-          timeout: const Duration(minutes: 30));
-      await File(p.join(work, '${commandIndex++}-$phase.log'))
-          .writeAsString('${result.stdout}\n${result.stderr}');
-      require(result.exitCode == 0, 'BUILD_STEP_FAILED',
-          '$phase failed (exit ${result.exitCode}); evidence: $work');
-      return result.stdout;
-    }
+    final run = _runner(work, () => phase);
 
     Future<void> call(List<String> args) async {
       await run(sdk.dart, [tool, ...args]);
@@ -298,23 +282,9 @@ class BuildPipeline {
       // The latter has its own fingerprint/APK binding, not a source-file input
       // that the unchanged application must reproduce when preparing a patch.
       final sourceInputs = await packageInputs(packages, application: package);
-      String? hostTrust;
-      if (request.hostPolicy != null) {
-        final policy = request.hostPolicy!;
-        await File(p.join(baseline, 'host_policy.json'))
-            .writeAsString(policy.canonical);
-        final nativeAsset = File(p.join(project,
-            'android/app/src/main/assets/flutter_patcher/host-trust.json'));
-        require(!await nativeAsset.exists(), 'BUILD_CONFIG_INVALID',
-            'Host trust asset is reserved for generated build inputs.');
-        await nativeAsset.parent.create(recursive: true);
-        hostTrust = jsonEncode({
-          'policy': policy.canonical,
-          'fingerprint': identity,
-          'policy_sha256': policy.digest,
-        });
-        await nativeAsset.writeAsString(hostTrust);
-      }
+      final hostTrust = request.hostPolicy == null
+          ? null
+          : await _writeHostTrust(project, baseline, request.hostPolicy!, identity);
       // Inside the runtime package the entry compiles as a package: URI; a
       // file URI would embed this run's work path in libapp.so.
       final target =
@@ -325,57 +295,15 @@ class BuildPipeline {
             package, request.target.substring(4), identity, request.publicKey));
       }
       phase = 'apk';
-      final gradle = p.join(cache, 'gradle');
-      await Directory(gradle).create(recursive: true);
-      await retireFlutterGradleCache(gradle);
       final trace = p.join(work, 'precompiler-trace.json'),
           hostDump = p.join(work, 'host_compiler_interface.json');
-      final mirror =
-          p.join(cache, 'mirrors', sdk.version, engine['build_id'] as String);
-      await run(
-          sdk.host.flutterLauncher(managed),
-          [
-            '--suppress-analytics',
-            'build',
-            'apk',
-            '--release',
-            '--no-pub',
-            '--target-platform',
-            'android-arm64',
-            '--target',
-            request.pipelineValidationOnly ? request.target : target,
-            if (request.flavor != null) ...['--flavor', request.flavor!],
-            if (request.versionCode != null) ...[
-              '--build-number',
-              request.versionCode!
-            ],
-            '--extra-front-end-options=--dynamic-interface=$iface,--dump-detailed-dynamic-interface=$hostDump',
-            '--extra-gen-snapshot-options=--trace-precompiler-to=$trace'
-          ],
-          cwd: project,
-          env: {
-            'FLUTTER_STORAGE_BASE_URL': Uri.directory(mirror).toString(),
-            'GRADLE_USER_HOME': gradle
-          });
-      final apk = p.join(project,
-          'build/app/outputs/flutter-apk/app-${request.flavor == null ? '' : '${request.flavor}-'}release.apk');
+      final apk = await _assembleApk(run, project, request,
+          request.pipelineValidationOnly ? request.target : target, [
+        '--extra-front-end-options=--dynamic-interface=$iface,--dump-detailed-dynamic-interface=$hostDump',
+        '--extra-gen-snapshot-options=--trace-precompiler-to=$trace'
+      ]);
       phase = 'verify-apk';
-      final apkInfo = await verifyBuildApk(
-          apk, baseline, aapt, commands, engine,
-          expectedHostTrust: hostTrust);
-      if (request.hostPolicy != null) {
-        require(
-            apkInfo['application_id'] ==
-                    request.hostPolicy!.fields['application_id'] &&
-                apkInfo['version_code'] ==
-                    request.hostPolicy!.fields['version_code'],
-            'BUILD_APK_INVALID',
-            'Actual APK differs from immutable host policy.');
-      }
-      if (request.versionCode != null) {
-        require(apkInfo['version_code'] == request.versionCode,
-            'BUILD_APK_INVALID', 'Actual versionCode differs.');
-      }
+      final apkInfo = await _verifyApk(apk, baseline, request, hostTrust);
       await call([
         'inspect-build',
         if (virtual != null) ...virtual.compilerArgs,
@@ -443,24 +371,206 @@ class BuildPipeline {
         'work': work,
         'device_verified': false
       };
-      final staging = temporaryName(p.absolute(request.output));
-      await Directory(staging).create(recursive: true);
-      await File(apk).copy(p.join(
-          staging,
-          request.pipelineValidationOnly
-              ? 'validation.apk'
-              : 'app-release.apk'));
-      await writeObject(p.join(staging, 'build.json'), report);
-      require(!await Directory(request.output).exists(), 'BUILD_CONFIG_INVALID',
-          'Output appeared during build.');
-      await Directory(staging).renameRetry(p.absolute(request.output));
+      await _writeOutput(request, apk, report,
+          request.pipelineValidationOnly ? 'validation.apk' : 'app-release.apk');
       return {...report, 'output': p.absolute(request.output)};
     } catch (error) {
-      await writeObject(p.join(work, 'failure.json'), {
-        'phase': phase,
-        'error': error is Failure ? error.code : error.runtimeType.toString()
-      });
+      await _recordFailure(work, phase, error);
       rethrow;
     }
   }
+
+  /// SO host: the app's own entry built with the managed engine and its host
+  /// policy packaged, archived as one release object. No kernel or interface.
+  Future<Map<String, dynamic>> buildSo(BuildRequest request) async {
+    await request.validate();
+    final policy = request.hostPolicy!;
+    require(policy.fields['strategy'] == 'so', 'BUILD_CONFIG_INVALID',
+        'Host policy strategy is not so.');
+    _requireOutsideSdk(request.output);
+    final work = temporaryName(p.join(cache, 'builds/run'));
+    await rejectLinks(work);
+    await Directory(work).create(recursive: true);
+    final workspace = BuildWorkspace(work);
+    var phase = 'prepare';
+    final run = _runner(work, () => phase);
+    try {
+      final project =
+          await workspace.copyPackage(request.project, application: true);
+      final package = (loadYaml(
+              await File(p.join(project, 'pubspec.yaml')).readAsString())
+          as Map)['name'] as String;
+      phase = 'pub-get';
+      await run(sdk.host.flutterLauncher(managed),
+          ['--suppress-analytics', 'pub', 'get', '--enforce-lockfile'],
+          cwd: project);
+      final packages = p.join(project, '.dart_tool/package_config.json');
+      require(
+          ((await readObject(packages))['packages'] as List)
+              .any((r) => r['name'] == 'flutter_patcher'),
+          'BUILD_BOOTSTRAP_UNAVAILABLE',
+          'The application must depend on flutter_patcher to build an SO release.');
+      final release = p.join(work, 'release');
+      await Directory(release).create();
+      final identity = soFingerprint(
+          sdk.version, sdk.engine, engine['build_id'] as String, policy.digest);
+      final sourceInputs = await packageInputs(packages, application: package);
+      final hostTrust =
+          await _writeHostTrust(project, release, policy, identity);
+      phase = 'apk';
+      final apk = await _assembleApk(run, project, request, request.target, const []);
+      phase = 'verify-apk';
+      final apkInfo = await _verifyApk(apk, release, request, hostTrust);
+      final virtual = await VirtualPackages.write(
+          packages, [p.absolute(work), p.absolute(cache)]);
+      await File(virtual.path).copy(p.join(release, 'package_config.json'));
+      final receipt = <String, dynamic>{
+        ...apkInfo,
+        'public_key': request.publicKey,
+        'package_inputs': sourceInputs,
+        'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
+        'crlf_dart_sources': const <String>[],
+      };
+      await workspace.verifyOriginals();
+      phase = 'archive';
+      final archived = await baselines.saveSo(release, receipt, policy,
+          flutterVersion: sdk.version,
+          engineCommit: sdk.engine,
+          buildId: engine['build_id'] as String);
+      require(archived['fingerprint'] == identity,
+          'BASELINE_FINGERPRINT_MISMATCH', 'Archived fingerprint changed.');
+      phase = 'publish-output';
+      final report = <String, dynamic>{
+        'status': 'build_archived',
+        'strategy': 'so',
+        ...receipt,
+        'fingerprint': identity,
+        'baseline': archived,
+        'work': work,
+        'device_verified': false
+      };
+      await _writeOutput(request, apk, report, 'app-release.apk');
+      return {...report, 'output': p.absolute(request.output)};
+    } catch (error) {
+      await _recordFailure(work, phase, error);
+      rethrow;
+    }
+  }
+
+  void _requireOutsideSdk(String output) => require(
+      !p.equals(p.absolute(output), p.absolute(sdk.root)) &&
+          !p.isWithin(p.absolute(sdk.root), p.absolute(output)),
+      'BUILD_CONFIG_INVALID',
+      'Output cannot be inside the selected SDK.');
+
+  /// Runs one build step, logged under [work] as `<n>-<phase>.log`.
+  _Run _runner(String work, String Function() phase) {
+    var index = 0;
+    return (executable, args, {cwd, env}) async {
+      final result = await commands.runResult(executable, args,
+          cwd: cwd, extraEnvironment: env, timeout: const Duration(minutes: 30));
+      await File(p.join(work, '${index++}-${phase()}.log'))
+          .writeAsString('${result.stdout}\n${result.stderr}');
+      require(result.exitCode == 0, 'BUILD_STEP_FAILED',
+          '${phase()} failed (exit ${result.exitCode}); evidence: $work');
+      return result.stdout;
+    };
+  }
+
+  /// Writes host_policy.json into [policyDir] and the packaged host trust
+  /// asset into [project]; returns the asset text.
+  Future<String> _writeHostTrust(String project, String policyDir,
+      HostPolicy policy, String identity) async {
+    await File(p.join(policyDir, 'host_policy.json'))
+        .writeAsString(policy.canonical);
+    final asset = File(p.join(
+        project, 'android/app/src/main/assets/flutter_patcher/host-trust.json'));
+    require(!await asset.exists(), 'BUILD_CONFIG_INVALID',
+        'Host trust asset is reserved for generated build inputs.');
+    await asset.parent.create(recursive: true);
+    final text = jsonEncode({
+      'policy': policy.canonical,
+      'fingerprint': identity,
+      'policy_sha256': policy.digest,
+    });
+    await asset.writeAsString(text);
+    return text;
+  }
+
+  /// `flutter build apk` with the managed engine mirror; returns the APK path.
+  Future<String> _assembleApk(_Run run, String project, BuildRequest request,
+      String target, List<String> extra) async {
+    final gradle = p.join(cache, 'gradle');
+    await Directory(gradle).create(recursive: true);
+    await retireFlutterGradleCache(gradle);
+    final mirror =
+        p.join(cache, 'mirrors', sdk.version, engine['build_id'] as String);
+    await run(
+        sdk.host.flutterLauncher(managed),
+        [
+          '--suppress-analytics',
+          'build',
+          'apk',
+          '--release',
+          '--no-pub',
+          '--target-platform',
+          'android-arm64',
+          '--target',
+          target,
+          if (request.flavor != null) ...['--flavor', request.flavor!],
+          if (request.versionCode != null) ...[
+            '--build-number',
+            request.versionCode!
+          ],
+          ...extra
+        ],
+        cwd: project,
+        env: {
+          'FLUTTER_STORAGE_BASE_URL': Uri.directory(mirror).toString(),
+          'GRADLE_USER_HOME': gradle
+        });
+    return p.join(project,
+        'build/app/outputs/flutter-apk/app-${request.flavor == null ? '' : '${request.flavor}-'}release.apk');
+  }
+
+  /// Verifies the APK, extracts libapp.so into [dir] and binds it to the request.
+  Future<Map<String, dynamic>> _verifyApk(String apk, String dir,
+      BuildRequest request, String? hostTrust) async {
+    final apkInfo = await verifyBuildApk(apk, dir, aapt, commands, engine,
+        expectedHostTrust: hostTrust);
+    if (request.hostPolicy != null) {
+      require(
+          apkInfo['application_id'] ==
+                  request.hostPolicy!.fields['application_id'] &&
+              apkInfo['version_code'] ==
+                  request.hostPolicy!.fields['version_code'],
+          'BUILD_APK_INVALID',
+          'Actual APK differs from immutable host policy.');
+    }
+    if (request.versionCode != null) {
+      require(apkInfo['version_code'] == request.versionCode,
+          'BUILD_APK_INVALID', 'Actual versionCode differs.');
+    }
+    return apkInfo;
+  }
+
+  Future<void> _writeOutput(BuildRequest request, String apk,
+      Map<String, dynamic> report, String name) async {
+    final staging = temporaryName(p.absolute(request.output));
+    await Directory(staging).create(recursive: true);
+    await File(apk).copy(p.join(staging, name));
+    await writeObject(p.join(staging, 'build.json'), report);
+    require(!await Directory(request.output).exists(), 'BUILD_CONFIG_INVALID',
+        'Output appeared during build.');
+    await Directory(staging).renameRetry(p.absolute(request.output));
+  }
+
+  Future<void> _recordFailure(String work, String phase, Object error) =>
+      writeObject(p.join(work, 'failure.json'), {
+        'phase': phase,
+        'error': error is Failure ? error.code : error.runtimeType.toString()
+      });
 }
+
+typedef _Run = Future<String> Function(String executable, List<String> args,
+    {String? cwd, Map<String, String>? env});

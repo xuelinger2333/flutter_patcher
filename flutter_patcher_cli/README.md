@@ -45,11 +45,11 @@ Windows 上目录 ACL 只授予当前用户。私钥不打印到终端，也不�
 `--private-key`。以下目录和序号需替换为实际项目值：
 
 ```bash
-flutter_patcher build android --strategy bytecode --project /path/to/app \
+flutter_patcher build android --project /path/to/app \
   --public-key "$HOME/.flutter_patcher/keys/public-key.base64" \
   --baseline-store file:///path/to/baselines --version-code 1 --out /path/to/new-release
 
-flutter_patcher patch android --strategy bytecode --project /path/to/app \
+flutter_patcher patch android --project /path/to/app \
   --private-key "$HOME/.flutter_patcher/keys/private-key.base64" \
   --baseline-store file:///path/to/baselines \
   --seq 1 --version-code 1 --out /path/to/new-patch

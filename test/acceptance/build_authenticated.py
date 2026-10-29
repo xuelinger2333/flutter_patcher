@@ -61,7 +61,7 @@ def run(repo, flutter, artifacts, out, custom=False):
         call([dart, 'pub', 'get'], repo/'flutter_patcher_cli', out/'cli-pub.log')
         call([dart, cli, 'doctor', *common, '--json'], repo, out/'doctor.log')
         print('STAGE authenticated-build', flush=True)
-        call([dart, cli, 'build', 'android', '--strategy', 'bytecode', *common,
+        call([dart, cli, 'build', 'android', *common,
               '--project', app, '--baseline-store', store.as_uri(), '--public-key', out/'patch-public.base64',
               '--host-policy', out/'host-policy.json', '--version-code', '1', '--out', out/'release'], repo, out/'build.log')
         built = json.loads((out/'release/build.json').read_text())
@@ -70,7 +70,7 @@ def run(repo, flutter, artifacts, out, custom=False):
             main = source.replace("const revision = 'original';", f"const revision = '{tier}';")
             if tier == 'whole': main = main.replace('Icons.home', 'Icons.favorite')
             (app/'lib/main.dart').write_text(main)
-            call([dart, cli, 'patch', 'android', '--strategy', 'bytecode', *common,
+            call([dart, cli, 'patch', 'android', *common,
                   '--project', app, '--fingerprint', built['fingerprint'], '--seq', str(seq),
                   '--version-code', '1', '--baseline-store', store.as_uri(), '--private-key', out/'patch-private.base64',
                   '--out', out/tier], repo, out/f'{tier}-patch.log')

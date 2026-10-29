@@ -15,8 +15,7 @@ Future<int> patchCommand(ArgResults args) async {
   try {
     require(args.rest.length == 1 && args.rest.single == 'android',
         'USAGE_ERROR', 'Use patch android');
-    require(args['strategy'] == 'bytecode', 'PATCH_STRATEGY_UNSUPPORTED',
-        'Select --strategy bytecode; v1 SO tooling is unchanged');
+
     requireSupportedHost();
     String value(String name) {
       final v = args[name] as String?;

@@ -3,15 +3,10 @@ import 'package:flutter_patcher_cli/src/patch/tier_policy.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('normal build and patch select bytecode; explicit SO remains accepted',
-      () {
+  test('the host policy, not an option, selects the strategy', () {
     for (final command in ['build', 'patch']) {
-      expect(parser().parse([command, 'android']).command!['strategy'],
-          'bytecode');
-      expect(
-          parser().parse(
-              [command, 'android', '--strategy', 'so']).command!['strategy'],
-          'so');
+      expect(() => parser().parse([command, 'android', '--strategy', 'so']),
+          throwsFormatException);
     }
   });
 
