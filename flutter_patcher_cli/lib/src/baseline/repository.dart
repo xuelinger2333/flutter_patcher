@@ -20,14 +20,10 @@ Map<String, dynamic> sidecar(Map<String, dynamic> m) => {
       'engine_commit': m['engine_commit'],
       'build_id': m['build_id'],
       'libapp_sha256': (m['files'] as Map)['libapp.so']['sha256'],
-      if ([2, 3, 4].contains(m['schema'])) 'baseline_schema': m['schema'],
-      if ([2, 3, 4].contains(m['schema']))
+      if ([2, 3].contains(m['schema'])) 'baseline_schema': m['schema'],
+      if ([2, 3].contains(m['schema']))
         'runtime_bootstrap': m['runtime_bootstrap'],
-      if (m['schema'] == 3 ||
-          (m['schema'] == 4 && m.containsKey('host_policy_sha256')))
-        'host_policy_sha256': m['host_policy_sha256'],
-      if (m['schema'] == 4)
-        'framework_partition_sha256': m['framework_partition_sha256'],
+      if (m['schema'] == 3) 'host_policy_sha256': m['host_policy_sha256'],
     };
 
 /// Lists release fields that differ, receipt fields included.
@@ -201,9 +197,9 @@ class BaselineRepository {
       String abi = 'arm64-v8a'}) async {
     final slot = releaseSlot(flavor, versionCode, abi);
     require(
-        [2, 3, 4].contains(metadata['schema']),
+        [2, 3].contains(metadata['schema']),
         'BASELINE_SCHEMA_UNSUPPORTED',
-        'Only build outputs with a build receipt (baseline schema 2-4) can be archived.');
+        'Only build outputs with a build receipt (baseline schema 2-3) can be archived.');
     final staging = await work(), payload = p.join(staging, 'baseline');
     await Directory(payload).create();
     var inputBytes = 0;

@@ -18,11 +18,8 @@ const baselineFiles = <String>[
 const buildBaselineFiles = ['compiler_interface.json', 'build_receipt.json'];
 List<String> payloadFiles(Map<String, dynamic> m) => [
       ...baselineFiles,
-      if ([2, 3, 4].contains(m['schema'])) ...buildBaselineFiles,
-      if (m['schema'] == 3 ||
-          (m['schema'] == 4 && m.containsKey('host_policy_sha256')))
-        'host_policy.json',
-      if (m['schema'] == 4) 'framework_partition.json'
+      if ([2, 3].contains(m['schema'])) ...buildBaselineFiles,
+      if (m['schema'] == 3) 'host_policy.json',
     ];
 final baselineHash = RegExp(r'^[0-9a-f]{64}$');
 final _commit = RegExp(r'^[0-9a-f]{40}$');
@@ -76,7 +73,7 @@ Future<Map<String, dynamic>> baselineObject(String path) async {
 /// v1 uses a domain prefix and four newline-delimited, constrained ASCII fields.
 String fingerprint(
     String appHash, String engine, String interfaceHash, String flutter,
-    {String? hostPolicyHash, String? frameworkPartitionHash}) {
+    {String? hostPolicyHash}) {
   valid(
       baselineHash.hasMatch(appHash) &&
           baselineHash.hasMatch(interfaceHash) &&
@@ -95,13 +92,7 @@ String fingerprint(
             .encode('flutter-patcher-baseline-v2\n$legacy\n$hostPolicyHash\n'))
         .toString();
   }
-  if (frameworkPartitionHash == null) return base;
-  valid(baselineHash.hasMatch(frameworkPartitionHash),
-      'Invalid framework partition digest.');
-  return sha256
-      .convert(utf8.encode(
-          'flutter-patcher-baseline-v3\n$base\n$frameworkPartitionHash\n'))
-      .toString();
+  return base;
 }
 
 final buildIdPattern = RegExp(
@@ -126,34 +117,27 @@ void validateSdkIdentity(Map<String, dynamic> m) {
 }
 
 void validateMetadata(Map<String, dynamic> m) {
-  valid(
-      (m['schema'] == 3) ||
-          (m['schema'] == 4 && m.containsKey('host_policy_sha256')) ||
-          !m.containsKey('host_policy_sha256'),
-      'Host policy requires baseline schema 3 or 4.');
+  require(m['schema'] != 4 && !m.containsKey('framework_partition_sha256'),
+      'BASELINE_SCHEMA_UNSUPPORTED',
+      'Framework reuse baselines (schema 4) are no longer supported; rebuild the host.');
+  valid(m['schema'] == 3 || !m.containsKey('host_policy_sha256'),
+      'Host policy requires baseline schema 3.');
   valid(
       m['schema'] is int &&
-          [1, 2, 3, 4].contains(m['schema']) &&
+          [1, 2, 3].contains(m['schema']) &&
           _version.hasMatch('${m['flutter_version']}') &&
           _commit.hasMatch('${m['engine_commit']}') &&
           RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
               .hasMatch('${m['build_id']}'),
       'Invalid baseline schema/version/engine/build_id.');
-  if ([2, 3, 4].contains(m['schema'])) {
+  if ([2, 3].contains(m['schema'])) {
     valid(m['runtime_bootstrap'] is bool, 'Missing bootstrap status.');
   }
-  if (m['schema'] == 3 ||
-      (m['schema'] == 4 && m.containsKey('host_policy_sha256'))) {
+  if (m['schema'] == 3) {
     valid(
         baselineHash.hasMatch('${m['host_policy_sha256']}') &&
             m['runtime_bootstrap'] == true,
         'Authenticated baseline policy missing.');
-  }
-  if (m['schema'] == 4) {
-    valid(
-        baselineHash.hasMatch('${m['framework_partition_sha256']}') &&
-            m['runtime_bootstrap'] == true,
-        'Framework partition identity missing.');
   }
   validateSdkIdentity(m);
 }
@@ -202,8 +186,7 @@ Future<void> validateDetails(String root, String interfaceHash) async {
                   'protocol',
                   'defaults',
                   'compiler-hint',
-                  'platform-privates',
-                  'framework-reuse'
+                  'platform-privates'
                 ].contains(v)) &&
             row.containsKey('location'),
         'Invalid detailed interface entry.');
@@ -239,8 +222,7 @@ Future<Map<String, dynamic>> hashPayload(
 /// Content checks for the files patch compilation reads besides app.dill.
 Future<void> validateCompileFiles(String root,
     {required String interfaceHash,
-    bool compilerInterface = true,
-    String? partitionHash}) async {
+    bool compilerInterface = true}) async {
   await validateDetails(root, interfaceHash);
   if (compilerInterface) {
     final compiler =
@@ -280,20 +262,6 @@ Future<void> validateCompileFiles(String root,
               RegExp(r'^(package:|dart:).+::[^:]+$').hasMatch(v)) &&
           classes.toSet().length == classes.length,
       'Invalid/duplicate allocation class identity.');
-  if (partitionHash != null) {
-    final partition =
-        await baselineObject(p.join(root, 'framework_partition.json'));
-    valid(
-        partition['schema'] == 1 &&
-            partition['host'] is List &&
-            partition['carry'] is List &&
-            partition['libraries'] is List,
-        'Invalid framework partition.');
-    valid(
-        await hashFile(p.join(root, 'framework_partition.json')) ==
-            partitionHash,
-        'Framework partition hash differs.');
-  }
 }
 
 Future<void> validatePackages(String root) async {
@@ -308,12 +276,8 @@ Future<Map<String, dynamic>> createManifest(
   final files = await hashPayload(root, payloadFiles(metadata));
   await validateCompileFiles(root,
       interfaceHash: files['dynamic_interface.yaml']['sha256'] as String,
-      compilerInterface: [2, 3, 4].contains(metadata['schema']),
-      partitionHash: metadata['schema'] == 4
-          ? metadata['framework_partition_sha256'] as String
-          : null);
-  if (metadata['schema'] == 3 ||
-      (metadata['schema'] == 4 && metadata.containsKey('host_policy_sha256'))) {
+      compilerInterface: [2, 3].contains(metadata['schema']));
+  if (metadata['schema'] == 3) {
     final policy = HostPolicy.parse(
         await File(p.join(root, 'host_policy.json')).readAsString());
     valid(policy.digest == metadata['host_policy_sha256'],
@@ -326,7 +290,7 @@ Future<Map<String, dynamic>> createManifest(
             receipt['public_key'] == policy.fields['fptc_key'],
         'Host policy receipt differs.');
   }
-  if ([2, 3, 4].contains(metadata['schema'])) {
+  if ([2, 3].contains(metadata['schema'])) {
     final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
     valid(
         receipt['runtime_bootstrap'] == metadata['runtime_bootstrap'] &&
@@ -336,9 +300,7 @@ Future<Map<String, dynamic>> createManifest(
                     metadata['engine_commit'] as String,
                     files['dynamic_interface.yaml']['sha256'] as String,
                     metadata['flutter_version'] as String,
-                    hostPolicyHash: metadata['host_policy_sha256'] as String?,
-                    frameworkPartitionHash:
-                        metadata['framework_partition_sha256'] as String?) &&
+                    hostPolicyHash: metadata['host_policy_sha256'] as String?) &&
             receipt['app_only'] == true &&
             receipt['interface_sha256'] ==
                 files['dynamic_interface.yaml']['sha256'] &&
@@ -349,12 +311,9 @@ Future<Map<String, dynamic>> createManifest(
   await validatePackages(root);
   return {
     'schema': metadata['schema'],
-    if (metadata['schema'] == 3 ||
-        (metadata['schema'] == 4 && metadata.containsKey('host_policy_sha256')))
+    if (metadata['schema'] == 3)
       'host_policy_sha256': metadata['host_policy_sha256'],
-    if (metadata['schema'] == 4)
-      'framework_partition_sha256': metadata['framework_partition_sha256'],
-    if ([2, 3, 4].contains(metadata['schema']))
+    if ([2, 3].contains(metadata['schema']))
       'runtime_bootstrap': metadata['runtime_bootstrap'],
     'flutter_version': metadata['flutter_version'],
     'engine_commit': metadata['engine_commit'],
@@ -366,9 +325,7 @@ Future<Map<String, dynamic>> createManifest(
         metadata['engine_commit'] as String,
         files['dynamic_interface.yaml']['sha256'] as String,
         metadata['flutter_version'] as String,
-        hostPolicyHash: metadata['host_policy_sha256'] as String?,
-        frameworkPartitionHash:
-            metadata['framework_partition_sha256'] as String?)
+        hostPolicyHash: metadata['host_policy_sha256'] as String?)
   };
 }
 

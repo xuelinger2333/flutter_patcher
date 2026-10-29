@@ -18,7 +18,7 @@ class ResolvedRelease {
   /// schema 1).
   final Map<String, dynamic> receipt;
 
-  /// Schema 5 view of a legacy schema 2–4 baseline.
+  /// Schema 5 view of a legacy schema 2–3 baseline.
   final SplitBaseline? projection;
   final Map<String, dynamic>? link;
   final Map<String, dynamic>? _release;
@@ -173,7 +173,7 @@ extension ReleaseResolution on BaselineRepository {
       valid(canonical(link) == canonical(sidecar(manifest)),
           'Release sidecar binding mismatch.');
     }
-    final split = [2, 3, 4].contains(manifest['schema']);
+    final split = [2, 3].contains(manifest['schema']);
     final receipt = split
         ? await baselineObject(p.join(root, 'build_receipt.json'))
         : <String, dynamic>{};
@@ -211,8 +211,8 @@ extension ReleaseResolution on BaselineRepository {
       'build_id': r.buildId,
       'libapp_sha256': r.receipt['libapp_sha256'],
       'runtime_bootstrap': r.compile['runtime_bootstrap'],
-      for (final k in ['host_policy_sha256', 'framework_partition_sha256'])
-        if (r.compile.containsKey(k)) k: r.compile[k],
+      if (r.compile.containsKey('host_policy_sha256'))
+        'host_policy_sha256': r.compile['host_policy_sha256'],
       'release': 'release-${r.slot}.tar.zst',
       'release_manifest_sha256': r.releaseSha,
       'compile_manifest_sha256': manifestDigest(r.compile),

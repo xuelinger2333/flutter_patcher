@@ -105,14 +105,12 @@ Map<String, Uint8List> readPatchArchive(Uint8List bytes,
 }
 
 class VerifiedPatch {
-  VerifiedPatch(this.module, this.assets, this.fonts, this.seq, this.tier,
-      {this.frameworkReuse});
+  VerifiedPatch(this.module, this.assets, this.fonts, this.seq, this.tier);
   final Uint8List module;
   final Map<String, Uint8List> assets;
   final Map<String, List<Uint8List>> fonts;
   final int seq;
   final String tier;
-  final Map<String, Object?>? frameworkReuse;
 }
 
 VerifiedPatch verifyPatchBytes(
@@ -217,20 +215,6 @@ VerifiedPatch _parsePatch(
       'Bytecode magic');
   bootRequire(manifest['assets'] is List && manifest['fonts'] is List,
       'Resource lists');
-  Map<String, Object?>? frameworkReuse;
-  if (manifest['framework_reuse'] != null) {
-    final value = manifest['framework_reuse'];
-    bootRequire(
-        value is Map &&
-            value['enabled'] is bool &&
-            value['partition_sha256'] is String &&
-            RegExp(r'^[0-9a-f]{64}$')
-                .hasMatch(value['partition_sha256'] as String) &&
-            value['carried'] is List &&
-            (value['carried'] as List).every((v) => v is String),
-        'Framework reuse metadata');
-    frameworkReuse = Map<String, Object?>.from(value as Map);
-  }
   final assets = <String, Uint8List>{}, fonts = <String, List<Uint8List>>{};
   for (final value in manifest['assets'] as List) {
     final Object? row = value;
@@ -262,6 +246,5 @@ VerifiedPatch _parsePatch(
     profile['module_bytes'] = module.length;
     profile['entry_count'] = entries.length;
   }
-  return VerifiedPatch(module, assets, fonts, seq, tier as String,
-      frameworkReuse: frameworkReuse);
+  return VerifiedPatch(module, assets, fonts, seq, tier as String);
 }

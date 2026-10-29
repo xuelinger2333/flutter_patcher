@@ -38,8 +38,6 @@ const volatileReceiptKeys = {'apk_sha256', 'build_host', 'crlf_dart_sources'};
 List<String> compilePayload(Map<String, dynamic> m) => [
       ...compileFiles,
       if (m.containsKey('host_policy_sha256')) 'host_policy.json',
-      if (m.containsKey('framework_partition_sha256'))
-        'framework_partition.json',
       'compile_receipt.json',
     ];
 const releasePayload = [...releaseFiles, 'release_receipt.json'];
@@ -50,7 +48,6 @@ final archiveEntries = <String, List<String>>{
   'compile': [
     ...compileFiles,
     'host_policy.json',
-    'framework_partition.json',
     'compile_receipt.json',
     'compile.manifest.json'
   ]..sort(),
@@ -106,7 +103,7 @@ Map<String, dynamic> compileReference(Map<String, dynamic> compile) => {
       'runtime_bootstrap': compile['runtime_bootstrap'],
     };
 
-/// Projects a verified schema 2–4 baseline manifest and its build receipt onto
+/// Projects a verified schema 2–3 baseline manifest and its build receipt onto
 /// the two schema 5 objects. Used both to archive a build and to compare a
 /// legacy release with a new build of the same slot.
 SplitBaseline splitBaseline(
@@ -114,8 +111,8 @@ SplitBaseline splitBaseline(
     {required String flavor,
     required String versionCode,
     required String abi}) {
-  valid([2, 3, 4].contains(legacy['schema']),
-      'Only baselines with a build receipt (schema 2–4) can be split.');
+  valid([2, 3].contains(legacy['schema']),
+      'Only baselines with a build receipt (schema 2–3) can be split.');
   releaseSlot(flavor, versionCode, abi);
   final files = legacy['files'] as Map;
   final compileReceipt = <String, dynamic>{
@@ -134,8 +131,6 @@ SplitBaseline splitBaseline(
     'runtime_bootstrap': legacy['runtime_bootstrap'],
     if (legacy.containsKey('host_policy_sha256'))
       'host_policy_sha256': legacy['host_policy_sha256'],
-    if (legacy.containsKey('framework_partition_sha256'))
-      'framework_partition_sha256': legacy['framework_partition_sha256'],
   };
   compile['files'] = {
     for (final name in compilePayload(compile))
@@ -204,19 +199,18 @@ Future<Map<String, dynamic>> verifyCompile(String root,
   final m = await baselineObject(p.join(root, 'compile.manifest.json'));
   valid(m['schema'] == 5 && m['kind'] == 'compile', 'Not a compile object.');
   validateSdkIdentity(m);
-  final policyHash = m['host_policy_sha256'] as String?,
-      partitionHash = m['framework_partition_sha256'] as String?;
+  require(!m.containsKey('framework_partition_sha256'),
+      'BASELINE_SCHEMA_UNSUPPORTED',
+      'Framework reuse compile objects are no longer supported; rebuild the host.');
+  final policyHash = m['host_policy_sha256'] as String?;
   valid(
       m['runtime_bootstrap'] is bool &&
           (policyHash == null || baselineHash.hasMatch(policyHash)) &&
-          (partitionHash == null || baselineHash.hasMatch(partitionHash)) &&
-          ((policyHash == null && partitionHash == null) ||
-              m['runtime_bootstrap'] == true),
+          (policyHash == null || m['runtime_bootstrap'] == true),
       'Invalid compile object identity.');
   final files = await hashPayload(root, compilePayload(m));
   final interfaceHash = files['dynamic_interface.yaml']['sha256'] as String;
-  await validateCompileFiles(root,
-      interfaceHash: interfaceHash, partitionHash: partitionHash);
+  await validateCompileFiles(root, interfaceHash: interfaceHash);
   if (policyHash != null) {
     final policy = HostPolicy.parse(
         await File(p.join(root, 'host_policy.json')).readAsString());
@@ -227,8 +221,7 @@ Future<Map<String, dynamic>> verifyCompile(String root,
       m['engine_commit'] as String,
       interfaceHash,
       m['flutter_version'] as String,
-      hostPolicyHash: policyHash,
-      frameworkPartitionHash: partitionHash);
+      hostPolicyHash: policyHash);
   final receipt = await baselineObject(p.join(root, 'compile_receipt.json'));
   valid(
       receipt['fingerprint'] == id &&
@@ -236,7 +229,7 @@ Future<Map<String, dynamic>> verifyCompile(String root,
           receipt['runtime_bootstrap'] == m['runtime_bootstrap'] &&
           receipt['app_only'] == true &&
           receipt['host_policy_sha256'] == policyHash &&
-          receipt['framework_partition_sha256'] == partitionHash &&
+          !receipt.containsKey('framework_partition_sha256') &&
           !receipt.keys.any((k) =>
               releaseReceiptKeys.contains(k) ||
               volatileReceiptKeys.contains(k)),
@@ -250,7 +243,6 @@ Future<Map<String, dynamic>> verifyCompile(String root,
     'platform': m['platform'],
     'runtime_bootstrap': m['runtime_bootstrap'],
     if (policyHash != null) 'host_policy_sha256': policyHash,
-    if (partitionHash != null) 'framework_partition_sha256': partitionHash,
     'files': files,
   };
   valid(canonical(m) == canonical(computed),

@@ -10,6 +10,14 @@
   bytecode workflow requires. `pub get` now rejects older Flutter SDKs
   instead of failing later in the Android build.
 
+### Removed
+
+- The experimental `--framework-reuse` option of `build android` and
+  `patch android`. Its host surface added about 4.5 MiB to `libapp.so`,
+  above the 1.5 MiB budget, so it never became a default. Baselines built
+  with it (schema 4) are now rejected with `BASELINE_SCHEMA_UNSUPPORTED`;
+  rebuild the host. Other baselines and their fingerprints are unchanged.
+
 ## 0.1.4
 
 ### Fixed

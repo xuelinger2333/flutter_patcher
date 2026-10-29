@@ -78,9 +78,6 @@ ArgParser parser() {
         defaultsTo: 'bytecode',
         allowed: ['so', 'bytecode'],
         help: 'Bytecode by default; SO uses the existing v1 workflow.');
-  patch.addFlag('framework-reuse',
-      help: 'Experimental: carry leaf framework libraries against a host built '
-          'with --framework-reuse. Off by default.');
   final build = environmentOptions()
     ..addOption('host-policy',
         help:
@@ -93,9 +90,6 @@ ArgParser parser() {
         defaultsTo: 'bytecode',
         allowed: ['so', 'bytecode'],
         help: 'Bytecode by default; SO uses the existing v1 workflow.');
-  build.addFlag('framework-reuse',
-      help: 'Experimental: keep the framework reuse surface alive (schema 4 '
-          'baseline). Off by default: it adds ~4.5 MiB to libapp.so.');
   final doctor = environmentOptions()
     ..addOption('project',
         help: 'Optional application directory whose Dart line endings are '

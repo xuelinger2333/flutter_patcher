@@ -11,6 +11,13 @@
   版本，字节码流程依赖这项能力。更旧的 Flutter SDK 现在会在 `pub get` 时
   被拒绝，而不是等到 Android 构建阶段才失败。
 
+### Removed
+
+- 移除 `build android` 与 `patch android` 的实验选项 `--framework-reuse`。它为
+  宿主保留的接口使 `libapp.so` 增大约 4.5 MiB，超出 1.5 MiB 的预算，因此从未成为
+  默认行为。用它构建的基线（schema 4）现在会以 `BASELINE_SCHEMA_UNSUPPORTED` 被
+  拒绝，需要重新构建宿主。其他基线及其指纹不受影响。
+
 ## 0.1.4
 
 ### Fixed

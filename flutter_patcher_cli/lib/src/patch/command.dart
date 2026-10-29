@@ -49,8 +49,7 @@ Future<int> patchCommand(ArgResults args) async {
             : int.tryParse(value('previous-seq')) ?? -1,
         target: args['target'] as String,
         assets: (args['assets'] as List).cast<String>(),
-        offline: offline,
-        frameworkReuse: args['framework-reuse'] == true);
+        offline: offline);
     await request.validate();
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);

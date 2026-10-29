@@ -70,7 +70,7 @@ flutter_patcher patch android --strategy bytecode --project /path/to/app \
 ```text
 compile-<fingerprint>.tar.zst                 编译对象：app.dill、接口、compiler_interface、
                                               allocate_finalized、source_hashes、
-                                              host_policy?、framework_partition?、compile_receipt
+                                              host_policy?、compile_receipt
 release-<flavor>-<versionCode>-arm64-v8a.tar.zst
                                               发布对象：libapp.so、package_config.json、
                                               release_receipt（application_id、public_key、

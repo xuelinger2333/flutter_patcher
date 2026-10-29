@@ -15,14 +15,10 @@ void main() {
     }
   });
 
-  test('framework reuse is off by default and opt-in per command', () {
+  test('the removed framework reuse flag is rejected', () {
     for (final command in ['build', 'patch']) {
-      expect(parser().parse([command, 'android']).command!['framework-reuse'],
-          false);
-      expect(
-          parser().parse([command, 'android', '--framework-reuse']).command![
-              'framework-reuse'],
-          true);
+      expect(() => parser().parse([command, 'android', '--framework-reuse']),
+          throwsFormatException);
     }
   });
 

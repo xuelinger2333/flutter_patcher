@@ -25,9 +25,6 @@ class BuildRequest {
   /// Internal integration harness only; deliberately not a CLI option.
   final bool pipelineValidationOnly;
 
-  /// Experimental framework reuse surface (schema 4 baseline). Off by
-  /// default (schema 3 baseline) because the surface enlarges libapp.so.
-  final bool frameworkReuse;
   BuildRequest(
       {required this.project,
       required this.output,
@@ -36,8 +33,7 @@ class BuildRequest {
       this.flavor,
       this.versionCode,
       this.hostPolicy,
-      this.pipelineValidationOnly = false,
-      this.frameworkReuse = false});
+      this.pipelineValidationOnly = false});
   Future<void> validate() async {
     require(
         target.startsWith('lib/') &&
@@ -125,8 +121,6 @@ class BuildPipeline {
           ].every(usage.contains),
           'TOOLS_VERSION_UNSUPPORTED',
           'CI tools with build inspection are required.');
-      final frameworkReuseTool =
-          request.frameworkReuse && usage.contains('gen-framework-partition');
       // Older tools cannot read back virtual source URIs; they keep the
       // path-dependent baseline kernel.
       final virtualTool = usage.contains('--filesystem-root');
@@ -245,7 +239,6 @@ class BuildPipeline {
       final iface = p.join(baseline, 'dynamic_interface.yaml');
       phase = 'interface';
       final privates = p.join(work, 'platform-privates.yaml');
-      final frameworkPartition = p.join(work, 'framework-partition.json');
       if (!request.pipelineValidationOnly) {
         await call([
           'gen-platform-privates',
@@ -254,19 +247,6 @@ class BuildPipeline {
           '--out',
           privates
         ]);
-        if (frameworkReuseTool) {
-          await call([
-            'gen-framework-partition',
-            '--platform',
-            platform,
-            '--dill',
-            analysis,
-            '--flutter-version',
-            sdk.version,
-            '--out',
-            frameworkPartition
-          ]);
-        }
       }
       await call([
         'merge-interface',
@@ -283,10 +263,6 @@ class BuildPipeline {
         if (!request.pipelineValidationOnly) ...[
           '--platform-privates',
           privates
-        ],
-        if (frameworkReuseTool && !request.pipelineValidationOnly) ...[
-          '--framework-reuse',
-          frameworkPartition
         ],
         '--out-iface',
         iface,
@@ -315,18 +291,9 @@ class BuildPipeline {
         '--compiler-interface',
         p.join(baseline, 'compiler_interface.json')
       ]);
-      if (frameworkReuseTool && !request.pipelineValidationOnly) {
-        await File(frameworkPartition)
-            .copy(p.join(baseline, 'framework_partition.json'));
-      }
-      final partitionHash =
-          frameworkReuseTool && !request.pipelineValidationOnly
-              ? await hashFile(p.join(baseline, 'framework_partition.json'))
-              : null;
       final identity = fingerprint(await hashFile(p.join(baseline, 'app.dill')),
           sdk.engine, await hashFile(iface), sdk.version,
-          hostPolicyHash: request.hostPolicy?.digest,
-          frameworkPartitionHash: partitionHash);
+          hostPolicyHash: request.hostPolicy?.digest);
       // Capture user/plugin sources before injecting generated native policy.
       // The latter has its own fingerprint/APK binding, not a source-file input
       // that the unchanged application must reproduce when preparing a patch.
@@ -436,7 +403,6 @@ class BuildPipeline {
         'schema': 1,
         if (request.hostPolicy != null)
           'host_policy_sha256': request.hostPolicy!.digest,
-        if (partitionHash != null) 'framework_partition_sha256': partitionHash,
         'runtime_bootstrap': !request.pipelineValidationOnly,
         'interface_sha256': await hashFile(iface),
         'fingerprint': identity,
@@ -448,11 +414,9 @@ class BuildPipeline {
       await writeObject(p.join(baseline, 'build_receipt.json'), receipt);
       await workspace.verifyOriginals();
       final metadata = <String, dynamic>{
-        'schema':
-            partitionHash != null ? 4 : (request.hostPolicy == null ? 2 : 3),
+        'schema': request.hostPolicy == null ? 2 : 3,
         if (request.hostPolicy != null)
           'host_policy_sha256': request.hostPolicy!.digest,
-        if (partitionHash != null) 'framework_partition_sha256': partitionHash,
         'flutter_version': sdk.version,
         'engine_commit': sdk.engine,
         'build_id': engine['build_id'],
