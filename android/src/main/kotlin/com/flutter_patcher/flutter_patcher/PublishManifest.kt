@@ -1,5 +1,6 @@
 package com.flutter_patcher.flutter_patcher
 
+import android.annotation.SuppressLint
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -79,6 +80,7 @@ internal object PublishManifest {
 
     /** trustedKeys and scope must come from host configuration, never this envelope.
      * State belongs to exactly this scope. No decision authenticates payload bytes. */
+    @SuppressLint("NewApi") // Authenticated mode only; HostTrustConfig.load requires API 28.
     fun verify(wire: String, trustedKeys: Map<String, ByteArray>, scope: Map<String, String>,
         pluginVersion: String, state: State): Decision {
         require(wire.length <= 24000 && scope.keys == scopeKeys) { "Envelope/scope" }

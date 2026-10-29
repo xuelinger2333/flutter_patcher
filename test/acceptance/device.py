@@ -216,7 +216,7 @@ def run(apk, corpus, serial, package, out, compatibility=False, custom_binding=T
                 update_url = 'http://127.0.0.1:8767/check'
             applied = request('/update', {'url': update_url})
             if compatibility:
-                if applied.get('ok') or 'API 33+' not in str(applied):
+                if applied.get('ok') or 'API 28+' not in str(applied):
                     raise AssertionError('Lower API must explicitly reject bytecode: ' + str(applied))
                 launch()
                 if ready()['revision'] != 'original': raise AssertionError('Lower API original app unavailable')

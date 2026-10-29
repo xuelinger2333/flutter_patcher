@@ -1,5 +1,6 @@
 package com.flutter_patcher.flutter_patcher
 
+import android.annotation.SuppressLint
 import java.util.Base64
 
 /** A complete root-authorized key set. Publishing keys cannot sign this document. */
@@ -7,6 +8,7 @@ internal object TrustUpdate {
     const val DOMAIN = "flutter_patcher.trust.v1\n"
     data class Decision(val revision: Long, val hash: String, val keys: Map<String, ByteArray>)
 
+    @SuppressLint("NewApi") // Authenticated mode only; HostTrustConfig.load requires API 28.
     fun keys(value: String): Map<String, ByteArray> {
         if (value == "-") return emptyMap()
         val rows = value.split(',')
@@ -22,6 +24,7 @@ internal object TrustUpdate {
         return result
     }
 
+    @SuppressLint("NewApi") // Authenticated mode only; HostTrustConfig.load requires API 28.
     fun verify(wire: String, root: ByteArray, scope: Map<String, String>,
         revision: Long, previousHash: String): Decision {
         require(wire.length <= 24000 && scope.keys == PublishManifest.scopeKeys) { "Trust envelope/scope" }

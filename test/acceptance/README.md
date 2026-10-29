@@ -43,7 +43,7 @@ Any Python 3.12+ interpreter works, for example `uv run python test/acceptance/r
 
 ## Rerun an already built APK and corpus
 
-Use Python 3, ADB, Dart and an unlocked API 33+ arm64 device. The dedicated
+Use Python 3, ADB, Dart and an unlocked API 28+ arm64 device. The dedicated
 `com.example.acceptance_app` APK is installed and its data is reset between cases.
 If the installed base APK has exactly the requested SHA256, installation is
 reused; a changed APK still requires installation. This is recorded in the result.

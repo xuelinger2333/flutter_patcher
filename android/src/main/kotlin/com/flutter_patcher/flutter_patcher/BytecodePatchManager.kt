@@ -17,7 +17,8 @@ internal class BytecodePatchManager(private val context: Context) {
     }
     private val store = CandidateStore(context, "bytecode")
     private val host by lazy { HostTrustConfig.load(context) }
-    private val authenticated by lazy { host?.let { AuthenticatedUpdates(context, it) } }
+    // An SO host has no bytecode updates; its policy never authorizes this manager.
+    private val authenticated by lazy { host?.takeIf { it.strategy == "bytecode" }?.let { AuthenticatedUpdates(context, it) } }
     @Volatile var bootstrapped = false
         private set
     private var fingerprint: String? = null
@@ -36,6 +37,7 @@ internal class BytecodePatchManager(private val context: Context) {
         val profileStart = System.nanoTime()
         fun elapsedUs() = (System.nanoTime() - profileStart) / 1000
         host?.let {
+            require(it.strategy == "bytecode") { "Host strategy is not bytecode" }
             HostTrustConfig.requireOwner(context)
             require(fp == it.scope["fingerprint"] &&
                 Base64.decode(publicKey, Base64.DEFAULT).contentEquals(it.fptcKey)) { "Bootstrap differs from immutable host" }
@@ -48,8 +50,8 @@ internal class BytecodePatchManager(private val context: Context) {
         require(raw.size == 32) { "Invalid host public key" }
         fingerprint = fp
         key = raw
-        if (Build.VERSION.SDK_INT < 33) {
-            store.diagnostic("BYTECODE_UNSUPPORTED", "Bytecode verification requires Android API 33")
+        if (Build.VERSION.SDK_INT < 28) {
+            store.diagnostic("BYTECODE_UNSUPPORTED", "Bytecode verification requires Android API 28")
             return@synchronized null
         }
         store.recoverAttempt()
@@ -158,8 +160,8 @@ internal class BytecodePatchManager(private val context: Context) {
 
     private fun install(args: Map<String, Any?>, progress: ProgressCallback,
         authenticatedBytes: ByteArray? = null, authorization: String? = null): ApplyResult = synchronized(lock) {
-        if (Build.VERSION.SDK_INT < 33 || fingerprint == null || key == null)
-            return@synchronized ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, "A bootstrapped Android API 33+ host is required")
+        if (Build.VERSION.SDK_INT < 28 || fingerprint == null || key == null)
+            return@synchronized ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, "A bootstrapped Android API 28+ host is required")
         try {
             val version = args["version"] as? String ?: ""
             val url = args["patchUrl"] as? String ?: ""

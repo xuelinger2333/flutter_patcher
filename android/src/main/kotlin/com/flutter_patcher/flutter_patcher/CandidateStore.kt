@@ -105,13 +105,14 @@ internal class CandidateStore(private val context: Context, private val strategy
     private fun commit(edit: SharedPreferences.Editor) { check(edit.commit()) { "Cannot commit $strategy state" } }
 
     companion object {
-        fun readBounded(stream: InputStream): ByteArray = stream.use {
+        /** InputStream.readNBytes needs API 33; this bounded read works from API 24. */
+        fun readBounded(stream: InputStream, limit: Int = BytecodeEnvelope.MAX_BYTES, what: String = "Patch"): ByteArray = stream.use {
             val out = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(65536)
             while (true) {
                 val count = it.read(buffer)
                 if (count < 0) break
-                require(out.size().toLong() + count <= BytecodeEnvelope.MAX_BYTES) { "Patch too large" }
+                require(out.size().toLong() + count <= limit) { "$what too large" }
                 out.write(buffer, 0, count)
             }
             out.toByteArray()

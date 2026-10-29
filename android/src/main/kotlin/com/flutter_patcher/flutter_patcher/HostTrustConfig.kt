@@ -1,5 +1,6 @@
 package com.flutter_patcher.flutter_patcher
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.os.Build
@@ -11,21 +12,22 @@ import org.json.JSONObject
 internal class HostTrustConfig internal constructor(val scope: Map<String, String>,
     val fptcKey: ByteArray, val root: ByteArray, val initialKeys: Map<String, ByteArray>,
     val policyHash: String) {
+    val strategy: String get() = scope.getValue("strategy")
     companion object {
         const val ASSET = "assets/flutter_patcher/host-trust.json"
+        @SuppressLint("NewApi") // java.util.Base64 (API 26) runs only after the API 28 check.
         fun load(context: Context): HostTrustConfig? = ZipFile(context.applicationInfo.sourceDir).use { apk ->
             val entry = apk.getEntry(ASSET) ?: return@use null
+            // Fail closed: an authenticated host below API 28 runs its original app.
+            check(Build.VERSION.SDK_INT >= 28) { "Authenticated host requires Android API 28+" }
             require(entry.size in 1..24000) { "Host policy size" }
-            val wrapper = JSONObject(apk.getInputStream(entry).use {
-                val bytes = it.readNBytes(24001)
-                require(bytes.size <= 24000) { "Host policy size" }
-                bytes.toString(Charsets.UTF_8)
-            })
+            val wrapper = JSONObject(CandidateStore.readBounded(apk.getInputStream(entry), 24000, "Host policy")
+                .toString(Charsets.UTF_8))
             val text = wrapper.getString("policy")
             val policy = PublishManifest.strings(text)
             require(text == PublishManifest.canonical(policy)) { "Host policy canonical form" }
             val expected = (PublishManifest.scopeKeys - "fingerprint") + setOf("schema", "fptc_key", "root_key", "keys")
-            require(policy.keys == expected && policy["schema"] == "1" && policy["strategy"] == "bytecode") { "Host policy fields" }
+            require(policy.keys == expected && policy["schema"] == "1" && policy["strategy"] in setOf("bytecode", "so")) { "Host policy fields" }
             val hash = PublishManifest.hash(text.toByteArray(Charsets.UTF_8))
             require(hash == wrapper.getString("policy_sha256")) { "Host policy hash" }
             val scope = PublishManifest.scopeKeys.associateWith { name ->
@@ -47,8 +49,8 @@ internal class HostTrustConfig internal constructor(val scope: Map<String, Strin
             HostTrustConfig(scope, key("fptc_key"), key("root_key"), TrustUpdate.keys(policy.getValue("keys")), hash)
         }
         fun requireOwner(context: Context) {
-            require(Build.VERSION.SDK_INT >= 33 && Application.getProcessName() == context.packageName) {
-                "Authenticated updates require the default application process on API 33+"
+            require(Build.VERSION.SDK_INT >= 28 && Application.getProcessName() == context.packageName) {
+                "Authenticated updates require the default application process on API 28+"
             }
         }
     }

@@ -26,8 +26,7 @@ internal class ManifestStateStore(context: Context, private val host: HostTrustC
             java.io.FileOutputStream(initialized, true).use { it.fd.sync() }
             syncDirectory()
         }
-        val bytes = file.openRead().use { it.readNBytes(65537) }
-        require(bytes.size <= 65536) { "Authorization state too large" }
+        val bytes = CandidateStore.readBounded(file.openRead(), 65536, "Authorization state")
         val outer = JSONObject(bytes.toString(Charsets.UTF_8))
         val text = outer.getString("state")
         require(outer.getString("sha256") == PublishManifest.hash(text.toByteArray(Charsets.UTF_8))) { "Authorization state corrupt" }
