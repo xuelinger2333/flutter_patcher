@@ -59,6 +59,8 @@ internal class SoPatchManager(private val context: Context, private val host: Ho
         }
     }
 
+    fun inspect(wire: String) = synchronized(lock) { auth.inspect(wire) }
+
     fun updateTrust(wire: String) = synchronized(lock) {
         auth.updateTrust(wire)
         invalidateUnauthorized()

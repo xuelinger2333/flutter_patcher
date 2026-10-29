@@ -42,6 +42,12 @@ export 'src/signed_manifest.dart';
 class FlutterPatcher {
   FlutterPatcher._();
 
+  static Future<String?>? _strategy;
+
+  /// `so` or `bytecode` for a host built with a host policy, else null.
+  static Future<String?> _hostStrategy() =>
+      _strategy ??= PatcherChannel.channel.invokeMethod<String>('hostStrategy');
+
   /// Fetch an untrusted envelope, preserving its exact signed representation.
   /// Authentication and replay checks occur only in [applySignedManifest].
   static Future<SignedManifest> fetchSignedManifest(String url) async =>
@@ -184,6 +190,9 @@ class FlutterPatcher {
   ///
   /// The returned `patchUrl` is a payload URL: `libapp.so` for lib-only patches
   /// or `patch.zip` for asset patches.
+  ///
+  /// On a host built with a host policy, [url] must serve a signed manifest
+  /// over HTTPS instead ([headers] are not sent); pass the result to [applyPatch].
   static Future<PatchCheckResult> checkUpdate(
     String url, {
     Map<String, String>? headers,
@@ -194,6 +203,7 @@ class FlutterPatcher {
     }
 
     try {
+      if (await _hostStrategy() != null) return await _checkSigned(url, timeout);
       final decoded = await platform_io.getJson(
         url,
         headers: headers,
@@ -206,6 +216,23 @@ class FlutterPatcher {
       _log('checkUpdate failed: $e', s);
       throw PatcherException(e.toString());
     }
+  }
+
+  /// Authenticated host: [url] serves a signed manifest. Native verifies it
+  /// without persisting anything; only a manifest that would change the
+  /// accepted state is an update. [applyPatch] then applies that manifest.
+  static Future<PatchCheckResult> _checkSigned(String url, Duration timeout) async {
+    final manifest =
+        SignedManifest.parse(await platform_io.getSignedWire(url, timeout: timeout));
+    final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
+        'checkSignedManifest', {'wire': manifest.wire});
+    if (raw == null || raw['fresh'] != true) return PatchCheckResult.none();
+    return PatchCheckResult(
+        hasUpdate: true,
+        patch: PatchInfo(
+            version: raw['patch_seq'] as String? ?? raw['action'] as String,
+            patchUrl: '',
+            raw: {'signed_manifest': manifest.wire, 'action': raw['action']}));
   }
 
   /// Downloads, verifies, and installs [patchInfo]'s payload.
@@ -237,6 +264,10 @@ class FlutterPatcher {
       sub = applyProgress.listen(onProgress);
     }
     try {
+      final wire = patchInfo.raw['signed_manifest'];
+      if (wire is String) {
+        return (await applySignedManifest(SignedManifest.parse(wire))).result;
+      }
       final native = await PatcherChannel.applyPatch(patchInfo.toJson());
       return PatchApplyResult.fromNative(native);
     } catch (e, s) {

@@ -146,6 +146,10 @@ internal class BytecodePatchManager(private val context: Context) {
         }
     }
 
+    fun inspect(wire: String) = synchronized(lock) {
+        (authenticated ?: error("Host has no authenticated policy")).inspect(wire)
+    }
+
     fun updateTrust(wire: String) = synchronized(lock) {
         val auth = authenticated ?: error("Host has no authenticated policy")
         auth.updateTrust(wire)

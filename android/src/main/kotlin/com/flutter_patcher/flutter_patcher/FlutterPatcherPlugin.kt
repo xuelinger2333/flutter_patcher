@@ -148,6 +148,11 @@ class FlutterPatcherPlugin :
                 val wire = call.argument<String>("wire") ?: ""
                 so?.applyManifest(wire, ::emitProgress) ?: bytecode.applyManifest(wire, ::emitProgress)
             }
+            "hostStrategy" -> bytecodeCall(result) { HostTrustConfig.load(appContext)?.strategy }
+            "checkSignedManifest" -> authenticatedCall(result) {
+                val wire = call.argument<String>("wire") ?: ""
+                so?.inspect(wire) ?: bytecode.inspect(wire)
+            }
             "updatePublicationTrust" -> authenticatedCall(result) {
                 val wire = call.argument<String>("wire") ?: ""
                 so?.updateTrust(wire) ?: bytecode.updateTrust(wire)
