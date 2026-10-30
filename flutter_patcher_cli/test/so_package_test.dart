@@ -163,4 +163,24 @@ void main() {
         throwsA(isA<Failure>()
             .having((f) => f.code, 'code', 'PATCH_NATIVE_CHANGE')));
   });
+  test('a patch that would run FFI in the interpreter is rejected', () {
+    rejectFfi({
+      'checks': {'ffi': []}
+    });
+    rejectFfi({'checks': <String, dynamic>{}}); // tools without the check
+    expect(
+        () => rejectFfi({
+              'checks': {
+                'ffi': [
+                  {
+                    'message': 'FFI call asFunction',
+                    'file': 'main.dart',
+                    'line': 3
+                  }
+                ]
+              }
+            }),
+        throwsA(isA<Failure>()
+            .having((f) => f.code, 'code', 'PATCH_FFI_UNSUPPORTED')));
+  });
 }

@@ -97,6 +97,20 @@ Object? _nativeBuildInputs(Object? entry, String platform) => entry is! Map
         }
       };
 
+/// The interpreter cannot make FFI calls in an AOT runtime, so a module that
+/// contains one (tools report `checks.ffi`) would abort the app. Older tools
+/// do not report the check.
+void rejectFfi(Map<String, dynamic> report) {
+  final sites = (report['checks'] as Map?)?['ffi'];
+  if (sites is! List || sites.isEmpty) return;
+  final first = sites.first as Map;
+  throw Failure(
+      'PATCH_FFI_UNSUPPORTED',
+      'Patched code would run FFI in the interpreter (${first['message']} at '
+          '${first['file']}:${first['line']}). Keep FFI in unchanged host code, '
+          'which a patch may call, or ship a new host release.');
+}
+
 /// Rejects native changes against the release's [previous] package inputs and
 /// records each changed pure-Dart dependency in [changed]; true if any did.
 bool nativeInputChanges(
@@ -139,7 +153,8 @@ class PatchPipeline {
   /// The engine release record; needed only to rebuild an SO host's APK.
   final Map<String, dynamic>? engine;
   PatchPipeline(this.commands, this.sdk, this.managed, this.tool, this.cache,
-      this.baselines, {this.engine});
+      this.baselines,
+      {this.engine});
   Future<Map<String, Object?>> patch(PatchRequest req) async {
     await req.validate();
     for (final protected in [sdk.root, managed]) {
@@ -158,7 +173,8 @@ class PatchPipeline {
       final resolved = await baselines.resolve(
           req.flavor, req.minBuild.toString(),
           abi: req.abi,
-          expectedFingerprint: req.fingerprint, sdkRoot: sdk.root);
+          expectedFingerprint: req.fingerprint,
+          sdkRoot: sdk.root);
       if (resolved.strategy == 'so') {
         phase = 'so';
         return await patchSo(req, resolved, work);
@@ -217,17 +233,15 @@ class PatchPipeline {
       final roots = await packageRoots(config);
       final packageState = await packageInputs(config, application: app);
       final oldState = receipt['package_inputs'];
-      require(
-          oldState is Map,
-          'PATCH_BASELINE_INCOMPATIBLE',
+      require(oldState is Map, 'PATCH_BASELINE_INCOMPATIBLE',
           'Baseline lacks dependency/native provenance; rebuild host');
       final own = {app, ...roots.keys.where((k) => !oldRoots.containsKey(k))};
       final changed = <String>[];
       var dependencyChanged = false;
       if (oldState is Map) {
-        dependencyChanged =
-            nativeInputChanges(packageState, oldState, app, changed,
-                platform: req.platform);
+        dependencyChanged = nativeInputChanges(
+            packageState, oldState, app, changed,
+            platform: req.platform);
       }
       final hashes =
           (await readObject(p.join(baseline, 'source_hashes.json')))['files']
@@ -295,9 +309,7 @@ class PatchPipeline {
           cwd: project);
       final payload = PatchResources(bundle, work, commands, managed);
       final oldResources = receipt['resources'];
-      require(
-          oldResources is Map,
-          'PATCH_BASELINE_INCOMPATIBLE',
+      require(oldResources is Map, 'PATCH_BASELINE_INCOMPATIBLE',
           'Baseline lacks resource inventory; rebuild host');
       await payload.collect(
           oldResources is Map
@@ -386,6 +398,8 @@ class PatchPipeline {
       }
 
       final first = await compile(false);
+      // The whole tier cannot remove an FFI call; it only carries more code.
+      rejectFfi(first);
       final resourceCheck = (first['checks'] as Map)['resources'];
       final resourceUpgrade = resources &&
           resourceCheck is Map &&
@@ -396,6 +410,7 @@ class PatchPipeline {
           resourceUpgrade: resourceUpgrade);
       if (tier == 'whole') {
         final whole = await compile(false);
+        rejectFfi(whole);
         require(whole['status'] == 'checked', 'PATCH_UNSAFE',
             'Whole-tier checks failed; evidence: $work');
       }
