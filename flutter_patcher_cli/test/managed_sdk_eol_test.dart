@@ -44,7 +44,7 @@ void main() {
     final commands = GitRecorder(temp.path);
     await expectLater(
         EnvironmentBuilder(p.join(temp.path, 'cache'), commands)
-            .prepare(sdk(host), store(), {}),
+            .prepare(sdk(host), store()),
         throwsA(isA<Failure>().having((f) => f.code, 'code', 'STOP')));
     return commands.calls.single;
   }
@@ -71,7 +71,7 @@ void main() {
         await EnvironmentBuilder(
                 p.join(temp.path, 'cache'), GitRecorder(temp.path),
                 offline: true)
-            .prepare(sdk(windows), store(), {});
+            .prepare(sdk(windows), store());
       } on Failure catch (f) {
         return f.code;
       }

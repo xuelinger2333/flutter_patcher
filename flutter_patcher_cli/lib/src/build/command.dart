@@ -76,7 +76,7 @@ Future<int> buildCommand(ArgResults args) async {
     await artifacts.obtain('tools', sdk,
         refresh: args['refresh-tools'] == true);
     final environment = EnvironmentBuilder(cache, commands, offline: offline);
-    final managed = await environment.prepare(sdk, artifacts, engine);
+    final managed = await environment.prepare(sdk, artifacts, android: engine);
     final pipeline = BuildPipeline(
             commands,
             sdk,

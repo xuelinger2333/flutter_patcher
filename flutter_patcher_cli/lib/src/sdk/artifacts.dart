@@ -30,16 +30,16 @@ class SdkIdentity {
 
 /// A well-formed `verify` block: snapshot/device states with a skip reason
 /// only when skipped. Pending states are allowed here (other hosts' rows).
-bool verificationShape(dynamic verify) =>
+bool verificationShape(dynamic verify, {String platform = 'android'}) =>
     verify is Map &&
     const ['pending', 'passed'].contains(verify['snapshot']) &&
     ((const ['pending', 'passed'].contains(verify['device']) &&
             verify['device_reason'] == null) ||
         (verify['device'] == 'skipped' &&
-            verify['device_reason'] == 'no_android_device'));
+            verify['device_reason'] == 'no_${platform}_device'));
 
-bool verificationPassed(dynamic verify) =>
-    verificationShape(verify) &&
+bool verificationPassed(dynamic verify, {String platform = 'android'}) =>
+    verificationShape(verify, platform: platform) &&
     verify['snapshot'] == 'passed' &&
     verify['device'] != 'pending';
 
@@ -48,23 +48,24 @@ bool verificationPassed(dynamic verify) =>
 Iterable<Map> hostFiles(Map<String, dynamic> manifest, HostIdentity host) =>
     (manifest['files'] as List).cast<Map>().where((row) =>
         row['role'] != 'gen_snapshot' ||
-        row['name'] == host.genSnapshotArtifact);
+        '${row['host_os']}-${row['host_arch']}' == host.key);
 
-void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
-  void valid(bool condition, String message) =>
-      require(condition, 'ENGINE_MANIFEST_INVALID', message);
-  bool hash(dynamic value, RegExp pattern) =>
-      value is String && pattern.hasMatch(value);
-  // Engine schema 2 lists one gen_snapshot per build host; schema 1
-  // releases carry only linux-x64. Tools manifests stay at schema 1.
-  final schema = value['schema'];
-  valid(schema is int && (schema == 1 || (kind == 'engine' && schema == 2)),
-      'Unknown $kind manifest schema.');
+/// iOS engine release files. The zip holds the whole Flutter.xcframework:
+/// the patched device slice and the stock simulator slice.
+const iosFrameworkZip = 'Flutter.xcframework.zip';
+const iosFrameworkBinary =
+    'Flutter.xcframework/ios-arm64/Flutter.framework/Flutter';
+
+/// gen_snapshot that runs on macos-arm64 and emits iOS arm64 code.
+const iosGenSnapshot = 'gen_snapshot_ios-darwin-arm64';
+
+void _checkSource(Map<String, dynamic> value, String kind, SdkIdentity sdk,
+    void Function(bool, String) valid) {
   valid(
       value['flutter_version'] == sdk.version &&
           value['engine_commit'] == sdk.engine,
       '$kind manifest does not match the selected Flutter SDK.');
-  valid(hash(value['builder_repo_commit'], hex40), 'Invalid builder commit.');
+  valid(_hash(value['builder_repo_commit'], hex40), 'Invalid builder commit.');
   final patches = value['patches'];
   valid(patches is List && patches.isNotEmpty, 'Missing patch provenance.');
   final patchNames = <String>{};
@@ -73,10 +74,123 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
         patch is Map &&
             patch['file'] is String &&
             p.basename(patch['file'] as String) == patch['file'] &&
-            hash(patch['sha256'], hex64) &&
+            _hash(patch['sha256'], hex64) &&
             patchNames.add(patch['file'] as String),
         'Invalid patch record.');
   }
+}
+
+void _checkBuild(
+    Map<String, dynamic> value, void Function(bool, String) valid) {
+  valid(
+      value['build_id'] is String &&
+          RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
+              .hasMatch(value['build_id']),
+      'Invalid engine build_id.');
+  valid(_hash(value['depot_tools_rev'], hex40), 'Invalid engine provenance.');
+  valid(
+      value['built_at'] is String &&
+          RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+              .hasMatch(value['built_at']) &&
+          DateTime.tryParse(value['built_at']) != null,
+      'Invalid build timestamp.');
+}
+
+bool _hash(dynamic value, RegExp pattern) =>
+    value is String && pattern.hasMatch(value);
+
+/// The iOS engine release (schema 1) of a Flutter version: same version,
+/// engine and patch set as its Android release, built on macos-arm64.
+void _checkIosEngine(Map<String, dynamic> value, SdkIdentity sdk) {
+  void valid(bool condition, String message) =>
+      require(condition, 'ENGINE_MANIFEST_INVALID', message);
+  valid(value['schema'] == 1, 'Unknown engine-ios manifest schema.');
+  _checkSource(value, 'engine-ios', sdk, valid);
+  _checkBuild(value, valid);
+  valid(verificationPassed(value['verify'], platform: 'ios'),
+      'iOS engine verification did not pass.');
+  final files = value['files'];
+  valid(
+      files is List && files.every((row) => row is Map), 'Invalid file list.');
+  final rows = {
+    for (final row in (files as List).cast<Map>()) row['role']: row
+  };
+  require(
+      files.length == 2 &&
+          rows.length == 2 &&
+          rows.containsKey('framework') &&
+          rows.containsKey('gen_snapshot'),
+      'ENGINE_ARTIFACT_MISSING',
+      'Missing required artifact roles.');
+  for (final row in rows.values) {
+    valid(row['size'] is int && row['size'] > 0 && _hash(row['sha256'], hex64),
+        'Invalid file size/hash.');
+  }
+  final framework = rows['framework']!, snapshot = rows['gen_snapshot']!;
+  valid(
+      framework['name'] == iosFrameworkZip &&
+          snapshot['name'] == iosGenSnapshot,
+      'Unexpected artifact filename.');
+  valid(snapshot['host_os'] == 'macos' && snapshot['host_arch'] == 'arm64',
+      'Unsupported gen_snapshot host.');
+  final contents = framework['contents'];
+  valid(contents is List && contents.length == 1, 'Wrong framework contents.');
+  final binary = (contents as List).single;
+  valid(
+      binary is Map &&
+          binary['name'] == iosFrameworkBinary &&
+          binary['size'] is int &&
+          binary['size'] > 0 &&
+          _hash(binary['sha256'], hex64),
+      'Invalid inner framework record.');
+}
+
+/// Rejects a framework zip that could write outside Flutter.xcframework or
+/// whose device binary is not the recorded arm64 Mach-O.
+void checkFrameworkArchive(Archive archive, Map record) {
+  for (final entry in archive.files) {
+    final parts = entry.name.split('/');
+    require(
+        !entry.isSymbolicLink &&
+            parts.first == 'Flutter.xcframework' &&
+            !entry.name.contains(r'\') &&
+            !parts.any((part) => part == '..' || part == '.'),
+        'ARTIFACT_INVALID',
+        'Unsafe framework archive entry: ${entry.name}');
+  }
+  require(
+      archive.files
+          .any((entry) => entry.name == 'Flutter.xcframework/Info.plist'),
+      'ARTIFACT_INVALID',
+      'Framework archive has no xcframework Info.plist.');
+  final binaries =
+      archive.files.where((entry) => entry.name == record['name']).toList();
+  require(binaries.length == 1, 'ARTIFACT_INVALID',
+      'Framework archive must contain exactly one device binary.');
+  final content = binaries.single.content;
+  require(
+      content.length == record['size'] &&
+          sha256.convert(content).toString() == record['sha256'],
+      'ARTIFACT_HASH_MISMATCH',
+      'Framework device binary mismatch.');
+  require(
+      content.length > 8 &&
+          content.take(8).join(',') == '207,250,237,254,12,0,0,1',
+      'ARTIFACT_INVALID',
+      'Framework device binary is not arm64 Mach-O.');
+}
+
+void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
+  if (kind == 'engine-ios') return _checkIosEngine(value, sdk);
+  void valid(bool condition, String message) =>
+      require(condition, 'ENGINE_MANIFEST_INVALID', message);
+  const hash = _hash;
+  // Engine schema 2 lists one gen_snapshot per build host; schema 1
+  // releases carry only linux-x64. Tools manifests stay at schema 1.
+  final schema = value['schema'];
+  valid(schema is int && (schema == 1 || (kind == 'engine' && schema == 2)),
+      'Unknown $kind manifest schema.');
+  _checkSource(value, kind, sdk, valid);
   final files = value['files'];
   final expected = kind == 'engine'
       ? {
@@ -168,21 +282,8 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
       valid(verificationPassed(mine!['verify']),
           'gen_snapshot verification for ${sdk.host.key} did not pass.');
     }
-    valid(
-        value['build_id'] is String &&
-            RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
-                .hasMatch(value['build_id']),
-        'Invalid engine build_id.');
-    valid(
-        hash(value['engine_stamp'], hex40) &&
-            hash(value['depot_tools_rev'], hex40),
-        'Invalid engine provenance.');
-    valid(
-        value['built_at'] is String &&
-            RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
-                .hasMatch(value['built_at']) &&
-            DateTime.tryParse(value['built_at']) != null,
-        'Invalid build timestamp.');
+    _checkBuild(value, valid);
+    valid(hash(value['engine_stamp'], hex40), 'Invalid engine provenance.');
     valid(verificationPassed(value['verify']),
         'Engine verification did not pass.');
   } else {
@@ -212,6 +313,9 @@ Future<void> validateFiles(String directory, Map<String, dynamic> manifest,
     } else if (row['role'] == 'gen_snapshot') {
       require(host.isNativeExecutable(bytes), 'ARTIFACT_INVALID',
           'Not a ${host.key} executable.');
+    } else if (row['role'] == 'framework') {
+      checkFrameworkArchive(ZipDecoder().decodeBytes(bytes),
+          (row['contents'] as List).single as Map);
     } else {
       final archive = ZipDecoder().decodeBytes(bytes);
       if (row['role'] == 'engine') {
@@ -315,8 +419,9 @@ class ArtifactStore {
         await quarantine(directory);
       }
     }
-    final missing =
-        kind == 'engine' ? 'ENGINE_ARTIFACT_MISSING' : 'TOOLS_ARTIFACT_MISSING';
+    final missing = kind.startsWith('engine')
+        ? 'ENGINE_ARTIFACT_MISSING'
+        : 'TOOLS_ARTIFACT_MISSING';
     final staging = temporaryName(directory);
     await downloads.fetch(
         Uri.parse('$source$manifestName'), p.join(staging, manifestName),
@@ -354,8 +459,8 @@ class ArtifactStore {
 
   /// Engine artifacts are cached per host so a cache directory shared between
   /// hosts (WSL2 and Windows, for example) never fights over gen_snapshot.
-  String _directory(SdkIdentity sdk, String kind) => kind == 'engine'
-      ? p.join(root, 'artifacts', sdk.version, 'engine', sdk.host.key)
+  String _directory(SdkIdentity sdk, String kind) => kind.startsWith('engine')
+      ? p.join(root, 'artifacts', sdk.version, kind, sdk.host.key)
       : p.join(root, 'artifacts', sdk.version, kind);
 
   String file(SdkIdentity sdk, String kind, String name) =>

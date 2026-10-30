@@ -299,7 +299,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
         EnvironmentBuilder(cache, commands, offline: downloads.offline);
     late String managed;
     await check('parallel_sdk', () async {
-      managed = await environment.prepare(sdk, store, engine);
+      managed = await environment.prepare(sdk, store, android: engine);
     }, 'Managed SDK and local Maven mirror prepared');
     report['managed_sdk'] = managed;
     report['maven_mirror'] =

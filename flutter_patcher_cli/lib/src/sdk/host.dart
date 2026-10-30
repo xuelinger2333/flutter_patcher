@@ -85,8 +85,12 @@ String? hostHome() =>
 /// The single host-support gate for every command.
 HostIdentity requireSupportedHost() {
   final host = HostIdentity.current();
+  // Maintainers bring up a new host before it is verified.
+  final unverified =
+      Platform.environment['FLUTTER_PATCHER_UNVERIFIED_HOST'] == '1' &&
+          HostIdentity.implemented.contains(host.key);
   require(
-      HostIdentity.verified.contains(host.key),
+      HostIdentity.verified.contains(host.key) || unverified,
       'HOST_UNSUPPORTED',
       HostIdentity.implemented.contains(host.key)
           ? 'Host ${host.key} is implemented but not yet verified for release.'

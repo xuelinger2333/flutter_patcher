@@ -68,7 +68,7 @@ Future<int> patchCommand(ArgResults args) async {
     final engine = await store.obtain('engine', sdk);
     await store.obtain('tools', sdk, refresh: args['refresh-tools'] == true);
     final managed = await EnvironmentBuilder(cache, commands, offline: offline)
-        .prepare(sdk, store, engine);
+        .prepare(sdk, store, android: engine);
     final baselines = BaselineRepository(
         p.join(cache, 'baselines'),
         offline

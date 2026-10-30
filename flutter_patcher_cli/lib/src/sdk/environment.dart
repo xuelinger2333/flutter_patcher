@@ -114,8 +114,10 @@ class EnvironmentBuilder {
   final bool offline;
   EnvironmentBuilder(this.cache, this.commands, {this.offline = false});
 
-  Future<String> prepare(
-      SdkIdentity sdk, ArtifactStore store, Map<String, dynamic> engine) async {
+  /// Clones the managed SDK once per Flutter revision, then installs the
+  /// verified patched engine for each requested target platform.
+  Future<String> prepare(SdkIdentity sdk, ArtifactStore store,
+      {Map<String, dynamic>? android, Map<String, dynamic>? ios}) async {
     final target = p.join(cache, 'flutter', sdk.version);
     await rejectLinks(target);
     final marker = p.join(target, '.flutter-patcher-sdk.json');
@@ -167,9 +169,9 @@ class EnvironmentBuilder {
               .trim();
       require(commit == sdk.framework, 'SDK_PREPARE_FAILED',
           'Flutter version tag differs from the selected SDK revision.');
-      // Bootstrap stock downloads before constructing/using the local Maven mirror.
+      // Bootstrap the tool and Dart SDK; platform artifacts follow per target.
       await commands.run(sdk.host.flutterLauncher(staging),
-          ['--suppress-analytics', 'precache', '--android'],
+          ['--suppress-analytics', '--version'],
           code: 'SDK_PREPARE_FAILED');
       require(
           (await File(p.join(staging, 'bin/internal/engine.version'))
@@ -179,29 +181,112 @@ class EnvironmentBuilder {
           'SDK_PREPARE_FAILED',
           'Managed SDK engine revision differs.');
       await writeObject(p.join(staging, '.flutter-patcher-sdk.json'),
-          {...sdk.toJson(), 'checkout_eol': 'lf'});
+          {...sdk.toJson(), 'checkout_eol': 'lf', 'precached': <String>[]});
       await Directory(staging).renameRetry(target);
     }
     final commit =
         (await commands.run('git', ['-C', target, 'rev-parse', 'HEAD'])).trim();
     require(commit == sdk.framework, 'SDK_PREPARE_FAILED',
         'Managed SDK checkout changed.');
-    final snapshot = store.file(sdk, 'engine', sdk.host.genSnapshotArtifact);
-    final installed = p.join(target, sdk.host.genSnapshotInstall);
+    if (android != null) {
+      await _precache(sdk, target, 'android');
+      await _installExecutable(
+          store.file(sdk, 'engine', sdk.host.genSnapshotArtifact),
+          p.join(target, sdk.host.genSnapshotInstall),
+          sdk.host);
+      await mirror(sdk, store, android);
+    }
+    if (ios != null) {
+      await _precache(sdk, target, 'ios');
+      await installIos(sdk, store, ios, target);
+    }
+    return target;
+  }
+
+  /// Downloads stock platform artifacts once; the patched files are then
+  /// laid over them. SDKs cached before this record had only Android.
+  Future<void> _precache(
+      SdkIdentity sdk, String target, String platform) async {
+    final marker = p.join(target, '.flutter-patcher-sdk.json');
+    final state = await readObject(marker);
+    final done =
+        (state['precached'] as List?)?.cast<String>() ?? const ['android'];
+    if (done.contains(platform)) return;
+    require(!offline, 'SDK_NOT_READY',
+        'The managed SDK has no $platform artifacts cached for offline use.');
+    await commands.run(sdk.host.flutterLauncher(target),
+        ['--suppress-analytics', 'precache', '--$platform'],
+        code: 'SDK_PREPARE_FAILED');
+    await writeObject(marker, {
+      ...state,
+      'precached': [...done, platform]
+    });
+  }
+
+  Future<void> _installExecutable(
+      String source, String installed, HostIdentity host) async {
     await rejectLinks(installed);
     await Directory(p.dirname(installed)).create(recursive: true);
     if (!await File(installed).exists() ||
-        await hashFile(installed) != await hashFile(snapshot)) {
+        await hashFile(installed) != await hashFile(source)) {
       final stage = temporaryName(installed);
-      await File(snapshot).copy(stage);
-      await markExecutable(commands, stage, host: sdk.host);
+      await File(source).copy(stage);
+      await markExecutable(commands, stage, host: host);
       await File(stage).renameRetry(installed);
     }
-    await markExecutable(commands, installed, host: sdk.host);
-    require(await hashFile(installed) == await hashFile(snapshot),
+    await markExecutable(commands, installed, host: host);
+    require(await hashFile(installed) == await hashFile(source),
         'ENGINE_ARTIFACT_MISMATCH', 'Installed gen_snapshot mismatch.');
-    await mirror(sdk, store, engine);
-    return target;
+  }
+
+  /// Lays the verified patched iOS engine over the stock ios-release
+  /// artifacts. The framework is replaced whole; a stamp beside it records
+  /// which build is installed, and the device binary is re-hashed each run.
+  Future<void> installIos(SdkIdentity sdk, ArtifactStore store,
+      Map<String, dynamic> ios, String target) async {
+    final release = p.join(target, 'bin/cache/artifacts/engine/ios-release');
+    await _installExecutable(store.file(sdk, 'engine-ios', iosGenSnapshot),
+        p.join(release, 'gen_snapshot_arm64'), sdk.host);
+    final record = ((ios['files'] as List)
+                .cast<Map>()
+                .singleWhere((row) => row['role'] == 'framework')['contents']
+            as List)
+        .single as Map;
+    final framework = p.join(release, 'Flutter.xcframework');
+    final binary = p.join(release, iosFrameworkBinary);
+    final stamp = p.join(release, '.flutter-patcher-framework');
+    await rejectLinks(framework);
+    if (await File(stamp).exists() &&
+        await File(stamp).readAsString() == ios['build_id'] &&
+        await File(binary).exists() &&
+        await hashFile(binary) == record['sha256']) {
+      return;
+    }
+    final archive = ZipDecoder().decodeBytes(
+        await File(store.file(sdk, 'engine-ios', iosFrameworkZip))
+            .readAsBytes());
+    checkFrameworkArchive(archive, record);
+    final staging = temporaryName(framework);
+    for (final entry in archive.files) {
+      final path = p.joinAll([staging, ...entry.name.split('/').skip(1)]);
+      if (!entry.isFile) {
+        await Directory(path).create(recursive: true);
+        continue;
+      }
+      await Directory(p.dirname(path)).create(recursive: true);
+      await File(path).writeAsBytes(entry.content);
+    }
+    await markExecutable(
+        commands, p.join(staging, 'ios-arm64/Flutter.framework/Flutter'),
+        host: sdk.host);
+    if (await File(stamp).exists()) await File(stamp).delete();
+    if (await Directory(framework).exists()) {
+      await Directory(framework).deleteRetry(recursive: true);
+    }
+    await Directory(staging).renameRetry(framework);
+    require(await hashFile(binary) == record['sha256'],
+        'ENGINE_ARTIFACT_MISMATCH', 'Installed Flutter.xcframework mismatch.');
+    await File(stamp).writeAsString(ios['build_id'] as String);
   }
 
   Future<String> mirror(
