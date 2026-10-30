@@ -4,15 +4,17 @@ import UIKit
 /// Dart <-> iOS channel handler. Methods, arguments, error codes and boot
 /// statuses match the Android plugin; see test/contract/channel.json.
 ///
-/// iOS hosts are bytecode only. The Dart bootstrap reports the first frame
-/// with its attempt token, so there is no native first-frame listener.
+/// iOS hosts are bytecode only. As on Android, the first rendered frame after
+/// an armed attempt confirms it natively.
 public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private let bytecode = BytecodePatchManager()
+  private weak var registrar: FlutterPluginRegistrar?
   private let worker = DispatchQueue(label: "flutter_patcher", qos: .userInitiated, attributes: .concurrent)
   private var eventSink: FlutterEventSink?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterPatcherPlugin()
+    instance.registrar = registrar
     let channel = FlutterMethodChannel(name: "flutter_patcher", binaryMessenger: registrar.messenger())
     registrar.addMethodCallDelegate(instance, channel: channel)
     FlutterEventChannel(name: "flutter_patcher/events", binaryMessenger: registrar.messenger())
@@ -61,7 +63,13 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
       }
     case "markBooting":
       guard bytecode.bootstrapped else { return result(nil) }
-      bytecodeCall(result) { [bytecode] in try bytecode.markBooting(attempt) }
+      bytecodeCall(result) { [bytecode] in
+        let started = try bytecode.markBooting(attempt)
+        if started, let token = attempt {
+          DispatchQueue.main.async { self.confirmFirstFrame(token) }
+        }
+        return started
+      }
     case "reportBootSuccess":
       guard bytecode.bootstrapped else { return result(nil) }
       bytecodeCall(result) { [bytecode] in
@@ -117,6 +125,16 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
       }
     default:
       result(FlutterMethodNotImplemented)
+    }
+  }
+
+  /// The counterpart of Android's FlutterRenderer display listener: the next
+  /// rendered frame settles the armed attempt as a success.
+  private func confirmFirstFrame(_ token: String) {
+    guard let controller = registrar?.viewController as? FlutterViewController else { return }
+    controller.setFlutterViewDidRenderCallback { [weak self] in
+      guard let self = self else { return }
+      self.worker.async { [bytecode = self.bytecode] in try? bytecode.success(token) }
     }
   }
 
