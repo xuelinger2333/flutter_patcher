@@ -16,8 +16,6 @@ import 'build/command.dart';
 import 'build/line_endings.dart';
 import 'patch/command.dart';
 import 'keys/command.dart';
-import 'legacy/mock_server.dart';
-import 'legacy/pack.dart';
 import 'publish/command.dart';
 import 'publish/trust_command.dart';
 
@@ -112,13 +110,6 @@ ArgParser parser() {
 }
 
 Future<int> runCli(List<String> arguments) async {
-  // v1 SO tools for hosts without a host policy keep their own options.
-  if (arguments.isNotEmpty && arguments.first == 'pack') {
-    return packMain(arguments.sublist(1));
-  }
-  if (arguments.isNotEmpty && arguments.first == 'mock-server') {
-    return mockServerMain(arguments.sublist(1));
-  }
   final args = parser();
   ArgResults parsed;
   try {
@@ -131,7 +122,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android [options]\nflutter_patcher patch android [options]\nflutter_patcher publish --production --request <file> [--commit]\nflutter_patcher pack [options]          (v1 SO, hosts without a host policy)\nflutter_patcher mock-server [options]   (v1 SO, hosts without a host policy)\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android [options]\nflutter_patcher patch android [options]\nflutter_patcher publish --production --request <file> [--commit]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {

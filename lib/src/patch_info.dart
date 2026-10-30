@@ -1,93 +1,19 @@
-/// Minimum metadata needed to install a patch.
+/// An available update, as returned by `FlutterPatcher.checkUpdate`.
 ///
-/// `PatchInfo` is intentionally backend-agnostic. Your update data can come
-/// from HTTP JSON, gRPC, remote config, or hard-coded test data; as long as you
-/// can provide these fields, the patch can be passed to
-/// `FlutterPatcher.applyPatch`.
+/// Pass it unchanged to `FlutterPatcher.applyPatch`: it carries the signed
+/// manifest that native code authenticates. A hand-built [PatchInfo] has no
+/// manifest and is rejected.
 class PatchInfo {
-  /// Patch identifier, for example `1.0.1-h1`.
+  /// Patch sequence of the publication, or `withdraw`.
   final String version;
 
-  /// Patch payload URL.
-  ///
-  /// For a lib-only patch this points to `libapp.so`. For an asset patch this
-  /// points to `patch.zip`.
-  final String patchUrl;
-
-
-  /// MD5 of the patch payload, lower-case hex.
-  ///
-  /// For a lib-only patch this is the MD5 of `libapp.so`. For an asset patch
-  /// this is the MD5 of `patch.zip`. An empty string skips payload MD5
-  /// verification and also skips signature verification.
-  final String md5;
-
-  /// Base64 Ed25519 signature over the [md5] hex string.
-  ///
-  /// Empty disables signature verification. When [md5] is empty this field is
-  /// ignored because there is no signed message.
-  final String signature;
-
-  /// Host APK `versionCode` this patch targets.
-  ///
-  /// On cold start, a patch whose target versionCode no longer matches the
-  /// installed APK is dropped automatically. If null, native code binds the
-  /// patch to the current app versionCode during `applyPatch`.
-  final int? targetVersionCode;
-
-  /// Original JSON fields preserved by [PatchInfo.fromJson].
-  ///
-  /// Direct construction does not use this field.
+  /// Update-check data; `signed_manifest` holds the exact signed wire.
   final Map<String, dynamic> raw;
 
-  const PatchInfo({
-    required this.version,
-    required this.patchUrl,
-
-    this.md5 = '',
-    this.signature = '',
-    this.targetVersionCode,
-    this.raw = const {},
-  });
-
-  /// Parses the minimal built-in check-update protocol.
-  ///
-  /// If your server response has a different shape, construct [PatchInfo]
-  /// directly. Compatible field names:
-  ///
-  /// - `patchUrl` / `patch_url`
-  /// - `targetVersionCode` / `target_version_code`
-  factory PatchInfo.fromJson(Map<String, dynamic> json) {
-    final rawVc = json['targetVersionCode'] ?? json['target_version_code'];
-    final int? parsedVc = rawVc is num
-        ? rawVc.toInt()
-        : (rawVc is String && rawVc.isNotEmpty ? int.tryParse(rawVc) : null);
-    return PatchInfo(
-      version: (json['version'] ?? '') as String,
-      patchUrl: (json['patchUrl'] ?? json['patch_url'] ?? '') as String,
-
-      md5: (json['md5'] ?? '') as String,
-      signature: (json['signature'] ?? '') as String,
-      targetVersionCode: parsedVc,
-      raw: Map<String, dynamic>.from(json),
-    );
-  }
-
-  /// Serializes this patch for the native MethodChannel call.
-  Map<String, dynamic> toJson() => {
-        'version': version,
-        'patchUrl': patchUrl,
-
-        if (md5.isNotEmpty) 'md5': md5,
-        'signature': signature,
-        if (targetVersionCode != null) 'targetVersionCode': targetVersionCode,
-      };
+  const PatchInfo({required this.version, this.raw = const {}});
 
   @override
-  String toString() => 'PatchInfo('
-      'version=$version, url=$patchUrl, '
-      'md5=${md5.isEmpty ? 'none' : md5}, '
-      'sig=${signature.isEmpty ? 'none' : '***'})';
+  String toString() => 'PatchInfo(version=$version)';
 }
 
 /// Stages emitted while applying a patch.
@@ -166,21 +92,20 @@ class PatchApplyProgress {
 
 /// Classified failure reason for `FlutterPatcher.applyPatch`.
 enum PatchApplyError {
-  /// Missing version/URL, invalid MD5 format, unsupported mode, or target
-  /// version mismatch.
+  /// Not a [PatchInfo] from `checkUpdate`, or metadata that differs from the
+  /// signed payload.
   invalidArgs,
 
-  /// The same `(version, md5)` payload is in the local bad-patch blacklist.
+  /// The payload is in the local bad-patch blacklist after a failed start.
   blacklisted,
 
-  /// Download failed after retries.
+  /// The payload download failed; retrying later may succeed.
   network,
 
-  /// Payload, lib, or overlay asset MD5 did not match expected metadata.
+  /// An installed file did not match the package's recorded MD5.
   md5Mismatch,
 
-  /// Ed25519 verification failed, or strict mode rejected a signed patch on an
-  /// Android version below the API 33 signature-policy minimum.
+  /// The patch envelope signature did not verify with the host policy key.
   signatureInvalid,
 
   /// The patch package has no `libapp.so` for the current device ABI.
@@ -275,14 +200,4 @@ class PatchCheckResult {
   factory PatchCheckResult.none() =>
       const PatchCheckResult(hasUpdate: false, patch: null);
 
-  factory PatchCheckResult.fromJson(Map<String, dynamic> json) {
-    final hasUpdate = json['hasUpdate'] == true || json['has_update'] == true;
-    if (!hasUpdate) return PatchCheckResult.none();
-    final patchJson = json['patch'];
-    final patchMap = patchJson is Map ? patchJson : json;
-    return PatchCheckResult(
-      hasUpdate: true,
-      patch: PatchInfo.fromJson(Map<String, dynamic>.from(patchMap)),
-    );
-  }
 }

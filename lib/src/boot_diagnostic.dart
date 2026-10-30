@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 ///
 /// Apply-time failures are reported by `PatchApplyError`. After a patch is
 /// installed, the next cold start can still drop it because of version mismatch,
-/// md5/signature failure, crash rollback, or loader hook failure. This enum
+/// file corruption, crash rollback, or loader hook failure. This enum
 /// exposes those native decisions to Dart for monitoring.
 enum PatchBootStatus {
   /// No local patch is installed or loaded.
@@ -19,9 +19,6 @@ enum PatchBootStatus {
   /// Cold-start validation found that local `libapp_patch.so` no longer
   /// matches metadata.
   droppedMd5Mismatch,
-
-  /// Cold-start signature validation failed.
-  droppedSignatureInvalid,
 
   /// Metadata or required patch artifacts are missing or corrupt on disk.
   ///
@@ -56,8 +53,6 @@ PatchBootStatus _parseStatus(String? raw) {
       return PatchBootStatus.droppedVersionCodeMismatch;
     case 'DROPPED_MD5_MISMATCH':
       return PatchBootStatus.droppedMd5Mismatch;
-    case 'DROPPED_SIGNATURE_INVALID':
-      return PatchBootStatus.droppedSignatureInvalid;
     case 'DROPPED_META_CORRUPTED':
       return PatchBootStatus.droppedMetaCorrupted;
     case 'DROPPED_CIRCUIT_BREAKER':

@@ -31,7 +31,7 @@ internal class SoPatchManager(private val context: Context, private val host: Ho
             attempt = null
         }
 
-        /** Returns false when no SO attempt is armed, leaving the report to the legacy guard. */
+        /** Returns false when no SO attempt is armed in this process. */
         fun error(context: Context, message: String?): Boolean = synchronized(lock) {
             val meta = attempt ?: return@synchronized false
             val store = CandidateStore(context, "so")

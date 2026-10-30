@@ -1,6 +1,5 @@
 package com.flutter_patcher.flutter_patcher
 
-import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import java.nio.ByteBuffer
@@ -58,15 +57,4 @@ class Ed25519DeviceTest {
         assertFalse(Ed25519Verifier.verify(key, forgery.copyOf(63), byteArrayOf()))
     }
 
-    @Test fun legacySpkiAndMd5SignaturesKeepTheirWireFormat() {
-        fun b64(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        val spki = hex("302a300506032b6570032100") + key
-        val md5 = "0123456789abcdef0123456789abcdef"
-        val sig = hex("78788c019313ac06cfc209c184e71dd752f362420e0bf7d35aff43f0882b66d26e40c5931ca2cdcb35eb053e549f6cd0b59fa37090371128187863b0b56bb60c")
-        assertTrue(SignatureVerifier.verifySignatureOnly(md5, b64(sig), b64(spki)))
-        assertFalse(SignatureVerifier.verifySignatureOnly("f" + md5.drop(1), b64(sig), b64(spki)))
-        assertFalse(SignatureVerifier.verifySignatureOnly(md5, b64(sig), b64(spki + byteArrayOf(0))))
-        sig[0] = (sig[0].toInt() xor 1).toByte()
-        assertFalse(SignatureVerifier.verifySignatureOnly(md5, b64(sig), b64(spki), strictSignature = false))
-    }
 }

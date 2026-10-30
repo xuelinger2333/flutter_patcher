@@ -20,9 +20,18 @@
 
 ### Removed
 
-- `dart run flutter_patcher:pack` 与 `bin/mock_server.dart` 移入 CLI，成为
-  `flutter_patcher pack` 与 `flutter_patcher mock-server`，参数不变。插件不再依赖
-  `archive` 与 `args`，运行时依赖只剩 `plugin_platform_interface` 与 `crypto`。
+- **移除不带宿主策略的 v1 流程。** 补丁现在只能安装到用
+  `flutter_patcher build android --host-policy` 构建的宿主上，并且只能通过签名的发布
+  清单下发；SO 与字节码宿主共用这一套流程。移除的内容：`dart run flutter_patcher:pack`
+  与 mock server（以及它们在 CLI 中的后继命令 `pack`、`mock-server`）；
+  `applyPatchBytes`；`init` 与 `checkUpdate` 的 `publicKeyBase64`、`strictSignature`、
+  `headers` 参数；`PatchInfo.patchUrl`、`md5`、`signature`、`targetVersionCode`、
+  `fromJson`、`toJson`；`PatchCheckResult.fromJson` 与 JSON 更新检查协议；
+  `PatchBootStatus.droppedSignatureInvalid`。不带策略的宿主只运行原始代码，在其上调用
+  `checkUpdate` 会抛出 `PatcherException`。迁移步骤：用 `flutter_patcher keys init`
+  生成密钥，用 `build android --host-policy` 构建，用 `patch android` 生成补丁，用
+  `publish` 发布，再把 `checkUpdate` 指向发布出来的清单。插件不再依赖 `archive` 与
+  `args`。
 - 移除 `build android` 与 `patch android` 的实验选项 `--framework-reuse`。它为
   宿主保留的接口使 `libapp.so` 增大约 4.5 MiB，超出 1.5 MiB 的预算，因此从未成为
   默认行为。用它构建的基线（schema 4）现在会以 `BASELINE_SCHEMA_UNSUPPORTED` 被
@@ -32,7 +41,6 @@
   `fingerprint` 与 `patchSeq`；`applyPatchBytes` 的 `strategy` 参数；CLI 的本地
   mock 发布（`publish --out`），因此 `publish` 必须带 `--production`。`patch android`
   会以 `BASELINE_NOT_RELEASE` 拒绝不带策略构建的字节码基线，需要带策略重新构建宿主。
-  不带策略的宿主继续使用 v1 `.so` 路径（`pack`、`mock-server`）。
 
 ### Fixed
 

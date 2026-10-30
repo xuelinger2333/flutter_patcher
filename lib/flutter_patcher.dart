@@ -1,8 +1,7 @@
 import 'dart:async';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show EventChannel;
+import 'package:flutter/services.dart' show EventChannel, PlatformException;
 import 'package:flutter/widgets.dart';
 
 import 'src/blacklist.dart';
@@ -20,17 +19,15 @@ export 'src/signed_manifest.dart';
 
 /// Android-only Flutter hot-update entrypoint.
 ///
-/// `flutter_patcher` installs a patch payload and loads it on the next cold
-/// start. The payload can be a legacy `libapp.so` or a v2 `patch.zip` that
-/// contains `libapp.so` plus explicitly selected Flutter assets.
+/// `flutter_patcher` installs signed patches on hosts built with
+/// `flutter_patcher build android --host-policy`, and loads them on the next
+/// cold start. SO and bytecode hosts share this API.
 ///
 /// Main APIs:
 ///
-/// - [init]: configure native startup, crash protection, and first-frame boot
-///   verification.
-/// - [checkUpdate]: optional helper for the built-in minimal update protocol.
-/// - [applyPatch]: download, verify, and install a payload URL.
-/// - [applyPatchBytes]: install an already downloaded payload byte array.
+/// - [init]: configure crash protection and first-frame boot verification.
+/// - [checkUpdate]: fetch and verify a signed publish manifest.
+/// - [applyPatch]: download, verify, and install the update it found.
 /// - [rollback]: delete the current patch.
 ///
 /// Patches are never swapped into the current process. A successful apply takes
@@ -116,16 +113,8 @@ class FlutterPatcher {
   ///
   /// Call this in `main()` before `runApp()`. The method is idempotent.
   ///
-  /// [publicKeyBase64] is an optional X.509 SubjectPublicKeyInfo Ed25519 public
-  /// key in base64. Empty disables signature verification. If [PatchInfo.md5]
-  /// is empty, signature verification is skipped as well because the signed
-  /// message is the md5 hex string.
-  ///
   /// [maxCrashCount] defaults to `1` (fail-fast). Once a loaded patch causes an
   /// early boot failure, the SDK rolls it back and blacklists the same payload.
-  ///
-  /// [strictSignature] rejects signed patches on Android API < 33, where
-  /// this plugin does not enable signed-patch verification.
   ///
   /// [loaderFieldCandidates] and [loaderFallbackHeuristic] are advanced Flutter
   /// embedding compatibility controls. Keep defaults unless adapting a new
@@ -133,9 +122,7 @@ class FlutterPatcher {
   ///
   /// [verifyAfter] is the post-first-frame Dart error watch window.
   static Future<void> init({
-    String publicKeyBase64 = '',
     int maxCrashCount = 1,
-    bool strictSignature = true,
     List<String> loaderFieldCandidates = const ['flutterLoader'],
     bool loaderFallbackHeuristic = false,
     Duration verifyAfter = const Duration(seconds: 5),
@@ -155,9 +142,7 @@ class FlutterPatcher {
 
     try {
       await PatcherChannel.saveConfig(
-        publicKeyBase64: publicKeyBase64,
         maxCrashCount: maxCrashCount,
-        strictSignature: strictSignature,
         loaderFieldCandidates: loaderFieldCandidates,
         loaderFallbackHeuristic: loaderFallbackHeuristic,
       );
@@ -183,19 +168,14 @@ class FlutterPatcher {
     }
   }
 
-  /// Optional HTTP update checker for the built-in minimal JSON protocol.
+  /// Fetches the signed publish manifest at [url] (HTTPS, written by
+  /// `flutter_patcher publish`) and verifies it natively without persisting it.
+  /// Only a manifest that would change the accepted state is an update; pass
+  /// its [PatchInfo] to [applyPatch].
   ///
-  /// Production apps can skip this method, parse their own update response, and
-  /// construct [PatchInfo] directly before calling [applyPatch].
-  ///
-  /// The returned `patchUrl` is a payload URL: `libapp.so` for lib-only patches
-  /// or `patch.zip` for asset patches.
-  ///
-  /// On a host built with a host policy, [url] must serve a signed manifest
-  /// over HTTPS instead ([headers] are not sent); pass the result to [applyPatch].
+  /// Throws [PatcherException] on a host built without a host policy.
   static Future<PatchCheckResult> checkUpdate(
     String url, {
-    Map<String, String>? headers,
     Duration timeout = const Duration(seconds: 10),
   }) async {
     if (_notAndroidGuard('checkUpdate')) {
@@ -203,13 +183,11 @@ class FlutterPatcher {
     }
 
     try {
-      if (await _hostStrategy() != null) return await _checkSigned(url, timeout);
-      final decoded = await platform_io.getJson(
-        url,
-        headers: headers,
-        timeout: timeout,
-      );
-      return PatchCheckResult.fromJson(decoded);
+      if (await _hostStrategy() == null) {
+        throw PatcherException('This host has no host policy; build it '
+            'with flutter_patcher build android --host-policy');
+      }
+      return await _checkSigned(url, timeout);
     } on PatcherException {
       rethrow;
     } catch (e, s) {
@@ -218,9 +196,6 @@ class FlutterPatcher {
     }
   }
 
-  /// Authenticated host: [url] serves a signed manifest. Native verifies it
-  /// without persisting anything; only a manifest that would change the
-  /// accepted state is an update. [applyPatch] then applies that manifest.
   static Future<PatchCheckResult> _checkSigned(String url, Duration timeout) async {
     final manifest =
         SignedManifest.parse(await platform_io.getSignedWire(url, timeout: timeout));
@@ -231,21 +206,13 @@ class FlutterPatcher {
         hasUpdate: true,
         patch: PatchInfo(
             version: raw['patch_seq'] as String? ?? raw['action'] as String,
-            patchUrl: '',
             raw: {'signed_manifest': manifest.wire, 'action': raw['action']}));
   }
 
-  /// Downloads, verifies, and installs [patchInfo]'s payload.
-  ///
-  /// The payload can be either a complete `libapp.so` or a v2 `patch.zip`.
-  /// Native code detects ZIP payloads automatically.
-  ///
-  /// Flow:
-  ///
-  /// 1. Download with retry.
-  /// 2. Verify payload md5/signature when provided.
-  /// 3. Install legacy lib-only payload, or parse and install v2 package.
-  /// 4. Commit patch files transactionally for the next cold start.
+  /// Applies the update [checkUpdate] returned: native code re-verifies the
+  /// signed manifest, downloads the patch over HTTPS, verifies its signature,
+  /// host fingerprint and sequence, and commits it for the next cold start. A
+  /// withdrawal removes the installed patch instead.
   ///
   /// Returns a [PatchApplyResult]. `ok=true` means the patch is installed and
   /// will take effect on the next cold start.
@@ -265,11 +232,18 @@ class FlutterPatcher {
     }
     try {
       final wire = patchInfo.raw['signed_manifest'];
-      if (wire is String) {
-        return (await applySignedManifest(SignedManifest.parse(wire))).result;
+      if (wire is! String) {
+        return PatchApplyResult.failure(PatchApplyError.invalidArgs,
+            'Pass the PatchInfo returned by checkUpdate');
       }
-      final native = await PatcherChannel.applyPatch(patchInfo.toJson());
-      return PatchApplyResult.fromNative(native);
+      return (await applySignedManifest(SignedManifest.parse(wire))).result;
+    } on PlatformException catch (e) {
+      // AUTH_UPDATE_IO: the download failed; a later retry may succeed.
+      return PatchApplyResult.failure(
+          e.code == 'AUTH_UPDATE_IO'
+              ? PatchApplyError.network
+              : PatchApplyError.unknown,
+          e.message);
     } catch (e, s) {
       _log('applyPatch failed: $e', s);
       return PatchApplyResult.failure(PatchApplyError.unknown, e.toString());
@@ -278,62 +252,6 @@ class FlutterPatcher {
     }
   }
 
-  static String? _cachedStagingDir;
-
-  /// Installs an already downloaded patch payload.
-  ///
-  /// Useful for bundled example patches, custom downloaders, or isolate-based
-  /// loading. The bytes can be either `libapp.so` or `patch.zip`.
-  ///
-  /// This helper writes bytes to native cache, computes md5, then reuses
-  /// [applyPatch] through a `file://` URL.
-  static Future<PatchApplyResult> applyPatchBytes(
-    Uint8List bytes, {
-    required String version,
-    String signature = '',
-    int? targetVersionCode,
-    void Function(PatchApplyProgress)? onProgress,
-  }) async {
-    if (_notAndroidGuard('applyPatchBytes')) {
-      return PatchApplyResult.failure(
-        PatchApplyError.unknown,
-        'not supported on ${platform_io.operatingSystem}',
-      );
-    }
-    final dir = _cachedStagingDir ??= (await PatcherChannel.cacheDir()) ?? '';
-    if (dir.isEmpty) {
-      return PatchApplyResult.failure(
-        PatchApplyError.ioError,
-        'native cacheDir unavailable',
-      );
-    }
-    String? stagedPath;
-    try {
-      stagedPath = await platform_io.stagePatchBytes(dir, bytes);
-      final md5Hex = crypto.md5.convert(bytes).toString();
-      return await applyPatch(
-        PatchInfo(
-          version: version,
-          patchUrl: 'file://$stagedPath',
-          md5: md5Hex,
-          signature: signature,
-          targetVersionCode: targetVersionCode,
-        ),
-        onProgress: onProgress,
-      );
-    } catch (e, s) {
-      _log('applyPatchBytes failed: $e', s);
-      return PatchApplyResult.failure(PatchApplyError.unknown, e.toString());
-    } finally {
-      try {
-        if (stagedPath != null) {
-          await platform_io.deleteFileIfExists(stagedPath);
-        }
-      } catch (_) {
-        // Staging cleanup must not block the apply result.
-      }
-    }
-  }
 
   /// Deletes the current patch. The next cold start uses the APK built-in
   /// version. Manual rollback does not blacklist the patch.

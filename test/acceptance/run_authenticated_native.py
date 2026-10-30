@@ -27,7 +27,7 @@ def run(apk, serial, out):
         run_id = uuid.uuid4().hex
         jobs = [
             ('state-and-ed25519', namespace + '.AuthenticatedStateDeviceTest,' +
-             namespace + '.Ed25519DeviceTest', [], 'OK (11 tests)'),
+             namespace + '.Ed25519DeviceTest', [], 'OK (10 tests)'),
             ('download-races', namespace + '.AuthenticatedDownloadRaceTest', [], 'OK (1 test)'),
             ('withdraw-kill', namespace + '.AuthenticatedProcessDeathTest',
              ['-e', 'phase', 'withdraw-kill', '-e', 'run_id', run_id], 'withdrawal_durable'),

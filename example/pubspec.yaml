@@ -53,7 +53,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/asset_patch_preload.zip
     - assets/patch_demo.png
 
   # An image asset can refer to one or more resolution-specific "variants", see

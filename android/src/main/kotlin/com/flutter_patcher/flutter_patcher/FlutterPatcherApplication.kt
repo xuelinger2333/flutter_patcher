@@ -5,26 +5,14 @@ import android.util.Log
 import io.flutter.app.FlutterApplication
 
 /**
- * 宿主 App 需在 AndroidManifest.xml 中使用这个 Application（或在自己的 Application
- * 里调 [attachPatcher]）。
+ * Host Application, or call [attachPatcher] from your own Application's
+ * attachBaseContext (after super).
  *
- * 启动流程：
- * 1. attachBaseContext
- *    → CrashGuard.shouldLoadPatch() 熔断检查（API 30+ 走 ApplicationExitInfo
- *      精确识别上次进程是真崩溃还是被用户/系统结束；API < 30 走朴素策略：
- *      patch_loading=true 即视为一次崩溃）
- *    → PatchManager.getValidPatchPath() 磁盘补丁验签
- *    → LoaderHook.install() 反射替换 FlutterLoader
- *    → CrashGuard.markBooting() 标记「启动中」并记录 pid（API 30+ 用于 ExitInfo 查询）
- * 2. Dart 首帧 → MethodChannel("flutter_patcher#reportBootSuccess")
- *    → CrashGuard.markBootSuccess() 重置计数
- *
- * API 30+ 上，用户主动从最近任务划掉 / OOM kill / 强停等「非崩溃退出」不计入
- * crash_count，只有真崩溃（CRASH / CRASH_NATIVE / ANR / INITIALIZATION_FAILURE）
- * 才会触发熔断。API < 30 没有这层分类，对长尾设备做 fail-fast 取舍。
- *
- * 用户如果已经有自己的 Application 基类，直接把 [attachPatcher] 搬过去即可，
- * 不需要继承本类。
+ * Only an SO host built with a host policy swaps `libapp.so` here, before the
+ * engine starts: [SoPatchManager.boot] settles the previous attempt, checks the
+ * active candidate's authorization and arms a new attempt, then [LoaderHook]
+ * points FlutterLoader at it. A bytecode host loads its patch from Dart; a host
+ * without a policy runs the original app.
  */
 open class FlutterPatcherApplication : FlutterApplication() {
 
@@ -37,10 +25,7 @@ open class FlutterPatcherApplication : FlutterApplication() {
         @Volatile
         private var attachResult = false
 
-        /**
-         * 在 Application.attachBaseContext(base) 中、super 调用之后调用。
-         * 返回补丁是否成功注入。
-         */
+        /** Returns whether a patch was injected; runs once per process. */
         @JvmStatic
         @Synchronized
         fun attachPatcher(context: Context): Boolean {
@@ -49,137 +34,20 @@ open class FlutterPatcherApplication : FlutterApplication() {
                 return attachResult
             }
             attachAttempted = true
-            attachResult = doAttachPatcher(context)
+            attachResult = try {
+                val host = HostTrustConfig.load(context)
+                host?.strategy == "so" && bootSo(context, SoPatchManager(context, host))
+            } catch (e: Exception) {
+                Log.e(TAG, "attachPatcher failed, fallback to built-in", e)
+                BootDiagnosticStore.record(context = context, status = BootDiagnosticStore.UNKNOWN,
+                    appVersionCode = PatcherConfig.currentVersionCode(context),
+                    message = e.message ?: e.javaClass.simpleName)
+                false
+            }
             return attachResult
         }
 
-        private fun doAttachPatcher(context: Context): Boolean {
-            // 本次启动是否已往 BootDiagnosticStore 写过精准 status。
-            // 用于在收尾阶段判断要不要兜底成 NO_PATCH（避免覆盖更精准的 reason）。
-            var diagRecorded = false
-            val appVc = PatcherConfig.currentVersionCode(context)
-
-            return try {
-                // An authenticated host never loads a legacy patch; an SO host
-                // loads only its own authorized candidate.
-                HostTrustConfig.load(context)?.let { host ->
-                    if (host.strategy != "so") return false
-                    return bootAuthenticatedSo(context, SoPatchManager(context, host))
-                }
-                // 在熔断/校验丢弃前预读 (version, downloadMd5)，等会儿入黑名单要用。
-                // 即便文件后续被删，这里捕获的字符串仍有效。
-                val patchManager = PatchManager(context)
-                val crashedMeta = patchManager.currentMeta()
-
-                val guard = CrashGuard(context)
-                val canLoad = guard.shouldLoadPatch { crashCount ->
-                    // 熔断触发 ⇒ 这个补丁连续没活到 verified，加入黑名单防止重试。
-                    if (crashedMeta != null) {
-                        BlacklistStore.add(
-                            context,
-                            crashedMeta.first,
-                            crashedMeta.second,
-                            BlacklistStore.REASON_BOOT_CRASH,
-                        )
-                    }
-                    BootDiagnosticStore.record(
-                        context = context,
-                        status = BootDiagnosticStore.DROPPED_CIRCUIT_BREAKER,
-                        patchVersion = crashedMeta?.first,
-                        appVersionCode = appVc,
-                        crashCount = crashCount,
-                        message = if (crashedMeta != null)
-                            "$crashCount boot failure(s); blacklisted (version=${crashedMeta.first})"
-                        else
-                            "$crashCount boot failure(s)",
-                    )
-                    diagRecorded = true
-                }
-                if (!canLoad) {
-                    Log.w(TAG, "circuit breaker tripped, skip patch")
-                    return false
-                }
-
-                val patch = patchManager.getValidPatch { status, version, extras ->
-                    // md5 / signature 失败 = 强烈"补丁有问题"信号，连带入黑名单。
-                    // meta_corrupted / version_code_mismatch 不入黑名单（前者 key 不全，后者
-                    // 属于正常 APK 升级而非补丁本身有问题）。
-                    val blacklistMd5 = extras["blacklistMd5"] as? String
-                    val blacklistReason = when (status) {
-                        BootDiagnosticStore.DROPPED_MD5_MISMATCH ->
-                            BlacklistStore.REASON_MD5_MISMATCH
-                        BootDiagnosticStore.DROPPED_SIGNATURE_INVALID ->
-                            BlacklistStore.REASON_SIGNATURE_INVALID
-                        else -> null
-                    }
-                    if (blacklistReason != null && version != null && !blacklistMd5.isNullOrEmpty()) {
-                        BlacklistStore.add(context, version, blacklistMd5, blacklistReason)
-                    }
-
-                    BootDiagnosticStore.record(
-                        context = context,
-                        status = status,
-                        patchVersion = version,
-                        patchTargetVersionCode = extras["patchTargetVersionCode"] as? Long,
-                        appVersionCode = (extras["appVersionCode"] as? Long) ?: appVc,
-                        message = extras["message"] as? String,
-                    )
-                    diagRecorded = true
-                }
-                if (patch == null) {
-                    Log.d(TAG, "no usable patch, boot with built-in libapp.so")
-                    if (!diagRecorded) BootDiagnosticStore.recordNoPatch(context, appVc)
-                    return false
-                }
-
-                // 走到这里说明补丁已通过校验。预先取版本号，方便后面 record。
-                val patchVersion = patchManager.currentVersion().ifEmpty { null }
-
-                // 标记「启动中」——必须 commit 同步写入，确保进程崩溃前状态已持久化
-                guard.markBooting()
-
-                val attemptedFields = mutableListOf<String>()
-                val ok = LoaderHook.install(
-                    context,
-                    patch.soPath,
-                    patch.assetsBundlePath,
-                    patch.assetsArchivePath,
-                    attemptedFields
-                )
-                if (ok) {
-                    BootDiagnosticStore.record(
-                        context = context,
-                        status = BootDiagnosticStore.PATCHED,
-                        patchVersion = patchVersion,
-                        appVersionCode = appVc,
-                    )
-                } else {
-                    // 注入失败：本次启动根本没换 libapp.so，不视为一次崩溃
-                    guard.reset()
-                    BootDiagnosticStore.record(
-                        context = context,
-                        status = BootDiagnosticStore.HOOK_INSTALL_FAILED,
-                        patchVersion = patchVersion,
-                        appVersionCode = appVc,
-                        attemptedLoaderFields = attemptedFields.toList(),
-                        message = "FlutterLoader reflection failed; patch retained",
-                    )
-                }
-                ok
-            } catch (e: Exception) {
-                Log.e(TAG, "attachPatcher failed, fallback to built-in", e)
-                CrashGuard(context).reset()
-                BootDiagnosticStore.record(
-                    context = context,
-                    status = BootDiagnosticStore.UNKNOWN,
-                    appVersionCode = appVc,
-                    message = e.message ?: e.javaClass.simpleName,
-                )
-                false
-            }
-        }
-
-        private fun bootAuthenticatedSo(context: Context, so: SoPatchManager): Boolean {
+        private fun bootSo(context: Context, so: SoPatchManager): Boolean {
             val patch = so.boot() ?: return false
             val ok = LoaderHook.install(context, patch.soPath, patch.assetsBundlePath, patch.assetsArchivePath, mutableListOf())
             if (!ok) {

@@ -21,10 +21,21 @@
 
 ### Removed
 
-- `dart run flutter_patcher:pack` and `bin/mock_server.dart` moved into the
-  CLI as `flutter_patcher pack` and `flutter_patcher mock-server`, with the
-  same options. The plugin no longer depends on `archive` or `args`; its
-  runtime dependencies are `plugin_platform_interface` and `crypto`.
+- **The v1 flow for hosts without a host policy.** Patches now install only
+  on hosts built with `flutter_patcher build android --host-policy`, from
+  signed publish manifests; SO and bytecode hosts share this flow. Removed:
+  `dart run flutter_patcher:pack` and the mock server (and their CLI
+  successors `pack` and `mock-server`); `applyPatchBytes`; the
+  `publicKeyBase64`, `strictSignature` and `headers` parameters of `init` and
+  `checkUpdate`; `PatchInfo.patchUrl`, `md5`, `signature`,
+  `targetVersionCode`, `fromJson` and `toJson`; `PatchCheckResult.fromJson`
+  and the JSON check-update protocol; and `PatchBootStatus
+  .droppedSignatureInvalid`. A host without a policy runs its original code,
+  and `checkUpdate` throws `PatcherException` there. To migrate: create keys
+  with `flutter_patcher keys init`, build with `build android --host-policy`,
+  make patches with `patch android`, publish them with `publish`, and point
+  `checkUpdate` at the published manifest. The plugin no longer depends on
+  `archive` or `args`.
 - The experimental `--framework-reuse` option of `build android` and
   `patch android`. Its host surface added about 4.5 MiB to `libapp.so`,
   above the 1.5 MiB budget, so it never became a default. Baselines built
@@ -36,8 +47,7 @@
   and `patchSeq`; the `strategy` parameter of `applyPatchBytes`; and the
   CLI's local mock publisher (`publish --out`), so `publish` requires
   `--production`. `patch android` rejects bytecode baselines built without a
-  policy with `BASELINE_NOT_RELEASE`; rebuild the host with a policy. Hosts
-  without a policy keep the v1 `.so` path (`pack`, `mock-server`).
+  policy with `BASELINE_NOT_RELEASE`; rebuild the host with a policy.
 
 ### Fixed
 

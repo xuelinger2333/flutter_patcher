@@ -147,7 +147,6 @@ class _DiagCardState extends State<DiagCard> {
           Icons.info_outline,
           'noPatch (built-in libapp.so)',
         );
-      case PatchBootStatus.droppedSignatureInvalid:
       case PatchBootStatus.droppedCircuitBreaker:
         return (
           Colors.red.shade50,

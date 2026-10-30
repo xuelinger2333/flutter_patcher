@@ -2,7 +2,6 @@ package com.flutter_patcher.flutter_patcher
 
 import android.content.Context
 import android.os.Build
-import android.os.SystemClock
 import android.util.Log
 import io.flutter.plugin.common.StandardMessageCodec
 import org.json.JSONArray
@@ -11,8 +10,6 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.nio.ByteBuffer
 import java.util.zip.ZipException
 import java.util.zip.ZipEntry
@@ -54,12 +51,7 @@ internal class PatchManager(
     companion object {
         private const val TAG = "FlutterPatcher/Mgr"
 
-        private const val CONNECT_TIMEOUT_MS = 10_000
-        private const val READ_TIMEOUT_MS = 30_000
-        private const val MAX_RETRIES = 3
-        private const val PROGRESS_EMIT_INTERVAL_MS = 200L
 
-        private const val MODE_FULL = "full"
         private const val FLUTTER_ASSETS_PREFIX = "assets/flutter_assets/"
         private const val ASSET_MANIFEST = "AssetManifest.bin"
         private const val STAGING_DIR = "staging"
@@ -68,59 +60,21 @@ internal class PatchManager(
         private const val PATCH_ASSET_BUNDLE = "flutter_patcher_assets"
         private const val PATCH_ASSETS_PREFIX = "assets/$PATCH_ASSET_BUNDLE/"
         private const val MIN_FREE_SPACE_BUFFER = 10L * 1024L * 1024L
-        private val MD5_HEX = Regex("^[0-9a-fA-F]{32}$")
 
         private val APPLY_LOCK = Any()
 
-        internal fun validatePatchArgs(
-            version: String,
-            url: String,
-            md5: String,
-            mode: String,
-            targetVersionCode: Long?,
-            currentVersionCode: Long
-        ): ApplyResult? {
-            if (version.isBlank() || url.isBlank()) {
-                return ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, "missing version/url")
-            }
-            if (md5.isNotBlank() && !MD5_HEX.matches(md5)) {
-                return ApplyResult.failure(
-                    ApplyErrorCode.INVALID_ARGS,
-                    "md5 must be 32 hex chars or empty"
-                )
-            }
-            if (mode != MODE_FULL) {
-                return ApplyResult.failure(
-                    ApplyErrorCode.INVALID_ARGS,
-                    "unsupported mode: $mode; only full patches are supported"
-                )
-            }
-            if (targetVersionCode != null) {
-                if (currentVersionCode == PatcherConfig.INVALID_VERSION_CODE) {
-                    return ApplyResult.failure(
-                        ApplyErrorCode.IO_ERROR,
-                        "cannot resolve current app versionCode"
-                    )
-                }
-                if (targetVersionCode != currentVersionCode) {
-                    return ApplyResult.failure(
-                        ApplyErrorCode.INVALID_ARGS,
-                        "targetVersionCode=$targetVersionCode does not match current=$currentVersionCode"
-                    )
+        /** Lower-case hex MD5; guards installed files against on-disk corruption. */
+        internal fun md5(file: File): String {
+            val digest = java.security.MessageDigest.getInstance("MD5")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(65536)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    digest.update(buffer, 0, n)
                 }
             }
-            return null
-        }
-
-        internal fun isSameInstalledPatch(
-            currentMeta: Pair<String, String>?,
-            version: String,
-            md5: String
-        ): Boolean {
-            if (currentMeta == null) return false
-            if (md5.isBlank()) return currentMeta.first == version
-            return currentMeta.first == version &&
-                currentMeta.second.equals(md5, ignoreCase = true)
+            return digest.digest().joinToString("") { "%02x".format(it) }
         }
 
         internal fun isZipPayload(file: File): Boolean {
@@ -176,10 +130,6 @@ internal class PatchManager(
     private val previousAssets = File(patchDir, "$ASSET_DIR.previous")
     private val previousAssetsArchive = File(patchDir, "$ASSET_ARCHIVE.previous")
 
-    fun getValidPatchPath(
-        onDrop: ((status: String, version: String?, extras: Map<String, Any?>) -> Unit)? = null
-    ): String? = getValidPatch(onDrop)?.soPath
-
     fun getValidPatch(
         onDrop: ((status: String, version: String?, extras: Map<String, Any?>) -> Unit)? = null
     ): ValidPatch? {
@@ -224,9 +174,6 @@ internal class PatchManager(
         }
 
         val expectedMd5 = meta.optString("effectiveMd5", "")
-        val signature = meta.optString("signature", "")
-        val publicKey = PatcherConfig.publicKey(context)
-        val strictSignature = PatcherConfig.strictSignature(context)
 
         if (expectedMd5.isEmpty()) {
             onDrop?.invoke(
@@ -238,24 +185,11 @@ internal class PatchManager(
             return null
         }
 
-        val verifyResult = SignatureVerifier.verifyDetailed(
-            patchFile, expectedMd5, signature, publicKey, strictSignature
-        )
-        if (verifyResult != SignatureVerifier.VerifyResult.OK) {
-            val status = when (verifyResult) {
-                SignatureVerifier.VerifyResult.MD5_MISMATCH ->
-                    BootDiagnosticStore.DROPPED_MD5_MISMATCH
-                SignatureVerifier.VerifyResult.SIGNATURE_INVALID ->
-                    BootDiagnosticStore.DROPPED_SIGNATURE_INVALID
-                SignatureVerifier.VerifyResult.OK -> error("unreachable")
-            }
+        if (!md5(patchFile).equals(expectedMd5, ignoreCase = true)) {
             onDrop?.invoke(
-                status,
+                BootDiagnosticStore.DROPPED_MD5_MISMATCH,
                 version,
-                mapOf(
-                    "blacklistMd5" to meta.optString("downloadMd5", expectedMd5),
-                    "message" to "SignatureVerifier returned $verifyResult",
-                )
+                mapOf("message" to "installed libapp.so differs from its recorded MD5")
             )
             deletePatch()
             return null
@@ -302,7 +236,7 @@ internal class PatchManager(
 
     fun currentVersion(): String = readMeta()?.optString("version", "") ?: ""
 
-    /** Candidate id an authenticated install recorded; null for legacy patches. */
+    /** Candidate id the authenticated install recorded. */
     fun candidate(): String? = readMeta()?.optString("candidate", "")?.ifEmpty { null }
 
     /** Materializes an already authenticated v2 package; no download, MD5 or signature input. */
@@ -310,199 +244,23 @@ internal class PatchManager(
         if (!isZipPayload(payload)) return ApplyResult.failure(ApplyErrorCode.ASSET_PACKAGE_INVALID, "SO payload must be a v2 package")
         patchDir.mkdirs()
         val result = try {
-            installPackagePatch(payload, version, downloadMd5 = "", effectiveMd5 = SignatureVerifier.md5(payload),
-                signature = "", targetVersionCode = PatcherConfig.currentVersionCode(context), candidate = candidate)
+            installPackagePatch(payload, version, effectiveMd5 = md5(payload),
+                targetVersionCode = PatcherConfig.currentVersionCode(context), candidate = candidate)
         } finally { stagingDir.deleteRecursively() }
         result ?: ApplyResult.SUCCESS
     }
 
-    fun currentMeta(): Pair<String, String>? {
-        val meta = readMeta() ?: return null
-        val version = meta.optString("version", "")
-        val md5 = meta.optString("downloadMd5", meta.optString("effectiveMd5", ""))
-        if (version.isEmpty() || md5.isEmpty()) return null
-        return version to md5
-    }
-
-    fun applyPatch(info: Map<String, Any?>): ApplyResult = synchronized(APPLY_LOCK) {
-        val version = (info["version"] as? String).orEmpty()
-        val url = (info["patchUrl"] as? String).orEmpty()
-        val md5 = (info["md5"] as? String).orEmpty()
-        val signature = (info["signature"] as? String).orEmpty()
-        val mode = ((info["mode"] as? String) ?: MODE_FULL).lowercase()
-        val hasTargetVersionCode = info.containsKey("targetVersionCode")
-        val serverTargetVc = (info["targetVersionCode"] as? Number)?.toLong()
-        if (hasTargetVersionCode && serverTargetVc == null) {
-            return ApplyResult.failure(
-                ApplyErrorCode.INVALID_ARGS,
-                "targetVersionCode must be a number"
-            )
-        }
-
-        val currentVc = PatcherConfig.currentVersionCode(context)
-        validatePatchArgs(
-            version = version,
-            url = url,
-            md5 = md5,
-            mode = mode,
-            targetVersionCode = serverTargetVc,
-            currentVersionCode = currentVc
-        )?.let { return it }
-        if (serverTargetVc == null && currentVc == PatcherConfig.INVALID_VERSION_CODE) {
-            return ApplyResult.failure(
-                ApplyErrorCode.IO_ERROR,
-                "cannot resolve current app versionCode"
-            )
-        }
-
-        val blacklistHit = if (md5.isBlank()) {
-            BlacklistStore.containsByVersion(context, version)
-        } else {
-            BlacklistStore.contains(context, version, md5)
-        }
-        if (blacklistHit) {
-            return ApplyResult.failure(
-                ApplyErrorCode.BLACKLISTED,
-                "patch (version=$version, md5=$md5) was previously blacklisted"
-            )
-        }
-        if (isSameInstalledPatch(currentMeta(), version, md5)) {
-            Log.d(TAG, "patch $version with md5=$md5 already installed")
-            return ApplyResult.SUCCESS
-        }
-
-        patchDir.mkdirs()
-        val downloaded = File(patchDir, "temp_download.bin")
-        var lastNetworkError: String? = null
-        var actualMd5: String? = null
-
-        for (attempt in 1..MAX_RETRIES) {
-            try {
-                progress?.invoke(Phase.DOWNLOADING, 0L, -1L)
-                downloadTo(url, downloaded) { received, total ->
-                    progress?.invoke(Phase.DOWNLOADING, received, total)
-                }
-                progress?.invoke(Phase.VERIFYING, 0L, 0L)
-                val verifiedMd5 = SignatureVerifier.md5(downloaded)
-                if (md5.isNotBlank()) {
-                    if (!verifiedMd5.equals(md5, ignoreCase = true)) {
-                        downloaded.delete()
-                        return ApplyResult.failure(
-                            ApplyErrorCode.MD5_MISMATCH,
-                            "expected=$md5 actual=$verifiedMd5"
-                        )
-                    }
-                    val publicKey = PatcherConfig.publicKey(context)
-                    val strictSignature = PatcherConfig.strictSignature(context)
-                    if (!SignatureVerifier.verifySignatureOnly(
-                            verifiedMd5.lowercase(), signature, publicKey, strictSignature
-                        )
-                    ) {
-                        downloaded.delete()
-                        return ApplyResult.failure(
-                            ApplyErrorCode.SIGNATURE_INVALID,
-                            "ed25519 signature verify failed"
-                        )
-                    }
-                } else {
-                    Log.w(TAG, "expected md5 empty, skip md5 & signature verify")
-                }
-                actualMd5 = verifiedMd5.lowercase()
-                break
-            } catch (e: Exception) {
-                Log.w(TAG, "attempt=$attempt failed: ${e.message}", e)
-                lastNetworkError = e.message
-                downloaded.delete()
-                stagingDir.deleteRecursively()
-                if (attempt < MAX_RETRIES) {
-                    val backoff = 2000L * (1L shl (attempt - 1))
-                    try {
-                        Thread.sleep(backoff)
-                    } catch (_: InterruptedException) {
-                        return ApplyResult.failure(
-                            ApplyErrorCode.NETWORK,
-                            "interrupted during backoff"
-                        )
-                    }
-                }
-            }
-        }
-
-        val verifiedMd5 = actualMd5 ?: return ApplyResult.failure(
-            ApplyErrorCode.NETWORK,
-            "download failed after $MAX_RETRIES attempts: $lastNetworkError"
-        )
-
-        progress?.invoke(Phase.FINALIZING, 0L, 0L)
-        val targetVersionCode = serverTargetVc ?: currentVc
-        val result = try {
-            if (isZipPayload(downloaded)) {
-                installPackagePatch(
-                    payload = downloaded,
-                    version = version,
-                    downloadMd5 = md5,
-                    effectiveMd5 = verifiedMd5,
-                    signature = signature,
-                    targetVersionCode = targetVersionCode,
-                )
-            } else {
-                installLegacyPatch(
-                    downloaded = downloaded,
-                    version = version,
-                    downloadMd5 = md5,
-                    effectiveMd5 = verifiedMd5,
-                    signature = signature,
-                    targetVersionCode = targetVersionCode,
-                )
-            }
-        } catch (e: IOException) {
-            ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message ?: e.javaClass.simpleName)
-        } catch (e: Exception) {
-            ApplyResult.failure(ApplyErrorCode.UNKNOWN, e.message ?: e.javaClass.simpleName)
-        }
-        downloaded.delete()
-        stagingDir.deleteRecursively()
-        if (result != null) return result
-
-        CrashGuard(context).reset()
-        Log.d(TAG, "patch $version ready, takes effect on next cold start")
-        return ApplyResult.SUCCESS
-    }
-
     fun rollback() {
         deletePatch()
-        CrashGuard(context).reset()
         Log.d(TAG, "rolled back to built-in version")
-    }
-
-    private fun installLegacyPatch(
-        downloaded: File,
-        version: String,
-        downloadMd5: String,
-        effectiveMd5: String,
-        signature: String,
-        targetVersionCode: Long,
-    ): ApplyResult? {
-        val meta = JSONObject().apply {
-            put("version", version)
-            put("downloadMd5", downloadMd5)
-            put("effectiveMd5", effectiveMd5)
-            put("signature", signature)
-            put(PatcherConfig.META_KEY_TARGET_VERSION_CODE, targetVersionCode)
-            put("hasAssets", false)
-            put("installed_at", System.currentTimeMillis())
-        }
-        return finalizePatch(downloaded, null, null, meta)
     }
 
     private fun installPackagePatch(
         payload: File,
         version: String,
-        downloadMd5: String,
         effectiveMd5: String,
-        signature: String,
         targetVersionCode: Long,
-        candidate: String? = null,
+        candidate: String,
     ): ApplyResult? {
         return try {
             ZipFile(payload).use { zip ->
@@ -555,7 +313,7 @@ internal class PatchManager(
             val stagedSo = File(stagingDir, "libapp_patch.so")
             resetStaging()
             extractZipEntry(zip, libEntry, stagedSo)
-            val installedLibMd5 = SignatureVerifier.md5(stagedSo)
+            val installedLibMd5 = md5(stagedSo)
             val expectedLibMd5 = libInfo.optString("md5")
             if (expectedLibMd5.isNotEmpty() &&
                 !installedLibMd5.equals(expectedLibMd5, ignoreCase = true)
@@ -570,15 +328,12 @@ internal class PatchManager(
             if (isDartOnlyAssets(assets)) {
                 val meta = JSONObject().apply {
                     put("version", version)
-                    put("downloadMd5", downloadMd5)
                     put("effectiveMd5", installedLibMd5)
-                    put("signature", "")
                     put("payloadMd5", effectiveMd5)
-                    put("payloadSignature", signature)
                     put(PatcherConfig.META_KEY_TARGET_VERSION_CODE, targetVersionCode)
                     put("hasAssets", false)
                     put("installed_at", System.currentTimeMillis())
-                    if (candidate != null) put("candidate", candidate)
+                    put("candidate", candidate)
                 }
                 return finalizePatch(stagedSo, null, null, meta)
             }
@@ -608,16 +363,13 @@ internal class PatchManager(
 
             val meta = JSONObject().apply {
                 put("version", version)
-                put("downloadMd5", downloadMd5)
                 put("effectiveMd5", installedLibMd5)
-                put("signature", "")
                 put("payloadMd5", effectiveMd5)
-                put("payloadSignature", signature)
                 put(PatcherConfig.META_KEY_TARGET_VERSION_CODE, targetVersionCode)
                 put("hasAssets", true)
                 put("assetMode", "overlay")
                 put("installed_at", System.currentTimeMillis())
-                if (candidate != null) put("candidate", candidate)
+                put("candidate", candidate)
             }
             return finalizePatch(stagedSo, stagingAssets, stagedAssetsArchive, meta)
             }
@@ -924,7 +676,7 @@ internal class PatchManager(
                     "asset missing after overlay: $path"
                 )
             }
-            val actualMd5 = SignatureVerifier.md5(actualFile)
+            val actualMd5 = md5(actualFile)
             if (!actualMd5.equals(expectedMd5, ignoreCase = true)) {
                 return ApplyResult.failure(
                     ApplyErrorCode.MD5_MISMATCH,
@@ -1051,78 +803,6 @@ internal class PatchManager(
             output.write(text.toByteArray(Charsets.UTF_8))
             output.fd.sync()
         }
-    }
-
-    private fun downloadTo(
-        url: String,
-        dest: File,
-        onBytes: ((received: Long, total: Long) -> Unit)? = null
-    ) {
-        val parsed = URL(url)
-        when (parsed.protocol?.lowercase()) {
-            "http", "https" -> downloadHttp(parsed, dest, onBytes)
-            "file" -> copyFromFile(parsed, dest, onBytes)
-            else -> throw RuntimeException("unsupported URL scheme: ${parsed.protocol}")
-        }
-    }
-
-    private fun downloadHttp(
-        url: URL,
-        dest: File,
-        onBytes: ((received: Long, total: Long) -> Unit)?
-    ) {
-        val conn = url.openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = CONNECT_TIMEOUT_MS
-            conn.readTimeout = READ_TIMEOUT_MS
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            if (code !in 200..299) throw RuntimeException("HTTP $code")
-            streamToFile(conn.inputStream, dest, conn.contentLengthLong, onBytes)
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun copyFromFile(
-        url: URL,
-        dest: File,
-        onBytes: ((received: Long, total: Long) -> Unit)?
-    ) {
-        val src = File(url.path)
-        if (!src.exists()) throw RuntimeException("file not found: ${src.absolutePath}")
-        if (!src.canRead()) throw RuntimeException("file not readable: ${src.absolutePath}")
-        streamToFile(src.inputStream(), dest, src.length(), onBytes)
-    }
-
-    private fun streamToFile(
-        input: java.io.InputStream,
-        dest: File,
-        total: Long,
-        onBytes: ((received: Long, total: Long) -> Unit)?
-    ) {
-        var received = 0L
-        var lastEmit = 0L
-        input.use { ins ->
-            FileOutputStream(dest).use { output ->
-                val buf = ByteArray(8192)
-                while (true) {
-                    val n = ins.read(buf)
-                    if (n <= 0) break
-                    output.write(buf, 0, n)
-                    received += n
-                    if (onBytes != null) {
-                        val now = SystemClock.uptimeMillis()
-                        if (now - lastEmit >= PROGRESS_EMIT_INTERVAL_MS) {
-                            onBytes(received, total)
-                            lastEmit = now
-                        }
-                    }
-                }
-                output.fd.sync()
-            }
-        }
-        onBytes?.invoke(received, total)
     }
 
     private fun copyFile(src: File, dest: File) {

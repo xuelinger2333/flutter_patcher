@@ -6,36 +6,32 @@ class PatcherChannel {
 
   static const MethodChannel channel = MethodChannel('flutter_patcher');
 
-  /// 保存 Dart 侧配置到原生（SharedPreferences）。原生下次冷启动在
-  /// Application.attachBaseContext 时读取这份配置做验签与加载。
+  /// 保存 Dart 侧配置到原生（SharedPreferences），下次冷启动加载补丁时使用。
+  /// 验签所需的信任材料只来自 APK 里的宿主策略。
   static Future<void> saveConfig({
-    required String publicKeyBase64,
     required int maxCrashCount,
-    required bool strictSignature,
     required List<String> loaderFieldCandidates,
     required bool loaderFallbackHeuristic,
   }) async {
     await channel.invokeMethod<void>('saveConfig', {
-      'publicKeyBase64': publicKeyBase64,
       'maxCrashCount': maxCrashCount,
-      'strictSignature': strictSignature,
       'loaderFieldCandidates': loaderFieldCandidates,
       'loaderFallbackHeuristic': loaderFallbackHeuristic,
     });
   }
 
-  /// Dart init 最开头调用：标记「启动中」（与原生 attachBaseContext 的标记互相兜底）。
+  /// Dart init 最开头调用：字节码宿主据此开始本次启动尝试。
   static Future<void> markBooting() async {
     await channel.invokeMethod<void>('markBooting');
   }
 
-  /// Dart 首帧完成 → 重置熔断计数。
+  /// Dart 首帧完成 → 确认本次补丁启动成功。
   static Future<void> reportBootSuccess() async {
     await channel.invokeMethod<void>('reportBootSuccess');
   }
 
-  /// 引导阶段 Dart 层未捕获异常上报。原生侧把它当成等同于 ApplicationExitInfo
-  /// 的 REASON_CRASH 处理：crash_count += 1，达到阈值则熔断 + 删补丁 + 黑名单。
+  /// 引导阶段 Dart 层未捕获异常上报。原生侧把它当成一次启动失败：达到阈值则
+  /// 熔断、回滚并拉黑当前补丁。
   ///
   /// 调用时机：仅在「verifyAfter 窗口内」（首帧渲染后到 verifyAfter 秒之间），
   /// 由 FlutterPatcher.init 安装的 PlatformDispatcher.onError / FlutterError.onError
@@ -46,15 +42,7 @@ class PatcherChannel {
     });
   }
 
-  /// 下载 + 验签 + 落盘（原子替换）。成功后下次冷启动自动生效。
-  ///
-  /// 原生侧返回 `Map{ok, error, message}`，由调用方用
-  /// `PatchApplyResult.fromNative` 反序列化。
-  static Future<Object?> applyPatch(Map<String, dynamic> patch) async {
-    return channel.invokeMethod<Object?>('applyPatch', patch);
-  }
-
-  /// 删除当前补丁 + 重置熔断标志位。
+  /// 删除当前补丁。
   static Future<void> rollback() async {
     await channel.invokeMethod<void>('rollback');
   }
@@ -70,12 +58,6 @@ class PatcherChannel {
   /// `PatchBootDiagnostic.fromNative` 反序列化；`null` 表示从未 record 过。
   static Future<Map<dynamic, dynamic>?> lastBootDiagnostic() async {
     return channel.invokeMethod<Map<dynamic, dynamic>?>('lastBootDiagnostic');
-  }
-
-  /// 插件可写的缓存目录绝对路径，供 `applyPatchBytes` 内部 staging 用。
-  /// 与 `PatchManager.patchDir` 隔离（一个是临时 staging，一个是终态补丁）。
-  static Future<String?> cacheDir() async {
-    return channel.invokeMethod<String>('cacheDir');
   }
 
   /// 当前宿主 APK 的 versionCode（API 28+ 用 longVersionCode）。

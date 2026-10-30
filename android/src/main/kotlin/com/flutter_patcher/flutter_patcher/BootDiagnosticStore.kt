@@ -8,14 +8,14 @@ import org.json.JSONObject
 /**
  * 上次冷启动时补丁加载结果的持久化存储。
  *
- * 补丁能否生效取决于 `CrashGuard` / `PatchManager.getValidPatch` /
- * `LoaderHook.install` 三处决策。本对象在每次冷启动时把"补丁的加载结果 + 上下文"
+ * 补丁能否生效取决于候选状态（`CandidateStore`）、`PatchManager.getValidPatch`
+ * 与 `LoaderHook.install`。本对象在每次冷启动时把"补丁的加载结果 + 上下文"
  * 一次性覆写到 SharedPreferences，Dart 侧通过 `FlutterPatcher.lastBootDiagnostic` 查询。
  *
  * # 写入时机
- * - [FlutterPatcherApplication.attachPatcher] 各出口（patched / hookFailed / noPatch / unknown）
- * - [PatchManager.getValidPatch] 通过传入的 onDrop 闭包写入（versionCode/md5/sig/meta）
- * - [CrashGuard.shouldLoadPatch] 通过传入的 onDrop 闭包写入（circuit breaker）
+ * - [CandidateStore]：无补丁、熔断、启动失败、宿主身份变化
+ * - SO / 字节码首帧成功（patched）
+ * - [FlutterPatcherApplication.attachPatcher]：hookFailed / unknown
  *
  * # 跨边界约定
  * status 用大写 SCREAMING_SNAKE 字符串而非 int，保证 Kotlin / Dart 两侧可读性 +
@@ -41,9 +41,6 @@ internal object BootDiagnosticStore {
 
     /** 补丁被丢弃：本地 .so 文件 md5 与 meta.effectiveMd5 不一致。*/
     const val DROPPED_MD5_MISMATCH = "DROPPED_MD5_MISMATCH"
-
-    /** 补丁被丢弃：Ed25519 签名校验失败 / 严格模式下 API < 33。*/
-    const val DROPPED_SIGNATURE_INVALID = "DROPPED_SIGNATURE_INVALID"
 
     /** 补丁被丢弃：meta.json 损坏或缺关键字段（effectiveMd5 等）。*/
     const val DROPPED_META_CORRUPTED = "DROPPED_META_CORRUPTED"
