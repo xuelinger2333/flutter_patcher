@@ -81,6 +81,10 @@ Future<String> assembleIpa(StepRunner run, String flutter, String project,
 /// Reads the archived app back: identity, AOT snapshot (kept in [baseline]
 /// as libapp.so, the baseline's name for the host AOT binary on every
 /// platform), engine and resources. Receipt keys match the Android build.
+///
+/// The snapshot is kept without its code signature: the signature carries
+/// the signing time, while the unsigned bytes are reproducible, so a rebuild
+/// of the same release matches its archived slot.
 Future<Map<String, dynamic>> verifyBuildIpa(Commands commands, String ipa,
     String project, String baseline, String managed,
     {required String expectedHostTrust}) async {
@@ -118,6 +122,9 @@ Future<Map<String, dynamic>> verifyBuildIpa(Commands commands, String ipa,
   require(await aot.exists() && machoUuid(await aot.readAsBytes()) != null,
       'BUILD_IPA_INVALID', 'Expected an arm64 App.framework AOT snapshot.');
   await aot.copy(p.join(baseline, 'libapp.so'));
+  await commands.run(
+      'codesign', ['--remove-signature', p.join(baseline, 'libapp.so')],
+      code: 'BUILD_IPA_INVALID');
   return {
     'application_id': id,
     'version_code': version,
