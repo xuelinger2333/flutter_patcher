@@ -56,9 +56,14 @@ enum PublishManifest {
       try require(matches(key, "[A-Za-z0-9_-]{1,64}"), key)
     }
     try require(matches("application_id", "[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"), "Application")
-    // iOS hosts load bytecode only.
-    try require(f["abi"] == Platform.abi && f["strategy"] == "bytecode", "ABI/strategy")
-    try require(matches("fingerprint", "[0-9a-f]{64}"), "Fingerprint")
+    // Protocol rules shared with the CLI and Android; the host scope pins the
+    // ABI, and iOS hosts load bytecode only.
+    let platform = ["arm64-v8a": "android", "ios-arm64": "ios"][f["abi"]!]
+    try require(
+      platform != nil && ["bytecode", "so"].contains(f["strategy"]!)
+        && (platform != "ios" || f["strategy"] == "bytecode"), "ABI/strategy")
+    try require(
+      matches("fingerprint", "[0-9a-f]{64}") || (f["strategy"] == "so" && f["fingerprint"] == "-"), "Fingerprint")
     _ = try version(f["minPluginVersion"]!)
     func number(_ key: String, _ max: Int64) throws {
       try require(matches(key, "[1-9][0-9]{0,15}") && Int64(f[key]!)! <= max, key)
