@@ -1,6 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+/// Release ABI → platform. Each is a separate release slot; iOS hosts load
+/// bytecode only, because iOS code signing forbids replacing machine code.
+const platformOfAbi = {'arm64-v8a': 'android', 'ios-arm64': 'ios'};
+
 /// V1 accepts canonical ASCII JSON only. All numbers are decimal strings.
 /// This is a signing codec, not proof that a publisher is trusted.
 class PublishManifest {
@@ -93,8 +97,10 @@ class PublishManifest {
         matches('application_id',
             r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+'),
         'Application');
-    check(fields['abi'] == 'arm64-v8a', 'ABI');
+    check(platformOfAbi.containsKey(fields['abi']), 'ABI');
     check({'bytecode', 'so'}.contains(fields['strategy']), 'Strategy');
+    check(platformOfAbi[fields['abi']] != 'ios' || fields['strategy'] == 'bytecode',
+        'iOS hosts load bytecode only');
     check(
         matches('fingerprint', r'[0-9a-f]{64}') ||
             (fields['strategy'] == 'so' && fields['fingerprint'] == '-'),

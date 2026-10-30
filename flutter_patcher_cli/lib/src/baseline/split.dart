@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../build/host_policy.dart';
+import '../publish/protocol.dart';
 import 'manifest.dart';
 
 /// Schema 5 stores a baseline as two objects. The compile object holds what
@@ -71,9 +72,9 @@ String releaseSlot(String flavor, String versionCode, String abi) {
   require(
       RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(flavor) &&
           RegExp(r'^[0-9]+$').hasMatch(versionCode) &&
-          abi == 'arm64-v8a',
+          platformOfAbi.containsKey(abi),
       'CONFIG_INVALID',
-      'Explicit flavor (use default if absent), numeric versionCode and arm64-v8a required.');
+      'Explicit flavor (use default if absent), numeric versionCode and a release ABI (${platformOfAbi.keys.join(', ')}) required.');
   return '$flavor-$versionCode-$abi';
 }
 

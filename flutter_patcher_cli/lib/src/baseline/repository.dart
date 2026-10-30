@@ -80,7 +80,7 @@ class BaselineRepository {
   Future<T> locked<T>(String key, Future<T> Function() action) =>
       serialized(p.join(cache, key.toLowerCase()), () async {
         valid(
-            RegExp(r'^((compile-)?[0-9a-f]{64}|release-[A-Za-z0-9_-]+-[0-9]+-arm64-v8a)$')
+            RegExp(r'^((compile-)?[0-9a-f]{64}|release-[A-Za-z0-9_-]+-[0-9]+-(arm64-v8a|ios-arm64))$')
                 .hasMatch(key),
             'Invalid requested fingerprint.');
         await rejectLinks(cache);
