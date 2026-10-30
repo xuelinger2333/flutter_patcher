@@ -22,6 +22,10 @@ class PatchFailure extends Failure {
 class PatchRequest {
   final String project, privateKey, output, target, flavor;
 
+  /// `android` or `ios`; must match the release's host policy.
+  final String platform;
+  String get abi => platform == 'ios' ? 'ios-arm64' : 'arm64-v8a';
+
   /// Optional; when given it must match the resolved release, and it selects
   /// a legacy baseline that has no release binding.
   final String? fingerprint;
@@ -40,6 +44,7 @@ class PatchRequest {
       this.previousSeq,
       this.assets = const [],
       this.target = 'lib/main.dart',
+      this.platform = 'android',
       this.offline = false});
   Future<void> validate() async {
     require(
@@ -67,17 +72,27 @@ class PatchRequest {
   }
 }
 
-/// The part of a package input that reaches an Android build: android/
-/// without test sources or Markdown, and hook/. Both sides are filtered at
-/// comparison time, so baselines recorded with every native file stay valid.
-Object? _androidBuildInputs(Object? entry) => entry is! Map
+/// Native files that reach each platform's build, besides hook/:
+/// - Android: android/ without test sources or Markdown.
+/// - iOS: ios/ and darwin/ without tests, Markdown, per-user Xcode state and
+///   the files `flutter pub get` regenerates with machine paths.
+/// Both sides are filtered at comparison time, so baselines recorded with
+/// every native file stay valid.
+final _nativeBuildFiles = {
+  'android':
+      RegExp(r'^(android/(?!(.*/)?src/(test|androidTest)/).*(?<!\.md)$|hook/)'),
+  'ios': RegExp(r'^((ios|darwin)/(?!(.*/)?(RunnerTests|xcuserdata)/)'
+      r'(?!Flutter/(Generated\.xcconfig|flutter_export_environment\.sh|ephemeral/))'
+      r'.*(?<!\.md)(?<!GeneratedPluginRegistrant\.[hm])$|hook/)'),
+};
+
+Object? _nativeBuildInputs(Object? entry, String platform) => entry is! Map
     ? entry
     : {
         ...entry,
         'native_files': {
           for (final e in ((entry['native_files'] as Map?) ?? const {}).entries)
-            if (RegExp(r'^(android/(?!(.*/)?src/(test|androidTest)/).*(?<!\.md)$|hook/)')
-                .hasMatch(e.key as String))
+            if (_nativeBuildFiles[platform]!.hasMatch(e.key as String))
               e.key: e.value
         }
       };
@@ -85,10 +100,13 @@ Object? _androidBuildInputs(Object? entry) => entry is! Map
 /// Rejects native changes against the release's [previous] package inputs and
 /// records each changed pure-Dart dependency in [changed]; true if any did.
 bool nativeInputChanges(
-    Map current, Map previous, String app, List<String> changed) {
+    Map current, Map previous, String app, List<String> changed,
+    {String platform = 'android'}) {
+  Map? inputs(Map state, String name) =>
+      _nativeBuildInputs(state[name], platform) as Map?;
   require(
-      canonical((_androidBuildInputs(current[app]) as Map?)?['native_files']) ==
-          canonical((_androidBuildInputs(previous[app]) as Map?)?['native_files']),
+      canonical(inputs(current, app)?['native_files']) ==
+          canonical(inputs(previous, app)?['native_files']),
       'PATCH_NATIVE_CHANGE',
       'Application native sources changed; rebuild host');
   var any = false;
@@ -97,8 +115,7 @@ bool nativeInputChanges(
     ...previous.keys.cast<String>()
   }) {
     if (name == app) continue;
-    final now = _androidBuildInputs(current[name]) as Map?,
-        before = _androidBuildInputs(previous[name]) as Map?;
+    final now = inputs(current, name), before = inputs(previous, name);
     if (canonical(now) == canonical(before)) continue;
     require(
         now?['native'] != true &&
@@ -140,6 +157,7 @@ class PatchPipeline {
     try {
       final resolved = await baselines.resolve(
           req.flavor, req.minBuild.toString(),
+          abi: req.abi,
           expectedFingerprint: req.fingerprint, sdkRoot: sdk.root);
       if (resolved.strategy == 'so') {
         phase = 'so';
@@ -161,7 +179,7 @@ class PatchPipeline {
               manifest['runtime_bootstrap'] == true &&
               manifest['host_policy_sha256'] is String,
           'BASELINE_NOT_RELEASE',
-          'A baseline archived by build android --host-policy is required');
+          'A baseline archived by build ${req.platform} --host-policy is required');
       final receipt = resolved.receipt;
       require(
           req.minBuild.toString() == receipt['version_code'],
@@ -208,7 +226,8 @@ class PatchPipeline {
       var dependencyChanged = false;
       if (oldState is Map) {
         dependencyChanged =
-            nativeInputChanges(packageState, oldState, app, changed);
+            nativeInputChanges(packageState, oldState, app, changed,
+                platform: req.platform);
       }
       final hashes =
           (await readObject(p.join(baseline, 'source_hashes.json')))['files']
@@ -267,7 +286,7 @@ class PatchPipeline {
             '--release',
             '--no-pub',
             '--target-platform',
-            'android-arm64',
+            req.platform == 'ios' ? 'ios' : 'android-arm64',
             '--target',
             req.target,
             '--asset-dir',
@@ -430,8 +449,8 @@ class PatchPipeline {
       await baselines.recheck(resolved, sdkRoot: sdk.root);
       final report = <String, Object?>{
         'status': 'patch_created',
-        'platform': 'android',
-        'abi': 'arm64-v8a',
+        'platform': req.platform,
+        'abi': req.abi,
         'strategy': 'bytecode',
         'fingerprint': fingerprint,
         'patch_seq': req.seq,

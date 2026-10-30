@@ -39,6 +39,8 @@ Future<Map<String, dynamic>> packageInputs(String config,
       if (native || row['name'] == application) ...[
         'android',
         'ios',
+        // Shared iOS/macOS plugin sources.
+        'darwin',
         'linux',
         'macos',
         'windows'

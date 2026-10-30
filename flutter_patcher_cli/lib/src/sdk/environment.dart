@@ -200,6 +200,8 @@ class EnvironmentBuilder {
       await _precache(sdk, target, 'ios');
       await installIos(sdk, store, ios, target);
     }
+    // Compiling only Dart (an iOS patch) needs just the host-independent tools.
+    if (android == null && ios == null) await _precache(sdk, target, 'universal');
     return target;
   }
 
@@ -214,8 +216,15 @@ class EnvironmentBuilder {
     if (done.contains(platform)) return;
     require(!offline, 'SDK_NOT_READY',
         'The managed SDK has no $platform artifacts cached for offline use.');
-    await commands.run(sdk.host.flutterLauncher(target),
-        ['--suppress-analytics', 'precache', '--$platform'],
+    await commands.run(
+        sdk.host.flutterLauncher(target),
+        [
+          '--suppress-analytics',
+          'precache',
+          '--$platform',
+          // Explicit, or precache adds every platform enabled by default.
+          if (platform == 'universal') ...['--no-android', '--no-ios']
+        ],
         code: 'SDK_PREPARE_FAILED');
     await writeObject(marker, {
       ...state,

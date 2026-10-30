@@ -56,11 +56,8 @@ void main() {
       ],
     };
     final result = pack(apk({'images/a.png': 'A', 'images/b.png': 'b'}, next));
-    expect(result.changed, [
-      'asset:images/a.png',
-      'asset:images/b.png',
-      'key:images/b.png'
-    ]);
+    expect(result.changed,
+        ['asset:images/a.png', 'asset:images/b.png', 'key:images/b.png']);
     final zip = ZipDecoder().decodeBytes(result.bytes);
     final assets = json(zip, 'manifest.json')['assets'] as Map;
     expect(assets['mode'], 'overlay');
@@ -70,11 +67,15 @@ void main() {
     final ops = json(zip, 'manifest_patch.json');
     expect(ops['baseManifestSize'],
         (release['files'] as Map)['AssetManifest.bin']['length']);
-    expect((ops['operations'] as List).single,
-        {'op': 'upsert', 'key': 'images/b.png', 'variants': next['images/b.png']});
+    expect((ops['operations'] as List).single, {
+      'op': 'upsert',
+      'key': 'images/b.png',
+      'variants': next['images/b.png']
+    });
   });
 
-  test('native changes are rejected; pure Dart dependency changes recorded', () {
+  test('native changes are rejected; pure Dart dependency changes recorded',
+      () {
     final previous = {
       'app': {'native_files': {}},
       'dart_only': {'version': '1'},
@@ -86,19 +87,23 @@ void main() {
     };
     // Test sources, docs and other platforms never reach the Android build.
     expect(
-        nativeInputChanges({
-          ...previous,
-          'plugin': {
-            'native': true,
-            'version': '1',
-            'native_files': {
-              'android/src/main/A.kt': 'a',
-              'android/src/test/T.kt': 't',
-              'android/README.md': 'd',
-              'ios/Classes/P.swift': 's'
-            }
-          }
-        }, previous, 'app', []),
+        nativeInputChanges(
+            {
+              ...previous,
+              'plugin': {
+                'native': true,
+                'version': '1',
+                'native_files': {
+                  'android/src/main/A.kt': 'a',
+                  'android/src/test/T.kt': 't',
+                  'android/README.md': 'd',
+                  'ios/Classes/P.swift': 's'
+                }
+              }
+            },
+            previous,
+            'app',
+            []),
         isFalse);
     final changed = <String>[];
     expect(
@@ -109,10 +114,52 @@ void main() {
         isTrue);
     expect(changed, ['dependency:dart_only']);
     expect(
-        () => nativeInputChanges({
+        () => nativeInputChanges(
+            {
               ...previous,
               'plugin': {'native': true, 'version': '2'}
-            }, previous, 'app', []),
+            },
+            previous,
+            'app',
+            []),
+        throwsA(isA<Failure>()
+            .having((f) => f.code, 'code', 'PATCH_NATIVE_CHANGE')));
+  });
+  test('iOS patches compare only what reaches the iOS build', () {
+    Map<String, dynamic> app(Map<String, String> files) => {
+          'app': {'native': false, 'version': '1', 'native_files': files}
+        };
+    final before = app({
+      'ios/Runner/AppDelegate.swift': 'a',
+      'ios/Flutter/Generated.xcconfig': 'path-1',
+      'android/app/build.gradle': 'g'
+    });
+    // Paths Flutter regenerates, per-user Xcode state and Android files.
+    expect(
+        nativeInputChanges(
+            app({
+              'ios/Runner/AppDelegate.swift': 'a',
+              'ios/Flutter/Generated.xcconfig': 'path-2',
+              'ios/Runner.xcworkspace/xcuserdata/u.xcuserdatad/UI.xcuserstate':
+                  'x',
+              'android/app/build.gradle': 'changed'
+            }),
+            before,
+            'app',
+            [],
+            platform: 'ios'),
+        isFalse);
+    expect(
+        () => nativeInputChanges(
+            app({
+              'ios/Runner/AppDelegate.swift': 'b',
+              'ios/Flutter/Generated.xcconfig': 'path-1',
+              'android/app/build.gradle': 'g'
+            }),
+            before,
+            'app',
+            [],
+            platform: 'ios'),
         throwsA(isA<Failure>()
             .having((f) => f.code, 'code', 'PATCH_NATIVE_CHANGE')));
   });

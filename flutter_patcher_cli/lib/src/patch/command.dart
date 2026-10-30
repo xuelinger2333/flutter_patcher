@@ -13,8 +13,13 @@ import 'pipeline.dart';
 Future<int> patchCommand(ArgResults args) async {
   RandomAccessFile? lock;
   try {
-    require(args.rest.length == 1 && args.rest.single == 'android',
-        'USAGE_ERROR', 'Use patch android');
+    require(
+        args.rest.length == 1 &&
+            const ['android', 'ios'].contains(args.rest.single),
+        'USAGE_ERROR',
+        'Use patch android or patch ios');
+    // iOS patches compile Dart only, so every supported host makes them.
+    final platform = args.rest.single;
 
     requireSupportedHost();
     String value(String name) {
@@ -48,6 +53,7 @@ Future<int> patchCommand(ArgResults args) async {
             : int.tryParse(value('previous-seq')) ?? -1,
         target: args['target'] as String,
         assets: (args['assets'] as List).cast<String>(),
+        platform: platform,
         offline: offline);
     await request.validate();
     await rejectLinks(p.join(cache, 'doctor.lock'));
@@ -65,7 +71,9 @@ Future<int> patchCommand(ArgResults args) async {
         Uri.parse(args['supported-versions-url'] as String),
         Downloads(offline: offline));
     await store.checkSupport(sdk.version);
-    final engine = await store.obtain('engine', sdk);
+    // The Android engine serves only SO rebuilds; an iOS patch needs none.
+    final engine =
+        platform == 'android' ? await store.obtain('engine', sdk) : null;
     await store.obtain('tools', sdk, refresh: args['refresh-tools'] == true);
     final managed = await EnvironmentBuilder(cache, commands, offline: offline)
         .prepare(sdk, store, android: engine);
