@@ -29,15 +29,18 @@ class HostIdentity {
   bool get isWindows => os == 'windows';
   bool get isPosix => !isWindows;
 
-  /// Flutter SDK host toolchain directory: `linux-x64`, `windows-x64`,
-  /// `darwin-arm64`.
-  String get toolchainDir => '${os == 'macos' ? 'darwin' : os}-$arch';
+  /// Release-asset host name: `linux-x64`, `windows-x64`, `darwin-arm64`.
+  String get assetHost => '${os == 'macos' ? 'darwin' : os}-$arch';
+
+  /// Flutter SDK host toolchain directory. Flutter keeps macOS host tools in
+  /// `darwin-x64` on every Mac; on Apple Silicon they are arm64 binaries.
+  String get toolchainDir => os == 'macos' ? 'darwin-x64' : assetHost;
 
   String exe(String name) => isWindows ? '$name.exe' : name;
   String script(String name) => isWindows ? '$name.bat' : name;
 
   /// Engine release asset carrying this host's patched gen_snapshot.
-  String get genSnapshotArtifact => exe('gen_snapshot-$toolchainDir');
+  String get genSnapshotArtifact => exe('gen_snapshot-$assetHost');
 
   /// SDK-relative path of a host toolchain file such as
   /// `frontend_server_aot.dart.snapshot` or `font-subset`.

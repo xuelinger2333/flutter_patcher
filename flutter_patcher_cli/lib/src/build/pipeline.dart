@@ -353,7 +353,8 @@ class BuildPipeline {
       phase = 'archive';
       final archived = await baselines.save(baseline, metadata,
           flavor: request.flavor ?? 'default',
-          versionCode: apkInfo['version_code'] as String);
+          versionCode: apkInfo['version_code'] as String,
+          abi: request.hostPolicy.fields['abi']!);
       require(archived['fingerprint'] == identity,
           'BASELINE_FINGERPRINT_MISMATCH', 'Archived fingerprint changed.');
       phase = 'publish-output';
@@ -390,9 +391,9 @@ class BuildPipeline {
     try {
       final project =
           await workspace.copyPackage(request.project, application: true);
-      final package = (loadYaml(
-              await File(p.join(project, 'pubspec.yaml')).readAsString())
-          as Map)['name'] as String;
+      final package =
+          (loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
+              as Map)['name'] as String;
       phase = 'pub-get';
       await run(sdk.host.flutterLauncher(managed),
           ['--suppress-analytics', 'pub', 'get', '--enforce-lockfile'],
@@ -411,7 +412,8 @@ class BuildPipeline {
       final hostTrust =
           await writeHostTrust(project, release, policy, identity);
       phase = 'apk';
-      final apk = await assembleApk(run, project, request, request.target, const []);
+      final apk =
+          await assembleApk(run, project, request, request.target, const []);
       phase = 'verify-apk';
       final apkInfo = await verifyApk(apk, release, request, hostTrust);
       final virtual = await VirtualPackages.write(
@@ -461,7 +463,9 @@ class BuildPipeline {
     var index = 0;
     return (executable, args, {cwd, env}) async {
       final result = await commands.runResult(executable, args,
-          cwd: cwd, extraEnvironment: env, timeout: const Duration(minutes: 30));
+          cwd: cwd,
+          extraEnvironment: env,
+          timeout: const Duration(minutes: 30));
       await File(p.join(work, '${index++}-${phase()}.log'))
           .writeAsString('${result.stdout}\n${result.stderr}');
       require(result.exitCode == 0, 'BUILD_STEP_FAILED',
@@ -486,8 +490,8 @@ class BuildPipeline {
       await embedIosHostTrust(commands, project, trust);
       return trust;
     }
-    final asset = File(p.join(
-        project, 'android/app/src/main/assets/flutter_patcher/host-trust.json'));
+    final asset = File(p.join(project,
+        'android/app/src/main/assets/flutter_patcher/host-trust.json'));
     require(!await asset.exists(), 'BUILD_CONFIG_INVALID',
         'Host trust asset is reserved for generated build inputs.');
     await asset.parent.create(recursive: true);
@@ -496,8 +500,8 @@ class BuildPipeline {
   }
 
   /// `flutter build apk` with the managed engine mirror; returns the APK path.
-  Future<String> assembleApk(StepRunner run, String project, BuildRequest request,
-      String target, List<String> extra) async {
+  Future<String> assembleApk(StepRunner run, String project,
+      BuildRequest request, String target, List<String> extra) async {
     final gradle = p.join(cache, 'gradle');
     await Directory(gradle).create(recursive: true);
     await retireFlutterGradleCache(gradle);
@@ -532,8 +536,8 @@ class BuildPipeline {
   }
 
   /// Verifies the APK, extracts libapp.so into [dir] and binds it to the request.
-  Future<Map<String, dynamic>> verifyApk(String apk, String dir,
-      BuildRequest request, String? hostTrust) async {
+  Future<Map<String, dynamic>> verifyApk(
+      String apk, String dir, BuildRequest request, String? hostTrust) async {
     return _bind(
         await verifyBuildApk(apk, dir, aapt, commands, engine,
             expectedHostTrust: hostTrust),
@@ -548,7 +552,8 @@ class BuildPipeline {
     require(
         apkInfo['application_id'] ==
                 request.hostPolicy.fields['application_id'] &&
-            apkInfo['version_code'] == request.hostPolicy.fields['version_code'],
+            apkInfo['version_code'] ==
+                request.hostPolicy.fields['version_code'],
         code,
         'Actual ${ios ? 'app' : 'APK'} differs from immutable host policy.');
     if (request.versionCode != null) {
@@ -576,5 +581,6 @@ class BuildPipeline {
       });
 }
 
-typedef StepRunner = Future<String> Function(String executable, List<String> args,
+typedef StepRunner = Future<String> Function(
+    String executable, List<String> args,
     {String? cwd, Map<String, String>? env});

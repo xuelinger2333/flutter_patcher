@@ -61,8 +61,9 @@ Future<int> keysCommand(ArgResults args) async {
   try {
     await privateFile.create();
     if (host.isPosix) {
-      final mode =
-          await Process.run('/bin/chmod', ['600', '--', privateFile.path]);
+      // macOS chmod has no `--`; an absolute path cannot read as an option.
+      final mode = await Process.run(
+          '/bin/chmod', ['600', p.absolute(privateFile.path)]);
       require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
           'Cannot protect private-key permissions.');
     }

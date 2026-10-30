@@ -11,7 +11,17 @@ class BuildWorkspace {
   final Map<String, String> copies = {}, originalHashes = {};
   int bytes = 0;
   BuildWorkspace(this.root);
-  static const excluded = {'.git', '.dart_tool', '.gradle', 'build', '.idea'};
+  /// Not build inputs: VCS, caches, outputs and per-user IDE state (Xcode
+  /// rewrites xcuserdata while the project is open).
+  static const excluded = {
+    '.git',
+    '.dart_tool',
+    '.gradle',
+    'build',
+    '.idea',
+    'xcuserdata',
+    '.DS_Store'
+  };
   Future<String> copyPackage(String original,
       {bool application = false}) async {
     original = p.normalize(p.absolute(original));

@@ -131,21 +131,35 @@ Future<Map<String, dynamic>> verifyBuildIpa(Commands commands, String ipa,
 bool _same(List<int>? a, List<int> b) =>
     a != null && a.length == b.length && a.join(',') == b.join(',');
 
-/// LC_UUID of a thin arm64 Mach-O; code signing leaves it unchanged, so it
-/// identifies the engine Xcode embedded and re-signed.
-List<int>? machoUuid(List<int> bytes) {
-  if (bytes.length < 32 ||
-      bytes.take(8).join(',') != '207,250,237,254,12,0,0,1') {
+/// LC_UUID of an arm64 Mach-O, or of the arm64 slice of a universal binary
+/// (Flutter ships App.framework as one). Code signing leaves it unchanged,
+/// so it identifies the engine Xcode embedded and re-signed.
+List<int>? machoUuid(List<int> input) {
+  final bytes = input is Uint8List ? input : Uint8List.fromList(input);
+  final data = ByteData.sublistView(bytes);
+  if (bytes.length >= 8 && data.getUint32(0) == 0xcafebabe) {
+    for (var i = 0, at = 8;
+        i < data.getUint32(4) && at + 20 <= bytes.length;
+        i++, at += 20) {
+      if (data.getUint32(at) != 0x0100000c) continue;
+      final offset = data.getUint32(at + 8), size = data.getUint32(at + 12);
+      return offset + size <= bytes.length
+          ? machoUuid(Uint8List.sublistView(bytes, offset, offset + size))
+          : null;
+    }
     return null;
   }
-  final data =
-      ByteData.sublistView(Uint8List.fromList(bytes.take(1 << 20).toList()));
+  if (bytes.length < 32 ||
+      data.getUint32(0, Endian.little) != 0xfeedfacf ||
+      data.getUint32(4, Endian.little) != 0x0100000c) {
+    return null;
+  }
   final count = data.getUint32(16, Endian.little);
   var offset = 32;
-  for (var i = 0; i < count && offset + 8 <= data.lengthInBytes; i++) {
+  for (var i = 0; i < count && offset + 8 <= bytes.length; i++) {
     final command = data.getUint32(offset, Endian.little);
     final size = data.getUint32(offset + 4, Endian.little);
-    if (command == 0x1b && offset + 24 <= data.lengthInBytes) {
+    if (command == 0x1b && offset + 24 <= bytes.length) {
       return bytes.sublist(offset + 8, offset + 24);
     }
     if (size < 8) return null;

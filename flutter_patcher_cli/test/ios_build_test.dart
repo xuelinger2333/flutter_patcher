@@ -61,6 +61,15 @@ void main() {
       ..setRange(56, 72, List.generate(16, (i) => i + 1));
     expect(machoUuid(bytes), List.generate(16, (i) => i + 1));
     expect(machoUuid([127, 69, 76, 70, ...bytes.skip(4)]), isNull);
+    // App.framework is a universal binary with one arm64 slice.
+    final fat = ByteData(32)
+      ..setUint32(0, 0xcafebabe)
+      ..setUint32(4, 1)
+      ..setUint32(8, 0x0100000c)
+      ..setUint32(16, 32)
+      ..setUint32(20, bytes.length);
+    expect(machoUuid([...fat.buffer.asUint8List(), ...bytes]),
+        List.generate(16, (i) => i + 1));
   });
 
   test('iOS flutter_assets give the same resource receipt as an APK', () async {
