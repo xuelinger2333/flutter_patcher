@@ -11,8 +11,9 @@ class BuildWorkspace {
   final Map<String, String> copies = {}, originalHashes = {};
   int bytes = 0;
   BuildWorkspace(this.root);
-  /// Not build inputs: VCS, caches, outputs and per-user IDE state (Xcode
-  /// rewrites xcuserdata while the project is open).
+  /// Not build inputs: VCS, caches, outputs, per-user IDE state (Xcode
+  /// rewrites xcuserdata while the project is open) and CocoaPods output that
+  /// Flutter regenerates (ios/.symlinks and Pods hold symbolic links).
   static const excluded = {
     '.git',
     '.dart_tool',
@@ -20,6 +21,8 @@ class BuildWorkspace {
     'build',
     '.idea',
     'xcuserdata',
+    '.symlinks',
+    'Pods',
     '.DS_Store'
   };
   Future<String> copyPackage(String original,
