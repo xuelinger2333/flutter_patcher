@@ -13,14 +13,19 @@ import 'bootstrap.dart';
 import 'runtime_package.dart';
 import 'outputs.dart';
 import 'host_policy.dart';
+import 'ios.dart';
+import '../publish/protocol.dart';
 import 'virtual_paths.dart';
 import 'dart:convert';
 
 class BuildRequest {
   final String project, output, publicKey;
   final String target;
-  final String? flavor, versionCode;
+  final String? flavor, versionCode, exportMethod;
   final HostPolicy hostPolicy;
+
+  /// `android` or `ios`, from the host policy's ABI.
+  String get platform => platformOfAbi[hostPolicy.fields['abi']]!;
 
   BuildRequest(
       {required this.project,
@@ -29,7 +34,8 @@ class BuildRequest {
       required this.hostPolicy,
       this.target = 'lib/main.dart',
       this.flavor,
-      this.versionCode});
+      this.versionCode,
+      this.exportMethod});
   Future<void> validate() async {
     require(
         target.startsWith('lib/') &&
@@ -42,6 +48,11 @@ class BuildRequest {
         'BUILD_CONFIG_INVALID', 'Invalid flavor.');
     require(versionCode == null || RegExp(r'^[0-9]+$').hasMatch(versionCode!),
         'BUILD_CONFIG_INVALID', 'Invalid versionCode.');
+    require(
+        exportMethod == null ||
+            (platform == 'ios' && iosExportMethods.contains(exportMethod)),
+        'BUILD_CONFIG_INVALID',
+        '--export-method applies to iOS builds: ${iosExportMethods.join(', ')}.');
     bootstrapSource('app', 'main.dart', '0' * 64, publicKey);
     require(
         hostPolicy.fields['fptc_key'] == publicKey &&
@@ -271,15 +282,25 @@ class BuildPipeline {
       await File(target).parent.create(recursive: true);
       await File(target).writeAsString(bootstrapSource(
           package, request.target.substring(4), identity, request.publicKey));
-      phase = 'apk';
+      final ios = request.platform == 'ios';
+      phase = ios ? 'ipa' : 'apk';
       final trace = p.join(work, 'precompiler-trace.json'),
           hostDump = p.join(work, 'host_compiler_interface.json');
-      final apk = await assembleApk(run, project, request, target, [
+      final extra = [
         '--extra-front-end-options=--dynamic-interface=$iface,--dump-detailed-dynamic-interface=$hostDump',
         '--extra-gen-snapshot-options=--trace-precompiler-to=$trace'
-      ]);
-      phase = 'verify-apk';
-      final apkInfo = await verifyApk(apk, baseline, request, hostTrust);
+      ];
+      final apk = ios
+          ? await assembleIpa(run, sdk.host.flutterLauncher(managed), project,
+              request, target, extra)
+          : await assembleApk(run, project, request, target, extra);
+      phase = ios ? 'verify-ipa' : 'verify-apk';
+      final apkInfo = ios
+          ? _bind(
+              await verifyBuildIpa(commands, apk, project, baseline, managed,
+                  expectedHostTrust: hostTrust),
+              request)
+          : await verifyApk(apk, baseline, request, hostTrust);
       await call([
         'inspect-build',
         if (virtual != null) ...virtual.compilerArgs,
@@ -343,7 +364,8 @@ class BuildPipeline {
         'work': work,
         'device_verified': false
       };
-      await _writeOutput(request, apk, report, 'app-release.apk');
+      await _writeOutput(
+          request, apk, report, ios ? 'app-release.ipa' : 'app-release.apk');
       return {...report, 'output': p.absolute(request.output)};
     } catch (error) {
       await _recordFailure(work, phase, error);
@@ -449,23 +471,28 @@ class BuildPipeline {
   }
 
   /// Writes host_policy.json into [policyDir] and the packaged host trust
-  /// asset into [project]; returns the asset text.
+  /// into the build copy [project] (an APK asset, or an iOS Info.plist key);
+  /// returns the trust text.
   Future<String> writeHostTrust(String project, String policyDir,
       HostPolicy policy, String identity) async {
     await File(p.join(policyDir, 'host_policy.json'))
         .writeAsString(policy.canonical);
+    final trust = jsonEncode({
+      'policy': policy.canonical,
+      'fingerprint': identity,
+      'policy_sha256': policy.digest,
+    });
+    if (platformOfAbi[policy.fields['abi']] == 'ios') {
+      await embedIosHostTrust(commands, project, trust);
+      return trust;
+    }
     final asset = File(p.join(
         project, 'android/app/src/main/assets/flutter_patcher/host-trust.json'));
     require(!await asset.exists(), 'BUILD_CONFIG_INVALID',
         'Host trust asset is reserved for generated build inputs.');
     await asset.parent.create(recursive: true);
-    final text = jsonEncode({
-      'policy': policy.canonical,
-      'fingerprint': identity,
-      'policy_sha256': policy.digest,
-    });
-    await asset.writeAsString(text);
-    return text;
+    await asset.writeAsString(trust);
+    return trust;
   }
 
   /// `flutter build apk` with the managed engine mirror; returns the APK path.
@@ -507,17 +534,26 @@ class BuildPipeline {
   /// Verifies the APK, extracts libapp.so into [dir] and binds it to the request.
   Future<Map<String, dynamic>> verifyApk(String apk, String dir,
       BuildRequest request, String? hostTrust) async {
-    final apkInfo = await verifyBuildApk(apk, dir, aapt, commands, engine,
-        expectedHostTrust: hostTrust);
+    return _bind(
+        await verifyBuildApk(apk, dir, aapt, commands, engine,
+            expectedHostTrust: hostTrust),
+        request);
+  }
+
+  /// The built package must be exactly what the immutable host policy names.
+  Map<String, dynamic> _bind(
+      Map<String, dynamic> apkInfo, BuildRequest request) {
+    final ios = request.platform == 'ios';
+    final code = ios ? 'BUILD_IPA_INVALID' : 'BUILD_APK_INVALID';
     require(
         apkInfo['application_id'] ==
                 request.hostPolicy.fields['application_id'] &&
             apkInfo['version_code'] == request.hostPolicy.fields['version_code'],
-        'BUILD_APK_INVALID',
-        'Actual APK differs from immutable host policy.');
+        code,
+        'Actual ${ios ? 'app' : 'APK'} differs from immutable host policy.');
     if (request.versionCode != null) {
-      require(apkInfo['version_code'] == request.versionCode,
-          'BUILD_APK_INVALID', 'Actual versionCode differs.');
+      require(apkInfo['version_code'] == request.versionCode, code,
+          'Actual ${ios ? 'CFBundleVersion' : 'versionCode'} differs.');
     }
     return apkInfo;
   }

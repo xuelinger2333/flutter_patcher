@@ -13,6 +13,7 @@ import 'baseline/repository.dart';
 import 'baseline/split.dart';
 import 'baseline/store.dart';
 import 'build/command.dart';
+import 'build/ios.dart' show iosExportMethods;
 import 'build/line_endings.dart';
 import 'patch/command.dart';
 import 'keys/command.dart';
@@ -80,7 +81,10 @@ ArgParser parser() {
     ..addOption('project',
         help: 'Application source directory; builds use an isolated copy.')
     ..addOption('target', defaultsTo: 'lib/main.dart')
-    ..addOption('out', help: 'New APK/report output directory.');
+    ..addOption('out', help: 'New APK/IPA and report output directory.')
+    ..addOption('export-method',
+        allowed: iosExportMethods,
+        help: 'iOS only: passed to flutter build ipa (default app-store).');
   final doctor = environmentOptions()
     ..addOption('project',
         help: 'Optional application directory whose Dart line endings are '
@@ -122,7 +126,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android [options]\nflutter_patcher patch android [options]\nflutter_patcher publish --production --request <file> [--commit]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish --production --request <file> [--commit]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
