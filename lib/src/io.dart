@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-bool get isAndroid => Platform.isAndroid;
+bool get isSupported => Platform.isAndroid || Platform.isIOS;
 
 String get operatingSystem => Platform.operatingSystem;
 

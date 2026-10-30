@@ -17,11 +17,11 @@ export 'src/patch_info.dart';
 export 'src/patch_bootstrap.dart';
 export 'src/signed_manifest.dart';
 
-/// Android-only Flutter hot-update entrypoint.
+/// Flutter hot-update entrypoint for Android and iOS.
 ///
 /// `flutter_patcher` installs signed patches on hosts built with
-/// `flutter_patcher build android --host-policy`, and loads them on the next
-/// cold start. SO and bytecode hosts share this API.
+/// `flutter_patcher build android|ios --host-policy`, and loads them on the next
+/// cold start. SO and bytecode hosts share this API; iOS hosts are bytecode only.
 ///
 /// Main APIs:
 ///
@@ -71,7 +71,7 @@ class FlutterPatcher {
   static bool _inited = false;
   static bool _bootReported = false;
   static bool _bootErrorReported = false;
-  static bool _nonAndroidWarned = false;
+  static bool _unsupportedWarned = false;
 
   /// Whether Dart boot-error hooks can still report failures to native crash
   /// protection. The first frame clears native boot state immediately; this
@@ -79,13 +79,13 @@ class FlutterPatcher {
   /// `verifyAfter` window.
   static bool _dartHookActive = true;
 
-  static bool _notAndroidGuard(String method) {
-    if (platform_io.isAndroid) return false;
-    if (!_nonAndroidWarned) {
-      _nonAndroidWarned = true;
+  static bool _unsupportedGuard(String method) {
+    if (platform_io.isSupported) return false;
+    if (!_unsupportedWarned) {
+      _unsupportedWarned = true;
       debugPrint(
         '[FlutterPatcher] WARNING: $method called on ${platform_io.operatingSystem}. '
-        'This plugin only supports Android; all calls are no-ops. '
+        'This plugin supports Android and iOS only; all calls are no-ops. '
         'See README > What Can Be Patched?',
       );
     }
@@ -100,10 +100,10 @@ class FlutterPatcher {
   /// Broadcast progress stream for [applyPatch].
   ///
   /// Subscribe before calling [applyPatch] to receive `downloading`,
-  /// `verifying`, and `finalizing` events. Non-Android platforms return an
+  /// `verifying`, and `finalizing` events. Unsupported platforms return an
   /// empty stream.
   static Stream<PatchApplyProgress> get applyProgress {
-    if (_notAndroidGuard('applyProgress')) return const Stream.empty();
+    if (_unsupportedGuard('applyProgress')) return const Stream.empty();
     return _progressStream ??= _eventChannel.receiveBroadcastStream().map(
           (raw) => PatchApplyProgress.fromNative(raw),
         );
@@ -127,7 +127,7 @@ class FlutterPatcher {
     bool loaderFallbackHeuristic = false,
     Duration verifyAfter = const Duration(seconds: 5),
   }) async {
-    if (_notAndroidGuard('init')) return;
+    if (_unsupportedGuard('init')) return;
     if (_inited) return;
     _inited = true;
     _verifyAfter = verifyAfter;
@@ -158,7 +158,7 @@ class FlutterPatcher {
   ///
   /// Usually called automatically by [init] after the first frame.
   static Future<void> reportBootSuccess() async {
-    if (_notAndroidGuard('reportBootSuccess')) return;
+    if (_unsupportedGuard('reportBootSuccess')) return;
     if (_bootReported) return;
     _bootReported = true;
     try {
@@ -178,14 +178,14 @@ class FlutterPatcher {
     String url, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    if (_notAndroidGuard('checkUpdate')) {
+    if (_unsupportedGuard('checkUpdate')) {
       return PatchCheckResult.none();
     }
 
     try {
       if (await _hostStrategy() == null) {
         throw PatcherException('This host has no host policy; build it '
-            'with flutter_patcher build android --host-policy');
+            'with flutter_patcher build android|ios --host-policy');
       }
       return await _checkSigned(url, timeout);
     } on PatcherException {
@@ -220,7 +220,7 @@ class FlutterPatcher {
     PatchInfo patchInfo, {
     void Function(PatchApplyProgress)? onProgress,
   }) async {
-    if (_notAndroidGuard('applyPatch')) {
+    if (_unsupportedGuard('applyPatch')) {
       return PatchApplyResult.failure(
         PatchApplyError.unknown,
         'not supported on ${platform_io.operatingSystem}',
@@ -256,7 +256,7 @@ class FlutterPatcher {
   /// Deletes the current patch. The next cold start uses the APK built-in
   /// version. Manual rollback does not blacklist the patch.
   static Future<void> rollback() async {
-    if (_notAndroidGuard('rollback')) return;
+    if (_unsupportedGuard('rollback')) return;
     try {
       await PatcherChannel.rollback();
     } catch (e, s) {
@@ -264,9 +264,10 @@ class FlutterPatcher {
     }
   }
 
-  /// Current host APK versionCode. Returns null on failure/non-Android.
+  /// Host build number: Android versionCode, iOS CFBundleVersion. Returns null
+  /// on failure or an unsupported platform.
   static Future<int?> get appVersionCode async {
-    if (_notAndroidGuard('appVersionCode')) return null;
+    if (_unsupportedGuard('appVersionCode')) return null;
     try {
       return await PatcherChannel.appVersionCode();
     } catch (_) {
@@ -274,9 +275,10 @@ class FlutterPatcher {
     }
   }
 
-  /// Current device ABI. Useful when your backend routes patches per ABI.
+  /// Current device ABI (`arm64-v8a`, `ios-arm64`). Useful when your backend
+  /// routes patches per ABI.
   static Future<String> get deviceAbi async {
-    if (_notAndroidGuard('deviceAbi')) return '';
+    if (_unsupportedGuard('deviceAbi')) return '';
     try {
       return await PatcherChannel.deviceAbi() ?? '';
     } catch (_) {
@@ -290,7 +292,7 @@ class FlutterPatcher {
   /// loaded by Flutter after the next cold start. Returns null when no patch is
   /// installed.
   static Future<String?> get currentVersion async {
-    if (_notAndroidGuard('currentVersion')) return null;
+    if (_unsupportedGuard('currentVersion')) return null;
     try {
       final v = await PatcherChannel.currentVersion();
       if (v == null || v.isEmpty) return null;
@@ -306,7 +308,7 @@ class FlutterPatcher {
   /// mismatches, and cold-start signature failures. For asset patches, the md5
   /// is the `patch.zip` payload md5.
   static Future<List<BlacklistEntry>> get blacklist async {
-    if (_notAndroidGuard('blacklist')) return const [];
+    if (_unsupportedGuard('blacklist')) return const [];
     try {
       final raw = await PatcherChannel.blacklist();
       if (raw == null) return const [];
@@ -324,7 +326,7 @@ class FlutterPatcher {
   ///
   /// Intended for tests, local debugging, or deliberate operational recovery.
   static Future<void> clearBlacklist() async {
-    if (_notAndroidGuard('clearBlacklist')) return;
+    if (_unsupportedGuard('clearBlacklist')) return;
     try {
       await PatcherChannel.clearBlacklist();
     } catch (e, s) {
@@ -338,7 +340,7 @@ class FlutterPatcher {
   /// happened on the next cold start: version mismatch, md5/signature failure,
   /// crash rollback, loader hook failure, or successful patch load.
   static Future<PatchBootDiagnostic?> get lastBootDiagnostic async {
-    if (_notAndroidGuard('lastBootDiagnostic')) return null;
+    if (_unsupportedGuard('lastBootDiagnostic')) return null;
     try {
       final raw = await PatcherChannel.lastBootDiagnostic();
       if (raw == null) return null;

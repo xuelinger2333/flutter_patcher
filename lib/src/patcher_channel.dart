@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
-/// 与 Android 原生层通信的 MethodChannel 常量 + 薄封装。
+/// 与原生层（Android / iOS）通信的 MethodChannel 常量 + 薄封装。
+/// 方法、错误码和状态的契约见 test/contract/channel.json。
 class PatcherChannel {
   PatcherChannel._();
 
@@ -60,7 +61,7 @@ class PatcherChannel {
     return channel.invokeMethod<Map<dynamic, dynamic>?>('lastBootDiagnostic');
   }
 
-  /// 当前宿主 APK 的 versionCode（API 28+ 用 longVersionCode）。
+  /// 宿主构建号：Android versionCode（API 28+ 用 longVersionCode），iOS CFBundleVersion。
   /// 失败时原生侧返回 -1（INVALID_VERSION_CODE）。
   static Future<int?> appVersionCode() async {
     final v = await channel.invokeMethod<int>('appVersionCode');
