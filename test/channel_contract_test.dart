@@ -91,6 +91,11 @@ void main() {
         ).containsAll(scan(swift, r'static let \w+ = "([A-Z_]+)"')),
         isTrue,
       );
+      final version = RegExp(
+        r'^version: (\S+)',
+        multiLine: true,
+      ).firstMatch(File('pubspec.yaml').readAsStringSync())!.group(1);
+      expect(scan(swift, r'pluginVersion = "([0-9.]+)"'), {version});
     }
   });
 }

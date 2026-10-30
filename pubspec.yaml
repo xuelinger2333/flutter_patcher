@@ -35,3 +35,5 @@ flutter:
       android:
         package: com.flutter_patcher.flutter_patcher
         pluginClass: FlutterPatcherPlugin
+      ios:
+        pluginClass: FlutterPatcherPlugin
