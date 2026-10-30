@@ -1,0 +1,6 @@
+name: fixture_support
+description: Host-side helpers for the device acceptance fixture.
+publish_to: none
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+
