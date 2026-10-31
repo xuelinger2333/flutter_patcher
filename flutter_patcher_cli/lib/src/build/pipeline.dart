@@ -465,12 +465,13 @@ class BuildPipeline {
   StepRunner runner(String work, String Function() phase) {
     var index = 0;
     return (executable, args, {cwd, env}) async {
+      // A real app's first Gradle or Xcode build (dependency downloads) can
+      // take far longer than a cached one.
       final result = await commands.runResult(executable, args,
           cwd: cwd,
           extraEnvironment: env,
-          timeout: const Duration(minutes: 30));
-      await File(p.join(work, '${index++}-${phase()}.log'))
-          .writeAsString('${result.stdout}\n${result.stderr}');
+          timeout: const Duration(hours: 2),
+          logPath: p.join(work, '${index++}-${phase()}.log'));
       require(result.exitCode == 0, 'BUILD_STEP_FAILED',
           '${phase()} failed (exit ${result.exitCode}); evidence: $work');
       return result.stdout;

@@ -25,7 +25,8 @@ class CompilerFixture extends Commands {
       List<int>? inputBytes,
       String code = 'TOOL_FAILED',
       Duration timeout = const Duration(minutes: 15),
-      Map<String, String>? extraEnvironment}) async {
+      Map<String, String>? extraEnvironment,
+      String? logPath}) async {
     invocations.add(args);
     if (args.last == '--help') {
       return oldTool
@@ -56,7 +57,8 @@ class CompilerFixture extends Commands {
       List<int>? inputBytes,
       String code = 'TOOL_FAILED',
       Duration timeout = const Duration(minutes: 15),
-      Map<String, String>? extraEnvironment}) async {
+      Map<String, String>? extraEnvironment,
+      String? logPath}) async {
     invocations.add(args);
     validations++;
     if (validations == 1 || neverPass) {

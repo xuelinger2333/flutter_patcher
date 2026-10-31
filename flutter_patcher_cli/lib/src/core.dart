@@ -183,7 +183,8 @@ class Commands {
       List<int>? inputBytes,
       String code = 'TOOL_FAILED',
       Duration timeout = const Duration(minutes: 15),
-      Map<String, String>? extraEnvironment}) async {
+      Map<String, String>? extraEnvironment,
+      String? logPath}) async {
     Process process;
     try {
       // Windows batch launchers (flutter.bat, aws.cmd) only start through the
@@ -204,20 +205,38 @@ class Commands {
     }
     if (inputBytes != null) process.stdin.add(inputBytes);
     final inputClosed = process.stdin.close();
-    final output = collectOutput(process.stdout);
-    final diagnostic = collectOutput(process.stderr);
+    // A step log is written as output arrives, so a hung or timed-out step
+    // still leaves evidence.
+    final log = logPath == null ? null : File(logPath).openWrite();
+    Stream<List<int>> tee(Stream<List<int>> stream) => log == null
+        ? stream
+        : stream.map((chunk) {
+            log.add(chunk);
+            return chunk;
+          });
+    final output = collectOutput(tee(process.stdout));
+    final diagnostic = collectOutput(tee(process.stderr));
     int result;
     try {
       result = await process.exitCode.timeout(timeout);
       await inputClosed;
     } on TimeoutException {
-      process.kill(
-          Platform.isWindows ? ProcessSignal.sigterm : ProcessSignal.sigkill);
+      if (Platform.isWindows) {
+        // A .bat runs under cmd.exe; killing only cmd.exe would leave dart.exe
+        // and Gradle running, holding the SDK lock and the work directory.
+        await Process.run('taskkill', ['/PID', '${process.pid}', '/T', '/F']);
+      } else {
+        process.kill(ProcessSignal.sigkill);
+      }
+      await Future.wait([output, diagnostic])
+          .timeout(const Duration(seconds: 30), onTimeout: () => const []);
+      await log?.close();
       throw Failure(code,
-          'Timed out running ${p.basename(executable)} ${args.take(2).join(' ')}');
+          'Timed out after ${timeout.inMinutes} min running ${p.basename(executable)} ${args.take(2).join(' ')}${logPath == null ? '' : '; log: $logPath'}');
     }
     final out = await output;
     final err = await diagnostic;
+    await log?.close();
     return CommandResult(result, out, err);
   }
 }
