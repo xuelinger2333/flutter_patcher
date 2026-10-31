@@ -10,6 +10,7 @@ import '../baseline/repository.dart';
 import 'workspace.dart';
 import 'line_endings.dart';
 import 'bootstrap.dart';
+import 'defines.dart';
 import 'runtime_package.dart';
 import 'outputs.dart';
 import 'host_policy.dart';
@@ -165,6 +166,7 @@ class BuildPipeline {
                 '--no-aot',
                 '--no-tfa',
                 '--no-link-platform',
+                ...defineArgs(releaseDefines(request.flavor)),
                 if (virtual != null) ...virtual.compilerArgs,
                 '--packages',
                 virtual?.packagesUri ?? packages,
@@ -191,6 +193,7 @@ class BuildPipeline {
               '--no-aot',
               '--no-tfa',
               linked ? '--link-platform' : '--no-link-platform',
+              ...defineArgs(releaseDefines(request.flavor)),
               '--packages',
               packages,
               if (iface != null) ...['--dynamic-interface', iface],

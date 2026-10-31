@@ -5,6 +5,7 @@ import 'package:yaml/yaml.dart';
 import '../core.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
+import '../build/defines.dart';
 import '../build/virtual_paths.dart';
 import '../build/workspace.dart';
 import '../sdk/artifacts.dart';
@@ -411,6 +412,8 @@ class PatchPipeline {
           'tier': tier,
           // Lets the whole tier drop Flutter's code for other platforms.
           'target_os': req.platform,
+          if (usage.contains('environment_defines'))
+            'environment_defines': releaseDefines(req.flavor),
           'emit': emit,
           'seq': req.seq,
           'fingerprint': fingerprint,
