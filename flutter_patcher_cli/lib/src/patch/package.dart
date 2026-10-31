@@ -81,7 +81,9 @@ Future<Map<String, Object?>> packPatch(
     archive.addFile(ArchiveFile(entry.key, entry.value.length, entry.value)
       ..compression = CompressionType.none);
   }
-  final payload = ZipEncoder().encode(archive, level: 0);
+  // A fixed entry time keeps the signed payload reproducible.
+  final payload =
+      ZipEncoder().encode(archive, level: 0, modified: DateTime.utc(1980));
   final zip = ZipDecoder().decodeBytes(payload);
   require(
       zip.length == 2 + extraEntries.length &&

@@ -5,6 +5,7 @@ import 'package:yaml/yaml.dart';
 import '../core.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
+import '../build/virtual_paths.dart';
 import '../build/workspace.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/package_inputs.dart';
@@ -385,6 +386,12 @@ class PatchPipeline {
               if ((row['library'] as String).startsWith('dart:')) row
           ]
       });
+      // As for the baseline kernel: virtual source URIs keep the run's work
+      // path (and the developer's directories) out of the shipped module.
+      final virtual = usage.contains('filesystem_roots')
+          ? await VirtualPackages.write(remap['packages'] as String,
+              [p.absolute(work), p.absolute(cache)])
+          : null;
       var tier = 'lean';
       Future<Map<String, dynamic>> compile(bool emit) async {
         phase = '$tier-${emit ? 'emit' : 'check'}';
@@ -408,7 +415,11 @@ class PatchPipeline {
           'seq': req.seq,
           'fingerprint': fingerprint,
           'entry': 'package:${names[app]}/__patch_entry.dart',
-          'packages': remap['packages'],
+          'packages': virtual?.packagesUri ?? remap['packages'],
+          if (virtual != null) ...{
+            'filesystem_scheme': virtualScheme,
+            'filesystem_roots': virtual.roots,
+          },
           'baseline': p.join(baseline, 'app.dill'),
           'interface': tier == 'whole'
               ? wholeInterface

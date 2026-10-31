@@ -62,7 +62,7 @@ List<int> v2Package(
       add('assets/${e.key}', e.value);
     }
   }
-  return ZipEncoder().encode(package);
+  return ZipEncoder().encode(package, modified: DateTime.utc(1980));
 }
 
 /// An SO patch: the rebuilt libapp.so plus every flutter asset whose bytes
