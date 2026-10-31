@@ -178,9 +178,12 @@ Map<String, dynamic> resourceReceipt(Archive archive) {
     if (!f.isFile || !f.name.startsWith('assets/flutter_assets/')) continue;
     final key = f.name.substring('assets/flutter_assets/'.length);
     assetKey(key);
-    final bytes = f.content as List<int>;
+    final raw = f.content as List<int>;
     require(
         !files.containsKey(key), 'PATCH_ASSET_INVALID', 'Duplicate APK asset');
+    // NOTICES.Z is gzip, whose header records the building OS (zlib OS_CODE):
+    // identify it by the license text, so hosts agree.
+    final bytes = key == 'NOTICES.Z' ? gzip.decode(raw) : raw;
     files[key] = {
       'sha256': sha256.convert(bytes).toString(),
       'length': bytes.length

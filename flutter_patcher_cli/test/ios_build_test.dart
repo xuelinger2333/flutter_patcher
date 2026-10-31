@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher_cli/src/core.dart';
@@ -70,6 +71,17 @@ void main() {
       ..setUint32(20, bytes.length);
     expect(machoUuid([...fat.buffer.asUint8List(), ...bytes]),
         List.generate(16, (i) => i + 1));
+  });
+
+  test('NOTICES.Z is identified by its text, not the gzip OS byte', () {
+    Map receipt(int os) {
+      final bytes = gzip.encode(utf8.encode('licenses'))..[9] = os;
+      return resourceReceipt(Archive()
+        ..addFile(ArchiveFile(
+            'assets/flutter_assets/NOTICES.Z', bytes.length, bytes)));
+    }
+
+    expect(receipt(0x0a)['files'], receipt(0x03)['files']);
   });
 
   test('iOS flutter_assets give the same resource receipt as an APK', () async {
