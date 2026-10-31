@@ -18,8 +18,12 @@ void main() {
 
   Future<Map<String, String>> rewrite(List<Map<String, String>> rows) async {
     final config = p.join(work, 'project', '.dart_tool', 'package_config.json');
-    await File(config)
-        .writeAsString(jsonEncode({'configVersion': 2, 'packages': rows}));
+    await File(config).writeAsString(jsonEncode({
+      'configVersion': 2,
+      'packages': rows,
+      'flutterRoot': Uri.directory(p.join(cache, 'flutter')).toString(),
+      'pubCache': Uri.directory(p.join(cache, 'pub-cache')).toString(),
+    }));
     final virtual = await VirtualPackages.write(config, [work, cache]);
     expect(virtual.packagesUri,
         'org-dartlang-root:///package_config.virtual.json');
@@ -34,6 +38,8 @@ void main() {
     final written = jsonDecode(
         await File(p.join(work, 'package_config.virtual.json'))
             .readAsString()) as Map;
+    // pub's absolute host paths never reach archives.
+    expect(written.keys, unorderedEquals(['configVersion', 'packages']));
     return {
       for (final row in written['packages'] as List)
         row['name'] as String: row['rootUri'] as String

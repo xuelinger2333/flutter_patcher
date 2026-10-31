@@ -41,8 +41,12 @@ class VirtualPackages {
       final location = source.uri.resolve(row['rootUri'] as String);
       rows.add({...row, 'rootUri': _virtual(location, roots) ?? '$location'});
     }
-    await File(p.join(roots.first, _name))
-        .writeAsString(jsonEncode({...config, 'packages': rows}));
+    // pub's flutterRoot and pubCache are this host's absolute paths (with the
+    // user name); the compilers never read them.
+    final portable = {...config, 'packages': rows}
+      ..remove('flutterRoot')
+      ..remove('pubCache');
+    await File(p.join(roots.first, _name)).writeAsString(jsonEncode(portable));
     return VirtualPackages._(roots, '$virtualScheme:///$_name');
   }
 
