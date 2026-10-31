@@ -9,6 +9,7 @@ import '../build/workspace.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/package_inputs.dart';
 import 'sources.dart';
+import 'hooks.dart';
 import 'package.dart';
 import 'plugins.dart';
 import 'resources.dart';
@@ -305,22 +306,25 @@ class PatchPipeline {
       }
       phase = 'resources';
       final bundle = p.join(work, 'flutter_assets');
-      await commands.run(
-          sdk.host.flutterLauncher(managed),
-          [
-            '--suppress-analytics',
-            'build',
-            'bundle',
-            '--release',
-            '--no-pub',
-            '--target-platform',
-            req.platform == 'ios' ? 'ios' : 'android-arm64',
-            '--target',
-            req.target,
-            '--asset-dir',
-            bundle,
-          ],
-          cwd: project);
+      await withoutBuildHooks(
+          config,
+          p.join(work, 'no-hooks'),
+          () => commands.run(
+              sdk.host.flutterLauncher(managed),
+              [
+                '--suppress-analytics',
+                'build',
+                'bundle',
+                '--release',
+                '--no-pub',
+                '--target-platform',
+                req.platform == 'ios' ? 'ios' : 'android-arm64',
+                '--target',
+                req.target,
+                '--asset-dir',
+                bundle,
+              ],
+              cwd: project));
       final payload = PatchResources(bundle, work, commands, managed);
       final oldResources = receipt['resources'];
       require(oldResources is Map, 'PATCH_BASELINE_INCOMPATIBLE',
