@@ -10,6 +10,7 @@ import '../sdk/artifacts.dart';
 import '../sdk/package_inputs.dart';
 import 'sources.dart';
 import 'package.dart';
+import 'plugins.dart';
 import 'resources.dart';
 import 'tier_policy.dart';
 import 'so_pipeline.dart';
@@ -100,10 +101,23 @@ Object? _nativeBuildInputs(Object? entry, String platform) => entry is! Map
 /// The interpreter cannot make FFI calls in an AOT runtime, so a module that
 /// contains one (tools report `checks.ffi`) would abort the app. Older tools
 /// do not report the check.
-void rejectFfi(Map<String, dynamic> report) {
+void rejectFfi(Map<String, dynamic> report,
+    {Map<String, String> registeredPlugins = const {}}) {
   final sites = (report['checks'] as Map?)?['ffi'];
   if (sites is! List || sites.isEmpty) return;
   final first = sites.first as Map;
+  final file = '${first['file']}';
+  for (final MapEntry(key: name, value: root) in registeredPlugins.entries) {
+    if (file.startsWith('package:$name/') || file.startsWith(root)) {
+      throw Failure(
+          'PATCH_FFI_UNSUPPORTED',
+          'This patch needs the whole tier, which carries its own copy of every '
+              'plugin and must register them, but the $name implementation uses '
+              'FFI (${first['message']} at $file:${first['line']}), which the '
+              'interpreter cannot run. Keep the change within the lean tier (no '
+              'dependency changes) or ship a new host release.');
+    }
+  }
   throw Failure(
       'PATCH_FFI_UNSUPPORTED',
       'Patched code would run FFI in the interpreter (${first['message']} at '
@@ -339,6 +353,22 @@ class PatchPipeline {
         await helper.copy(generated);
       }
       final entry = p.join(work, 'module', app, '__patch_entry.dart');
+      // Whole-tier modules carry their own plugin copies; the host's Dart
+      // plugin registrant only set up the host's.
+      final pluginsLibrary =
+          p.join(work, 'module', app, '__patch_plugins.dart');
+      require(!await File(pluginsLibrary).exists(), 'PATCH_SOURCE_INVALID',
+          'Application uses reserved __patch_plugins.dart');
+      final registrant = File(p.join(
+          project, '.dart_tool/flutter_build/dart_plugin_registrant.dart'));
+      final registrations = await registrant.exists()
+          ? platformRegistrations(await registrant.readAsString(), req.platform)
+          : <PluginRegistration>[];
+      final registeredPlugins = {
+        for (final r in registrations)
+          pluginPackage(r):
+              '${roots[pluginPackage(r)] ?? 'package:${pluginPackage(r)}/'}'
+      };
       final interfaceYaml = loadYaml(
           await File(p.join(baseline, 'dynamic_interface.yaml'))
               .readAsString()) as Map;
@@ -354,13 +384,22 @@ class PatchPipeline {
       var tier = 'lean';
       Future<Map<String, dynamic>> compile(bool emit) async {
         phase = '$tier-${emit ? 'emit' : 'check'}';
+        final plugins = tier == 'whole' && registrations.isNotEmpty;
+        if (plugins) {
+          await File(pluginsLibrary).writeAsString(pluginRegistrantSource(
+              names[app]!, req.target.substring(4), registrations));
+        } else if (await File(pluginsLibrary).exists()) {
+          await File(pluginsLibrary).delete();
+        }
         await File(entry).writeAsString(patchEntry(
             names[app]!, req.target.substring(4), req.seq, fingerprint, tier,
-            resources: resources));
+            resources: resources, plugins: plugins));
         final input = p.join(work, '$phase-request.json'),
             output = p.join(work, '$phase-report.json');
         await writeObject(input, {
           'tier': tier,
+          // Lets the whole tier drop Flutter's code for other platforms.
+          'target_os': req.platform,
           'emit': emit,
           'seq': req.seq,
           'fingerprint': fingerprint,
@@ -410,7 +449,7 @@ class PatchPipeline {
           resourceUpgrade: resourceUpgrade);
       if (tier == 'whole') {
         final whole = await compile(false);
-        rejectFfi(whole);
+        rejectFfi(whole, registeredPlugins: registeredPlugins);
         require(whole['status'] == 'checked', 'PATCH_UNSAFE',
             'Whole-tier checks failed; evidence: $work');
       }
