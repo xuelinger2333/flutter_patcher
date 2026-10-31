@@ -518,7 +518,11 @@ class BuildPipeline {
           'build',
           'apk',
           '--release',
-          '--no-pub',
+          // Not --no-pub: only the pub step regenerates the native plugin
+          // registrants for release, which leaves out dev_dependency plugins
+          // (e.g. integration_test); a stale debug registrant references them
+          // and the release compile fails. pub get --enforce-lockfile already
+          // ran, so this check resolves nothing.
           '--target-platform',
           'android-arm64',
           '--target',
