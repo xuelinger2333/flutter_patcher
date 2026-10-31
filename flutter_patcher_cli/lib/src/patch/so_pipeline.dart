@@ -34,12 +34,10 @@ extension SoPatch on PatchPipeline {
         signingKey(req.privateKey, expectedPublic: receipt['public_key'] as String);
     final policy = HostPolicy.parse(
         await File(p.join(resolved.releaseRoot, 'host_policy.json')).readAsString());
-    final android = locateAndroidSdk(sdk.host);
-    require(android != null, 'ANDROID_SDK_MISSING',
-        'Set ANDROID_HOME to an initialized Android SDK.');
+    final android = await resolveAndroidSdk(commands, sdk.host, sdk.flutter);
     checkJavaHome(sdk.host);
     final builder = BuildPipeline(commands, sdk, managed, tool, cache,
-        await selectAapt(android!, sdk.host), engine!, baselines);
+        await selectAapt(android, sdk.host), engine!, baselines);
     var phase = 'sources';
     final run = builder.runner(work, () => phase);
     final workspace = BuildWorkspace(work);

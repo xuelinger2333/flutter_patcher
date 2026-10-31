@@ -62,14 +62,6 @@ Future<int> buildCommand(ArgResults args) async {
         Uri.parse(required('baseline-store')), commands,
         offline: offline);
     await baselineStore.probe();
-    var aapt = '';
-    if (platform == 'android') {
-      final android = locateAndroidSdk(host);
-      require(android != null, 'ANDROID_SDK_MISSING',
-          'Set ANDROID_HOME to an initialized Android SDK.');
-      checkJavaHome(host);
-      aapt = await selectAapt(android!, host);
-    }
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);
     await lock.lock(FileLock.blockingExclusive);
@@ -79,14 +71,20 @@ Future<int> buildCommand(ArgResults args) async {
         commands);
     require(sdk.root != p.join(cache, 'flutter', sdk.version), 'CONFIG_INVALID',
         'Select the stock Flutter SDK.');
+    var aapt = '';
+    if (platform == 'android') {
+      final android = await resolveAndroidSdk(commands, host, sdk.flutter);
+      checkJavaHome(host);
+      aapt = await selectAapt(android, host);
+    }
     final artifacts = ArtifactStore(
         cache,
         Uri.parse(args['artifacts-url'] as String),
         Uri.parse(args['supported-versions-url'] as String),
         Downloads(offline: offline));
     await artifacts.checkSupport(sdk.version);
-    final engine = await artifacts
-        .obtain(platform == 'ios' ? 'engine-ios' : 'engine', sdk);
+    final engine = await artifacts.obtain(
+        platform == 'ios' ? 'engine-ios' : 'engine', sdk);
     await artifacts.obtain('tools', sdk,
         refresh: args['refresh-tools'] == true);
     final environment = EnvironmentBuilder(cache, commands, offline: offline);
@@ -94,15 +92,15 @@ Future<int> buildCommand(ArgResults args) async {
         ? environment.prepare(sdk, artifacts, ios: engine)
         : environment.prepare(sdk, artifacts, android: engine));
     final pipeline = BuildPipeline(
-            commands,
-            sdk,
-            managed,
-            artifacts.file(
-                sdk, 'tools', 'flutter_patcher_tools-${sdk.version}.dill'),
-            cache,
-            aapt,
-            engine,
-            BaselineRepository(p.join(cache, 'baselines'), baselineStore));
+        commands,
+        sdk,
+        managed,
+        artifacts.file(
+            sdk, 'tools', 'flutter_patcher_tools-${sdk.version}.dill'),
+        cache,
+        aapt,
+        engine,
+        BaselineRepository(p.join(cache, 'baselines'), baselineStore));
     final result = request.hostPolicy.fields['strategy'] == 'so'
         ? await pipeline.buildSo(request)
         : await pipeline.build(request);

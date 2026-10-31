@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../core.dart';
@@ -27,6 +28,32 @@ String? locateAndroidSdk(HostIdentity host,
     }
   }
   return null;
+}
+
+/// The Android SDK the way Flutter itself resolves it: `flutter config
+/// --android-sdk` first, then [locateAndroidSdk]. Gradle builds use Flutter's
+/// choice, so the CLI must not reject a host where only the config is set.
+Future<String> resolveAndroidSdk(
+    Commands commands, HostIdentity host, String flutterLauncher) async {
+  String? configured;
+  final result = await commands.runResult(
+      flutterLauncher, ['--suppress-analytics', 'config', '--machine']);
+  final start = result.stdout.indexOf('{');
+  if (result.exitCode == 0 && start >= 0) {
+    try {
+      configured = (jsonDecode(result.stdout.substring(start))
+          as Map)['android-sdk'] as String?;
+    } on FormatException {
+      configured = null;
+    }
+  }
+  final sdk = configured != null &&
+          Directory(p.join(configured, 'build-tools')).existsSync()
+      ? configured
+      : locateAndroidSdk(host);
+  require(sdk != null, 'ANDROID_SDK_MISSING',
+      'No Android SDK: select one with flutter config --android-sdk or ANDROID_HOME.');
+  return sdk!;
 }
 
 /// Numeric build-tools ordering: `34.0.0` sorts after `9.0.0`, and
