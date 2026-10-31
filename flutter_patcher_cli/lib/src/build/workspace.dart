@@ -28,6 +28,25 @@ class BuildWorkspace {
     'ephemeral',
     '.DS_Store'
   };
+  /// Where Flutter, Gradle and CocoaPods put each excluded name; elsewhere
+  /// (e.g. lib/features/build/) the name is an ordinary source directory.
+  static const _placed = {
+    'build': {'', 'android', 'android/app', 'ios', 'macos', 'linux', 'windows'},
+    'Pods': {'ios', 'macos'},
+    '.symlinks': {'ios', 'macos'},
+    'ephemeral': {'ios/Flutter', 'macos/Flutter', 'linux/flutter', 'windows/flutter'},
+  };
+
+  /// Whether [relative] (a POSIX path from the package root) is excluded.
+  static bool skipped(String relative) {
+    final name = p.posix.basename(relative);
+    if (!excluded.contains(name)) return false;
+    final placed = _placed[name];
+    if (placed == null) return true;
+    final parent = p.posix.dirname(relative);
+    return placed.contains(parent == '.' ? '' : parent);
+  }
+
   Future<String> copyPackage(String original,
       {bool application = false}) async {
     original = p.normalize(p.absolute(original));
@@ -41,10 +60,15 @@ class BuildWorkspace {
       await rejectLinks(from);
       await Directory(to).create(recursive: true);
       await for (final entry in Directory(from).list(followLinks: false)) {
-        if (excluded.contains(p.basename(entry.path))) continue;
+        final relative =
+            p.relative(entry.path, from: original).replaceAll('\\', '/');
+        if (skipped(relative)) continue;
         if (entry is Directory) {
           rejectCaseVariant(
-              p.basename(entry.path), excluded, 'BUILD_PROJECT_INVALID');
+              p.basename(entry.path),
+              excluded.where((name) => skipped(
+                  p.posix.join(p.posix.dirname(relative), name))),
+              'BUILD_PROJECT_INVALID');
         }
         final target = p.join(to, p.basename(entry.path));
         if (entry is Directory) {

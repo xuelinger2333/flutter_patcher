@@ -13,7 +13,9 @@ Future<List<String>> crlfDartSources(String root) async {
   Future<void> visit(Directory directory) async {
     await for (final entry in directory.list(followLinks: false)) {
       final name = p.basename(entry.path);
-      if (entry is Directory && !BuildWorkspace.excluded.contains(name)) {
+      if (entry is Directory &&
+          !BuildWorkspace.skipped(
+              p.relative(entry.path, from: root).replaceAll('\\', '/'))) {
         await visit(entry);
       } else if (entry is File && name.endsWith('.dart')) {
         final bytes = await entry.readAsBytes();
