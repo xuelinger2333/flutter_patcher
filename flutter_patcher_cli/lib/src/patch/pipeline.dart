@@ -277,6 +277,14 @@ class PatchPipeline {
           if (name != app) dependencyChanged = true;
         }
       }
+      // The generated host.dart imports the host's entry file: a different
+      // --target is a mistake, not a dependency change for the whole tier to
+      // carry (it would ship the other entry's main).
+      require(
+          !changed.contains('package:dynamic_modules/host.dart'),
+          'PATCH_TARGET_MISMATCH',
+          'The host was built from a different entry file than ${req.target}; '
+              'patch with the --target the host was built with.');
       for (final name in own) {
         final root = roots[name] as Uri?;
         if (root == null) continue;
