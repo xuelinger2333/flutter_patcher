@@ -12,8 +12,10 @@ class BuildWorkspace {
   int bytes = 0;
   BuildWorkspace(this.root);
   /// Not build inputs: VCS, caches, outputs, per-user IDE state (Xcode
-  /// rewrites xcuserdata while the project is open) and CocoaPods output that
-  /// Flutter regenerates (ios/.symlinks and Pods hold symbolic links).
+  /// rewrites xcuserdata while the project is open), CocoaPods output that
+  /// Flutter regenerates (ios/.symlinks and Pods hold symbolic links) and
+  /// Flutter's per-platform `ephemeral` directories (desktop ones hold
+  /// .plugin_symlinks; all are rewritten on pub get and build).
   static const excluded = {
     '.git',
     '.dart_tool',
@@ -23,6 +25,7 @@ class BuildWorkspace {
     'xcuserdata',
     '.symlinks',
     'Pods',
+    'ephemeral',
     '.DS_Store'
   };
   Future<String> copyPackage(String original,

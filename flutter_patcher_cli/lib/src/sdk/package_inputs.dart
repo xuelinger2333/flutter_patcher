@@ -66,7 +66,9 @@ Future<Map<String, dynamic>> packageInputs(String config,
             '.dart_tool',
             '.git',
             'local.properties',
-            'GeneratedPluginRegistrant.java'
+            'GeneratedPluginRegistrant.java',
+            // Flutter-generated per run (absolute paths, desktop plugin links).
+            'ephemeral'
           ].contains(p.basename(file.path))) {
             continue;
           }
