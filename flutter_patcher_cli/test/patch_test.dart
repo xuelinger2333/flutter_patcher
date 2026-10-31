@@ -95,6 +95,10 @@ void main() {
     final after = await packageInputs(config);
     expect(jsonEncode(beforeNative), isNot(jsonEncode(after)));
     expect(after['plugin']['native'], true);
+    expect(after['plugin'].containsKey('dart_files'), false);
+    await File(p.join(root, 'lib/src/unused.dart')).create(recursive: true);
+    final app = await packageInputs(config, application: 'plugin');
+    expect((app['plugin']['dart_files'] as Map).keys, ['src/unused.dart']);
   });
   test(
       'real Ed25519 envelope verifies and detects tampering without a private file',

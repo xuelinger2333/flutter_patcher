@@ -111,6 +111,45 @@ void main() {
         .writeAsBytes(AssetCodec.encode({'b': manifest['b']}));
     await expectLater(bad.collect(baseline, []), throwsA(isA<Failure>()));
   });
+  test('fonts the host already has are not carried', () async {
+    final dir = await Directory.systemTemp.createTemp('resources-host-fonts-');
+    addTearDown(() => dir.delete(recursive: true));
+    final files = {
+      'fonts/NotoSansSC.otf': 'text font',
+      'fonts/MaterialIcons-Regular.otf': 'icons',
+    };
+    for (final e in files.entries) {
+      await File(p.join(dir.path, e.key)).create(recursive: true);
+      await File(p.join(dir.path, e.key)).writeAsString(e.value);
+    }
+    await File(p.join(dir.path, 'FontManifest.json')).writeAsString(jsonEncode([
+      {
+        'family': 'NotoSansSC',
+        'fonts': [
+          {'asset': 'fonts/NotoSansSC.otf'}
+        ]
+      },
+      {
+        'family': 'MaterialIcons',
+        'fonts': [
+          {'asset': 'fonts/MaterialIcons-Regular.otf'}
+        ]
+      },
+    ]));
+    final patch =
+        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
+    await patch.collectFonts([
+      {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000}
+    ], [], hostIcons: [
+      {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000},
+      {'fontFamily': 'MaterialIcons', 'codePoint': 0xe001},
+    ], hostFiles: {
+      'fonts/NotoSansSC.otf': {
+        'sha256': sha256.convert(utf8.encode('text font')).toString()
+      }
+    });
+    expect(patch.fonts, isEmpty);
+  });
   test('dynamic or missing icon fonts cannot silently disappear', () async {
     final dir = await Directory.systemTemp.createTemp('resources-fonts-');
     addTearDown(() => dir.delete(recursive: true));

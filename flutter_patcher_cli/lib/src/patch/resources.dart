@@ -279,8 +279,15 @@ class PatchResources {
     }
   }
 
-  Future<void> collectFonts(
-      List<dynamic> icons, List<dynamic> dynamicIcons) async {
+  /// Fonts the patch must carry. [hostIcons] (lean tier) are the icons the
+  /// host program references: the host ships its icon font tree-shaken to
+  /// them, and a patch font replaces the whole family, so a subset keeps them
+  /// too, and none ships when the host's already covers the module. A font
+  /// whose bytes equal the host's ([hostFiles], the resource inventory) is
+  /// already loaded by the host and is not carried.
+  Future<void> collectFonts(List<dynamic> icons, List<dynamic> dynamicIcons,
+      {List<dynamic>? hostIcons,
+      Map<dynamic, dynamic> hostFiles = const {}}) async {
     require(dynamicIcons.isEmpty, 'PATCH_DYNAMIC_ICON',
         'Non-constant IconData cannot be subset safely');
     final fontFile = File(p.join(bundle, 'FontManifest.json'));
@@ -312,6 +319,15 @@ class PatchResources {
           package == null ? family as String : 'packages/$package/$family';
       groups.putIfAbsent(name, () => {}).add(point as int);
     }
+    final hostGroups = <String, Set<int>>{};
+    for (final raw in hostIcons ?? const []) {
+      final family = raw['fontFamily'], package = raw['fontPackage'];
+      if (family is! String || raw['codePoint'] is! int) continue;
+      hostGroups
+          .putIfAbsent(
+              package == null ? family : 'packages/$package/$family', () => {})
+          .add(raw['codePoint'] as int);
+    }
     final found = <String>{};
     for (final definition in definitions) {
       final family = definition['family'] as String,
@@ -334,9 +350,18 @@ class PatchResources {
       found.add(family);
       require(points == null || sources.length == 1, 'FONT_SUBSET_FAILED',
           'Ambiguous icon font family: $family');
+      final shipped = hostGroups[family];
+      if (points != null && hostIcons != null) {
+        if (shipped != null && shipped.containsAll(points)) continue;
+        points.addAll(shipped ?? const <int>{});
+      }
       for (var i = 0; i < sources.length; i++) {
         final source = sources[i]['asset'] as String;
         var bytes = await read(source);
+        if (points == null &&
+            sha256.convert(bytes).toString() == hostFiles[source]?['sha256']) {
+          continue;
+        }
         if (points != null) {
           final output = p.join(work, 'font-${fonts.length}.otf');
           final host = HostIdentity.current();

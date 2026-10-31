@@ -285,15 +285,28 @@ class PatchPipeline {
           'PATCH_TARGET_MISMATCH',
           'The host was built from a different entry file than ${req.target}; '
               'patch with the --target the host was built with.');
+      // Libraries the host never compiled are new only if they changed since
+      // the release (older baselines did not record them: all count).
+      final released = oldState is Map && oldState[app] is Map
+          ? (oldState[app] as Map)['dart_files'] as Map?
+          : null;
       for (final name in own) {
         final root = roots[name] as Uri?;
         if (root == null) continue;
         await for (final entity in Directory.fromUri(root)
             .list(recursive: true, followLinks: false)) {
           if (entity is File && entity.path.endsWith('.dart')) {
-            final identity =
-                'package:$name/${p.relative(entity.path, from: root.toFilePath()).replaceAll('\\', '/')}';
-            if (!hashes.containsKey(identity)) changed.add(identity);
+            final relative = p
+                .relative(entity.path, from: root.toFilePath())
+                .replaceAll('\\', '/');
+            final identity = 'package:$name/$relative';
+            if (hashes.containsKey(identity)) continue;
+            if (name == app &&
+                released != null &&
+                released[relative] == await hashFile(entity.path)) {
+              continue;
+            }
+            changed.add(identity);
           }
         }
       }
@@ -485,7 +498,9 @@ class PatchPipeline {
       require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',
           'Resource transform did not run');
       await payload.collectFonts(finalReport['fonts'] as List? ?? [],
-          finalReport['dynamic_fonts'] as List? ?? []);
+          finalReport['dynamic_fonts'] as List? ?? [],
+          hostIcons: finalReport['host_icons'] as List?,
+          hostFiles: oldResources['files'] as Map? ?? const {});
       // Font-only changes are meaningful even when all Dart hashes match.
       if (payload.fonts.isNotEmpty) {
         final current = File(p.join(bundle, 'FontManifest.json'));

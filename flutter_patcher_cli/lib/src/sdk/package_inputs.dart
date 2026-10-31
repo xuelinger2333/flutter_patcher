@@ -100,12 +100,28 @@ Future<Map<String, dynamic>> packageInputs(String config,
 
       await visit(dir);
     }
+    // Every application library, compiled into the host or not: a patch then
+    // tells a library new since the release from one the host never imported.
+    final dart = <String, String>{};
+    final lib = Directory.fromUri(root.resolve('lib/'));
+    if (row['name'] == application && await lib.exists()) {
+      await for (final file in lib.list(recursive: true, followLinks: false)) {
+        if (file is File && file.path.endsWith('.dart')) {
+          dart[p.relative(file.path, from: lib.path).replaceAll('\\', '/')] =
+              await hashFile(file.path);
+        }
+      }
+    }
     inputs[row['name'] as String] = {
       'pubspec_sha256':
           sha256.convert(utf8.encode(jsonEncode(portable))).toString(),
       'version': '${yaml['version']}',
       'native': native,
-      'native_files': {for (final k in files.keys.toList()..sort()) k: files[k]}
+      'native_files': {
+        for (final k in files.keys.toList()..sort()) k: files[k]
+      },
+      if (row['name'] == application)
+        'dart_files': {for (final k in dart.keys.toList()..sort()) k: dart[k]}
     };
   }
   return inputs;
