@@ -201,13 +201,47 @@ Future<void> writeSplit(String flat, SplitBaseline split, String compileDir,
   }
 }
 
+/// Compile objects already verified in this process, by directory and the
+/// size and modification time of every file in it: resolving a patch checks
+/// the same object several times, and each full check hashes and parses
+/// over 100 MB. A replaced or modified file changes the signature.
+final _verifiedCompile = <String, Map<String, dynamic>>{};
+
+Future<String> _signature(String root) async {
+  final rows = <String>[];
+  await for (final entity
+      in Directory(root).list(recursive: true, followLinks: false)) {
+    final stat = await entity.stat();
+    rows.add('${p.relative(entity.path, from: root)}\t${stat.type}\t'
+        '${stat.size}\t${stat.modified.microsecondsSinceEpoch}');
+  }
+  rows.sort();
+  return '${p.canonicalize(root)}\n${rows.join('\n')}';
+}
+
 Future<Map<String, dynamic>> verifyCompile(String root,
     {String? expected, String? sdkRoot}) async {
   await rejectLinks(root);
+  final signature = await _signature(root);
+  var computed = _verifiedCompile[signature];
+  if (computed == null) {
+    computed = await _verifyCompile(root);
+    _verifiedCompile[signature] = computed;
+  }
+  require(
+      expected == null || computed['fingerprint'] == expected,
+      'BASELINE_FINGERPRINT_MISMATCH',
+      'Requested fingerprint differs from baseline.');
+  if (sdkRoot != null) await verifyPlatform(computed, sdkRoot);
+  return computed;
+}
+
+Future<Map<String, dynamic>> _verifyCompile(String root) async {
   final m = await baselineObject(p.join(root, 'compile.manifest.json'));
   valid(m['schema'] == 5 && m['kind'] == 'compile', 'Not a compile object.');
   validateSdkIdentity(m);
-  require(!m.containsKey('framework_partition_sha256'),
+  require(
+      !m.containsKey('framework_partition_sha256'),
       'BASELINE_SCHEMA_UNSUPPORTED',
       'Framework reuse compile objects are no longer supported; rebuild the host.');
   final policyHash = m['host_policy_sha256'] as String?;
@@ -255,9 +289,6 @@ Future<Map<String, dynamic>> verifyCompile(String root,
   };
   valid(canonical(m) == canonical(computed),
       'Compile manifest/files do not agree.');
-  require(expected == null || id == expected, 'BASELINE_FINGERPRINT_MISMATCH',
-      'Requested fingerprint differs from baseline.');
-  if (sdkRoot != null) await verifyPlatform(computed, sdkRoot);
   return computed;
 }
 

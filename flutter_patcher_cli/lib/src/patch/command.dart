@@ -70,13 +70,16 @@ Future<int> patchCommand(ArgResults args) async {
         Uri.parse(args['artifacts-url'] as String),
         Uri.parse(args['supported-versions-url'] as String),
         Downloads(offline: offline));
+    trace('identify sdk');
     await store.checkSupport(sdk.version);
     // The Android engine serves only SO rebuilds; an iOS patch needs none.
     final engine =
         platform == 'android' ? await store.obtain('engine', sdk) : null;
     await store.obtain('tools', sdk, refresh: args['refresh-tools'] == true);
+    trace('artifacts');
     final managed = await EnvironmentBuilder(cache, commands, offline: offline)
         .prepare(sdk, store, android: engine);
+    trace('managed sdk');
     final baselines = BaselineRepository(
         p.join(cache, 'baselines'),
         offline

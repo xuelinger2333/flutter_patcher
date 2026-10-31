@@ -222,6 +222,7 @@ class PatchPipeline {
           'Release public key is missing');
       final key = signingKey(req.privateKey,
           expectedPublic: receipt['public_key'] as String);
+      trace('baseline');
       final usage = await commands.run(sdk.dart, [tool, '--help']);
       require(usage.contains('compile-patch'), 'TOOLS_VERSION_UNSUPPORTED',
           'Tools with compile-patch support are required; update the tools release');
@@ -229,6 +230,7 @@ class PatchPipeline {
       final workspace = BuildWorkspace(work);
       final project =
           await workspace.copyPackage(req.project, application: true);
+      trace('copied project');
       await commands.run(
           sdk.host.flutterLauncher(managed),
           [
@@ -249,6 +251,7 @@ class PatchPipeline {
       await installRuntimePackage(config, app, req.target.substring(4));
       final roots = await packageRoots(config);
       final packageState = await packageInputs(config, application: app);
+      trace('package inputs');
       final oldState = receipt['package_inputs'];
       require(oldState is Map, 'PATCH_BASELINE_INCOMPATIBLE',
           'Baseline lacks dependency/native provenance; rebuild host');
@@ -327,58 +330,11 @@ class PatchPipeline {
             'PATCH_NATIVE_CHANGE',
             'Native plugin changes require a new host release: $name');
       }
-      phase = 'resources';
-      final bundle = p.join(work, 'flutter_assets');
-      await withoutBuildHooks(
-          config,
-          p.join(work, 'no-hooks'),
-          () => commands.run(
-              sdk.host.flutterLauncher(managed),
-              [
-                '--suppress-analytics',
-                'build',
-                'bundle',
-                '--release',
-                '--no-pub',
-                '--target-platform',
-                req.platform == 'ios' ? 'ios' : 'android-arm64',
-                '--target',
-                req.target,
-                '--asset-dir',
-                bundle,
-              ],
-              cwd: project));
-      final payload = PatchResources(bundle, work, commands, managed);
-      final oldResources = receipt['resources'];
-      require(oldResources is Map, 'PATCH_BASELINE_INCOMPATIBLE',
-          'Baseline lacks resource inventory; rebuild host');
-      await payload.collect(
-          oldResources is Map
-              ? Map<String, dynamic>.from(oldResources)
-              : {
-                  'schema': 1,
-                  'files': <String, dynamic>{},
-                  'manifest': <String, dynamic>{}
-                },
-          req.assets);
-      if (payload.assets.isNotEmpty) changed.add('resources');
-      final resources = payload.assets.isNotEmpty;
+      trace('source changes');
+      // Before the bundle build: it shadows hook packages in this config.
       final remap =
           await remapSources(config, p.join(work, 'module'), own, req.seq);
       final names = Map<String, String>.from(remap['names'] as Map);
-      if (resources) {
-        final plugin = roots['flutter_patcher'] as Uri?;
-        require(plugin != null, 'PATCH_OVERLAY_UNAVAILABLE',
-            'Resource patches require the flutter_patcher dependency');
-        final helper =
-            File.fromUri(plugin!.resolve('src/bootstrap/overlay.dart'));
-        require(await helper.exists(), 'PATCH_OVERLAY_UNAVAILABLE',
-            'The flutter_patcher dependency has no resource overlay; use a newer version');
-        final generated = p.join(work, 'module', app, '__patch_overlay.dart');
-        require(!await File(generated).exists(), 'PATCH_SOURCE_INVALID',
-            'Application uses reserved __patch_overlay.dart');
-        await helper.copy(generated);
-      }
       final entry = p.join(work, 'module', app, '__patch_entry.dart');
       // Whole-tier modules carry their own plugin copies; the host's Dart
       // plugin registrant only set up the host's.
@@ -386,17 +342,10 @@ class PatchPipeline {
           p.join(work, 'module', app, '__patch_plugins.dart');
       require(!await File(pluginsLibrary).exists(), 'PATCH_SOURCE_INVALID',
           'Application uses reserved __patch_plugins.dart');
-      final registrant = File(p.join(
-          project, '.dart_tool/flutter_build/dart_plugin_registrant.dart'));
-      final registrations = await registrant.exists()
-          ? platformRegistrations(await registrant.readAsString(), req.platform)
-          : <PluginRegistration>[];
-      final registeredPlugins = {
-        for (final r in registrations)
-          pluginPackage(r):
-              '${roots[pluginPackage(r)] ?? 'package:${pluginPackage(r)}/'}'
-      };
-      final interfaceYaml = loadYaml(
+      // Both known only once the bundle is built (it writes the registrant).
+      var resources = false;
+      var registrations = <PluginRegistration>[];
+      final interfaceYaml = decodeInterface(
           await File(p.join(baseline, 'dynamic_interface.yaml'))
               .readAsString()) as Map;
       // Whole keeps only the dart: rows; framework libraries travel in the module.
@@ -475,7 +424,92 @@ class PatchPipeline {
         return report;
       }
 
-      final first = await compile(false);
+      phase = 'resources';
+      final bundle = p.join(work, 'flutter_assets');
+      // The bundle build compiles the whole app once more just for assets.
+      // Meanwhile the lean module compiles, assuming no asset changed; it is
+      // compiled again with the resource overlay if one did. Without a
+      // dependency change lean is the likely tier, so this compile emits
+      // right away (the tool emits only when every check passes).
+      final bundling = withoutBuildHooks(
+          config,
+          p.join(work, 'no-hooks'),
+          () => commands.run(
+              sdk.host.flutterLauncher(managed),
+              [
+                '--suppress-analytics',
+                'build',
+                'bundle',
+                '--release',
+                '--no-pub',
+                '--target-platform',
+                req.platform == 'ios' ? 'ios' : 'android-arm64',
+                '--target',
+                req.target,
+                '--asset-dir',
+                bundle,
+              ],
+              cwd: project));
+      Map<String, dynamic>? speculative;
+      (Object, StackTrace)? speculativeError;
+      final speculation = dependencyChanged
+          ? Future<void>.value()
+          : compile(true).then<void>((r) => speculative = r,
+              onError: (Object e, StackTrace s) => speculativeError = (e, s));
+      try {
+        await bundling;
+      } finally {
+        await speculation;
+        phase = 'resources';
+      }
+      final registrant = File(p.join(
+          project, '.dart_tool/flutter_build/dart_plugin_registrant.dart'));
+      registrations = await registrant.exists()
+          ? platformRegistrations(await registrant.readAsString(), req.platform)
+          : <PluginRegistration>[];
+      final registeredPlugins = {
+        for (final r in registrations)
+          pluginPackage(r):
+              '${roots[pluginPackage(r)] ?? 'package:${pluginPackage(r)}/'}'
+      };
+      final payload = PatchResources(bundle, work, commands, managed);
+      final oldResources = receipt['resources'];
+      require(oldResources is Map, 'PATCH_BASELINE_INCOMPATIBLE',
+          'Baseline lacks resource inventory; rebuild host');
+      await payload.collect(
+          oldResources is Map
+              ? Map<String, dynamic>.from(oldResources)
+              : {
+                  'schema': 1,
+                  'files': <String, dynamic>{},
+                  'manifest': <String, dynamic>{}
+                },
+          req.assets);
+      if (payload.assets.isNotEmpty) changed.add('resources');
+      resources = payload.assets.isNotEmpty;
+      if (resources) {
+        final plugin = roots['flutter_patcher'] as Uri?;
+        require(plugin != null, 'PATCH_OVERLAY_UNAVAILABLE',
+            'Resource patches require the flutter_patcher dependency');
+        final helper =
+            File.fromUri(plugin!.resolve('src/bootstrap/overlay.dart'));
+        require(await helper.exists(), 'PATCH_OVERLAY_UNAVAILABLE',
+            'The flutter_patcher dependency has no resource overlay; use a newer version');
+        final generated = p.join(work, 'module', app, '__patch_overlay.dart');
+        require(!await File(generated).exists(), 'PATCH_SOURCE_INVALID',
+            'Application uses reserved __patch_overlay.dart');
+        await helper.copy(generated);
+      }
+      final Map<String, dynamic> first;
+      if (!resources && speculativeError != null) {
+        Error.throwWithStackTrace(speculativeError!.$1, speculativeError!.$2);
+      } else if (!resources && speculative != null) {
+        first = speculative!;
+      } else {
+        if (speculative != null) reports.remove(speculative);
+        first = await compile(!dependencyChanged);
+      }
+      if (first['status'] == 'compiled') first['status'] = 'checked';
       // The whole tier cannot remove an FFI call; it only carries more code.
       rejectFfi(first);
       final resourceCheck = (first['checks'] as Map)['resources'];
@@ -492,7 +526,10 @@ class PatchPipeline {
         require(whole['status'] == 'checked', 'PATCH_UNSAFE',
             'Whole-tier checks failed; evidence: $work');
       }
-      final finalReport = await compile(true);
+      final finalReport =
+          tier == 'lean' && !dependencyChanged && first['status'] == 'checked'
+              ? {...first, 'status': 'compiled'}
+              : await compile(true);
       require(finalReport['status'] == 'compiled', 'PATCH_UNSAFE',
           'Final compiler checks failed; evidence: $work');
       require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',

@@ -113,6 +113,7 @@ class BaselineRepository {
         if (await Directory(target).exists()) {
           try {
             final m = await verify(target);
+            trace('verified cached $key');
             if (accept == null || accept(m)) cached = m;
           } on Failure {
             // Quarantined below.
@@ -126,13 +127,17 @@ class BaselineRepository {
         if (optional && store == null) return null;
         final staging = await work(),
             packed = p.join(staging, 'download.tar.zst');
-        if (!await lookup(object, packed)) {
+        final fetched = await lookup(object, packed);
+        trace('fetched $object');
+        if (!fetched) {
           require(optional, 'BASELINE_NOT_FOUND', '$object not found.');
           return null;
         }
         final unpacked = p.join(staging, 'baseline');
         await archive.unpack(packed, unpacked, kind: kind);
+        trace('unpacked $object');
         final stored = await verify(unpacked, sdkRoot: sdkRoot);
+        trace('verified stored $object');
         valid(accept == null || accept(stored),
             'Stored $object differs from the requested identity.');
         if (cached != null) {

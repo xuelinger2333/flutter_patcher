@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
-import 'package:yaml/yaml.dart';
 import '../core.dart';
 import '../build/host_policy.dart';
 
@@ -62,7 +61,7 @@ Future<Map<String, dynamic>> baselineObject(String path) async {
     valid(await File(path).length() <= 64 * 1024 * 1024,
         'Baseline JSON exceeds size limit.');
     final text = await File(path).readAsString();
-    loadYaml(text);
+    rejectDuplicateJsonKeys(text);
     return jsonDecode(text) as Map<String, dynamic>;
   } catch (_) {
     throw Failure(
@@ -165,7 +164,7 @@ Future<void> validateDetails(String root, String interfaceHash) async {
           detail['entries'] is List,
       'Detailed interface does not match YAML.');
   final expected = <String>{};
-  final yaml = loadYaml(
+  final yaml = decodeInterface(
       await File(p.join(root, 'dynamic_interface.yaml')).readAsString());
   valid(yaml is Map, 'Interface must be a mapping.');
   const sections = [

@@ -54,14 +54,65 @@ Future<String> hashFile(String path) async =>
 Future<Map<String, dynamic>> readObject(String path) async {
   try {
     final text = await File(path).readAsString();
-    loadYaml(
-        text); // Reject duplicate mapping keys before JSON decoding loses them.
+    // Reject duplicate keys before JSON decoding loses them.
+    rejectDuplicateJsonKeys(text);
     final value = jsonDecode(text);
     if (value is! Map<String, dynamic>) throw const FormatException();
     return value;
   } catch (_) {
     throw Failure('ENGINE_MANIFEST_INVALID', 'Invalid JSON object: $path');
   }
+}
+
+/// Throws [FormatException] if an object in the JSON [text] repeats a key.
+/// Only keys are examined; the caller still decodes (and so validates) the
+/// text. A linear scan: the YAML parser this replaces took seconds on the
+/// multi-megabyte interface files of a real application.
+void rejectDuplicateJsonKeys(String text) {
+  final objects = <Set<String>?>[]; // null for an array
+  var expectKey = false;
+  for (var i = 0; i < text.length; i++) {
+    final c = text.codeUnitAt(i);
+    if (c == 0x22) {
+      final start = i;
+      var escaped = false;
+      for (i++; i < text.length && text.codeUnitAt(i) != 0x22; i++) {
+        if (text.codeUnitAt(i) == 0x5C) {
+          escaped = true;
+          i++;
+        }
+      }
+      if (expectKey) {
+        final raw = text.substring(start, i + 1);
+        final key = escaped
+            ? jsonDecode(raw) as String
+            : raw.substring(1, raw.length - 1);
+        if (!objects.last!.add(key)) {
+          throw FormatException('Duplicate JSON key: $key');
+        }
+        expectKey = false;
+      }
+    } else if (c == 0x7B) {
+      objects.add(<String>{});
+      expectKey = true;
+    } else if (c == 0x5B) {
+      objects.add(null);
+      expectKey = false;
+    } else if (c == 0x7D || c == 0x5D) {
+      if (objects.isNotEmpty) objects.removeLast();
+      expectKey = false;
+    } else if (c == 0x2C) {
+      expectKey = objects.isNotEmpty && objects.last != null;
+    }
+  }
+}
+
+/// Decodes an interface document: JSON (what the tools write, checked as
+/// [rejectDuplicateJsonKeys] does) or, for hand-written files, YAML.
+Object? decodeInterface(String text) {
+  if (!text.trimLeft().startsWith('{')) return loadYaml(text);
+  rejectDuplicateJsonKeys(text);
+  return jsonDecode(text);
 }
 
 String temporaryName(String path) =>
@@ -185,6 +236,7 @@ class Commands {
       Duration timeout = const Duration(minutes: 15),
       Map<String, String>? extraEnvironment,
       String? logPath}) async {
+    final started = DateTime.now();
     Process process;
     try {
       // Windows batch launchers (flutter.bat, aws.cmd) only start through the
@@ -220,6 +272,7 @@ class Commands {
     try {
       result = await process.exitCode.timeout(timeout);
       await inputClosed;
+      trace('${p.basename(executable)} ${_traceArgs(args)}', started);
     } on TimeoutException {
       if (Platform.isWindows) {
         // A .bat runs under cmd.exe; killing only cmd.exe would leave dart.exe
@@ -333,4 +386,26 @@ class Downloads {
       client.close(force: true);
     }
   }
+}
+
+/// Development timing: with FLUTTER_PATCHER_TRACE=1 every external command
+/// and marked phase prints its duration to stderr.
+final bool _tracing = Platform.environment['FLUTTER_PATCHER_TRACE'] == '1';
+final DateTime _traceStart = DateTime.now();
+
+void trace(String label, [DateTime? since]) {
+  if (!_tracing) return;
+  final now = DateTime.now();
+  final total = now.difference(_traceStart).inMilliseconds / 1000;
+  final took = since == null
+      ? ''
+      : ' ${(now.difference(since).inMilliseconds / 1000).toStringAsFixed(1)}s';
+  stderr.writeln('[trace ${total.toStringAsFixed(1)}s]$took $label');
+}
+
+String _traceArgs(List<String> args) {
+  final shown = args
+      .take(3)
+      .map((a) => a.length > 40 ? '…${a.substring(a.length - 30)}' : a);
+  return shown.join(' ');
 }
