@@ -328,6 +328,73 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     }, 'SDK-specific protocol and platform YAML generated or validated');
     await check('engine_pair', () => environment.pairSmoke(sdk, managed),
         'Downloaded gen_snapshot compiled a minimal arm64 AOT ELF');
+    // build ios needs these; patch ios runs on every host without them.
+    if (host.os == 'macos') {
+      late Map<String, dynamic> iosEngine;
+      await check('ios_engine_artifacts', () async {
+        iosEngine = await store.obtain('engine-ios', sdk);
+      }, 'iOS framework and gen_snapshot size/hash/format verified');
+      report['ios_engine_build_id'] = iosEngine['build_id'];
+      await check(
+          'ios_sdk',
+          () => environment.prepare(sdk, store, ios: iosEngine),
+          'Managed SDK carries the patched iOS engine');
+      await check('xcode', () async {
+        final version = await commands.runResult('xcodebuild', ['-version'],
+            code: 'XCODE_MISSING');
+        require(version.exitCode == 0, 'XCODE_MISSING',
+            'Install Xcode and select it with xcode-select or DEVELOPER_DIR.');
+        final iphoneos = await commands.runResult(
+            'xcrun', ['--sdk', 'iphoneos', '--show-sdk-path'],
+            code: 'XCODE_MISSING');
+        require(iphoneos.exitCode == 0, 'XCODE_MISSING',
+            'Xcode has no iOS platform; install it under Xcode > Settings > Components.');
+        report['xcode'] = version.stdout.trim().split('\n').first;
+      }, 'Xcode with the iOS SDK selected');
+      // Missing optional tools are warnings: SwiftPM can replace CocoaPods,
+      // and signing may come from a CI keychain unlocked at build time.
+      Future<void> advise(String id, String executable, List<String> arguments,
+          String? Function(String out) passed, String warning) async {
+        String? message;
+        try {
+          final result = await commands.runResult(executable, arguments);
+          if (result.exitCode == 0) message = passed(result.stdout.trim());
+        } on Failure {
+          // Not installed.
+        }
+        checks.add({
+          'id': id,
+          'status': message == null ? 'warning' : 'passed',
+          'message': message ?? warning
+        });
+      }
+
+      await advise('cocoapods', 'pod', ['--version'], (out) => 'CocoaPods $out',
+          'CocoaPods not found; Flutter needs it unless Swift Package Manager is enabled.');
+      await advise(
+          'signing_identity',
+          'security',
+          ['find-identity', '-v', '-p', 'codesigning'],
+          (out) => out.contains(' 0 valid identities found')
+              ? null
+              : 'Code signing identity available',
+          'No code signing identity in the keychain; build ios needs one for its export method.');
+      if (project != null) {
+        await check('bundle_version', () async {
+          final plist = p.join(project, 'ios/Runner/Info.plist');
+          final value = await commands.runResult('plutil',
+              ['-extract', 'CFBundleVersion', 'raw', '-o', '-', plist],
+              code: 'BUILD_CONFIG_INVALID');
+          final version = value.stdout.trim();
+          require(
+              value.exitCode == 0 &&
+                  (version == r'$(FLUTTER_BUILD_NUMBER)' ||
+                      RegExp(r'^[1-9][0-9]*$').hasMatch(version)),
+              'BUILD_CONFIG_INVALID',
+              'ios/Runner/Info.plist CFBundleVersion must be \$(FLUTTER_BUILD_NUMBER) or a positive integer; it is the host policy version_code.');
+        }, 'CFBundleVersion is the integer build number');
+      }
+    }
     if (interfaceRequest != null) {
       await check('interface', () async {
         report['interface'] = await InterfacePipeline(commands, sdk, tool,
