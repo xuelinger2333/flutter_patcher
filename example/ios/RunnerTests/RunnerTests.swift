@@ -88,13 +88,32 @@ final class RunnerTests: XCTestCase {
     let store = try CandidateStore(strategy: "bytecode")
     let meta = store.candidate(fingerprint: "ab", seq: 1, sha256: "cd", version: "1", authorization: "{}")
     try store.save(meta, bytes: Data("x".utf8))
-    try store.markLoading(meta)
+    try store.markLoading(meta, foreground: true)
     // The process ends before its first frame; the next launch settles it.
     let next = try CandidateStore(strategy: "bytecode")
     try next.recoverAttempt()
     XCTAssertNil(try next.activeFor("ab"))
     XCTAssertTrue(next.isBlacklisted(meta))
     XCTAssertEqual(BootDiagnosticStore.read()?["status"] as? String, "DROPPED_CIRCUIT_BREAKER")
+  }
+
+  func testEndingInTheBackgroundIsNotACrash() throws {
+    try PatcherConfig.save(maxCrashCount: 1)
+    let store = try CandidateStore(strategy: "bytecode")
+    let meta = store.candidate(fingerprint: "ab", seq: 2, sha256: "ce", version: "2", authorization: "{}")
+    try store.save(meta, bytes: Data("x".utf8))
+    // Swiped away (or ended by the system) after leaving the foreground.
+    try store.markLoading(meta, foreground: true)
+    try store.pauseLoading()
+    let next = try CandidateStore(strategy: "bytecode")
+    try next.recoverAttempt()
+    XCTAssertFalse(next.isBlacklisted(meta))
+    // A background launch only arms the breaker once it reaches the foreground.
+    try next.markLoading(meta, foreground: false)
+    try next.resumeLoading()
+    let last = try CandidateStore(strategy: "bytecode")
+    try last.recoverAttempt()
+    XCTAssertTrue(last.isBlacklisted(meta))
   }
 
   func testHostPolicyBindsBundleAndBuild() throws {

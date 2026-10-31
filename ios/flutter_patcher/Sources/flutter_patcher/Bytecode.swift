@@ -293,7 +293,7 @@ final class BytecodePatchManager {
     }
   }
 
-  func markBooting(_ token: String?) throws -> Bool {
+  func markBooting(_ token: String?, foreground: Bool = true) throws -> Bool {
     try locked {
       guard let token = token, token == offered, attempt?.running != true, attempt?.failed != true,
             let meta = offeredMeta
@@ -302,10 +302,18 @@ final class BytecodePatchManager {
       let store = try store()
       // A rollback or a newly installed candidate invalidates a prepared offer.
       guard store.active().map({ store.id($0) == store.id(meta) }) == true else { return false }
-      try store.markLoading(meta)
+      try store.markLoading(meta, foreground: foreground)
       let started = attempt?.start(token) == true
       if started { frameToken = token }
       return started
+    }
+  }
+
+  /// The app left (or re-entered) the foreground; see CrashGuard.
+  func foregroundChanged(_ foreground: Bool) throws {
+    try locked {
+      guard attempt?.running == true else { return }
+      try foreground ? store().resumeLoading() : store().pauseLoading()
     }
   }
 

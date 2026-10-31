@@ -16,6 +16,10 @@ enum PatcherConfig {
 /// iOS has no ApplicationExitInfo, so this is Android's rule below API 30: a
 /// process that ended before its first frame (still `loading`) crashed. A
 /// crash after the first frame is not detected; Dart errors are reported apart.
+/// Unlike that rule, `loading` is held only while the app is in the
+/// foreground: the system ending a backgrounded (or background-launched)
+/// app, or the user swiping it away, is not a crash (Android API 30+ tells
+/// these apart through ApplicationExitInfo).
 enum CrashGuard {
   static func previousSessionCrashed(loading: Bool) -> Bool { loading }
 }
@@ -215,11 +219,30 @@ final class CandidateStore {
     }
   }
 
-  func markLoading(_ meta: Meta) throws {
+  func markLoading(_ meta: Meta, foreground: Bool) throws {
     try commit {
       $0["attempt_meta"] = meta
-      $0["loading"] = true
+      $0["loading"] = foreground
+      $0["paused"] = !foreground
       $0["pid"] = Int(getpid())
+    }
+  }
+
+  /// The app left the foreground before the attempt's first frame.
+  func pauseLoading() throws {
+    guard state["attempt_meta"] != nil, state["loading"] as? Bool == true else { return }
+    try commit {
+      $0["loading"] = false
+      $0["paused"] = true
+    }
+  }
+
+  /// The app is back in the foreground with the attempt still unconfirmed.
+  func resumeLoading() throws {
+    guard state["attempt_meta"] != nil, state["paused"] as? Bool == true else { return }
+    try commit {
+      $0["loading"] = true
+      $0["paused"] = false
     }
   }
 
@@ -227,6 +250,7 @@ final class CandidateStore {
     let key = "crashes:\(id(meta))"
     try commit {
       $0["loading"] = false
+      $0["paused"] = false
       $0[key] = 0
     }
   }
@@ -284,6 +308,7 @@ final class CandidateStore {
   private static func clearingAttempt(_ state: inout [String: Any]) {
     state.removeValue(forKey: "attempt_meta")
     state.removeValue(forKey: "pid")
+    state.removeValue(forKey: "paused")
     state["loading"] = false
   }
 

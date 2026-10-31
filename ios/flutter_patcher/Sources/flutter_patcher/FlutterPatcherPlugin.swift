@@ -11,6 +11,8 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
   private weak var registrar: FlutterPluginRegistrar?
   private let worker = DispatchQueue(label: "flutter_patcher", qos: .userInitiated, attributes: .concurrent)
   private var eventSink: FlutterEventSink?
+  /// The armed attempt whose first frame is not yet observed.
+  private var pendingFrame: String?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterPatcherPlugin()
@@ -19,6 +21,21 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
     registrar.addMethodCallDelegate(instance, channel: channel)
     FlutterEventChannel(name: "flutter_patcher/events", binaryMessenger: registrar.messenger())
       .setStreamHandler(instance)
+    let center = NotificationCenter.default
+    center.addObserver(instance, selector: #selector(didEnterBackground),
+                       name: UIApplication.didEnterBackgroundNotification, object: nil)
+    center.addObserver(instance, selector: #selector(didBecomeActive),
+                       name: UIApplication.didBecomeActiveNotification, object: nil)
+  }
+
+  @objc private func didEnterBackground() {
+    worker.async { [bytecode] in try? bytecode.foregroundChanged(false) }
+  }
+
+  @objc private func didBecomeActive() {
+    worker.async { [bytecode] in try? bytecode.foregroundChanged(true) }
+    // add-to-app: the engine may have run before any view controller existed.
+    if let token = pendingFrame { confirmFirstFrame(token) }
   }
 
   public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
@@ -63,8 +80,9 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
       }
     case "markBooting":
       guard bytecode.bootstrapped else { return result(nil) }
+      let foreground = UIApplication.shared.applicationState != .background
       bytecodeCall(result) { [bytecode] in
-        let started = try bytecode.markBooting(attempt)
+        let started = try bytecode.markBooting(attempt, foreground: foreground)
         if started, let token = attempt {
           DispatchQueue.main.async { self.confirmFirstFrame(token) }
         }
@@ -130,10 +148,15 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
 
   /// The counterpart of Android's FlutterRenderer display listener: the next
   /// rendered frame settles the armed attempt as a success.
+  /// Without a view controller yet (add-to-app), it retries when the app
+  /// becomes active. Flutter has one render-callback slot, so a host that sets
+  /// its own afterwards replaces this one.
   private func confirmFirstFrame(_ token: String) {
+    pendingFrame = token
     guard let controller = registrar?.viewController as? FlutterViewController else { return }
     controller.setFlutterViewDidRenderCallback { [weak self] in
       guard let self = self else { return }
+      self.pendingFrame = nil
       self.worker.async { [bytecode = self.bytecode] in try? bytecode.success(token) }
     }
   }
