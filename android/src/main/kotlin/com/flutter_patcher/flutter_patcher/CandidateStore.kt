@@ -18,6 +18,35 @@ internal class CandidateStore(private val context: Context, private val strategy
     private val prefs = context.getSharedPreferences("flutter_patcher_$strategy", Context.MODE_PRIVATE)
     private val directory = File(context.filesDir, "flutter_patcher_$strategy")
 
+    init {
+        dropRestoredState()
+    }
+
+    /**
+     * Auto Backup restores shared_prefs and files/ but never noBackupFilesDir,
+     * where the authorization state lives, so a restored candidate (reinstall,
+     * new device) would fail its authorization check and be blacklisted. A
+     * marker beside that state ties candidate state to this installation;
+     * state from another one is dropped, as on a fresh install. iOS excludes
+     * its whole store from backup instead.
+     */
+    private fun dropRestoredState() {
+        val marker = File(context.noBackupFilesDir, "flutter_patcher_install_$strategy")
+        val local = marker.takeIf { it.isFile }?.readText()
+        val recorded = prefs.getString("install", null)
+        if (recorded != null && recorded == local) return
+        // State written before this marker existed has no record and is kept.
+        if (recorded != null) {
+            commit(prefs.edit().clear())
+            directory.deleteRecursively()
+        }
+        val id = local ?: UUID.randomUUID().toString().also {
+            marker.parentFile?.mkdirs()
+            marker.writeText(it)
+        }
+        commit(prefs.edit().putString("install", id))
+    }
+
     fun active(): JSONObject? = prefs.getString("active", null)?.let { JSONObject(it) }
     fun id(meta: JSONObject) = "${meta.getString("fingerprint")}:${meta.getLong("seq")}:${meta.getString("sha256")}"
     fun file(meta: JSONObject) = File(directory, meta.getString("sha256") + ".fptc")
