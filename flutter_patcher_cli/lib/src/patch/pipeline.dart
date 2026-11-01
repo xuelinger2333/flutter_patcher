@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../build/pins.dart';
 import '../build/runtime_package.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
@@ -13,9 +14,7 @@ import '../sdk/package_inputs.dart';
 import 'sources.dart';
 import 'hooks.dart';
 import 'package.dart';
-import 'plugins.dart';
 import 'resources.dart';
-import 'tier_policy.dart';
 import 'so_pipeline.dart';
 
 class PatchFailure extends Failure {
@@ -104,23 +103,30 @@ Object? _nativeBuildInputs(Object? entry, String platform) => entry is! Map
 /// The interpreter cannot make FFI calls in an AOT runtime, so a module that
 /// contains one (tools report `checks.ffi`) would abort the app. Older tools
 /// do not report the check.
-void rejectFfi(Map<String, dynamic> report,
-    {Map<String, String> registeredPlugins = const {}}) {
+/// The first few rejection reasons of a tools report, one line each.
+String checkSummary(Map<String, dynamic> report, {int limit = 3}) {
+  final lines = <String>[];
+  final checks = report['checks'];
+  if (checks is Map) {
+    for (final entry in checks.entries) {
+      if (entry.value is! List) continue;
+      for (final row in entry.value as List) {
+        if (row is! Map) continue;
+        final message = '${row['message'] ?? row['code']}'.split('\n').first;
+        lines.add(
+            '${entry.key}: ${message.replaceFirst(RegExp(r'^org-dartlang-root:///'), '')}');
+      }
+    }
+  }
+  if (lines.isEmpty) return 'see the report';
+  final more = lines.length > limit ? ' (+${lines.length - limit} more)' : '';
+  return '${lines.take(limit).join('; ')}$more';
+}
+
+void rejectFfi(Map<String, dynamic> report) {
   final sites = (report['checks'] as Map?)?['ffi'];
   if (sites is! List || sites.isEmpty) return;
   final first = sites.first as Map;
-  final file = '${first['file']}';
-  for (final MapEntry(key: name, value: root) in registeredPlugins.entries) {
-    if (file.startsWith('package:$name/') || file.startsWith(root)) {
-      throw Failure(
-          'PATCH_FFI_UNSUPPORTED',
-          'This patch needs the whole tier, which carries its own copy of every '
-              'plugin and must register them, but the $name implementation uses '
-              'FFI (${first['message']} at $file:${first['line']}), which the '
-              'interpreter cannot run. Keep the change within the lean tier (no '
-              'dependency changes) or ship a new host release.');
-    }
-  }
   throw Failure(
       'PATCH_FFI_UNSUPPORTED',
       'Patched code would run FFI in the interpreter (${first['message']} at '
@@ -331,51 +337,115 @@ class PatchPipeline {
             'Native plugin changes require a new host release: $name');
       }
       trace('source changes');
-      // Before the bundle build: it shadows hook packages in this config.
-      final remap =
-          await remapSources(config, p.join(work, 'module'), own, req.seq);
-      final names = Map<String, String>.from(remap['names'] as Map);
-      final entry = p.join(work, 'module', app, '__patch_entry.dart');
-      // Whole-tier modules carry their own plugin copies; the host's Dart
-      // plugin registrant only set up the host's.
-      final pluginsLibrary =
-          p.join(work, 'module', app, '__patch_plugins.dart');
-      require(!await File(pluginsLibrary).exists(), 'PATCH_SOURCE_INVALID',
-          'Application uses reserved __patch_plugins.dart');
-      // Both known only once the bundle is built (it writes the registrant).
+      // The whole tier renames every free package into the module as well.
+      // The packages pinned at the host build (native capability and all it
+      // reaches) always stay the host's, so changing one needs a release.
+      final pinned = (await baselineObject(
+          p.join(baseline, 'compile_receipt.json')))['pinned_packages'];
+      Set<String>? wholeOwn;
+      if (pinned is Map) {
+        final changedPackages = {
+          for (final c in changed)
+            if (c.startsWith('dependency:'))
+              c.substring('dependency:'.length)
+            else if (c.startsWith('package:'))
+              Uri.parse(c).pathSegments.first,
+          for (final name in pinned.keys.cast<String>())
+            if (!roots.containsKey(name)) name,
+        };
+        for (final name in changedPackages.toList()..sort()) {
+          if (!pinned.containsKey(name)) continue;
+          final row = pinned[name] as Map;
+          final why = row['reason'] == 'dependency'
+              ? 'reached via ${(row['via'] as List).join(' -> ')}'
+              : '${row['reason']}';
+          final version = oldState is Map && oldState[name] is Map
+              ? oldState[name]['version']
+              : null;
+          throw Failure(
+              'PATCH_PINNED_PACKAGE_CHANGED',
+              '$name stays in the host ($why), so a patch cannot change it; '
+                  'a new host release can. To keep the release\'s copy'
+                  '${version == null ? '' : ', add to pubspec.yaml:\n'
+                      'dependency_overrides:\n  $name: $version'}');
+        }
+        final now = await computePackagePins(config, app);
+        final added = now.pinned.keys
+            .where((n) => !pinned.containsKey(n))
+            .toList()
+          ..sort();
+        require(
+            added.isEmpty,
+            'PATCH_NATIVE_CHANGE',
+            'Packages with native capability, or reached from one, are new '
+                'since the release and need a new host release: ${added.join(', ')}');
+        wholeOwn = {...own, ...now.free.where((n) => !pinned.containsKey(n))};
+      }
+      require(
+          !dependencyChanged || wholeOwn != null,
+          'PATCH_BASELINE_INCOMPATIBLE',
+          'This host predates pinned-package records; rebuild it to patch '
+              'dependency changes');
+      // Both known only once the bundle is built.
       var resources = false;
-      var registrations = <PluginRegistration>[];
-      final interfaceYaml = decodeInterface(
-          await File(p.join(baseline, 'dynamic_interface.yaml'))
-              .readAsString()) as Map;
-      // Whole keeps only the dart: rows; framework libraries travel in the module.
-      final wholeInterface = p.join(work, 'whole-interface.yaml');
-      await writeObject(wholeInterface, {
-        for (final section in interfaceYaml.keys)
-          section as String: [
-            for (final row in (interfaceYaml[section] as List? ?? []))
-              if ((row['library'] as String).startsWith('dart:')) row
-          ]
-      });
-      // As for the baseline kernel: virtual source URIs keep the run's work
-      // path (and the developer's directories) out of the shipped module.
-      final virtual = usage.contains('filesystem_roots')
-          ? await VirtualPackages.write(remap['packages'] as String,
-              [p.absolute(work), p.absolute(cache)])
-          : null;
-      var tier = 'lean';
+      var tier = dependencyChanged ? 'whole' : 'lean';
+      final modules = <String,
+          ({
+        Map<String, Object?> remap,
+        Map<String, String> names,
+        String dir
+      })>{};
+      Future<
+          ({
+            Map<String, Object?> remap,
+            Map<String, String> names,
+            String dir
+          })> module(String tier) async {
+        if (modules[tier] case final ready?) return ready;
+        final dir = p.join(work, tier == 'lean' ? 'module' : 'module-whole');
+        final remap = await remapSources(
+            config, dir, tier == 'lean' ? own : wholeOwn!, req.seq);
+        for (final reserved in ['__patch_entry.dart', '__patch_overlay.dart']) {
+          require(!await File(p.join(dir, app, reserved)).exists(),
+              'PATCH_SOURCE_INVALID', 'Application uses reserved $reserved');
+        }
+        return modules[tier] = (
+          remap: remap,
+          names: Map<String, String>.from(remap['names'] as Map),
+          dir: dir
+        );
+      }
+
+      Future<void> installOverlay(String appDir) async {
+        final generated = p.join(appDir, '__patch_overlay.dart');
+        if (await File(generated).exists()) return;
+        final plugin = roots['flutter_patcher'] as Uri?;
+        require(plugin != null, 'PATCH_OVERLAY_UNAVAILABLE',
+            'Resource patches require the flutter_patcher dependency');
+        final helper =
+            File.fromUri(plugin!.resolve('src/bootstrap/overlay.dart'));
+        require(await helper.exists(), 'PATCH_OVERLAY_UNAVAILABLE',
+            'The flutter_patcher dependency has no resource overlay; use a newer version');
+        await helper.copy(generated);
+      }
+
+      // Before the bundle build: it shadows hook packages in this config.
+      await module(tier);
       Future<Map<String, dynamic>> compile(bool emit) async {
         phase = '$tier-${emit ? 'emit' : 'check'}';
-        final plugins = tier == 'whole' && registrations.isNotEmpty;
-        if (plugins) {
-          await File(pluginsLibrary).writeAsString(pluginRegistrantSource(
-              names[app]!, req.target.substring(4), registrations));
-        } else if (await File(pluginsLibrary).exists()) {
-          await File(pluginsLibrary).delete();
-        }
-        await File(entry).writeAsString(patchEntry(
-            names[app]!, req.target.substring(4), req.seq, fingerprint, tier,
-            resources: resources, plugins: plugins));
+        final m = await module(tier);
+        final names = m.names;
+        if (resources) await installOverlay(p.join(m.dir, app));
+        await File(p.join(m.dir, app, '__patch_entry.dart')).writeAsString(
+            patchEntry(names[app]!, req.target.substring(4), req.seq,
+                fingerprint, tier,
+                resources: resources));
+        // As for the baseline kernel: virtual source URIs keep the run's work
+        // path (and the developer's directories) out of the shipped module.
+        final virtual = usage.contains('filesystem_roots')
+            ? await VirtualPackages.write(m.remap['packages'] as String,
+                [p.absolute(work), p.absolute(cache)])
+            : null;
         final input = p.join(work, '$phase-request.json'),
             output = p.join(work, '$phase-report.json');
         await writeObject(input, {
@@ -388,15 +458,13 @@ class PatchPipeline {
           'seq': req.seq,
           'fingerprint': fingerprint,
           'entry': 'package:${names[app]}/__patch_entry.dart',
-          'packages': virtual?.packagesUri ?? remap['packages'],
+          'packages': virtual?.packagesUri ?? m.remap['packages'],
           if (virtual != null) ...{
             'filesystem_scheme': virtualScheme,
             'filesystem_roots': virtual.roots,
           },
           'baseline': p.join(baseline, 'app.dill'),
-          'interface': tier == 'whole'
-              ? wholeInterface
-              : p.join(baseline, 'dynamic_interface.yaml'),
+          'interface': p.join(baseline, 'dynamic_interface.yaml'),
           'compiler_interface': p.join(baseline, 'compiler_interface.json'),
           'platform':
               p.join(sdk.root, (manifest['platform'] as Map)['path'] as String),
@@ -405,7 +473,7 @@ class PatchPipeline {
           if (resources)
             'overlay_library': 'package:${names[app]}/__patch_overlay.dart',
           'own': names.values.toList(),
-          'original_own': own.toList(),
+          'original_own': (tier == 'lean' ? own : wholeOwn!).toList(),
           'out': p.join(work, 'module.bc'),
           if (!emit) 'kernel_out': p.join(work, '$tier-analysis.dill'),
         });
@@ -427,10 +495,9 @@ class PatchPipeline {
       phase = 'resources';
       final bundle = p.join(work, 'flutter_assets');
       // The bundle build compiles the whole app once more just for assets.
-      // Meanwhile the lean module compiles, assuming no asset changed; it is
-      // compiled again with the resource overlay if one did. Without a
-      // dependency change lean is the likely tier, so this compile emits
-      // right away (the tool emits only when every check passes).
+      // Meanwhile the module compiles, assuming no asset changed; it is
+      // compiled again with the resource overlay if one did. The compile
+      // emits right away (the tool emits only when every check passes).
       final bundling = withoutBuildHooks(
           config,
           p.join(work, 'no-hooks'),
@@ -452,26 +519,14 @@ class PatchPipeline {
               cwd: project));
       Map<String, dynamic>? speculative;
       (Object, StackTrace)? speculativeError;
-      final speculation = dependencyChanged
-          ? Future<void>.value()
-          : compile(true).then<void>((r) => speculative = r,
-              onError: (Object e, StackTrace s) => speculativeError = (e, s));
+      final speculation = compile(true).then<void>((r) => speculative = r,
+          onError: (Object e, StackTrace s) => speculativeError = (e, s));
       try {
         await bundling;
       } finally {
         await speculation;
         phase = 'resources';
       }
-      final registrant = File(p.join(
-          project, '.dart_tool/flutter_build/dart_plugin_registrant.dart'));
-      registrations = await registrant.exists()
-          ? platformRegistrations(await registrant.readAsString(), req.platform)
-          : <PluginRegistration>[];
-      final registeredPlugins = {
-        for (final r in registrations)
-          pluginPackage(r):
-              '${roots[pluginPackage(r)] ?? 'package:${pluginPackage(r)}/'}'
-      };
       final payload = PatchResources(bundle, work, commands, managed);
       final oldResources = receipt['resources'];
       require(oldResources is Map, 'PATCH_BASELINE_INCOMPATIBLE',
@@ -487,51 +542,41 @@ class PatchPipeline {
           req.assets);
       if (payload.assets.isNotEmpty) changed.add('resources');
       resources = payload.assets.isNotEmpty;
-      if (resources) {
-        final plugin = roots['flutter_patcher'] as Uri?;
-        require(plugin != null, 'PATCH_OVERLAY_UNAVAILABLE',
-            'Resource patches require the flutter_patcher dependency');
-        final helper =
-            File.fromUri(plugin!.resolve('src/bootstrap/overlay.dart'));
-        require(await helper.exists(), 'PATCH_OVERLAY_UNAVAILABLE',
-            'The flutter_patcher dependency has no resource overlay; use a newer version');
-        final generated = p.join(work, 'module', app, '__patch_overlay.dart');
-        require(!await File(generated).exists(), 'PATCH_SOURCE_INVALID',
-            'Application uses reserved __patch_overlay.dart');
-        await helper.copy(generated);
-      }
-      final Map<String, dynamic> first;
+      Map<String, dynamic> outcome;
       if (!resources && speculativeError != null) {
         Error.throwWithStackTrace(speculativeError!.$1, speculativeError!.$2);
       } else if (!resources && speculative != null) {
-        first = speculative!;
+        outcome = speculative!;
       } else {
         if (speculative != null) reports.remove(speculative);
-        first = await compile(!dependencyChanged);
+        outcome = await compile(true);
       }
-      if (first['status'] == 'compiled') first['status'] = 'checked';
-      // The whole tier cannot remove an FFI call; it only carries more code.
-      rejectFfi(first);
-      final resourceCheck = (first['checks'] as Map)['resources'];
-      final resourceUpgrade = resources &&
-          resourceCheck is Map &&
-          resourceCheck['verdict'] != 'INJECTABLE';
-      tier = selectPatchTier(
-          leanChecked: first['status'] == 'checked',
-          dependencyChanged: dependencyChanged,
-          resourceUpgrade: resourceUpgrade);
-      if (tier == 'whole') {
-        final whole = await compile(false);
-        rejectFfi(whole, registeredPlugins: registeredPlugins);
-        require(whole['status'] == 'checked', 'PATCH_UNSAFE',
-            'Whole-tier checks failed; evidence: $work');
+      // An FFI call in the module is no tier's to fix.
+      rejectFfi(outcome);
+      final resourceCheck = (outcome['checks'] as Map)['resources'];
+      require(
+          !resources ||
+              resourceCheck is! Map ||
+              resourceCheck['verdict'] == 'INJECTABLE',
+          'PATCH_RESOURCE_UNSAFE',
+          'The changed assets could be read past the patch overlay '
+              '(${resourceCheck is Map ? resourceCheck['verdict'] : ''}); '
+              'see the resource check in $work. Ship them in a host release.');
+      // Lean rejected: the whole tier carries the free packages the module
+      // used through the host interface, and may pass.
+      if (outcome['status'] != 'compiled' &&
+          tier == 'lean' &&
+          wholeOwn != null) {
+        tier = 'whole';
+        outcome = await compile(true);
+        rejectFfi(outcome);
       }
-      final finalReport =
-          tier == 'lean' && !dependencyChanged && first['status'] == 'checked'
-              ? {...first, 'status': 'compiled'}
-              : await compile(true);
-      require(finalReport['status'] == 'compiled', 'PATCH_UNSAFE',
-          'Final compiler checks failed; evidence: $work');
+      final finalReport = outcome;
+      require(
+          finalReport['status'] == 'compiled',
+          'PATCH_UNSAFE',
+          '${tier == 'lean' ? 'Lean' : 'Whole'}-tier checks failed: '
+              '${checkSummary(finalReport)}; evidence: $work');
       require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',
           'Resource transform did not run');
       await payload.collectFonts(finalReport['fonts'] as List? ?? [],
@@ -591,8 +636,9 @@ class PatchPipeline {
         if (tier == 'whole')
           'upgrade': {
             'dependency_changed': dependencyChanged,
-            'message':
-                'Framework code runs in the module interpreter; startup, scrolling and memory may regress.'
+            'carried_packages': (wholeOwn!.toList()..sort()),
+            'message': 'Dependencies other than those pinned to the host run '
+                'in the module interpreter.'
           },
         'changed': changed,
         'sha256': artifact['sha256'],

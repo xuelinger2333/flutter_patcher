@@ -31,6 +31,14 @@ void main() {
     expect(result, contains("import 'package:patch.4.app/a.dart'"));
     expect(result, contains("'package:patch.4.app/b.dart'"));
   });
+  test('a URI split into adjacent literals is remapped as one', () {
+    const source = "import 'package:app'\n    '/a.dart' as a show A;\n"
+        "import 'package:host' '/h.dart';";
+    final result = rewriteImports(source, {'app': 'patch.5.app'});
+    expect(
+        result, contains("import 'package:patch.5.app/a.dart' as a show A;"));
+    expect(result, contains("import 'package:host' '/h.dart';"));
+  });
   test(
       'package URI rewriting copies source and does not rewrite host dependency',
       () async {

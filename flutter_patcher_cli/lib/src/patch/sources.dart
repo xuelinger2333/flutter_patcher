@@ -57,45 +57,61 @@ String rewriteImports(String source, Map<String, String> names,
       }
       continue;
     }
-    final delimiter =
-        source.startsWith(source[i] * 3, i) ? source[i] * 3 : source[i];
-    i += delimiter.length;
-    final begin = i;
-    while (i < source.length && !source.startsWith(delimiter, i)) {
-      if (!raw && source[i] == '\\') {
-        i += 2;
-      } else {
-        i++;
+    // A URI may be written as adjacent literals ('package:a' '/b.dart'),
+    // which the language concatenates; rewrite the run as one literal.
+    final parts = <String>[];
+    String readLiteral(bool isRaw) {
+      final delimiter =
+          source.startsWith(source[i] * 3, i) ? source[i] * 3 : source[i];
+      i += delimiter.length;
+      final begin = i;
+      while (i < source.length && !source.startsWith(delimiter, i)) {
+        if (!isRaw && source[i] == '\\') {
+          i += 2;
+        } else {
+          i++;
+        }
       }
+      require(i < source.length, 'PATCH_SOURCE_INVALID',
+          'Unterminated source string');
+      final end = i;
+      i += delimiter.length;
+      return source.substring(begin, end);
     }
-    require(i < source.length, 'PATCH_SOURCE_INVALID',
-        'Unterminated source string');
-    final end = i;
-    i += delimiter.length;
+
+    parts.add(readLiteral(raw));
+    while (directive) {
+      var j = i;
+      while (j < source.length && ' \t\r\n'.contains(source[j])) {
+        j++;
+      }
+      final nextRaw = j + 1 < source.length &&
+          source[j] == 'r' &&
+          ["'", '"'].contains(source[j + 1]);
+      if (!nextRaw && (j >= source.length || !["'", '"'].contains(source[j]))) {
+        break;
+      }
+      i = nextRaw ? j + 1 : j;
+      parts.add(readLiteral(nextRaw));
+    }
     if (!directive) continue;
-    final content = source.substring(begin, end);
+    final content = parts.join();
     require(
         !content.contains('\\') && !content.contains(r'$'),
         'PATCH_SOURCE_INVALID',
         'Escaped/interpolated directive URIs are unsupported');
     final uri = Uri.tryParse(content);
-    if (relativeUriRewrites.containsKey(content)) {
-      final replacement = relativeUriRewrites[content]!;
-      out.write(source.substring(previous, start));
-      out.write('${raw ? 'r' : ''}$delimiter$replacement$delimiter');
-      previous = i;
-      continue;
+    String? replacement = relativeUriRewrites[content];
+    if (replacement == null &&
+        uri?.scheme == 'package' &&
+        uri!.pathSegments.isNotEmpty &&
+        names.containsKey(uri.pathSegments.first)) {
+      replacement = content.replaceFirst('package:${uri.pathSegments.first}/',
+          'package:${names[uri.pathSegments.first]}/');
     }
-    if (uri?.scheme != 'package' ||
-        uri!.pathSegments.isEmpty ||
-        !names.containsKey(uri.pathSegments.first)) {
-      continue;
-    }
-    final replacement = content.replaceFirst(
-        'package:${uri.pathSegments.first}/',
-        'package:${names[uri.pathSegments.first]}/');
+    if (replacement == null) continue;
     out.write(source.substring(previous, start));
-    out.write('${raw ? 'r' : ''}$delimiter$replacement$delimiter');
+    out.write("'$replacement'");
     previous = i;
   }
   out.write(source.substring(previous));
@@ -162,9 +178,8 @@ Future<Map<String, Object?>> remapSources(
 
 String patchEntry(
         String package, String target, int seq, String fingerprint, String tier,
-        {bool resources = false, bool plugins = false}) =>
+        {bool resources = false}) =>
     'import ${jsonEncode('package:$package/$target').replaceAll(r'$', r'\$')} as app;\n'
     '${resources ? 'import "__patch_overlay.dart" as overlay;\n' : ''}'
-    '${plugins ? 'import "__patch_plugins.dart" as plugins;\n' : ''}'
     '@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
-    'Object? dynamicModuleEntrypoint() => <Object?>[1,$seq,"$fingerprint","$tier",${plugins ? 'plugins.patcherMain' : 'app.main'},${resources ? 'overlay.patcherInstallAssets' : 'null'}];\n';
+    'Object? dynamicModuleEntrypoint() => <Object?>[1,$seq,"$fingerprint","$tier",app.main,${resources ? 'overlay.patcherInstallAssets' : 'null'}];\n';

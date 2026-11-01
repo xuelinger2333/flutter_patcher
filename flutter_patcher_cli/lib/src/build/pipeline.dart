@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'pins.dart';
 import 'package:yaml/yaml.dart';
 import '../core.dart';
 import '../sdk/artifacts.dart';
@@ -128,6 +129,9 @@ class BuildPipeline {
           cwd: project);
       final packages = p.join(project, '.dart_tool/package_config.json');
       final config = await readObject(packages);
+      // A whole-tier patch carries every free package, so the host interface
+      // covers what they use, not only what the application itself does.
+      final pins = await computePackagePins(packages, package);
       final plugins = (config['packages'] as List)
           .where((r) => r['name'] == 'flutter_patcher');
       require(plugins.length == 1, 'BUILD_BOOTSTRAP_UNAVAILABLE',
@@ -216,6 +220,10 @@ class BuildPipeline {
         analysis,
         '--own',
         package,
+        if (pins.free.isNotEmpty && usage.contains('--scan')) ...[
+          '--scan',
+          (pins.free.toList()..sort()).join(',')
+        ],
         '--out-iface',
         refs,
         '--out-trim-iface',
@@ -335,6 +343,7 @@ class BuildPipeline {
         'fingerprint': identity,
         'public_key': request.publicKey,
         'package_inputs': sourceInputs,
+        'pinned_packages': pins.pinned,
         'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
         'crlf_dart_sources': crlf
       };
