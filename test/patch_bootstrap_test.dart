@@ -221,10 +221,12 @@ void main() {
                 events.add('patched');
                 if (scenario == 'main') throw StateError('main');
               },
-              (Map<String, Uint8List> assets) {
-                events.add('assets');
-              }
+              null
             ];
+          },
+          assets: (assets) async {
+            expect(assets['a'], [1]);
+            events.add('assets');
           },
           fonts: (_) async {
             events.add('fonts');

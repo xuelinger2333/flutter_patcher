@@ -6,7 +6,6 @@ import 'budget.dart';
 import 'raw_channel.dart';
 
 typedef ModuleLoader = Future<Object?> Function(Uint8List bytes);
-typedef AssetInstaller = void Function(Map<String, Uint8List> assets);
 
 class _NoPatch implements Exception {
   const _NoPatch();
@@ -17,12 +16,14 @@ class BootRunner {
   BootRunner(
       {required this.call,
       required this.load,
+      required this.assets,
       required this.fonts,
       required this.observe,
       required this.log,
       this.timeout = const Duration(seconds: 3)});
   final RawCall call;
   final ModuleLoader load;
+  final Future<void> Function(Map<String, Uint8List>) assets;
   final Future<void> Function(Map<String, List<Uint8List>>) fonts;
   final void Function(Future<void> Function(Object) failure,
       Future<void> Function() success) observe;
@@ -35,7 +36,7 @@ class BootRunner {
       required String publicKeyBase64}) async {
     final startup = Stopwatch()..start();
     String? attempt;
-    var failed = false, entered = false, fontMutation = false;
+    var failed = false, entered = false, mutated = false;
     Future<void> failure(Object error) async {
       log(error);
       if (failed || attempt == null) return;
@@ -44,7 +45,7 @@ class BootRunner {
         await call('reportDartBootError', {
           'attempt': attempt,
           'message': error.toString(),
-          'quarantine': entered || fontMutation
+          'quarantine': entered || mutated
         }).timeout(timeout);
       } catch (e) {
         log(e);
@@ -102,15 +103,17 @@ class BootRunner {
               slots[2] == fingerprint &&
               slots[3] == patch.tier &&
               slots[4] is FutureOr<void> Function() &&
-              (patch.assets.isEmpty
-                  ? slots[5] == null || slots[5] is AssetInstaller
-                  : slots[5] is AssetInstaller),
+              slots[5] == null,
           'PatchEntry contract');
-      if (slots[5] != null) (slots[5] as AssetInstaller)(patch.assets);
+      // The engine has no API to remove installed assets or registered fonts.
+      // After a partial failure the original app cannot safely run in this
+      // same isolate.
+      if (patch.assets.isNotEmpty) {
+        mutated = true;
+        await assets(patch.assets);
+      }
       if (patch.fonts.isNotEmpty) {
-        // Flutter has no font-unregister API. A partial registration failure
-        // cannot safely run the original app in this same isolate.
-        fontMutation = true;
+        mutated = true;
         await fonts(patch.fonts);
       }
       bootRequire(!failed, 'Boot attempt already failed');
@@ -142,7 +145,7 @@ class BootRunner {
       return;
     } catch (error) {
       if (error is! _NoPatch) await failure(error);
-      if (entered || fontMutation) return;
+      if (entered || mutated) return;
     }
     await original();
   }

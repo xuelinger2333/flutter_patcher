@@ -22,10 +22,9 @@ Future<void> installRuntimePackage(
   await File(p.join(root.path, 'lib/host.dart')).writeAsString(
       "import 'package:$app/$entry' as app;\n"
       "import 'package:flutter_patcher/src/patch_bootstrap.dart';\n"
-      "import 'package:flutter_patcher/src/bootstrap/overlay.dart';\n"
       "import 'dynamic_modules.dart';\n"
       "@pragma('vm:entry-point')\n"
-      'Object retainRuntime() => [PatchBootstrap.run, patcherWrap, patcherWholeBundle, patcherInstallAssets, loadModule];\n'
+      'Object retainRuntime() => [PatchBootstrap.run, loadModule];\n'
       'Future<void> main() { retainRuntime(); return Future<void>.sync(app.main); }\n');
   (config['packages'] as List).add({
     'name': 'dynamic_modules',

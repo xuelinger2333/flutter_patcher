@@ -344,6 +344,10 @@ class BuildPipeline {
         'public_key': request.publicKey,
         'package_inputs': sourceInputs,
         'pinned_packages': pins.pinned,
+        // Engine patches decide what a patch may rely on at boot.
+        'engine_patches': [
+          for (final row in engine['patches'] as List) row['file'] as String
+        ],
         'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
         'crlf_dart_sources': crlf
       };

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'bootstrap/assets.dart';
 import 'bootstrap/fonts.dart';
 import 'bootstrap/transport.dart';
 import 'bootstrap/runner.dart';
@@ -21,6 +22,7 @@ class PatchBootstrap {
     final runner = BootRunner(
         call: BootstrapTransport().call,
         load: loadModule,
+        assets: patcherInstallAssets,
         fonts: patcherLoadFonts,
         log: (e) => debugPrint('[FlutterPatcher] $e'),
         observe: (failure, onSuccess) {

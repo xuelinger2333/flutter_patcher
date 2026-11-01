@@ -8,6 +8,9 @@ import '../core.dart';
 import '../baseline/manifest.dart';
 import '../sdk/host.dart';
 
+/// The engine patch that installs patch assets in front of the app bundle.
+const engineAssetChannelPatch = '0001-patcher-asset-channel.patch';
+
 void assetKey(String key) {
   require(
       key.isNotEmpty &&

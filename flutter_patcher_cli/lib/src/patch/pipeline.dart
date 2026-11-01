@@ -386,8 +386,6 @@ class PatchPipeline {
           'PATCH_BASELINE_INCOMPATIBLE',
           'This host predates pinned-package records; rebuild it to patch '
               'dependency changes');
-      // Both known only once the bundle is built.
-      var resources = false;
       var tier = dependencyChanged ? 'whole' : 'lean';
       final modules = <String,
           ({
@@ -405,28 +403,15 @@ class PatchPipeline {
         final dir = p.join(work, tier == 'lean' ? 'module' : 'module-whole');
         final remap = await remapSources(
             config, dir, tier == 'lean' ? own : wholeOwn!, req.seq);
-        for (final reserved in ['__patch_entry.dart', '__patch_overlay.dart']) {
-          require(!await File(p.join(dir, app, reserved)).exists(),
-              'PATCH_SOURCE_INVALID', 'Application uses reserved $reserved');
-        }
+        require(
+            !await File(p.join(dir, app, '__patch_entry.dart')).exists(),
+            'PATCH_SOURCE_INVALID',
+            'Application uses reserved __patch_entry.dart');
         return modules[tier] = (
           remap: remap,
           names: Map<String, String>.from(remap['names'] as Map),
           dir: dir
         );
-      }
-
-      Future<void> installOverlay(String appDir) async {
-        final generated = p.join(appDir, '__patch_overlay.dart');
-        if (await File(generated).exists()) return;
-        final plugin = roots['flutter_patcher'] as Uri?;
-        require(plugin != null, 'PATCH_OVERLAY_UNAVAILABLE',
-            'Resource patches require the flutter_patcher dependency');
-        final helper =
-            File.fromUri(plugin!.resolve('src/bootstrap/overlay.dart'));
-        require(await helper.exists(), 'PATCH_OVERLAY_UNAVAILABLE',
-            'The flutter_patcher dependency has no resource overlay; use a newer version');
-        await helper.copy(generated);
       }
 
       // Before the bundle build: it shadows hook packages in this config.
@@ -435,11 +420,9 @@ class PatchPipeline {
         phase = '$tier-${emit ? 'emit' : 'check'}';
         final m = await module(tier);
         final names = m.names;
-        if (resources) await installOverlay(p.join(m.dir, app));
         await File(p.join(m.dir, app, '__patch_entry.dart')).writeAsString(
             patchEntry(names[app]!, req.target.substring(4), req.seq,
-                fingerprint, tier,
-                resources: resources));
+                fingerprint, tier));
         // As for the baseline kernel: virtual source URIs keep the run's work
         // path (and the developer's directories) out of the shipped module.
         final virtual = usage.contains('filesystem_roots')
@@ -469,9 +452,6 @@ class PatchPipeline {
           'platform':
               p.join(sdk.root, (manifest['platform'] as Map)['path'] as String),
           'allocated': p.join(baseline, 'allocate_finalized.json'),
-          'resources': resources,
-          if (resources)
-            'overlay_library': 'package:${names[app]}/__patch_overlay.dart',
           'own': names.values.toList(),
           'original_own': (tier == 'lean' ? own : wholeOwn!).toList(),
           'out': p.join(work, 'module.bc'),
@@ -495,8 +475,7 @@ class PatchPipeline {
       phase = 'resources';
       final bundle = p.join(work, 'flutter_assets');
       // The bundle build compiles the whole app once more just for assets.
-      // Meanwhile the module compiles, assuming no asset changed; it is
-      // compiled again with the resource overlay if one did. The compile
+      // Meanwhile the module compiles: assets never change it. The compile
       // emits right away (the tool emits only when every check passes).
       final bundling = withoutBuildHooks(
           config,
@@ -517,16 +496,15 @@ class PatchPipeline {
                 bundle,
               ],
               cwd: project));
-      Map<String, dynamic>? speculative;
-      (Object, StackTrace)? speculativeError;
-      final speculation = compile(true).then<void>((r) => speculative = r,
-          onError: (Object e, StackTrace s) => speculativeError = (e, s));
+      final compiling = compile(true);
       try {
         await bundling;
-      } finally {
-        await speculation;
-        phase = 'resources';
+      } catch (_) {
+        await compiling.then<void>((_) {}, onError: (_) {});
+        rethrow;
       }
+      var outcome = await compiling;
+      phase = 'resources';
       final payload = PatchResources(bundle, work, commands, managed);
       final oldResources = receipt['resources'];
       require(oldResources is Map, 'PATCH_BASELINE_INCOMPATIBLE',
@@ -540,28 +518,21 @@ class PatchPipeline {
                   'manifest': <String, dynamic>{}
                 },
           req.assets);
-      if (payload.assets.isNotEmpty) changed.add('resources');
-      resources = payload.assets.isNotEmpty;
-      Map<String, dynamic> outcome;
-      if (!resources && speculativeError != null) {
-        Error.throwWithStackTrace(speculativeError!.$1, speculativeError!.$2);
-      } else if (!resources && speculative != null) {
-        outcome = speculative!;
-      } else {
-        if (speculative != null) reports.remove(speculative);
-        outcome = await compile(true);
+      if (payload.assets.isNotEmpty) {
+        changed.add('resources');
+        // The engine installs patch assets in front of the app bundle; under
+        // an engine without that patch every boot of this patch would fail.
+        final engine = (await baselineObject(
+            p.join(baseline, 'compile_receipt.json')))['engine_patches'];
+        require(
+            engine is List && engine.contains(engineAssetChannelPatch),
+            'PATCH_ENGINE_UNSUPPORTED',
+            'Asset changes need a host whose engine installs patch assets '
+                '($engineAssetChannelPatch); rebuild the host with the '
+                'current engine, or ship the assets in a host release');
       }
       // An FFI call in the module is no tier's to fix.
       rejectFfi(outcome);
-      final resourceCheck = (outcome['checks'] as Map)['resources'];
-      require(
-          !resources ||
-              resourceCheck is! Map ||
-              resourceCheck['verdict'] == 'INJECTABLE',
-          'PATCH_RESOURCE_UNSAFE',
-          'The changed assets could be read past the patch overlay '
-              '(${resourceCheck is Map ? resourceCheck['verdict'] : ''}); '
-              'see the resource check in $work. Ship them in a host release.');
       // Lean rejected: the whole tier carries the free packages the module
       // used through the host interface, and may pass.
       if (outcome['status'] != 'compiled' &&
@@ -577,8 +548,6 @@ class PatchPipeline {
           'PATCH_UNSAFE',
           '${tier == 'lean' ? 'Lean' : 'Whole'}-tier checks failed: '
               '${checkSummary(finalReport)}; evidence: $work');
-      require(!resources || finalReport['overlay'] is Map, 'PATCH_UNSAFE',
-          'Resource transform did not run');
       await payload.collectFonts(finalReport['fonts'] as List? ?? [],
           finalReport['dynamic_fonts'] as List? ?? [],
           hostIcons: finalReport['host_icons'] as List?,

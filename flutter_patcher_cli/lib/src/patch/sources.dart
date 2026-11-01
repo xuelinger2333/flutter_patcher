@@ -176,10 +176,8 @@ Future<Map<String, Object?>> remapSources(
   return {'packages': result, 'names': names};
 }
 
-String patchEntry(
-        String package, String target, int seq, String fingerprint, String tier,
-        {bool resources = false}) =>
+String patchEntry(String package, String target, int seq, String fingerprint,
+        String tier) =>
     'import ${jsonEncode('package:$package/$target').replaceAll(r'$', r'\$')} as app;\n'
-    '${resources ? 'import "__patch_overlay.dart" as overlay;\n' : ''}'
     '@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
-    'Object? dynamicModuleEntrypoint() => <Object?>[1,$seq,"$fingerprint","$tier",app.main,${resources ? 'overlay.patcherInstallAssets' : 'null'}];\n';
+    'Object? dynamicModuleEntrypoint() => <Object?>[1,$seq,"$fingerprint","$tier",app.main,null];\n';
