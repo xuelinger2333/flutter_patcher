@@ -23,9 +23,6 @@ example/android/local.properties
 # Pre-built demo APKs / .so artifacts under repo root
 dist/
 
-# Local test fixtures used during development (the example bundles its own under example/assets)
-example/tools/
-
 # IDE and editor metadata
 .idea/
 .vscode/
@@ -39,13 +36,6 @@ temp/
 test/
 android/src/test/
 android/src/androidTest/
-
-# Local development projects and engine work, not in Git (a .pubignore
-# replaces .gitignore for publishing, so they must be listed here).
-fixture/
-fixture_prefs/
-fixture_support/
-engine_patches/
 
 # Large media: README links them from GitHub.
 doc/feature-presentation.gif
