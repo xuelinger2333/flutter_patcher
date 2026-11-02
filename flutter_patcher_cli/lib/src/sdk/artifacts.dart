@@ -405,7 +405,13 @@ class ArtifactStore {
     final source =
         '${base.toString().replaceAll(RegExp(r'/+$'), '')}/flutter-${sdk.version}/';
     final manifestName = '$kind.manifest.json';
+    final missing = kind.startsWith('engine')
+        ? 'ENGINE_ARTIFACT_MISSING'
+        : 'TOOLS_ARTIFACT_MISSING';
+    final staging = temporaryName(directory);
+    var outdated = false;
     if (!refresh && await Directory(directory).exists()) {
+      Map<String, dynamic>? cached;
       try {
         final provenance = await readObject(p.join(directory, 'source.json'));
         require(provenance['url'] == source, 'CACHE_INVALID',
@@ -413,19 +419,40 @@ class ArtifactStore {
         final manifest = await readObject(p.join(directory, manifestName));
         checkManifest(manifest, kind, sdk);
         await validateFiles(directory, manifest, host: sdk.host);
-        return manifest;
+        cached = manifest;
       } catch (_) {
         if (downloads.offline) rethrow;
         await quarantine(directory);
       }
+      if (cached != null) {
+        if (downloads.offline) return cached;
+        // A release can be rebuilt under the same Flutter version (a new
+        // engine patch, fixed tools): the small manifest says whether the
+        // cached files are still the source's.
+        try {
+          await downloads.fetch(
+              Uri.parse('$source$manifestName'), p.join(staging, manifestName),
+              missingCode: missing, maxBytes: 1024 * 1024);
+        } catch (error) {
+          // Unreachable or failing source: the verified cache still works.
+          await _discard(staging);
+          stderr.writeln('WARNING: ARTIFACT_CHECK_SKIPPED: using cached $kind '
+              'artifacts; cannot reach $source ($error)');
+          return cached;
+        }
+        if (await _sameBytes(
+            p.join(staging, manifestName), p.join(directory, manifestName))) {
+          await _discard(staging);
+          return cached;
+        }
+        outdated = true;
+      }
     }
-    final missing = kind.startsWith('engine')
-        ? 'ENGINE_ARTIFACT_MISSING'
-        : 'TOOLS_ARTIFACT_MISSING';
-    final staging = temporaryName(directory);
-    await downloads.fetch(
-        Uri.parse('$source$manifestName'), p.join(staging, manifestName),
-        missingCode: missing, maxBytes: 1024 * 1024);
+    if (!outdated) {
+      await downloads.fetch(
+          Uri.parse('$source$manifestName'), p.join(staging, manifestName),
+          missingCode: missing, maxBytes: 1024 * 1024);
+    }
     final manifest = await readObject(p.join(staging, manifestName));
     checkManifest(manifest, kind, sdk);
     for (final file in hostFiles(manifest, sdk.host)) {
@@ -435,9 +462,37 @@ class ArtifactStore {
     }
     await validateFiles(staging, manifest, host: sdk.host);
     await writeObject(p.join(staging, 'source.json'), {'url': source});
-    if (await Directory(directory).exists()) await quarantine(directory);
-    await Directory(staging).renameRetry(directory);
+    if (outdated) {
+      // Valid but superseded: nothing to diagnose, so it is not kept.
+      final retired = temporaryName('$directory.retired');
+      await Directory(directory).renameRetry(retired);
+      await Directory(staging).renameRetry(directory);
+      await _discard(retired);
+    } else {
+      if (await Directory(directory).exists()) await quarantine(directory);
+      await Directory(staging).renameRetry(directory);
+    }
     return manifest;
+  }
+
+  static Future<bool> _sameBytes(String a, String b) async {
+    final left = await File(a).readAsBytes(),
+        right = await File(b).readAsBytes();
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (left[i] != right[i]) return false;
+    }
+    return true;
+  }
+
+  static Future<void> _discard(String path) async {
+    try {
+      if (await Directory(path).exists()) {
+        await Directory(path).deleteRetry(recursive: true);
+      }
+    } on FileSystemException {
+      // A leftover staging directory is never read as a cache.
+    }
   }
 
   /// Moves a flat engine cache (`engine/engine.manifest.json` directly under

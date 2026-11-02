@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'pins.dart';
 import 'package:yaml/yaml.dart';
 import '../core.dart';
+import '../run_work.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/environment.dart';
 import '../sdk/package_inputs.dart';
@@ -86,9 +87,7 @@ class BuildPipeline {
   Future<Map<String, dynamic>> build(BuildRequest request) async {
     await request.validate();
     _requireOutsideSdk(request.output);
-    final work = temporaryName(p.join(cache, 'builds/run'));
-    await rejectLinks(work);
-    await Directory(work).create(recursive: true);
+    final work = await RunWork.create(p.join(cache, 'builds/run'));
     require(!work.contains(',') && !work.contains('\n'), 'BUILD_CONFIG_INVALID',
         'Build paths cannot contain commas/newlines.');
     final workspace = BuildWorkspace(work);
@@ -375,11 +374,11 @@ class BuildPipeline {
         'status': 'build_archived',
         ...receipt,
         'baseline': archived,
-        'work': work,
         'device_verified': false
       };
       await _writeOutput(
           request, apk, report, ios ? 'app-release.ipa' : 'app-release.apk');
+      await RunWork.finish(work);
       return {...report, 'output': p.absolute(request.output)};
     } catch (error) {
       await _recordFailure(work, phase, error);
@@ -396,9 +395,7 @@ class BuildPipeline {
     require(policy.fields['strategy'] == 'so', 'BUILD_CONFIG_INVALID',
         'Host policy strategy is not so.');
     _requireOutsideSdk(request.output);
-    final work = temporaryName(p.join(cache, 'builds/run'));
-    await rejectLinks(work);
-    await Directory(work).create(recursive: true);
+    final work = await RunWork.create(p.join(cache, 'builds/run'));
     final workspace = BuildWorkspace(work);
     var phase = 'prepare';
     final run = runner(work, () => phase);
@@ -431,8 +428,8 @@ class BuildPipeline {
           await writeHostTrust(project, release, policy, identity);
       final target = await writeBootstrapEntry(
           project,
-          bootstrapSource(package, request.target.substring(4), identity,
-              request.publicKey,
+          bootstrapSource(
+              package, request.target.substring(4), identity, request.publicKey,
               modules: false));
       phase = 'apk';
       final apk = await assembleApk(run, project, request, target, const []);
@@ -463,17 +460,16 @@ class BuildPipeline {
         ...receipt,
         'fingerprint': identity,
         'baseline': archived,
-        'work': work,
         'device_verified': false
       };
       await _writeOutput(request, apk, report, 'app-release.apk');
+      await RunWork.finish(work);
       return {...report, 'output': p.absolute(request.output)};
     } catch (error) {
       await _recordFailure(work, phase, error);
       rethrow;
     }
   }
-
 
   void _requireOutsideSdk(String output) => require(
       !p.equals(p.absolute(output), p.absolute(sdk.root)) &&
@@ -492,8 +488,9 @@ class BuildPipeline {
           extraEnvironment: env,
           timeout: const Duration(hours: 2),
           logPath: p.join(work, '${index++}-${phase()}.log'));
-      require(result.exitCode == 0, 'BUILD_STEP_FAILED',
-          '${phase()} failed (exit ${result.exitCode}); evidence: $work');
+      if (result.exitCode != 0) {
+        throw stepFailure('BUILD_STEP_FAILED', phase(), result, work);
+      }
       return result.stdout;
     };
   }
@@ -605,7 +602,8 @@ class BuildPipeline {
   Future<void> _recordFailure(String work, String phase, Object error) =>
       writeObject(p.join(work, 'failure.json'), {
         'phase': phase,
-        'error': error is Failure ? error.code : error.runtimeType.toString()
+        'error': error is Failure ? error.code : error.runtimeType.toString(),
+        if (error is Failure) 'message': error.message
       });
 }
 

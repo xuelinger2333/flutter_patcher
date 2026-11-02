@@ -299,14 +299,15 @@ void main() {
     tearDown(() async {
       await server.close(force: true);
     });
-    test('cold download, warm hit, offline use without HTTP', () async {
+    test('cold download, warm hit checks only the manifest, offline no HTTP',
+        () async {
       await store.checkSupport(sdk.version);
       await store.obtain('engine', sdk);
       await store.obtain('tools', sdk);
       final count = network.requests;
       await store.checkSupport(sdk.version);
       await store.obtain('engine', sdk);
-      expect(network.requests, count);
+      expect(network.requests, count + 1);
       final offline = ArtifactStore(
           temp.path, store.base, store.supportUri, Downloads(offline: true));
       await offline.checkSupport(sdk.version);
@@ -341,7 +342,35 @@ void main() {
       await store.obtain('tools', sdk, refresh: true);
       expect(network.requests, count + 2);
       await store.obtain('engine', sdk);
-      expect(network.requests, count + 2);
+      expect(network.requests, count + 3);
+    });
+    test('a release rebuilt under the same version replaces the cache',
+        () async {
+      await store.obtain('tools', sdk);
+      const name = 'flutter_patcher_tools-3.47.2.dill';
+      fixture.bytes[name] = [144, 171, 205, 239, 2];
+      (fixture.tools['files'] as List)[0] = {
+        'role': 'tools',
+        'name': name,
+        'size': 5,
+        'sha256': sha256.convert(fixture.bytes[name]!).toString()
+      };
+      await store.obtain('tools', sdk);
+      expect(await File(store.file(sdk, 'tools', name)).readAsBytes(),
+          fixture.bytes[name]);
+      // A superseded cache was valid: nothing is kept for diagnosis.
+      expect(
+          Directory(p.join(temp.path, 'artifacts', '3.47.2'))
+              .listSync()
+              .map((e) => p.basename(e.path))
+              .where((n) => n.startsWith('tools')),
+          ['tools']);
+    });
+    test('an unreachable source keeps using verified artifacts', () async {
+      await store.obtain('tools', sdk);
+      await server.close(force: true);
+      final manifest = await store.obtain('tools', sdk);
+      expect(manifest['files'], fixture.tools['files']);
     });
     test('refreshes a cached support table for a newly supported version',
         () async {

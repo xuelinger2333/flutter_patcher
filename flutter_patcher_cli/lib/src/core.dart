@@ -15,6 +15,60 @@ class Failure implements Exception {
   String toString() => '$code: $message';
 }
 
+/// A failure for an error no step anticipated. File system and process
+/// errors name their path and the OS's reason (a full disk, a file another
+/// process holds); other errors only their type, as their text may quote
+/// inputs such as key material.
+Failure unexpectedFailure(String code, String what, Object error) {
+  if (error is FileSystemException) {
+    final os = error.osError;
+    if (os != null && _diskFull(os.errorCode)) return _noSpace(error.path);
+    final path = error.path == null ? '' : ': ${error.path}';
+    final reason =
+        os == null ? '' : ' (${os.message.trim()}, error ${os.errorCode})';
+    return Failure(code, '$what failed: ${error.message}$path$reason.');
+  }
+  if (error is ProcessException) {
+    return Failure(code,
+        '$what failed: cannot run ${error.executable}: ${error.message.trim()}.');
+  }
+  return Failure(code, '$what failed (${error.runtimeType}).');
+}
+
+/// The failure of a step that exited with [result]: [code], with the last
+/// lines the step printed, or `DISK_FULL` when it ran out of space.
+Failure stepFailure(
+    String code, String what, CommandResult result, String evidence) {
+  final lines = '${result.stdout}\n${result.stderr}'
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+  final space = RegExp(r'errno = (\d+)|error (\d+)\)');
+  for (final line in lines) {
+    final match = space.firstMatch(line);
+    final errno = int.tryParse(match?.group(1) ?? match?.group(2) ?? '');
+    if (errno != null && _diskFull(errno) || line.contains('No space left')) {
+      final path = RegExp(r"path = '([^']+)'").firstMatch(line)?.group(1);
+      return _noSpace(path, evidence: evidence);
+    }
+  }
+  final tail = [
+    for (final line in lines.skip(lines.length > 2 ? lines.length - 2 : 0))
+      line.length > 300 ? '${line.substring(0, 300)}...' : line
+  ].join(' | ');
+  return Failure(code,
+      '$what failed (exit ${result.exitCode})${tail.isEmpty ? '' : ': $tail'}; evidence: $evidence');
+}
+
+bool _diskFull(int errno) =>
+    Platform.isWindows ? errno == 112 || errno == 39 : errno == 28;
+
+Failure _noSpace(String? path, {String? evidence}) => Failure(
+    'DISK_FULL',
+    'No space left on the device${path == null ? '' : ' writing $path'}; '
+        'free space and retry.'
+        '${evidence == null ? '' : ' Evidence: $evidence'}');
 void require(bool condition, String code, String message) {
   if (!condition) throw Failure(code, message);
 }

@@ -94,8 +94,8 @@ Future<int> baselineCommand(ArgResults args) async {
   } catch (e) {
     final failure = e is Failure
         ? e
-        : Failure('BASELINE_OPERATION_FAILED',
-            'Baseline operation failed (${e.runtimeType}).');
+        : unexpectedFailure(
+            'BASELINE_OPERATION_FAILED', 'Baseline operation', e);
     stderr.writeln(jsonEncode({
       'command': 'baseline',
       'status': 'failed',

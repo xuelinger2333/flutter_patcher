@@ -229,8 +229,9 @@ class BytecodeProducer implements CodeProducer {
         .runResult(_p.sdk.dart, [_p.tool, 'compile-patch', '--request', input]);
     await File(p.join(work, '${run.phase}.log'))
         .writeAsString('${result.stdout}\n${result.stderr}');
-    require(result.exitCode == 0, 'PATCH_TOOL_FAILED',
-        'Compiler/checker failed; evidence: $work');
+    if (result.exitCode != 0) {
+      throw stepFailure('PATCH_TOOL_FAILED', 'Compiler/checker', result, work);
+    }
     // Tools write their report to stdout; CFE incidental diagnostics stay in the log.
     await File(output).writeAsString(result.stdout);
     final report = await readObject(output);

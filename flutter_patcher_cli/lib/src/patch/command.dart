@@ -103,7 +103,7 @@ Future<int> patchCommand(ArgResults args) async {
   } catch (error) {
     final failure = error is Failure
         ? error
-        : Failure('PATCH_FAILED', 'Patch failed (${error.runtimeType})');
+        : unexpectedFailure('PATCH_FAILED', 'Patch', error);
     stderr.writeln(jsonEncode({
       'command': 'patch',
       'status': 'failed',

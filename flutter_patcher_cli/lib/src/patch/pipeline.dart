@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 import '../core.dart';
+import '../run_work.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
 import '../build/runtime_package.dart';
@@ -209,9 +210,7 @@ class PatchPipeline {
           'PATCH_CONFIG_INVALID',
           'Output cannot be inside a Flutter SDK');
     }
-    final work = temporaryName(p.join(cache, 'patches/run'));
-    await rejectLinks(work);
-    await Directory(work).create(recursive: true);
+    final work = await RunWork.create(p.join(cache, 'patches/run'));
     PatchRun? run;
     try {
       final resolved = await baselines.resolve(
@@ -332,7 +331,7 @@ class PatchPipeline {
       await workspace.verifyOriginals();
       await baselines.recheck(resolved, sdkRoot: sdk.root);
       final so = resolved.strategy == 'so';
-      return await writeOutput(req, artifact['file'] as String, {
+      final output = await writeOutput(req, artifact['file'] as String, {
         'status': 'patch_created',
         'platform': req.platform,
         'abi': req.abi,
@@ -354,8 +353,9 @@ class PatchPipeline {
           if (!so) 'compile': resolved.compileRoot,
           'release': resolved.releaseRoot
         },
-        'work': work
       });
+      await RunWork.finish(work);
+      return output;
     } catch (error) {
       final phase = run?.phase ?? 'baseline';
       await writeObject(p.join(work, 'failure.json'), {

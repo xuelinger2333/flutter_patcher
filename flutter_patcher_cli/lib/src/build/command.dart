@@ -109,7 +109,7 @@ Future<int> buildCommand(ArgResults args) async {
   } catch (error) {
     final failure = error is Failure
         ? error
-        : Failure('BUILD_FAILED', 'Build failed (${error.runtimeType}).');
+        : unexpectedFailure('BUILD_FAILED', 'Build', error);
     stderr.writeln(jsonEncode({
       'command': 'build',
       'status': 'failed',
