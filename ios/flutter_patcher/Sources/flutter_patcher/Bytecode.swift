@@ -287,14 +287,18 @@ final class BytecodePatchManager {
     }
   }
 
-  /// The offer for an isolate a background engine starts: the active,
-  /// authorized candidate, for any number of engines, starting no attempt and
-  /// changing no boot state. nil runs the entry point as built.
+  /// The offer for an isolate a background engine starts, for any number of
+  /// engines, starting no attempt and changing no boot state: the code this
+  /// process booted, so one process never runs two versions; a failed boot
+  /// runs as built. Before this process boots, the active, authorized
+  /// candidate. nil runs the entry point as built.
   func backgroundPayload(fingerprint fp: String, publicKey: String) throws -> [String: Any]? {
     try locked {
       let (auth, raw) = try bootstrap(fp, publicKey)
       let store = try store()
-      guard let meta = try store.activeFor(fp) else { return nil }
+      let claimed = fingerprint != nil || Self.processClaimed
+      guard let meta = claimed ? (attempt?.failed == true ? nil : offeredMeta) : try store.activeFor(fp)
+      else { return nil }
       do {
         try auth.checkBoot(meta)
         return ["transportVersion": 1, "envelopeBytes": try envelope(store, meta, fp, raw)]

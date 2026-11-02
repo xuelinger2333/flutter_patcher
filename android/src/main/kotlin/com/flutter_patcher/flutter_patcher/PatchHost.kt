@@ -87,15 +87,16 @@ internal class PatchHost private constructor(
     }
 
     /**
-     * The offer for an isolate a background engine starts: the code this
-     * process runs, for any number of engines, starting no attempt and
-     * changing no boot state. Code loaded before the engine is offered only
-     * when this process loaded it; otherwise the active, authorized
-     * candidate. Null runs the entry point as built.
+     * The offer for an isolate a background engine starts, for any number of
+     * engines, starting no attempt and changing no boot state: the code this
+     * process booted, so one process never runs two versions; a failed boot
+     * runs as built. Before this process boots, and only for code that loads
+     * after the engine, the active, authorized candidate. Null runs the entry
+     * point as built.
      */
     fun backgroundPayload(fp: String, publicKey: String): Map<String, Any?>? = synchronized(lock) {
         requireBootstrap(fp, publicKey)
-        val meta = if (format.loadsBeforeEngine) attempt?.takeIf { it.code != null }?.meta
+        val meta = if (claimed || format.loadsBeforeEngine) attempt?.takeIf { !it.boot.failed }?.meta
             else store.activeFor(fingerprint)?.takeIf {
                 try { auth.checkBoot(it); true } catch (_: Exception) { false }
             }
