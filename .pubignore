@@ -35,8 +35,21 @@ example/tools/
 plan/
 temp/
 
-# Frozen acceptance evidence belongs in Git, not the published package.
-test/acceptance/baselines/
+# Tests stay in Git; none of them is ever built into an app.
+test/
+android/src/test/
+android/src/androidTest/
+
+# Local development projects and engine work, not in Git (a .pubignore
+# replaces .gitignore for publishing, so they must be listed here).
+fixture/
+fixture_prefs/
+fixture_support/
+engine_patches/
+
+# Large media: README links them from GitHub.
+doc/feature-presentation.gif
+doc/social-preview.png
 
 # OS junk
 .DS_Store

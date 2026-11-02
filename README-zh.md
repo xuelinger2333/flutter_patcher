@@ -15,7 +15,7 @@ standard/custom。SO 仍走现有 v1 流程。详见[默认路径与回退规则
 
 如果你用过 [Shorebird](https://shorebird.dev/)、[CodePush](https://learn.microsoft.com/en-us/appcenter/distribution/codepush/) 或 [Expo EAS Update](https://docs.expo.dev/eas-update/introduction/) —— flutter_patcher 将相同的 OTA 更新模式带到 Flutter Android，完全自托管、MIT 协议。
 
-![功能演示：应用补丁、冷启动生效和回滚](doc/feature-presentation.gif)
+![功能演示：应用补丁、冷启动生效和回滚](https://raw.githubusercontent.com/xuelinger2333/flutter_patcher/main/doc/feature-presentation.gif)
 
 ---
 

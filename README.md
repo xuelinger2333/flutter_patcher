@@ -16,7 +16,7 @@ Ship Dart code and asset hotfixes over the air — no store release, no third-pa
 
 If you've used [Shorebird](https://shorebird.dev/), [CodePush](https://learn.microsoft.com/en-us/appcenter/distribution/codepush/), or [Expo EAS Update](https://docs.expo.dev/eas-update/introduction/) — flutter_patcher brings the same OTA update model to Flutter Android, fully self-hosted and MIT-licensed.
 
-![Feature demo: apply a patch, cold restart, and rollback](doc/feature-presentation.gif)
+![Feature demo: apply a patch, cold restart, and rollback](https://raw.githubusercontent.com/xuelinger2333/flutter_patcher/main/doc/feature-presentation.gif)
 
 ---
 
