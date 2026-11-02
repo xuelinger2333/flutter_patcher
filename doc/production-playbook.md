@@ -56,6 +56,21 @@ Track each patch with at least:
 
 ---
 
+## Compress patch downloads
+
+The entries of a bytecode patch (`.fptc`) are stored uncompressed, so the
+device can check and load them without unpacking. On the wire they compress
+well: a 2.27 MB lean patch is 0.83 MB with gzip. Turn on gzip (or let your CDN
+do it) for `.fptc` responses.
+
+The client asks for gzip and decodes it before any check: the size and SHA-256
+in the signed manifest apply to the decoded file, exactly as without
+compression. Keep publishing the original file; do not upload a pre-compressed
+copy under the same name unless your server marks it with
+`Content-Encoding: gzip`, or the digest check will reject it.
+
+---
+
 ## Plan for emergency rollback
 
 An emergency rollback only requires the update endpoint to stop returning the offending patch version. Devices that already tripped crash protection have rolled back locally and will refuse to apply the same problematic patch again.

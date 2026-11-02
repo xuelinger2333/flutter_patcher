@@ -193,7 +193,11 @@ private final class Download: NSObject, URLSessionDataDelegate {
     let http = response as? HTTPURLResponse
     if http?.statusCode != 200 {
       rejected = "Download HTTP status rejected"
-    } else if response.expectedContentLength != -1 && response.expectedContentLength != Int64(expected) {
+    } else if response.expectedContentLength != -1 && response.expectedContentLength != Int64(expected)
+      && (http?.value(forHTTPHeaderField: "Content-Encoding") ?? "identity").lowercased() == "identity"
+    {
+      // A compressed body's length is not the patch's: URLSession hands over
+      // the decoded bytes, which the size bound and digest below then check.
       rejected = "Download length"
     }
     completionHandler(rejected == nil ? .allow : .cancel)
