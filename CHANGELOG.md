@@ -4,6 +4,12 @@
 
 ### Added
 
+- The command-line tool ships in this package: after adding
+  `flutter_patcher` to an app, run `dart run flutter_patcher <command>`
+  (`keys init`, `build`, `patch`, `publish`, `doctor`, ...). Its version is
+  always the plugin version the app resolved. The tool adds the pure-Dart
+  dependencies `args`, `archive`, `path` and `yaml`; app code does not import
+  them.
 - Authenticated `.so` hosts: a host policy with `"strategy":"so"` makes
   `build android` produce an SO host whose patches (`libapp.so` plus changed
   assets) install only from signed publish manifests, with the same replay,
@@ -20,6 +26,9 @@
   AGP 9 it compiles with AGP's built-in Kotlin, so apps no longer see the
   "applies KGP" deprecation warning; on AGP 8 it uses the app's Kotlin
   plugin as before. Kotlin targets JVM 17 either way.
+- Baseline archives are gzip (`.tar.gz`) from `dart:io`, so the CLI no
+  longer needs `zstd` on PATH. Baselines archived as `.tar.zst` are not read;
+  rebuild the host to archive a new baseline.
 - macOS hosts are verified for iOS builds and patches, so `build ios` and
   `patch ios` no longer require `FLUTTER_PATCHER_UNVERIFIED_HOST` there.
   Android commands on macOS still do.
@@ -39,8 +48,7 @@
   and `checkUpdate` throws `PatcherException` there. To migrate: create keys
   with `flutter_patcher keys init`, build with `build android --host-policy`,
   make patches with `patch android`, publish them with `publish`, and point
-  `checkUpdate` at the published manifest. The plugin no longer depends on
-  `archive` or `args`.
+  `checkUpdate` at the published manifest.
 - The experimental `--framework-reuse` option of `build android` and
   `patch android`. Its host surface added about 4.5 MiB to `libapp.so`,
   above the 1.5 MiB budget, so it never became a default. Baselines built

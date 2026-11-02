@@ -51,14 +51,10 @@ jobs:
           flutter-version: ${{ matrix.version }}
           channel: stable
       - run: flutter pub get
+      - run: flutter analyze
       - run: flutter test
-      - working-directory: flutter_patcher_cli
+      - name: CLI publication to an isolated S3
         run: |
-          dart pub get
-      - name: CLI with isolated S3 and real zstd
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y zstd
           python3 -m venv "$RUNNER_TEMP/ci-tests"
           "$RUNNER_TEMP/ci-tests/bin/pip" install -r test/acceptance/test-requirements.txt
           export PATH="$RUNNER_TEMP/ci-tests/bin:$PATH"

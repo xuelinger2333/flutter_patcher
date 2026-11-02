@@ -17,17 +17,26 @@ environment:
   sdk: '>=3.12.0 <4.0.0'
   flutter: '>=3.44.0'
 
+# The command-line tool (bin/flutter_patcher.dart, `dart run flutter_patcher`)
+# needs args, archive, path and yaml; the app code never imports them.
+executables:
+  flutter_patcher: flutter_patcher
+
 dependencies:
   flutter:
     sdk: flutter
   plugin_platform_interface: '>=2.0.2 <3.0.0'
   crypto: '>=3.0.3 <4.0.0'
+  args: '>=2.5.0 <3.0.0'
+  archive: '>=4.0.0 <5.0.0'
+  path: '>=1.9.0 <2.0.0'
+  yaml: '>=3.1.2 <4.0.0'
 
 dev_dependencies:
-  archive: '>=3.4.10 <5.0.0'
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  test: any
 
 flutter:
   plugin:

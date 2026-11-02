@@ -6,6 +6,10 @@
 
 ### Added
 
+- 命令行工具随本包发布：应用添加 `flutter_patcher` 依赖后，运行
+  `dart run flutter_patcher <命令>`（`keys init`、`build`、`patch`、`publish`、
+  `doctor` 等）。工具版本始终等于应用解析到的插件版本。工具带来纯 Dart 依赖
+  `args`、`archive`、`path` 与 `yaml`，应用代码不会引用它们。
 - 带认证的 `.so` 宿主：宿主策略写 `"strategy":"so"` 时，`build android` 构建 SO 宿主，
   它的补丁（`libapp.so` 加上变化的资源）只能通过签名的发布清单安装，和字节码宿主
   一样具备防回放、撤回与密钥轮换保护。凡是带策略构建的宿主，`checkUpdate` 都会获取
@@ -19,6 +23,8 @@
 - Android 插件不再自行应用 Kotlin Gradle 插件。在 AGP 9 上由 AGP 内置的 Kotlin
   编译，应用不再看到“applies KGP”的弃用警告；在 AGP 8 上照旧使用应用自己的
   Kotlin 插件。两种情况下 Kotlin 都以 JVM 17 为目标。
+- 基线归档改用 `dart:io` 自带的 gzip（`.tar.gz`），CLI 不再需要 PATH 中的 `zstd`。
+  以 `.tar.zst` 归档的基线不再读取，需要重新构建宿主以归档新基线。
 - macOS 主机已验证可用于 iOS 构建与补丁，在 macOS 上运行 `build ios`、`patch ios`
   不再需要 `FLUTTER_PATCHER_UNVERIFIED_HOST`。macOS 上的 Android 命令仍然需要。
 
@@ -34,8 +40,7 @@
   `PatchBootStatus.droppedSignatureInvalid`。不带策略的宿主只运行原始代码，在其上调用
   `checkUpdate` 会抛出 `PatcherException`。迁移步骤：用 `flutter_patcher keys init`
   生成密钥，用 `build android --host-policy` 构建，用 `patch android` 生成补丁，用
-  `publish` 发布，再把 `checkUpdate` 指向发布出来的清单。插件不再依赖 `archive` 与
-  `args`。
+  `publish` 发布，再把 `checkUpdate` 指向发布出来的清单。
 - 移除 `build android` 与 `patch android` 的实验选项 `--framework-reuse`。它为
   宿主保留的接口使 `libapp.so` 增大约 4.5 MiB，超出 1.5 MiB 的预算，因此从未成为
   默认行为。用它构建的基线（schema 4）现在会以 `BASELINE_SCHEMA_UNSUPPORTED` 被

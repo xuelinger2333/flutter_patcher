@@ -1,4 +1,4 @@
-"""Run CLI tests against an isolated S3 emulator with test-only credentials."""
+"""Run the CLI S3 publication tests against an isolated emulator with test-only credentials."""
 import argparse
 import os
 from pathlib import Path
@@ -31,9 +31,8 @@ def run(repo, dart, out):
             subprocess.run(['aws', '--endpoint-url', endpoint, 's3api', 'create-bucket', '--bucket', 'flutter-patcher-test'],
                            env=env, check=True)
             with (out / 'cli.log').open('w') as output:
-                for command in [['analyze'], ['test', '--reporter', 'expanded']]:
-                    subprocess.run([str(dart), *command], cwd=repo / 'flutter_patcher_cli', env=env,
-                                   stdout=output, stderr=subprocess.STDOUT, check=True)
+                subprocess.run([str(dart), 'test', 'test/cli/publication_s3_test.dart', '--reporter', 'expanded'],
+                               cwd=repo, env=env, stdout=output, stderr=subprocess.STDOUT, check=True)
         finally:
             service.terminate(); service.wait(timeout=15)
 

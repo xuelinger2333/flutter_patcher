@@ -74,14 +74,14 @@ def create_app(flutter, repo, out, ca):
 
 
 def prepare(args, repo, out):
-    dart, cli = dart_binary(args.flutter_sdk), repo / 'flutter_patcher_cli/bin/flutter_patcher.dart'
+    dart, cli = dart_binary(args.flutter_sdk), repo / 'bin/flutter_patcher.dart'
     common = ['--flutter-sdk', args.flutter_sdk]
 
     def patcher(name, *argv):
         print('STAGE ' + name, flush=True)
         call([dart, cli, *argv], repo, out / (name + '.log'))
 
-    call([dart, 'pub', 'get'], repo / 'flutter_patcher_cli', out / 'cli-pub.log')
+    call([flutter_launcher(args.flutter_sdk), 'pub', 'get'], repo, out / 'cli-pub.log')
     keys = {}
     for role in ['patch', 'publisher', 'root']:
         patcher('keys-' + role, 'keys', 'init', '--out', out / 'keys' / role)
