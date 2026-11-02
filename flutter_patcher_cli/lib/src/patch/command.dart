@@ -95,6 +95,9 @@ Future<int> patchCommand(ArgResults args) async {
             baselines,
             engine: engine)
         .patch(request);
+    for (final warning in result['warnings'] as List? ?? const []) {
+      stderr.writeln('WARNING: ${warning['code']}: ${warning['message']}');
+    }
     stdout.writeln(jsonEncode({'command': 'patch', ...result}));
     return 0;
   } catch (error) {

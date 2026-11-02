@@ -13,6 +13,8 @@ import 'libapp.dart';
 import 'package.dart';
 import 'resources.dart';
 import 'rules.dart';
+import 'scan.dart';
+import 'sources.dart';
 
 class PatchFailure extends Failure {
   final Map<String, Object?> details;
@@ -303,6 +305,7 @@ class PatchPipeline {
           }
         }
       }
+      await _scan(current, payload);
       current.rules.check(PatchStage.resources, facts);
       current.rules.check(PatchStage.result, facts);
 
@@ -370,6 +373,33 @@ class PatchPipeline {
       }
       rethrow;
     }
+  }
+
+  /// Facts of the boundary warnings: read only when the patch changes code
+  /// or assets, which is when they apply.
+  Future<void> _scan(PatchRun run, PatchResources payload) async {
+    final facts = run.facts;
+    final sizes = [
+      for (final e in payload.entries.entries) (e.key, e.value.length)
+    ]..sort((a, b) => b.$2.compareTo(a.$2));
+    facts
+      ..resourceBytes = sizes.fold(0, (n, r) => n + r.$2)
+      ..largestResources = sizes.take(3).toList();
+    final assets = facts.changedAssets;
+    if (assets.isEmpty && !facts.codeChanged) return;
+    final scan = SourceScan(await packageRoots(run.config), run.app,
+        sdkRoots: [sdk.root, managed]);
+    if (assets.isNotEmpty) {
+      facts.nativeAssetReaders =
+          await scan.nativeAssetReaders(run.req.platform);
+      facts.assetsPassed =
+          await scan.assetsPassedTo(facts.nativeAssetReaders.keys, assets);
+    }
+    final background = await scan.backgroundEntries();
+    facts
+      ..backgroundEntries = background.entries
+      ..backgroundRegistrations = background.registrations;
+    trace('source scan');
   }
 
   /// Moves the envelope and report into the request's new output directory.
