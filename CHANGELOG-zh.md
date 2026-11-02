@@ -13,10 +13,14 @@
 
 ### Changed
 
-- 最低支持的 Flutter 版本提高到 3.32.0（Dart 3.8.0），`.so` 与字节码两条
-  流程使用同一下限。Flutter 3.32 是第一个在引擎构建中提供 Dart 动态模块的
-  版本，字节码流程依赖这项能力。更旧的 Flutter SDK 现在会在 `pub get` 时
-  被拒绝，而不是等到 Android 构建阶段才失败。
+- 最低支持的 Flutter 版本提高到 3.44.0（Dart 3.12.0），`.so` 与字节码两条
+  流程使用同一下限。更旧的 Flutter SDK 现在会在 `pub get` 时被拒绝，而不是
+  等到 Android 构建阶段才失败。
+- Android 插件不再自行应用 Kotlin Gradle 插件。在 AGP 9 上由 AGP 内置的 Kotlin
+  编译，应用不再看到“applies KGP”的弃用警告；在 AGP 8 上照旧使用应用自己的
+  Kotlin 插件。两种情况下 Kotlin 都以 JVM 17 为目标。
+- macOS 主机已验证可用于 iOS 构建与补丁，在 macOS 上运行 `build ios`、`patch ios`
+  不再需要 `FLUTTER_PATCHER_UNVERIFIED_HOST`。macOS 上的 Android 命令仍然需要。
 
 ### Removed
 

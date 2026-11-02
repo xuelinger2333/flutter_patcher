@@ -21,7 +21,7 @@ Future<int> patchCommand(ArgResults args) async {
     // iOS patches compile Dart only, so every supported host makes them.
     final platform = args.rest.single;
 
-    requireSupportedHost();
+    requireSupportedHost(target: platform);
     String value(String name) {
       final v = args[name] as String?;
       require(

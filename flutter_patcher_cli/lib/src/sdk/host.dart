@@ -5,8 +5,9 @@ import '../core.dart';
 
 /// Build-host identity.
 ///
-/// `verified` hosts are supported; `implemented` hosts have code paths but
-/// are not yet verified and are refused by the gate. Everything host-specific
+/// A host is supported for the platforms it is verified to build and patch
+/// for ([verifiedTargets]); `implemented` hosts have code paths, and any
+/// pairing not yet verified is refused by the gate. Everything host-specific
 /// (executable suffixes, the Flutter SDK toolchain directory, the gen_snapshot
 /// artifact name) is derived here so the rest of the CLI never spells out
 /// `linux-x64`.
@@ -22,7 +23,16 @@ class HostIdentity {
       Platform.operatingSystem, Abi.current().toString().split('_').last);
 
   static const linuxX64 = HostIdentity('linux', 'x64');
-  static const verified = {'linux-x64', 'windows-x64'};
+
+  /// The platforms each host is verified for. An iOS patch compiles Dart
+  /// only, so every verified host makes one; an iOS host build also needs
+  /// Xcode, which `build ios` checks.
+  static const verifiedTargets = {
+    'linux-x64': {'android', 'ios'},
+    'windows-x64': {'android', 'ios'},
+    'macos-arm64': {'ios'},
+  };
+  static Set<String> get verified => verifiedTargets.keys.toSet();
   static const implemented = {'linux-x64', 'windows-x64', 'macos-arm64'};
 
   String get key => '$os-$arch';
@@ -85,20 +95,30 @@ class HostIdentity {
 String? hostHome() =>
     Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 
-/// The single host-support gate for every command.
-HostIdentity requireSupportedHost() {
-  final host = HostIdentity.current();
-  // Maintainers bring up a new host before it is verified.
-  final unverified =
-      Platform.environment['FLUTTER_PATCHER_UNVERIFIED_HOST'] == '1' &&
-          HostIdentity.implemented.contains(host.key);
+/// The single host-support gate for every command. A command that builds
+/// or patches for one platform passes it as [target]; other commands need a
+/// host verified for any platform.
+HostIdentity requireSupportedHost(
+    {String? target, HostIdentity? host, Map<String, String>? environment}) {
+  final current = host ?? HostIdentity.current();
+  final targets = HostIdentity.verifiedTargets[current.key] ?? const <String>{};
+  final verified =
+      target == null ? targets.isNotEmpty : targets.contains(target);
+  // Maintainers bring up a new host, or platform, before it is verified.
+  final unverified = (environment ??
+              Platform.environment)['FLUTTER_PATCHER_UNVERIFIED_HOST'] ==
+          '1' &&
+      HostIdentity.implemented.contains(current.key);
   require(
-      HostIdentity.verified.contains(host.key) || unverified,
+      verified || unverified,
       'HOST_UNSUPPORTED',
-      HostIdentity.implemented.contains(host.key)
-          ? 'Host ${host.key} is implemented but not yet verified for release.'
-          : 'Supported build hosts: ${HostIdentity.verified.join(', ')}; detected ${host.key}.');
-  return host;
+      !HostIdentity.implemented.contains(current.key)
+          ? 'Supported build hosts: ${HostIdentity.verified.join(', ')}; detected ${current.key}.'
+          : targets.isEmpty
+              ? 'Host ${current.key} is implemented but not yet verified for release.'
+              : '$target on ${current.key} is not yet verified for release; '
+                  'this host is verified for ${(targets.toList()..sort()).join(', ')}.');
+  return current;
 }
 
 /// Marks a downloaded tool executable. No-op on Windows, where the loader

@@ -22,7 +22,7 @@ Future<int> buildCommand(ArgResults args) async {
         'Use build android or build ios.');
     final platform = args.rest.single;
 
-    final host = requireSupportedHost();
+    final host = requireSupportedHost(target: platform);
     String required(String key) {
       final value = args[key] as String?;
       require(value != null && value.isNotEmpty, 'BUILD_CONFIG_INVALID',

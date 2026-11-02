@@ -449,7 +449,7 @@ Only do this when you know the project creates a `FlutterEngine` ahead of time.
 
 `flutter_patcher` needs to influence Flutter Engine's loader during early Android startup.
 
-The current `pubspec` requires Flutter `>=3.32.0`; the loader hook is verified on Flutter `3.32 ~ 3.44`. If a future Flutter release changes the loader internals, you may temporarily override the field name without upgrading the plugin:
+The current `pubspec` requires Flutter `>=3.44.0`; the loader hook is verified on Flutter `3.44 ~ 3.47`. If a future Flutter release changes the loader internals, you may temporarily override the field name without upgrading the plugin:
 
 ```dart
 await FlutterPatcher.init(

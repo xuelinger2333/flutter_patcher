@@ -76,4 +76,39 @@ void main() {
               .having((e) => e.code, 'code', 'HOST_UNSUPPORTED')));
     }
   });
+  test('each host is verified for its own platforms', () {
+    const mac = HostIdentity('macos', 'arm64');
+    Matcher refused(String text) => throwsA(isA<Failure>()
+        .having((e) => e.code, 'code', 'HOST_UNSUPPORTED')
+        .having((e) => e.message, 'message', contains(text)));
+    // A Mac builds and patches iOS hosts, and runs the commands of any
+    // platform (keys, publish).
+    expect(
+        requireSupportedHost(target: 'ios', host: mac, environment: {}), mac);
+    expect(requireSupportedHost(host: mac, environment: {}), mac);
+    expect(
+        () =>
+            requireSupportedHost(target: 'android', host: mac, environment: {}),
+        refused('android on macos-arm64 is not yet verified'));
+    expect(
+        requireSupportedHost(
+            target: 'android',
+            host: mac,
+            environment: {'FLUTTER_PATCHER_UNVERIFIED_HOST': '1'}),
+        mac);
+    for (final host in const [
+      HostIdentity('linux', 'x64'),
+      HostIdentity('windows', 'x64')
+    ]) {
+      for (final target in ['android', 'ios']) {
+        expect(
+            requireSupportedHost(target: target, host: host, environment: {}),
+            host);
+      }
+    }
+    expect(
+        () => requireSupportedHost(
+            host: const HostIdentity('linux', 'arm64'), environment: {}),
+        refused('Supported build hosts'));
+  });
 }

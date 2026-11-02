@@ -13,11 +13,16 @@
 
 ### Changed
 
-- The minimum supported Flutter version is now 3.32.0 (Dart 3.8.0), and
-  the `.so` and bytecode workflows share this floor. Flutter 3.32 is the
-  first release whose engine build exposes Dart dynamic modules, which the
-  bytecode workflow requires. `pub get` now rejects older Flutter SDKs
-  instead of failing later in the Android build.
+- The minimum supported Flutter version is now 3.44.0 (Dart 3.12.0), and
+  the `.so` and bytecode workflows share this floor. `pub get` now rejects
+  older Flutter SDKs instead of failing later in the Android build.
+- The Android plugin no longer applies the Kotlin Gradle plugin itself. On
+  AGP 9 it compiles with AGP's built-in Kotlin, so apps no longer see the
+  "applies KGP" deprecation warning; on AGP 8 it uses the app's Kotlin
+  plugin as before. Kotlin targets JVM 17 either way.
+- macOS hosts are verified for iOS builds and patches, so `build ios` and
+  `patch ios` no longer require `FLUTTER_PATCHER_UNVERIFIED_HOST` there.
+  Android commands on macOS still do.
 
 ### Removed
 
