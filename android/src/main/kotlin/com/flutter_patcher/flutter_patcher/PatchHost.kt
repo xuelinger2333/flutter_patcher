@@ -20,6 +20,8 @@ internal typealias ProgressCallback = (phase: String, received: Long, total: Lon
  * authorized candidate once per process; [bootPayload] offers it to the Dart
  * bootstrap, [markBooting] starts it, and the first frame ([success]) or a
  * Dart failure ([error]) settles it. A crash leaves it to the next start.
+ * A background engine's isolate gets the same code ([backgroundPayload])
+ * outside any attempt.
  */
 internal class PatchHost private constructor(
     private val context: Context,
@@ -68,9 +70,7 @@ internal class PatchHost private constructor(
 
     /** The offer for this process, once; null runs the app as built. */
     fun bootPayload(fp: String, publicKey: String): Map<String, Any?>? = synchronized(lock) {
-        require(fp == fingerprint && Base64.decode(publicKey, Base64.DEFAULT).contentEquals(host.fptcKey)) {
-            "Bootstrap differs from immutable host"
-        }
+        requireBootstrap(fp, publicKey)
         // Code the engine loads first was chosen before it started.
         val boot = (if (format.loadsBeforeEngine) attempt else select())
             ?.takeIf { !it.offered } ?: return@synchronized null
@@ -82,6 +82,29 @@ internal class PatchHost private constructor(
             // Code already loaded runs regardless; the next start must not.
             store.recordFailure(boot.meta, error.message ?: "Candidate rejected", quarantine = boot.code != null)
             attempt = null
+            null
+        }
+    }
+
+    /**
+     * The offer for an isolate a background engine starts: the code this
+     * process runs, for any number of engines, starting no attempt and
+     * changing no boot state. Code loaded before the engine is offered only
+     * when this process loaded it; otherwise the active, authorized
+     * candidate. Null runs the entry point as built.
+     */
+    fun backgroundPayload(fp: String, publicKey: String): Map<String, Any?>? = synchronized(lock) {
+        requireBootstrap(fp, publicKey)
+        val meta = if (format.loadsBeforeEngine) attempt?.takeIf { it.code != null }?.meta
+            else store.activeFor(fingerprint)?.takeIf {
+                try { auth.checkBoot(it); true } catch (_: Exception) { false }
+            }
+        meta ?: return@synchronized null
+        try {
+            mapOf("transportVersion" to 1) + format.offer(store.root, meta, host)
+        } catch (error: Exception) {
+            // The candidate is the app isolate's to judge; this engine runs as built.
+            android.util.Log.w("FlutterPatcher", "Background payload rejected: ${error.message}")
             null
         }
     }
@@ -155,6 +178,11 @@ internal class PatchHost private constructor(
         HostTrustConfig.requireOwner(context)
         store.clearBlacklist()
     }
+
+    private fun requireBootstrap(fp: String, publicKey: String) =
+        require(fp == fingerprint && Base64.decode(publicKey, Base64.DEFAULT).contentEquals(host.fptcKey)) {
+            "Bootstrap differs from immutable host"
+        }
 
     /** This process's attempt: the active, authorized candidate, checked; once. */
     private fun select(): Attempt? {

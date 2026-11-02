@@ -58,20 +58,26 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
     let args = call.arguments as? [String: Any] ?? [:]
     let attempt = args["attempt"] as? String
     let wire = args["wire"] as? String ?? ""
+    let fingerprint = args["fingerprint"] as? String ?? "", publicKey = args["publicKeyBase64"] as? String ?? ""
+    func typed(_ payload: [String: Any]?) -> [String: Any]? {
+      guard var payload = payload else { return nil }
+      payload["envelopeBytes"] = FlutterStandardTypedData(bytes: payload["envelopeBytes"] as! Data)
+      return payload
+    }
     switch call.method {
     case "bootPayload":
       bytecode.announceBootstrap()
       bytecodeCall(result) { [bytecode] in
         do {
-          guard var payload = try bytecode.bootPayload(
-            fingerprint: args["fingerprint"] as? String ?? "", publicKey: args["publicKeyBase64"] as? String ?? "")
-          else { return nil }
-          payload["envelopeBytes"] = FlutterStandardTypedData(bytes: payload["envelopeBytes"] as! Data)
-          return payload
+          return typed(try bytecode.bootPayload(fingerprint: fingerprint, publicKey: publicKey))
         } catch {
           BootDiagnosticStore.record(BootDiagnosticStore.unknown, message: "Bytecode boot payload rejected: \(error)")
           return nil
         }
+      }
+    case "backgroundPayload":
+      bytecodeCall(result) { [bytecode] in
+        typed(try bytecode.backgroundPayload(fingerprint: fingerprint, publicKey: publicKey))
       }
     case "saveConfig":
       bytecodeCall(result) {

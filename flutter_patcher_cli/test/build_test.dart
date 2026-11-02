@@ -117,6 +117,25 @@ void main() {
     expect(() => bootstrapSource('app', 'main.dart', 'a' * 64, 'bad'),
         throwsA(isA<Failure>()));
   });
+  test('bootstrap declares the entry hook for both strategies', () {
+    final key = base64Encode(List.filled(32, 1));
+    for (final modules in [true, false]) {
+      final source =
+          bootstrapSource('app', 'main.dart', 'a' * 64, key, modules: modules);
+      expect(
+          source,
+          contains(
+              'const flutterPatcherAppLibrary = "package:app/main.dart";'));
+      expect(
+          source,
+          contains('Function? flutterPatcherEntry(String key, '
+              'Function? original, bool start) =>'));
+      expect(source, contains('PatchBootstrap.entry(key, original'));
+      // Both the main and the hook load modules only on a bytecode host.
+      expect(
+          'loadModule: loadModule'.allMatches(source).length, modules ? 2 : 0);
+    }
+  });
   test('schema 2 archive preserves compiler evidence and rejects receipt drift',
       () async {
     final root =

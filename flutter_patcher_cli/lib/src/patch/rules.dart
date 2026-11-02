@@ -97,6 +97,10 @@ String _list(Iterable<String> items, {int limit = 5}) {
   return '${all.take(limit).join(', ')}$more';
 }
 
+/// The library URI of the file at [site].
+String _library(SourceSite site) =>
+    'package:${site.package}/${site.file.replaceFirst(RegExp('^lib/'), '')}';
+
 class PatchRule {
   const PatchRule(this.code, this.stage, this.findings,
       {this.strategies = const {'bytecode', 'so'}, this.reject = true});
@@ -207,8 +211,27 @@ final patchRules = <PatchRule>[
             'of a native asset reader; that use keeps the release\'s copy',
     ];
   }, reject: false),
-  // Only main runs the generated entry that installs a patch.
+  // Without the engine's entry hook only main runs the generated entry that
+  // installs a patch. With it every engine boots with the patch, and a
+  // bytecode patch runs its version of each entry point it carries.
   PatchRule('PATCH_BACKGROUND_ENTRY', PatchStage.resources, (f) {
+    if (f.enginePatches.contains(engineEntryHookPatch)) {
+      if (f.strategy == 'so' || !f.codeChanged) return const [];
+      final carried =
+          (f.report?['entries'] as List? ?? const []).cast<String>();
+      final missed = [
+        for (final (name, site) in f.backgroundEntries)
+          if (!carried.any((key) =>
+              key.startsWith('${_library(site)}#') &&
+              (key.endsWith('#$name') || key.endsWith('.$name'))))
+            '$name (${siteText(site)})',
+      ];
+      if (missed.isEmpty) return const [];
+      return [
+        'Entry points this patch does not carry run the release\'s code in a '
+            'separate engine: ${_list(missed)}'
+      ];
+    }
     final sites = [
       for (final (name, site) in f.backgroundEntries)
         '$name (${siteText(site)})',

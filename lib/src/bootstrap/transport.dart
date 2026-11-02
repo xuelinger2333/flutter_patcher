@@ -15,6 +15,7 @@ class BootstrapTransport {
   Future<Object?> call(String method, Map<String, Object?> arguments) {
     switch (method) {
       case 'bootPayload':
+      case 'backgroundPayload':
         _selected ??= _open() ?? _channel;
         return _selected!(method, arguments);
       case 'markBooting':

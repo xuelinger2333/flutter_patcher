@@ -48,6 +48,7 @@ void main() {
     expect(scan([kotlin('FlutterPatcherPlugin')], r'"(\w+)" ->'), methods);
     expect(scan([kotlin('BootstrapBridge')], r'"(\w+)" ->'), {
       'bootPayload',
+      'backgroundPayload',
       'markBooting',
     });
   });

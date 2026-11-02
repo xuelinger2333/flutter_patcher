@@ -35,11 +35,13 @@ class Jobs {
 }
 ''');
     // A reader in main sources; only its test reads assets in another plugin.
-    await file('cache/hosted/pub.dev/video/pubspec.yaml', 'name: video\n$plugin');
+    await file(
+        'cache/hosted/pub.dev/video/pubspec.yaml', 'name: video\n$plugin');
     await file('cache/hosted/pub.dev/video/lib/video.dart', '');
     await file('cache/hosted/pub.dev/video/android/src/main/V.kt',
         'val key = loader.getLookupKeyForAsset(asset)\n');
-    await file('cache/hosted/pub.dev/quiet/pubspec.yaml', 'name: quiet\n$plugin');
+    await file(
+        'cache/hosted/pub.dev/quiet/pubspec.yaml', 'name: quiet\n$plugin');
     await file('cache/hosted/pub.dev/quiet/lib/quiet.dart', '''
 @pragma('vm:entry-point')
 void notAppCode() {}
@@ -50,28 +52,32 @@ void notAppCode() {}
         'registrar.lookupKey(forAsset: "x")\n');
     await file('sdk/packages/flutter/lib/f.dart', '');
     Uri lib(String dir) => Directory(p.join(temp.path, dir, 'lib')).uri;
-    scan = SourceScan({
-      'app': lib('app'),
-      'local': lib('local'),
-      'video': lib('cache/hosted/pub.dev/video'),
-      'quiet': lib('cache/hosted/pub.dev/quiet'),
-      'flutter': lib('sdk/packages/flutter'),
-    }, 'app', sdkRoots: [p.join(temp.path, 'sdk')]);
+    scan = SourceScan(
+        {
+          'app': lib('app'),
+          'local': lib('local'),
+          'video': lib('cache/hosted/pub.dev/video'),
+          'quiet': lib('cache/hosted/pub.dev/quiet'),
+          'flutter': lib('sdk/packages/flutter'),
+        },
+        'app',
+        sdkRoots: [p.join(temp.path, 'sdk')]);
   });
   tearDown(() => temp.delete(recursive: true));
 
   test('own code is the app and its local packages', () {
     expect(scan.own, ['app', 'local']);
   });
-  test('native asset readers: main sources of plugins on that platform', () async {
+  test('native asset readers: main sources of plugins on that platform',
+      () async {
     final android = await scan.nativeAssetReaders('android');
     expect(android.keys, ['video']);
     expect(siteText(android['video']!), 'video/android/src/main/V.kt:1');
     expect((await scan.nativeAssetReaders('ios')).keys, isEmpty);
   });
   test('an asset named beside an import of a reader', () async {
-    final passed = await scan.assetsPassedTo(
-        ['video'], ['assets/intro.mp4', 'assets/other.png']);
+    final passed = await scan
+        .assetsPassedTo(['video'], ['assets/intro.mp4', 'assets/other.png']);
     expect(passed.keys, ['assets/intro.mp4']);
     expect(siteText(passed['assets/intro.mp4']!.single), 'app/lib/main.dart:4');
   });
@@ -138,6 +144,45 @@ void notAppCode() {}
             ..backgroundEntries = [('callbackDispatcher', site)]);
       expect(assets.warnings.single['message'],
           contains("this patch's code but the release's assets"));
+    });
+    test('an engine with the entry hook boots background engines too', () {
+      const hooked = [engineAssetChannelPatch, engineEntryHookPatch];
+      final so = PatchRules();
+      so.check(
+          PatchStage.resources,
+          facts('so')
+            ..changed.add('libapp.so')
+            ..assets = ['a.png']
+            ..enginePatches = hooked
+            ..backgroundEntries = [('callbackDispatcher', site)]);
+      expect(so.warnings, isEmpty);
+      PatchFacts bytecode(List<String> entries) => facts('bytecode')
+        ..changed.add('package:app/main.dart')
+        ..enginePatches = hooked
+        ..report = {'entries': entries}
+        ..backgroundEntries = [
+          ('callbackDispatcher', site),
+          ('run', (package: 'app', file: 'lib/src/jobs.dart', line: 3)),
+        ];
+      final carried = PatchRules();
+      carried.check(
+          PatchStage.resources,
+          bytecode([
+            'package:app/main.dart#main',
+            'package:app/main.dart#callbackDispatcher',
+            'package:app/src/jobs.dart#Jobs.run',
+          ]));
+      expect(carried.warnings, isEmpty);
+      // Same name, other library: not this entry point.
+      final missed = PatchRules();
+      missed.check(PatchStage.resources,
+          bytecode(['package:app/other.dart#callbackDispatcher']));
+      expect(
+          missed.warnings.single['message'],
+          allOf(
+              contains('does not carry'),
+              contains('callbackDispatcher (app/lib/main.dart:6)'),
+              contains('run (app/lib/src/jobs.dart:3)')));
     });
   });
 }

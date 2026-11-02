@@ -48,6 +48,8 @@ internal class BootstrapBridge(private val context: Context, private val host: (
             val value = when (call.method) {
                 "bootPayload" -> bootPayload(context, host(), call.argument<String>("fingerprint") ?: "",
                     call.argument<String>("publicKeyBase64") ?: "")
+                "backgroundPayload" -> host()?.backgroundPayload(call.argument<String>("fingerprint") ?: "",
+                    call.argument<String>("publicKeyBase64") ?: "")
                 "markBooting" -> host()?.markBooting(call.argument<String>("attempt")) ?: false
                 else -> error("Unsupported bootstrap operation")
             }

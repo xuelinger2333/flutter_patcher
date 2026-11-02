@@ -11,6 +11,10 @@ import '../sdk/host.dart';
 /// The engine patch that installs patch assets in front of the app bundle.
 const engineAssetChannelPatch = '0001-patcher-asset-channel.patch';
 
+/// The engine patch that boots every engine's isolate with the patch: it
+/// asks the generated `flutterPatcherEntry` for each entry point but main.
+const engineEntryHookPatch = '0002-patcher-entry-hook.patch';
+
 void assetKey(String key) {
   require(
       key.isNotEmpty &&

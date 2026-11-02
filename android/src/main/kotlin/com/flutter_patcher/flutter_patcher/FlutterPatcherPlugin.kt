@@ -24,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel.Result
  * MethodChannel 方法：
  * - saveConfig(maxCrashCount, loaderFieldCandidates, loaderFallbackHeuristic)
  * - bootPayload / markBooting   — 生成的入口取本次启动的补丁并开始启动尝试
+ * - backgroundPayload           — 后台引擎的 isolate 取同一份补丁，不开始启动尝试
  * - reportBootSuccess()         — 首帧确认本次补丁启动成功（原生首帧监听也会确认）
  * - reportDartBootError(Map)    — 引导阶段 Dart 未捕获异常上报，等同一次真崩溃
  * - checkSignedManifest / applySignedManifest / updatePublicationTrust — 签名清单
@@ -110,6 +111,10 @@ class FlutterPatcherPlugin :
         when (call.method) {
             "bootPayload" -> hostCall(result, trace) {
                 bootPayload(appContext, host, call.argument<String>("fingerprint") ?: "",
+                    call.argument<String>("publicKeyBase64") ?: "")
+            }
+            "backgroundPayload" -> hostCall(result) {
+                host?.backgroundPayload(call.argument<String>("fingerprint") ?: "",
                     call.argument<String>("publicKeyBase64") ?: "")
             }
             "saveConfig" -> handleSaveConfig(call, result)

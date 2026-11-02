@@ -257,10 +257,7 @@ final class BytecodePatchManager {
   func bootPayload(fingerprint fp: String, publicKey: String) throws -> [String: Any]? {
     try locked {
       let started = DispatchTime.now().uptimeNanoseconds
-      guard let auth = try authenticated() else { throw PatcherError("Bytecode requires a host policy") }
-      let raw = Data(base64Encoded: publicKey)
-      try require(fp == auth.host.scope["fingerprint"] && raw == auth.host.fptcKey,
-        "Bootstrap differs from immutable host")
+      let (auth, raw) = try bootstrap(fp, publicKey)
       if fingerprint != nil || Self.processClaimed { return nil }
       Self.processClaimed = true
       fingerprint = fp
@@ -273,10 +270,7 @@ final class BytecodePatchManager {
       }
       do {
         try auth.checkBoot(meta)
-        let bytes = try Storage.read(store.fileURL(meta), limit: BytecodeEnvelope.maxBytes)
-        let seq = try BytecodeEnvelope.verify(bytes, fingerprint: fp, rawKey: raw!)
-        try require(seq == int64(meta["seq"]) && sha256Hex(bytes) == meta["sha256"] as? String,
-          "Stored candidate changed")
+        let bytes = try envelope(store, meta, fp, raw)
         let token = UUID().uuidString
         offered = token
         attempt = BytecodeAttempt(token)
@@ -291,6 +285,42 @@ final class BytecodePatchManager {
         return nil
       }
     }
+  }
+
+  /// The offer for an isolate a background engine starts: the active,
+  /// authorized candidate, for any number of engines, starting no attempt and
+  /// changing no boot state. nil runs the entry point as built.
+  func backgroundPayload(fingerprint fp: String, publicKey: String) throws -> [String: Any]? {
+    try locked {
+      let (auth, raw) = try bootstrap(fp, publicKey)
+      let store = try store()
+      guard let meta = try store.activeFor(fp) else { return nil }
+      do {
+        try auth.checkBoot(meta)
+        return ["transportVersion": 1, "envelopeBytes": try envelope(store, meta, fp, raw)]
+      } catch {
+        // The candidate is the app isolate's to judge; this engine runs as built.
+        NSLog("[FlutterPatcher] Background payload rejected: \(error)")
+        return nil
+      }
+    }
+  }
+
+  private func bootstrap(_ fp: String, _ publicKey: String) throws -> (AuthenticatedUpdates, Data) {
+    guard let auth = try authenticated() else { throw PatcherError("Bytecode requires a host policy") }
+    let raw = Data(base64Encoded: publicKey)
+    try require(fp == auth.host.scope["fingerprint"] && raw == auth.host.fptcKey,
+      "Bootstrap differs from immutable host")
+    return (auth, raw!)
+  }
+
+  /// [meta]'s stored envelope, verified; this exact snapshot goes to Dart.
+  private func envelope(_ store: CandidateStore, _ meta: CandidateStore.Meta, _ fp: String, _ raw: Data) throws -> Data {
+    let bytes = try Storage.read(store.fileURL(meta), limit: BytecodeEnvelope.maxBytes)
+    let seq = try BytecodeEnvelope.verify(bytes, fingerprint: fp, rawKey: raw)
+    try require(seq == int64(meta["seq"]) && sha256Hex(bytes) == meta["sha256"] as? String,
+      "Stored candidate changed")
+    return bytes
   }
 
   func markBooting(_ token: String?, foreground: Bool = true) throws -> Bool {
