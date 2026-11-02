@@ -33,7 +33,11 @@ internal object Ed25519Verifier {
         return spki.copyOfRange(spkiPrefix.size, spki.size)
     }
 
-    fun verify(publicKey: ByteArray, signature: ByteArray, message: ByteArray): Boolean {
+    fun verify(publicKey: ByteArray, signature: ByteArray, message: ByteArray): Boolean =
+        verify(publicKey, signature) { it.update(message) }
+
+    /** As above; [message] feeds the signed message to the digest, so its parts need not be joined. */
+    fun verify(publicKey: ByteArray, signature: ByteArray, message: (MessageDigest) -> Unit): Boolean {
         if (publicKey.size != 32 || signature.size != 64) return false
         val s = littleEndian(signature.copyOfRange(32, 64))
         if (s >= order) return false
@@ -44,7 +48,7 @@ internal object Ed25519Verifier {
         val hash = MessageDigest.getInstance("SHA-512").apply {
             update(encodedR)
             update(publicKey)
-            update(message)
+            message(this)
         }.digest()
         val k = littleEndian(hash).mod(order)
         // Strict (uncofactored) equation [S]B = R + [k]A.

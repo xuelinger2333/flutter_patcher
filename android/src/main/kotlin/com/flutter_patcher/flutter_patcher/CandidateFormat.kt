@@ -46,28 +46,49 @@ internal interface CandidateFormat {
     }
 }
 
-/** The envelope itself, re-verified at every boot; Dart loads its module. */
+/**
+ * The envelope itself, re-verified at every boot, archive included; Dart
+ * loads its module.
+ */
 internal object BytecodeFormat : CandidateFormat {
     override val strategy = "bytecode"
     override val loadsBeforeEngine = false
     private fun name(meta: JSONObject) = meta.getString("sha256") + ".fptc"
 
-    override fun install(root: File, meta: JSONObject, envelope: ByteArray, seq: Long) =
+    /**
+     * A verified envelope's header pins its payload by digest, so the digest
+     * of the header kept at install pins the whole file the authorization
+     * named without hashing it again. Older candidates compare the file's.
+     */
+    private fun header(bytes: ByteArray) = PatchEnvelope.digest(bytes, 0, PatchEnvelope.HEADER)
+    private fun identifies(bytes: ByteArray, meta: JSONObject) = meta.optString("header_sha256").let {
+        if (it.isEmpty()) PatchEnvelope.digest(bytes) == meta.getString("sha256") else it == header(bytes)
+    }
+
+    override fun install(root: File, meta: JSONObject, envelope: ByteArray, seq: Long) {
         CandidateFormat.writeSynced(File(root, name(meta)), envelope)
+        meta.put("header_sha256", header(envelope))
+    }
 
     override fun owned(meta: JSONObject) = setOf(name(meta))
     override fun code(root: File, meta: JSONObject): File? = null
 
     override fun offer(root: File, meta: JSONObject, host: HostTrustConfig): Map<String, Any?> {
         val started = System.nanoTime()
-        val bytes = CandidateStore.readBounded(File(root, name(meta)).inputStream())
+        val bytes = CandidateStore.readBounded(File(root, name(meta)))
         val read = System.nanoTime()
         val seq = PatchEnvelope.verify(bytes, meta.getString("fingerprint"), host.fptcKey)
-        require(seq == meta.getLong("seq") && PatchEnvelope.digest(bytes) == meta.getString("sha256")) { "Stored candidate changed" }
+        require(seq == meta.getLong("seq") && identifies(bytes, meta)) { "Stored candidate changed" }
+        val verified = System.nanoTime()
+        // The bootstrap reads the same ranges and skips only the CRCs and
+        // digests checked here; see parseAuthenticatedPatchBytes.
+        val entries = PatchArchive.readBytecode(bytes, meta.getString("fingerprint"), seq).entries
+            .mapValues { (_, entry) -> listOf(entry.offset, entry.length) }
         // This exact local snapshot passed verification above. Never reopen
         // the path or mutate the array after handing it to the codec.
-        return mapOf("envelopeBytes" to bytes, "profile_us" to mapOf(
-            "read" to (read - started) / 1000, "envelope_verify" to (System.nanoTime() - read) / 1000))
+        return mapOf("envelopeBytes" to bytes, "entries" to entries, "profile_us" to mapOf(
+            "read" to (read - started) / 1000, "envelope_verify" to (verified - read) / 1000,
+            "archive" to (System.nanoTime() - verified) / 1000))
     }
 }
 
@@ -89,10 +110,10 @@ internal object LibappFormat : CandidateFormat {
         if (!dir.isDirectory) {
             val pending = File(root, UUID.randomUUID().toString() + ".pending")
             try {
-                for ((path, data) in archive.entries) {
+                for ((path, entry) in archive.entries) {
                     val file = File(pending, path)
                     check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs()) { "Cannot create ${file.parent}" }
-                    FileOutputStream(file).use { it.write(data); it.fd.sync() }
+                    FileOutputStream(file).use { it.write(entry.source, entry.offset, entry.length); it.fd.sync() }
                 }
                 check(pending.renameTo(dir)) { "Cannot commit SO candidate" }
             } finally {

@@ -8,8 +8,8 @@ internal object PatchEnvelope {
     const val MAX_BYTES = 320 * 1024 * 1024
     /** Header fields and Ed25519 signature before the signed payload. */
     const val HEADER = 146
-    fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
-        .digest(bytes).joinToString("") { "%02x".format(it) }
+    fun digest(bytes: ByteArray, offset: Int = 0, length: Int = bytes.size): String = MessageDigest.getInstance("SHA-256")
+        .apply { update(bytes, offset, length) }.digest().joinToString("") { "%02x".format(it) }
 
     fun verify(bytes: ByteArray, fingerprint: String, rawKey: ByteArray): Long {
         require(bytes.size in 146..MAX_BYTES) { "Envelope size" }
@@ -24,11 +24,11 @@ internal object PatchEnvelope {
         require(MessageDigest.isEqual(hash, bytes.copyOfRange(50, 82))) { "Envelope hash" }
         require(rawKey.size == 32) { "Raw Ed25519 public key required" }
         // Pure Ed25519 signs the header followed by the ZIP, not Ed25519ph or its hash.
-        // One exact-size buffer, bounded above before allocation; never mutate the input.
-        val message = ByteArray(bytes.size - 64)
-        bytes.copyInto(message, 0, 0, 82)
-        bytes.copyInto(message, 82, 146)
-        val valid = Ed25519Verifier.verify(rawKey, bytes.copyOfRange(82, 146), message)
+        // Both parts are hashed in place; never mutate the input.
+        val valid = Ed25519Verifier.verify(rawKey, bytes.copyOfRange(82, 146)) {
+            it.update(bytes, 0, 82)
+            it.update(bytes, 146, bytes.size - 146)
+        }
         require(valid) { "Envelope signature" }
         return (header.getInt(38).toLong() and 0xffffffffL).also { require(it > 0) { "Patch sequence" } }
     }

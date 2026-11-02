@@ -1,5 +1,7 @@
 // Bounded asynchronous bootstrap transport. Kotlin remains the only patch manager.
 #include <jni.h>
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -14,12 +16,21 @@ bool registered=false;
 bool disabled=false;
 jmethodID execute=nullptr;
 std::mutex mutex;
-struct Task { std::vector<uint8_t> bytes; int state=0; bool input=false; bool cancelled=false; };
+using Clock=std::chrono::steady_clock;
+// Microseconds a worker spent: waiting to start, attaching, in Kotlin, copying the response.
+constexpr int span_count=4;
+struct Task { std::vector<uint8_t> bytes; int state=0; bool input=false; bool cancelled=false; int64_t spans[span_count]={-1,-1,-1,-1}; };
 std::unordered_map<uint64_t,std::shared_ptr<Task>> tasks;
 uint64_t sequence=1;
 int workers=0;
 constexpr int max_response=320*1024*1024+65536;
-void work(std::shared_ptr<Task> task,std::vector<uint8_t> request) {
+int64_t micros(Clock::time_point from,Clock::time_point to) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(to-from).count();
+}
+void work(std::shared_ptr<Task> task,std::vector<uint8_t> request,Clock::time_point queued) {
+    int64_t spans[span_count]={-1,-1,-1,-1};
+    auto mark=Clock::now();
+    spans[0]=micros(queued,mark);
     JNIEnv* env=nullptr;
     bool attached=false;
     if(vm->GetEnv(reinterpret_cast<void**>(&env),JNI_VERSION_1_6)!=JNI_OK) {
@@ -28,6 +39,7 @@ void work(std::shared_ptr<Task> task,std::vector<uint8_t> request) {
         }
         attached=true;
     }
+    spans[1]=micros(mark,Clock::now());
     jobject local=nullptr;jmethodID method=nullptr;
     { std::lock_guard<std::mutex> lock(mutex); if(provider && !disabled) local=env->NewLocalRef(provider);method=execute; }
     jbyteArray input=nullptr,output=nullptr;
@@ -37,7 +49,10 @@ void work(std::shared_ptr<Task> task,std::vector<uint8_t> request) {
         input=env->NewByteArray(static_cast<jsize>(request.size()));
         if(input) {
             env->SetByteArrayRegion(input,0,static_cast<jsize>(request.size()),reinterpret_cast<const jbyte*>(request.data()));
+            mark=Clock::now();
             if(!env->ExceptionCheck())output=static_cast<jbyteArray>(env->CallObjectMethod(local,method,input));
+            spans[2]=micros(mark,Clock::now());
+            mark=Clock::now();
             if(!env->ExceptionCheck() && output) {
                 const int size=env->GetArrayLength(output);
                 if(size>0 && size<=max_response) {
@@ -48,6 +63,7 @@ void work(std::shared_ptr<Task> task,std::vector<uint8_t> request) {
                     } catch(...) { success=false; }
                 }
             }
+            spans[3]=micros(mark,Clock::now());
         }
     }
     if(env->ExceptionCheck())env->ExceptionClear();
@@ -57,7 +73,10 @@ void work(std::shared_ptr<Task> task,std::vector<uint8_t> request) {
     if(attached)vm->DetachCurrentThread();
     std::lock_guard<std::mutex> lock(mutex);
     --workers;
-    if(!task->cancelled) { task->bytes=std::move(response);task->state=success && !disabled?1:-1; }
+    if(!task->cancelled) {
+        task->bytes=std::move(response);task->state=success && !disabled?1:-1;
+        std::copy(spans,spans+span_count,task->spans);
+    }
 }
 }
 #define API extern "C" __attribute__((visibility("default")))
@@ -98,7 +117,7 @@ API uint64_t patcher_boot_v1_begin(uint64_t input) {
         auto task=std::make_shared<Task>();const auto id=sequence++;
         tasks.emplace(id,task);
         ++workers;
-        try {std::thread(work,task,std::move(request)).detach();}
+        try {std::thread(work,task,std::move(request),Clock::now()).detach();}
         catch(...) {--workers;tasks.erase(id);return 0;}
         return id;
     } catch(...) {return 0;}
@@ -118,6 +137,11 @@ API uint8_t* patcher_boot_v1_data(uint64_t id) {
 API int32_t patcher_boot_v1_release(uint64_t id) {
     std::lock_guard<std::mutex> lock(mutex);auto it=tasks.find(id);if(it==tasks.end())return -1;
     it->second->cancelled=true;tasks.erase(it);return 0;
+}
+// A finished task's span [index] in microseconds; -1 when unknown.
+API int64_t patcher_boot_v1_span(uint64_t id,int32_t index) {
+    std::lock_guard<std::mutex> lock(mutex);auto it=tasks.find(id);
+    return it==tasks.end() || it->second->state==0 || index<0 || index>=span_count?-1:it->second->spans[index];
 }
 API int32_t patcher_boot_v1_workers() {std::lock_guard<std::mutex> lock(mutex);return workers;}
 API int32_t patcher_boot_v1_handles() {std::lock_guard<std::mutex> lock(mutex);return static_cast<int32_t>(tasks.size());}

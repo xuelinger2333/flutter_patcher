@@ -33,9 +33,9 @@ fields are diagnostics only; use `bootstrap_over_budget` with
 
 ## Scope and deferred work
 
-- Implement equivalent table-based CRC and measure checksum alternatives.
-- Preserve exact-byte native attestation and all validation ordering/constraints.
-- Split native dispatch/codec/thread/lock/return spans before changing scheduling.
+- Preserve exact-byte native attestation and every validation constraint.
+- Native dispatch, codec, thread and copy spans are reported (see
+  `android/BOOTSTRAP_FFI.md`); measure them before changing scheduling.
 - Whole framework reuse through a broader generated host interface is a separate
   compatibility design task and is out of scope for now.
   It requires safe class/interface identity, dependency/version boundaries,
@@ -43,8 +43,29 @@ fields are diagnostics only; use `bootstrap_over_budget` with
   by just retaining more libraries in whole-interface.yaml.
 - Whole runtime frame/CPU/memory performance is still unmeasured. Larger bytecode
   coverage is reason to measure it, not evidence of a quantified runtime slowdown.
-- Moving hashes to Android needs a separate design for binding the exact bytes
-  consumed by Dart. Do not replace that binding with trusting a pathname.
+- Do not replace the exact-byte binding with trusting a pathname.
+
+## Where archive checks run
+
+Every check of a signed archive still runs at every boot; what moved is where
+two of them run. Native reads the payload of the same snapshot it verified
+with the rules of the Dart reader (`PatchArchive.readBytecode` on Android and
+iOS) and checks each entry's ZIP CRC and the SHA-256 its manifest lists, with
+the platform's CRC and SHA-256. The offer then carries `entries`: the envelope
+offset and length of each entry it checked.
+
+Dart still runs the complete ZIP, manifest, path, size and module checks. It
+skips the CRC and digest of an entry only when its own reader selected that
+entry at exactly the range native reported; any other entry, and any offer
+without `entries` (the platform channel of an older host, for instance), gets
+both checks in Dart. A difference between the two readers therefore costs a
+check in Dart, never a check. `verifyPatchBytes`, for untrusted file bytes,
+runs every check itself.
+
+At boot, native identifies the stored file by the digest of its 146-byte
+header, kept at install: the verified header pins the payload by digest, so
+this pins the whole file the authorization named without hashing it twice.
+Candidates installed before this field compare the file's digest.
 
 ## Hash scan experiment
 

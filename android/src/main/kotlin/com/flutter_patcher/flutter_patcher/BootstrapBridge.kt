@@ -41,10 +41,18 @@ internal class BootstrapBridge(private val context: Context, private val host: (
         }
     }
 
+    /**
+     * Answers one request: the codec envelope's length, the envelope, then
+     * an offer's `envelopeBytes` unencoded, so the largest value is copied
+     * once here and never grows a codec buffer (see BOOTSTRAP_FFI.md).
+     */
     fun execute(bytes: ByteArray): ByteArray {
+        val started = System.nanoTime()
         val codec = StandardMethodCodec.INSTANCE
+        var envelope: ByteArray? = null
         val response = try {
             val call = codec.decodeMethodCall(ByteBuffer.wrap(bytes))
+            val decoded = System.nanoTime()
             val value = when (call.method) {
                 "bootPayload" -> bootPayload(context, host(), call.argument<String>("fingerprint") ?: "",
                     call.argument<String>("publicKeyBase64") ?: "")
@@ -53,11 +61,18 @@ internal class BootstrapBridge(private val context: Context, private val host: (
                 "markBooting" -> host()?.markBooting(call.argument<String>("attempt")) ?: false
                 else -> error("Unsupported bootstrap operation")
             }
-            codec.encodeSuccessEnvelope(value)
+            @Suppress("UNCHECKED_CAST") val offer = value as? Map<String, Any?>
+            envelope = offer?.get("envelopeBytes") as? ByteArray
+            codec.encodeSuccessEnvelope(if (offer == null) value else offer - "envelopeBytes" + ("bridge_us" to mapOf(
+                "decode" to (decoded - started) / 1000, "dispatch" to (System.nanoTime() - decoded) / 1000)))
         } catch (error: Exception) {
+            envelope = null
             codec.encodeErrorEnvelope("BYTECODE_REJECTED", error.message, null)
         }
         response.flip()
-        return ByteArray(response.remaining()).also { response.get(it) }
+        val tail = envelope ?: ByteArray(0)
+        return ByteArray(4 + response.remaining() + tail.size).also {
+            ByteBuffer.wrap(it).putInt(response.remaining()).put(response).put(tail)
+        }
     }
 }

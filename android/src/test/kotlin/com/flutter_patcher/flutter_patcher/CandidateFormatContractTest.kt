@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.Signature
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
@@ -30,21 +31,28 @@ class CandidateFormatContractTest {
     private fun row(path: String, bytes: ByteArray) = JSONObject()
         .put("path", path).put("length", bytes.size).put("sha256", PatchEnvelope.digest(bytes))
 
-    /** A signed envelope of a format 2 archive, as the CLI writes it. */
-    private fun envelope(): ByteArray {
+    /** A signed envelope of a format 2 archive of [format]'s code, as the CLI writes it. */
+    private fun envelope(format: CandidateFormat): ByteArray {
+        val (kind, path) = if (format.loadsBeforeEngine) "libapp" to PatchArchive.CODE else "bytecode" to PatchArchive.MODULE
         val code = ByteArray(64) { it.toByte() }
         val asset = byteArrayOf(4)
         val font = byteArrayOf(5)
         val manifest = JSONObject()
             .put("format_version", PatchArchive.FORMAT).put("patch_seq", 7).put("fingerprint", fp)
-            .put("code", row("libapp.so", code).put("kind", "libapp"))
+            .put("code", row(path, code).put("kind", kind))
             .put("assets", JSONArray().put(row("assets/a", asset).put("key", "a")))
             .put("fonts", JSONArray().put(row("fonts/f.otf", font).put("family", "F")))
         val zip = ByteArrayOutputStream().also { out ->
             ZipOutputStream(out).use { z ->
                 for ((name, bytes) in mapOf("patch_manifest.json" to manifest.toString().toByteArray(),
-                    "libapp.so" to code, "assets/a" to asset, "fonts/f.otf" to font)) {
-                    z.putNextEntry(ZipEntry(name)); z.write(bytes); z.closeEntry()
+                    path to code, "assets/a" to asset, "fonts/f.otf" to font)) {
+                    z.putNextEntry(ZipEntry(name).apply {
+                        method = ZipEntry.STORED
+                        size = bytes.size.toLong()
+                        compressedSize = size
+                        crc = CRC32().apply { update(bytes) }.value
+                    })
+                    z.write(bytes); z.closeEntry()
                 }
             }
         }.toByteArray()
@@ -59,8 +67,8 @@ class CandidateFormatContractTest {
 
     @Test
     fun everyFormatKeepsOnlyWhatItOwnsAndOffersOnlyWhatWasSigned() {
-        val bytes = envelope()
         for (format in formats) {
+            val bytes = envelope(format)
             val root = Files.createTempDirectory("format-${format.strategy}").toFile()
             try {
                 File(root, "older").mkdir()
@@ -86,6 +94,27 @@ class CandidateFormatContractTest {
             } finally {
                 root.deleteRecursively()
             }
+        }
+    }
+
+    @Test
+    fun bytecodeOffersTheRangesItCheckedAndKeepsOlderCandidatesBootable() {
+        val bytes = envelope(BytecodeFormat)
+        val root = Files.createTempDirectory("format-offer").toFile()
+        try {
+            val meta = JSONObject().put("fingerprint", fp).put("seq", 7L).put("sha256", PatchEnvelope.digest(bytes))
+            BytecodeFormat.install(root, meta, bytes, 7)
+            assertEquals(PatchEnvelope.digest(bytes, 0, PatchEnvelope.HEADER), meta.getString("header_sha256"))
+            val entries = BytecodeFormat.offer(root, meta, host)["entries"] as Map<*, *>
+            assertEquals(setOf("patch_manifest.json", "module.bc", "assets/a", "fonts/f.otf"), entries.keys)
+            assertEquals(listOf(64), entries.values.map { (it as List<*>)[1] }.filter { it == 64 })
+            meta.put("header_sha256", "0".repeat(64))
+            assertFailsWith<IllegalArgumentException> { BytecodeFormat.offer(root, meta, host) }
+            // Installed before header digests: the file's digest still identifies it.
+            meta.remove("header_sha256")
+            assertTrue(BytecodeFormat.offer(root, meta, host).isNotEmpty())
+        } finally {
+            root.deleteRecursively()
         }
     }
 }

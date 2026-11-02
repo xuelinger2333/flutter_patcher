@@ -3,6 +3,18 @@ import Foundation
 /// FPTC v1: never allocate from the unauthenticated payload length.
 enum BytecodeEnvelope {
   static let maxBytes = 320 * 1024 * 1024
+  /// Header fields and Ed25519 signature before the signed payload.
+  static let header = 146
+
+  /// A verified header pins its payload by digest, so the digest of the
+  /// header kept at install pins the whole file the authorization named.
+  static func headerDigest(_ bytes: Data) -> String { sha256Hex(bytes.prefix(header)) }
+
+  /// True when verified [bytes] are the file [meta] names; older candidates compare the file's digest.
+  static func identifies(_ bytes: Data, _ meta: CandidateStore.Meta) -> Bool {
+    if let digest = meta["header_sha256"] as? String { return headerDigest(bytes) == digest }
+    return sha256Hex(bytes) == meta["sha256"] as? String
+  }
 
   private static func uint(_ bytes: Data, _ offset: Int, _ count: Int) -> UInt64 {
     var value: UInt64 = 0
@@ -274,16 +286,16 @@ final class BytecodePatchManager {
       }
       do {
         try auth.checkBoot(meta)
-        let bytes = try envelope(store, meta, fp, raw)
+        var reply = try offer(store, meta, fp, raw)
         let token = UUID().uuidString
         offered = token
         attempt = BytecodeAttempt(token)
         offeredMeta = meta
         // This exact verified snapshot goes to Dart; the file is never reopened.
-        return [
-          "transportVersion": 1, "envelopeBytes": bytes, "attempt": token,
-          "profile_us": ["total": (DispatchTime.now().uptimeNanoseconds - started) / 1000],
-        ]
+        reply["transportVersion"] = 1
+        reply["attempt"] = token
+        reply["profile_us"] = ["total": (DispatchTime.now().uptimeNanoseconds - started) / 1000]
+        return reply
       } catch {
         try store.recordFailure(meta, (error as? PatcherError)?.description ?? "Candidate rejected")
         return nil
@@ -305,7 +317,7 @@ final class BytecodePatchManager {
       else { return nil }
       do {
         try auth.checkBoot(meta)
-        return ["transportVersion": 1, "envelopeBytes": try envelope(store, meta, fp, raw)]
+        return try offer(store, meta, fp, raw).merging(["transportVersion": 1]) { $1 }
       } catch {
         // The candidate is the app isolate's to judge; this engine runs as built.
         NSLog("[FlutterPatcher] Background payload rejected: \(error)")
@@ -322,13 +334,16 @@ final class BytecodePatchManager {
     return (auth, raw!)
   }
 
-  /// [meta]'s stored envelope, verified; this exact snapshot goes to Dart.
-  private func envelope(_ store: CandidateStore, _ meta: CandidateStore.Meta, _ fp: String, _ raw: Data) throws -> Data {
+  /// [meta]'s stored envelope, verified, as offer fields; this exact snapshot goes to Dart.
+  private func offer(_ store: CandidateStore, _ meta: CandidateStore.Meta, _ fp: String, _ raw: Data) throws
+    -> [String: Any]
+  {
     let bytes = try Storage.read(store.fileURL(meta), limit: BytecodeEnvelope.maxBytes)
     let seq = try BytecodeEnvelope.verify(bytes, fingerprint: fp, rawKey: raw)
-    try require(seq == int64(meta["seq"]) && sha256Hex(bytes) == meta["sha256"] as? String,
-      "Stored candidate changed")
-    return bytes
+    try require(seq == int64(meta["seq"]) && BytecodeEnvelope.identifies(bytes, meta), "Stored candidate changed")
+    // The bootstrap reads the same ranges and skips only the CRCs and
+    // digests checked here; see parseAuthenticatedPatchBytes.
+    return ["envelopeBytes": bytes, "entries": try PatchArchive.readBytecode(bytes, fingerprint: fp, seq: seq)]
   }
 
   func markBooting(_ token: String?, foreground: Bool = true) throws -> Bool {
@@ -445,8 +460,9 @@ final class BytecodePatchManager {
     do {
       try require(fields["sha256"] == hash && Int64(fields["patch_seq"] ?? "") == seq, "Manifest differs from payload")
       let store = try store()
-      let meta = store.candidate(
+      var meta = store.candidate(
         fingerprint: fingerprint, seq: seq, sha256: hash, version: fields["patch_seq"]!, authorization: wire)
+      meta["header_sha256"] = BytecodeEnvelope.headerDigest(bytes)
       if store.isBlacklisted(meta) { return Self.failure("BLACKLISTED", "Bytecode candidate is blacklisted") }
       try store.requireNewer(meta)
       progress("finalizing", total, total)

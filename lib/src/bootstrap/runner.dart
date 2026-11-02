@@ -179,7 +179,7 @@ class BootRunner {
       );
       if (patch != null) {
         log(
-          'BYTECODE_BOOT_PROFILE: ${jsonEncode({'schema': 2, 'transport': 'native-bytes-v1', 'tier': patch.tier, 'budget_us': bootstrapBudgetUs(patch.tier), 'native': row['profile_us'], 'dart_channel': row['dart_channel_us'], 'verify': profile, 'mark_booting_us': markedUs - verifiedUs, 'observe_us': beforeLoadUs - markedUs, 'module_load_us': loadedUs - beforeLoadUs})}',
+          'BYTECODE_BOOT_PROFILE: ${jsonEncode({'schema': 2, 'transport': 'native-bytes-v1', 'tier': patch.tier, 'budget_us': bootstrapBudgetUs(patch.tier), 'native': row['profile_us'], 'bridge': row['bridge_us'], 'dart_channel': row['dart_channel_us'], 'verify': profile, 'mark_booting_us': markedUs - verifiedUs, 'observe_us': beforeLoadUs - markedUs, 'module_load_us': loadedUs - beforeLoadUs})}',
         );
         final budgetUs = bootstrapBudgetUs(patch.tier);
         if (startup.elapsedMicroseconds > budgetUs) {
@@ -289,6 +289,7 @@ class BootRunner {
     final patch = parseAuthenticatedPatchBytes(
       row['envelopeBytes'] as Uint8List,
       fingerprint,
+      checkedEntries: row['entries'],
       profile: profile,
     );
     return _Boot(patch.assets, patch.fonts, patch: patch);

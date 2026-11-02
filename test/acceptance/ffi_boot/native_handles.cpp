@@ -21,7 +21,9 @@ int main(int argc, char** argv) {
     const auto handles = symbol<int32_t(*)()>(lib,"patcher_boot_v1_handles");
     const auto workers = symbol<int32_t(*)()>(lib,"patcher_boot_v1_workers");
     const auto available = symbol<int32_t(*)()>(lib,"patcher_boot_v1_available");
+    const auto span = symbol<int64_t(*)(uint64_t,int32_t)>(lib,"patcher_boot_v1_span");
     require(available()==0 && handles()==0 && workers()==0);
+    require(span(0,0)==-1);
     require(input(-1)==0 && input(0)==0 && input(65537)==0);
     require(release(0)==-1 && state(0)==-2 && size(0)==-1 && data(0)==nullptr);
     uint64_t held[4];

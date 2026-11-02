@@ -111,6 +111,93 @@ void main() {
       );
     },
   );
+  group('ranges native checked', () {
+    /// Envelope offset and length of each entry, as native reports them.
+    Map<String, List<int>> ranges(Uint8List bytes) => {
+      for (final e in readPatchArchive(
+        Uint8List.sublistView(bytes, 146),
+      ).entries)
+        e.key: [e.value.offsetInBytes - bytes.offsetInBytes, e.value.length],
+    };
+    Matcher rejected(String reason) => throwsA(
+      isA<FormatException>().having((e) => e.message, 'reason', reason),
+    );
+
+    test('skip only their digest checks, and only at the same range', () {
+      final bytes = envelope(assets: true, wrongEntryDigest: true);
+      final checked = ranges(bytes);
+      final profile = <String, int>{};
+      final patch = parseAuthenticatedPatchBytes(
+        bytes,
+        fp,
+        checkedEntries: checked,
+        profile: profile,
+      );
+      expect(patch.assets['a'], [1]);
+      expect(profile['native_checked_entries'], 2);
+      final module = checked['module.bc']!;
+      expect(
+        () => parseAuthenticatedPatchBytes(
+          bytes,
+          fp,
+          checkedEntries: {
+            ...checked,
+            'module.bc': [module[0] + 1, module[1]],
+          },
+        ),
+        rejected('Entry digest'),
+      );
+      expect(
+        () => parseAuthenticatedPatchBytes(
+          bytes,
+          fp,
+          checkedEntries: {...checked}..remove('module.bc'),
+        ),
+        rejected('Entry digest'),
+      );
+    });
+    test('skip a CRC check only for the entry they cover', () {
+      final bytes = envelope();
+      final checked = ranges(bytes);
+      final view = ByteData.sublistView(bytes);
+      final central = 146 + view.getUint32(bytes.length - 6, Endian.little);
+      final wrong = view.getUint32(146 + 14, Endian.little) ^ 1;
+      view.setUint32(146 + 14, wrong, Endian.little);
+      view.setUint32(central + 16, wrong, Endian.little);
+      expect(
+        parseAuthenticatedPatchBytes(bytes, fp, checkedEntries: checked).seq,
+        7,
+      );
+      expect(
+        () => parseAuthenticatedPatchBytes(
+          bytes,
+          fp,
+          checkedEntries: {...checked}..remove('module.bc'),
+        ),
+        rejected('ZIP CRC mismatch'),
+      );
+    });
+    test('never relax the archive and manifest checks', () {
+      final bytes = envelope(kind: 'libapp');
+      expect(
+        () => parseAuthenticatedPatchBytes(
+          bytes,
+          fp,
+          checkedEntries: ranges(bytes),
+        ),
+        rejected('Module path'),
+      );
+      final extra = envelope(extra: 'assets/x');
+      expect(
+        () => parseAuthenticatedPatchBytes(
+          extra,
+          fp,
+          checkedEntries: ranges(extra),
+        ),
+        rejected('Unlisted ZIP entries'),
+      );
+    });
+  });
   test('codec snapshot survives source file replacement before parsing', () {
     final directory = Directory.systemTemp.createTempSync('boot-snapshot-');
     try {

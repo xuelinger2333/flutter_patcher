@@ -166,5 +166,20 @@ internal class CandidateStore(
             }
             out.toByteArray()
         }
+
+        /** [file] in one exact-size array; a file that changes length while read is rejected. */
+        fun readBounded(file: File, limit: Int = PatchEnvelope.MAX_BYTES): ByteArray = file.inputStream().use {
+            val size = file.length()
+            require(size <= limit) { "Patch too large" }
+            val bytes = ByteArray(size.toInt())
+            var read = 0
+            while (read < bytes.size) {
+                val count = it.read(bytes, read, bytes.size - read)
+                require(count > 0) { "Patch changed while read" }
+                read += count
+            }
+            require(it.read() < 0) { "Patch changed while read" }
+            bytes
+        }
     }
 }

@@ -12,8 +12,9 @@ void bootRequire(bool value, String reason) {
 
 /// Strict, read-only STORED ZIP reader. Central and local records must agree;
 /// no extraction, ambiguous paths, data descriptors, zip64 or trailing data.
+/// An entry [checked] vouches for skips only its CRC check.
 Map<String, Uint8List> readPatchArchive(Uint8List bytes,
-    {Map<String, int>? profile}) {
+    {Map<String, int>? profile, bool Function(String, Uint8List)? checked}) {
   final view = ByteData.sublistView(bytes);
   void range(int p, int n) =>
       bootRequire(p >= 0 && n >= 0 && p + n <= bytes.length, 'ZIP bounds');
@@ -92,13 +93,15 @@ Map<String, Uint8List> readPatchArchive(Uint8List bytes,
     range(start, length);
     bootRequire(start + length <= central, 'ZIP overlapping entry');
     final content = Uint8List.sublistView(bytes, start, start + length);
-    final crcWatch = profile == null ? null : (Stopwatch()..start());
-    final crc = patchCrc32(content);
-    if (crcWatch != null) {
-      profile!['zip_crc_us'] =
-          (profile['zip_crc_us'] ?? 0) + crcWatch.elapsedMicroseconds;
+    if (checked == null || !checked(file, content)) {
+      final crcWatch = profile == null ? null : (Stopwatch()..start());
+      final crc = patchCrc32(content);
+      if (crcWatch != null) {
+        profile!['zip_crc_us'] =
+            (profile['zip_crc_us'] ?? 0) + crcWatch.elapsedMicroseconds;
+      }
+      bootRequire(crc == u32(cp + 16), 'ZIP CRC mismatch');
     }
-    bootRequire(crc == u32(cp + 16), 'ZIP CRC mismatch');
     result[file] = content;
     lp = start + length;
     cp += 46 + n;
@@ -125,13 +128,21 @@ VerifiedPatch verifyPatchBytes(
 /// Native must already have authenticated these exact bytes. This is NOT an
 /// untrusted-file verifier; callers with file bytes must use verifyPatchBytes.
 /// All ZIP/manifest consistency checks remain mandatory for signed input too.
+///
+/// [checkedEntries] is the offer's `entries`: archive path to the envelope
+/// offset and length of each entry whose ZIP CRC and listed digest native
+/// checked in this same snapshot, reading the archive with these rules. Only
+/// an entry this parser selects at exactly that range skips those two checks;
+/// every other entry, and every other check, runs here.
 VerifiedPatch parseAuthenticatedPatchBytes(Uint8List bytes, String fingerprint,
-        {Map<String, int>? profile}) =>
-    _parsePatch(bytes, fingerprint, null, profile: profile);
+        {Object? checkedEntries, Map<String, int>? profile}) =>
+    _parsePatch(bytes, fingerprint, null,
+        checked: checkedEntries is Map ? checkedEntries : null,
+        profile: profile);
 
 VerifiedPatch _parsePatch(
     Uint8List bytes, String fingerprint, String? verifiedSha256,
-    {Map<String, int>? profile}) {
+    {Map<Object?, Object?>? checked, Map<String, int>? profile}) {
   final watch = profile == null ? null : (Stopwatch()..start());
   var checkpoint = 0;
   void mark(String name) {
@@ -166,7 +177,17 @@ VerifiedPatch _parsePatch(
         'Verified file changed');
     mark('file_sha256_us');
   }
-  final entries = readPatchArchive(payload, profile: profile);
+  var vouched = 0;
+  bool native(String path, Uint8List content) {
+    final range = checked?[path];
+    return range is List &&
+        range.length == 2 &&
+        range[0] == content.offsetInBytes - bytes.offsetInBytes &&
+        range[1] == content.length;
+  }
+
+  final entries = readPatchArchive(payload,
+      profile: profile, checked: checked == null ? null : native);
   mark('zip_total_us');
   bootRequire(
       entries.containsKey('module.bc') &&
@@ -194,17 +215,21 @@ VerifiedPatch _parsePatch(
     final path = row['path'] as String, content = entries[path];
     bootRequire(path.startsWith(prefix) && listed.add(path) && content != null,
         'Unlisted/duplicate entry');
+    final data = content!;
+    bootRequire(
+        row['length'] is int && row['length'] == data.length, 'Entry digest');
+    if (checked != null && native(path, data)) {
+      vouched++;
+      return data;
+    }
     final hashWatch = profile == null ? null : (Stopwatch()..start());
     bootRequire(
-        row['length'] is int &&
-            row['length'] == content!.length &&
-            row['sha256'] == sha256.convert(content).toString(),
-        'Entry digest');
+        row['sha256'] == sha256.convert(data).toString(), 'Entry digest');
     if (hashWatch != null) {
       profile!['entry_sha256_us'] =
           (profile['entry_sha256_us'] ?? 0) + hashWatch.elapsedMicroseconds;
     }
-    return content!;
+    return data;
   }
 
   // An SO patch's code is a libapp.so that native code loads; only a
@@ -253,6 +278,7 @@ VerifiedPatch _parsePatch(
     profile['file_bytes'] = bytes.length;
     profile['module_bytes'] = module.length;
     profile['entry_count'] = entries.length;
+    profile['native_checked_entries'] = vouched;
   }
   return VerifiedPatch(module, assets, fonts, seq, tier as String);
 }
