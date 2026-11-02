@@ -19,10 +19,10 @@ Future<Uint8List> testPatch(String dir, String fingerprint, int seq,
   final module = p.join(work.path, 'module.bc');
   await File(module).writeAsBytes(List.filled(128, 1));
   final packed = await packPatch(
-      module: module,
+      kind: 'bytecode',
+      code: module,
       work: work.path,
       metadata: {
-        'format_version': 1,
         'patch_seq': seq,
         'fingerprint': fingerprint,
         'tier': 'lean',

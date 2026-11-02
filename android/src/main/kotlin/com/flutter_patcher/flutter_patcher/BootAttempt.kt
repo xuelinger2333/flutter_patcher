@@ -1,7 +1,7 @@
 package com.flutter_patcher.flutter_patcher
 
 /** Token-bound, idempotent startup settlement. A first frame never undoes failure. */
-internal class BytecodeAttempt(val token: String) {
+internal class BootAttempt(val token: String) {
     var running = false
         private set
     var failed = false

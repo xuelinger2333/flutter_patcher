@@ -3,6 +3,9 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'crc32.dart';
 
+/// Patch archive manifest version: `code` names the kind of code it carries.
+const patchFormatVersion = 2;
+
 void bootRequire(bool value, String reason) {
   if (!value) throw FormatException(reason);
 }
@@ -179,7 +182,7 @@ VerifiedPatch _parsePatch(
       seq > 0 &&
           manifest['format_version'] is int &&
           manifest['patch_seq'] is int &&
-          manifest['format_version'] == 1 &&
+          manifest['format_version'] == patchFormatVersion &&
           manifest['patch_seq'] == seq &&
           manifest['fingerprint'] == fingerprint &&
           (tier == 'lean' || tier == 'whole'),
@@ -204,10 +207,15 @@ VerifiedPatch _parsePatch(
     return content!;
   }
 
-  final moduleRow = manifest['module'];
+  // An SO patch's code is a libapp.so that native code loads; only a
+  // bytecode module reaches this parser.
+  final codeRow = manifest['code'];
   bootRequire(
-      moduleRow is Map && moduleRow['path'] == 'module.bc', 'Module path');
-  final module = entry(manifest['module'], 'module.bc');
+      codeRow is Map &&
+          codeRow['kind'] == 'bytecode' &&
+          codeRow['path'] == 'module.bc',
+      'Module path');
+  final module = entry(codeRow, 'module.bc');
   bootRequire(
       module.length >= 120 &&
           ByteData.sublistView(module).getUint32(0, Endian.little) ==

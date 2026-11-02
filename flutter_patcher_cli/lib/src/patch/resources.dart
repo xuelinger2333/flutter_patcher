@@ -203,6 +203,9 @@ class PatchResources {
   final Map<String, List<int>> entries = {};
   final List<Map<String, dynamic>> assets = [], fonts = [];
 
+  /// Release asset keys (or image variants) the current bundle lacks.
+  final List<String> deleted = [];
+
   Future<List<int>> read(String key) async {
     assetKey(key);
     final file = File(p.join(bundle, key));
@@ -243,13 +246,13 @@ class PatchResources {
       return {key, for (final row in rows as List) row['asset'] as String};
     }
 
-    // Overlays cannot delete a resource or an image variant from the host.
+    // Overlays cannot delete a resource or an image variant from the host;
+    // the rules reject such a patch.
     for (final key in old.keys) {
-      require(
-          current.containsKey(key) &&
-              variants(current, key).containsAll(variants(old, key)),
-          'PATCH_ASSET_DELETE_UNSUPPORTED',
-          'Resource deletion requires a new host: $key');
+      if (!current.containsKey(key) ||
+          !variants(current, key).containsAll(variants(old, key))) {
+        deleted.add(key);
+      }
     }
     final selected = <String>{};
     require(requested.toSet().length == requested.length, 'PATCH_ASSET_INVALID',
@@ -288,11 +291,14 @@ class PatchResources {
   /// too, and none ships when the host's already covers the module. A font
   /// whose bytes equal the host's ([hostFiles], the resource inventory) is
   /// already loaded by the host and is not carried.
-  Future<void> collectFonts(List<dynamic> icons, List<dynamic> dynamicIcons,
+  ///
+  /// With [wholeFamilies] (an SO patch, whose bundle was built with its own
+  /// code and already subsets the icon font to it) every font file whose
+  /// bytes differ from the host's ships as built.
+  Future<void> collectFonts(List<dynamic> icons,
       {List<dynamic>? hostIcons,
-      Map<dynamic, dynamic> hostFiles = const {}}) async {
-    require(dynamicIcons.isEmpty, 'PATCH_DYNAMIC_ICON',
-        'Non-constant IconData cannot be subset safely');
+      Map<dynamic, dynamic> hostFiles = const {},
+      bool wholeFamilies = false}) async {
     final fontFile = File(p.join(bundle, 'FontManifest.json'));
     final definitions = await fontFile.exists()
         ? jsonDecode(await fontFile.readAsString()) as List
@@ -337,7 +343,8 @@ class PatchResources {
           sources = definition['fonts'] as List;
       // Only the SDK's dedicated Material icon face is known to be icon-only.
       // Custom/package families may also be used by Text and must remain whole.
-      final points = fallbackFamilies.contains(family) ||
+      final points = wholeFamilies ||
+              fallbackFamilies.contains(family) ||
               family != 'MaterialIcons' ||
               sources.length != 1 ||
               sources.single['asset'] != 'fonts/MaterialIcons-Regular.otf'
@@ -345,7 +352,8 @@ class PatchResources {
           : groups[family];
       // Framework material font is needed only when referenced. Text fonts are
       // carried whole because IconData does not describe their glyph usage.
-      if (family == 'MaterialIcons' &&
+      if (!wholeFamilies &&
+          family == 'MaterialIcons' &&
           !groups.containsKey(family) &&
           !fallbackFamilies.contains(family)) {
         continue;

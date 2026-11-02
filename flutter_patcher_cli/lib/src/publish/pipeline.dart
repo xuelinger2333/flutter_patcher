@@ -62,22 +62,29 @@ Future<Map<String, dynamic>> publicationBaseline(
         {BaselineArchive? archive}) async =>
     (await resolvePublication(store, fields, work, archive: archive)).identity;
 
-/// The signed `target` of a patch package, or null when it has none. An SO
-/// package carries it in its v2 manifest.json, a bytecode one in
-/// patch_manifest.json; a package of the other strategy has none.
-Map<String, dynamic>? patchTarget(Uint8List bytes, String strategy) {
+/// The signed patch_manifest.json of a patch package, or null.
+Map<String, dynamic>? patchManifest(Uint8List bytes) {
   try {
-    final entry = ZipDecoder().decodeBytes(bytes.sublist(146)).findFile(
-        strategy == 'so' ? 'manifest.json' : 'patch_manifest.json');
+    final entry = ZipDecoder()
+        .decodeBytes(bytes.sublist(146))
+        .findFile('patch_manifest.json');
     final manifest = entry == null
         ? null
         : jsonDecode(utf8.decode(entry.content as List<int>));
-    final target = manifest is Map ? manifest['target'] : null;
-    return target is Map ? Map<String, dynamic>.from(target) : null;
+    return manifest is Map ? Map<String, dynamic>.from(manifest) : null;
   } catch (_) {
     return null;
   }
 }
+
+/// The signed `target` of a patch package, or null when it has none.
+Map<String, dynamic>? patchTarget(Uint8List bytes) {
+  final target = patchManifest(bytes)?['target'];
+  return target is Map ? Map<String, dynamic>.from(target) : null;
+}
+
+/// The code kind each host strategy loads.
+const codeKinds = {'bytecode': 'bytecode', 'so': 'libapp'};
 
 /// A schema 5 release accepts only patches pinned to it; a legacy release
 /// (one fingerprint per release) also accepts unpinned patches.
@@ -88,7 +95,19 @@ void checkPatchTarget(Uint8List patch, String strategy,
     expected =
         releaseTarget(Map<String, dynamic>.from(baseline['release'] as Map));
   }
-  final actual = patchTarget(patch, strategy);
+  final manifest = patchManifest(patch);
+  if (manifest != null) {
+    final code = manifest['code'];
+    // Format 1 bytecode patches named their module `module`.
+    final kind = code is Map
+        ? code['kind']
+        : manifest.containsKey('module')
+            ? 'bytecode'
+            : null;
+    require(kind == codeKinds[strategy], 'PUBLISH_TARGET_MISMATCH',
+        'Patch code ($kind) does not run on a $strategy host');
+  }
+  final actual = patchTarget(patch);
   if (actual == null) {
     require(!pinned, 'PUBLISH_TARGET_MISMATCH',
         'Patch is not pinned to a release; create it with this CLI version');

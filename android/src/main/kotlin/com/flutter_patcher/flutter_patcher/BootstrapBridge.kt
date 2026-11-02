@@ -5,8 +5,18 @@ import android.util.Log
 import io.flutter.plugin.common.StandardMethodCodec
 import java.nio.ByteBuffer
 
+/** The boot offer of [host], or null; a rejected offer runs the app as built. */
+internal fun bootPayload(context: Context, host: PatchHost?, fingerprint: String, publicKey: String): Map<String, Any?>? =
+    try {
+        host?.bootPayload(fingerprint, publicKey)
+    } catch (error: Exception) {
+        BootDiagnosticStore.record(context, BootDiagnosticStore.UNKNOWN,
+            message = "Boot payload rejected: ${error.message}")
+        null
+    }
+
 /** Optional per-process fast path; multiple engine registrations disable it. */
-internal class BootstrapBridge(private val context: Context, private val manager: BytecodePatchManager) {
+internal class BootstrapBridge(private val context: Context, private val host: () -> PatchHost?) {
     private external fun nativeRegister()
     private external fun nativeUnregister()
     private var loaded = false
@@ -36,18 +46,9 @@ internal class BootstrapBridge(private val context: Context, private val manager
         val response = try {
             val call = codec.decodeMethodCall(ByteBuffer.wrap(bytes))
             val value = when (call.method) {
-                "bootPayload" -> {
-                    manager.announceBootstrap()
-                    try {
-                        manager.bootPayload(call.argument<String>("fingerprint") ?: "",
-                            call.argument<String>("publicKeyBase64") ?: "")
-                    } catch (error: Exception) {
-                        BootDiagnosticStore.record(context, BootDiagnosticStore.UNKNOWN,
-                            message = "Bytecode boot payload rejected: ${error.message}")
-                        null
-                    }
-                }
-                "markBooting" -> manager.markBooting(call.argument<String>("attempt"))
+                "bootPayload" -> bootPayload(context, host(), call.argument<String>("fingerprint") ?: "",
+                    call.argument<String>("publicKeyBase64") ?: "")
+                "markBooting" -> host()?.markBooting(call.argument<String>("attempt")) ?: false
                 else -> error("Unsupported bootstrap operation")
             }
             codec.encodeSuccessEnvelope(value)

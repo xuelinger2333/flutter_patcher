@@ -81,7 +81,7 @@ internal class AuthenticatedUpdates(context: Context, val host: HostTrustConfig)
                     }
                 }
                 val bytes = out.toByteArray()
-                require(bytes.size == expected && BytecodeEnvelope.digest(bytes) == fields["sha256"]) { "Download digest/size" }
+                require(bytes.size == expected && PatchEnvelope.digest(bytes) == fields["sha256"]) { "Download digest/size" }
                 return bytes
             } finally { connection.disconnect() }
         }

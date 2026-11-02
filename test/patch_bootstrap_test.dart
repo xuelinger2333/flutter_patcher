@@ -14,6 +14,7 @@ Uint8List envelope(
     {bool fonts = false,
     bool assets = false,
     String extra = '',
+    String kind = 'bytecode',
     bool wrongEntryDigest = false}) {
   final module = Uint8List(120);
   ByteData.sublistView(module).setUint32(0, 0x44424333, Endian.little);
@@ -23,11 +24,12 @@ Uint8List envelope(
         'sha256': sha256.convert(bytes).toString()
       };
   final manifest = {
-    'format_version': 1,
+    'format_version': patchFormatVersion,
     'patch_seq': 7,
     'fingerprint': fp,
     'tier': 'lean',
-    'module': {
+    'code': {
+      'kind': kind,
       ...row('module.bc', module),
       if (wrongEntryDigest) 'sha256': '0' * 64
     },
@@ -128,6 +130,79 @@ void main() {
     expect(
         () => verifyPatchBytes(changed, fp, sha256.convert(bytes).toString()),
         throwsFormatException);
+  });
+  test('rejects code that is not a bytecode module', () {
+    final bytes = envelope(kind: 'libapp');
+    expect(
+        () => parseAuthenticatedPatchBytes(bytes, fp),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'reason', 'Module path')));
+  });
+  group('SO host', () {
+    Future<({List<String> calls, List<String> events})> boot(
+        Map<String, Object?> payload,
+        {bool failAssets = false}) async {
+      final calls = <String>[], events = <String>[];
+      Future<void> Function()? firstFrame;
+      final runner = BootRunner(
+          call: (method, args) async {
+            calls.add(method);
+            if (method == 'bootPayload') return payload;
+            expect(args['attempt'], 'token');
+            return true;
+          },
+          assets: (assets) async {
+            events.add('assets:${assets.keys.join(',')}');
+            if (failAssets) throw StateError('engine');
+          },
+          fonts: (fonts) async => events.add('fonts:${fonts.keys.join(',')}'),
+          observe: (_, success) => firstFrame = success,
+          log: (_) {});
+      await runner.run(
+          original: () => events.add('main'),
+          fingerprint: fp,
+          publicKeyBase64: 'key');
+      await firstFrame?.call();
+      return (calls: calls, events: events);
+    }
+
+    Map<String, Object?> payload(Object? assets, Object? fonts) => {
+          'attempt': 'token',
+          'transportVersion': 1,
+          'kind': 'libapp',
+          'assets': assets,
+          'fonts': fonts
+        };
+
+    test('installs resources, then runs the running libapp main', () async {
+      final run = await boot(payload({
+        'a': Uint8List.fromList([1])
+      }, {
+        'F': [
+          Uint8List.fromList([2])
+        ]
+      }));
+      expect(run.events, ['assets:a', 'fonts:F', 'main']);
+      expect(run.calls, ['bootPayload', 'markBooting', 'reportBootSuccess']);
+    });
+    test('a patch without resources only settles the attempt', () async {
+      final run = await boot(payload(<String, Object?>{}, <String, Object?>{}));
+      expect(run.events, ['main']);
+      expect(run.calls.last, 'reportBootSuccess');
+    });
+    test('a failed install is reported and main still runs once', () async {
+      final run = await boot(
+          payload({'a': Uint8List.fromList([1])}, <String, Object?>{}),
+          failAssets: true);
+      expect(run.events, ['assets:a', 'main']);
+      expect(run.calls, contains('reportDartBootError'));
+      expect(run.calls, isNot(contains('reportBootSuccess')));
+    });
+    test('malformed resources fail before touching the engine', () async {
+      final run = await boot(payload({'a': [1]}, <String, Object?>{}));
+      expect(run.events, ['main']);
+      expect(run.calls, ['bootPayload', 'reportDartBootError']);
+    });
   });
   test('rejects traversal, unlisted entries, truncation and payload corruption',
       () {

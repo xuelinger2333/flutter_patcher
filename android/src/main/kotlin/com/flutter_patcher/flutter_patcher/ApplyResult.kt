@@ -1,7 +1,7 @@
 package com.flutter_patcher.flutter_patcher
 
 /**
- * [PatchManager.applyPatch] 的结构化返回值。
+ * 安装签名补丁（PatchHost.applyManifest）的结构化返回值。
  *
  * 通过 MethodChannel 以 `Map<String, Any?>` 形式序列化到 Dart 侧，由
  * `PatchApplyResult.fromNative()` 反解。

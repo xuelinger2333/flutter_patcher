@@ -3,14 +3,15 @@ package com.flutter_patcher.flutter_patcher
 import android.content.Context
 import android.util.Log
 import io.flutter.FlutterInjector
-import io.flutter.embedding.engine.FlutterJNI
 import io.flutter.embedding.engine.loader.FlutterLoader
 import java.lang.reflect.Field
 import java.lang.reflect.Modifier
 import java.util.concurrent.ExecutorService
 
 /**
- * 通过反射把 FlutterInjector 内部持有的 FlutterLoader 替换为自定义实现。
+ * 通过反射把 FlutterInjector 内部持有的 FlutterLoader 替换为自定义实现，让
+ * 引擎加载补丁的 libapp.so。补丁资源不经过这里：生成的 Dart 入口把它们交给
+ * 引擎（见 SoPatchManager.bootPayload）。
  *
  * # 为什么是最脆弱的部分
  * Flutter Engine 每个大版本都可能改内部字段名 / 改 FlutterLoader 的方法签名。
@@ -49,25 +50,10 @@ internal object LoaderHook {
     fun install(
         context: Context,
         patchSoPath: String,
-        patchAssetsPath: String? = null,
-        patchAssetsArchivePath: String? = null,
         attemptedFields: MutableList<String>? = null,
     ): Boolean {
         return try {
             val injector = FlutterInjector.instance()
-            if (!patchAssetsArchivePath.isNullOrEmpty() && !patchAssetsPath.isNullOrEmpty()) {
-                if (!verifyAssetArchiveReadable(context, patchAssetsArchivePath, patchAssetsPath)) {
-                    throw IllegalStateException(
-                        "AssetManager.addAssetPath failed: $patchAssetsArchivePath"
-                    )
-                }
-                installPatchedFlutterJniFactory(
-                    injector,
-                    context,
-                    patchAssetsArchivePath,
-                    patchAssetsPath
-                )
-            }
             val candidates = buildCandidates(context)
             attemptedFields?.addAll(candidates)
             val heuristic = PatcherConfig.loaderFallbackHeuristic(context)
@@ -78,121 +64,13 @@ internal object LoaderHook {
                         "loaderFieldCandidates to FlutterPatcher.init."
                 )
             field.isAccessible = true
-
-            val patched = PatchedFlutterLoader(patchSoPath, patchAssetsPath)
-            field.set(injector, patched)
-
+            field.set(injector, PatchedFlutterLoader(patchSoPath))
             Log.d(TAG, "FlutterLoader patched via field '${field.name}' -> $patchSoPath")
             true
         } catch (e: Throwable) {
             Log.e(TAG, "install failed", e)
             false
         }
-    }
-
-    private fun verifyAssetArchiveReadable(
-        context: Context,
-        path: String,
-        bundlePath: String
-    ): Boolean {
-        return try {
-            val packageContext = context.createPackageContext(context.packageName, 0)
-            addAssetPathTo(packageContext, path, bundlePath, verifyManifest = true)
-        } catch (e: Throwable) {
-            Log.e(TAG, "createPackageContext asset patch failed", e)
-            false
-        }
-    }
-
-    private fun installPatchedFlutterJniFactory(
-        injector: FlutterInjector,
-        context: Context,
-        archivePath: String,
-        bundlePath: String
-    ) {
-        val field = injector.javaClass.getDeclaredField("flutterJniFactory")
-        field.isAccessible = true
-        field.set(
-            injector,
-            PatchedFlutterJniFactory(context.applicationContext, archivePath, bundlePath)
-        )
-        Log.d(TAG, "FlutterJNI factory patched for asset bundle=$bundlePath")
-    }
-
-    private class PatchedFlutterJniFactory(
-        private val context: Context,
-        private val archivePath: String,
-        private val bundlePath: String
-    ) : FlutterJNI.Factory() {
-        override fun provideFlutterJNI(): FlutterJNI {
-            return PatchedFlutterJNI(context, archivePath, bundlePath)
-        }
-    }
-
-    private class PatchedFlutterJNI(
-        private val context: Context,
-        private val archivePath: String,
-        private val bundlePath: String
-    ) : FlutterJNI() {
-        override fun runBundleAndSnapshotFromLibrary(
-            bundlePath: String,
-            entrypointFunctionName: String?,
-            pathToEntrypointFunction: String?,
-            assetManager: android.content.res.AssetManager,
-            entrypointArgs: MutableList<String>?,
-            engineId: Long
-        ) {
-            try {
-                val packageContext = context.createPackageContext(context.packageName, 0)
-                if (addAssetPathTo(packageContext, archivePath, this.bundlePath)) {
-                    super.runBundleAndSnapshotFromLibrary(
-                        this.bundlePath,
-                        entrypointFunctionName,
-                        pathToEntrypointFunction,
-                        packageContext.assets,
-                        entrypointArgs,
-                        engineId
-                    )
-                    return
-                }
-            } catch (e: Throwable) {
-                Log.e(TAG, "patched FlutterJNI asset setup failed", e)
-            }
-            super.runBundleAndSnapshotFromLibrary(
-                bundlePath,
-                entrypointFunctionName,
-                pathToEntrypointFunction,
-                assetManager,
-                entrypointArgs,
-                engineId
-            )
-        }
-    }
-
-    private fun addAssetPathTo(
-        context: Context,
-        path: String,
-        bundlePath: String?,
-        verifyManifest: Boolean = false
-    ): Boolean {
-        val method = context.assets.javaClass.getMethod("addAssetPath", String::class.java)
-        val cookie = method.invoke(context.assets, path) as? Int ?: 0
-        if (cookie == 0) {
-            Log.e(TAG, "AssetManager rejected asset archive: $path")
-            return false
-        }
-        if (verifyManifest && !bundlePath.isNullOrEmpty()) {
-            val manifestPath = "${bundlePath.trimEnd('/')}/AssetManifest.bin"
-            try {
-                context.assets.open(manifestPath).use { input ->
-                    input.read()
-                }
-            } catch (e: Throwable) {
-                Log.e(TAG, "AssetManager self-check failed for $manifestPath", e)
-                return false
-            }
-        }
-        return true
     }
 
     private fun buildCandidates(context: Context): List<String> {
@@ -240,28 +118,13 @@ internal object LoaderHook {
     }
 }
 
-internal fun patchedAssetLookupKey(patchAssetsPath: String, asset: String): String {
-    return "${patchAssetsPath.trimEnd('/')}/${asset.trimStart('/')}"
-}
-
-internal fun patchedPackageAssetLookupKey(
-    patchAssetsPath: String,
-    asset: String,
-    packageName: String
-): String {
-    return patchedAssetLookupKey(patchAssetsPath, "packages/$packageName/$asset")
-}
-
 /**
  * 自定义 FlutterLoader：通过 `--aot-shared-library-name` 参数让 Flutter Engine
  * 从补丁路径加载 libapp.so，替代 APK 内置版本。
  *
  * `--aot-shared-library-name=<path>` 从 Flutter 1.x 开始一直稳定存在，跨大版本兼容。
  */
-internal class PatchedFlutterLoader(
-    private val patchSoPath: String,
-    private val patchAssetsPath: String? = null,
-) : FlutterLoader() {
+internal class PatchedFlutterLoader(private val patchSoPath: String) : FlutterLoader() {
 
     companion object {
         private const val TAG = "FlutterPatcher/Loader"
@@ -270,24 +133,7 @@ internal class PatchedFlutterLoader(
     override fun ensureInitializationComplete(context: Context, args: Array<String>?) {
         val patched = (args ?: emptyArray()).toMutableList()
         patched.add("--aot-shared-library-name=$patchSoPath")
-        if (!patchAssetsPath.isNullOrEmpty()) {
-            patched.add("--flutter-assets-dir=$patchAssetsPath")
-        }
-        Log.d(TAG, "load patch: so=$patchSoPath assets=${patchAssetsPath ?: "<built-in>"}")
+        Log.d(TAG, "load patch: so=$patchSoPath")
         super.ensureInitializationComplete(context, patched.toTypedArray())
-    }
-
-    override fun findAppBundlePath(): String {
-        return patchAssetsPath ?: super.findAppBundlePath()
-    }
-
-    override fun getLookupKeyForAsset(asset: String): String {
-        return patchAssetsPath?.let { patchedAssetLookupKey(it, asset) }
-            ?: super.getLookupKeyForAsset(asset)
-    }
-
-    override fun getLookupKeyForAsset(asset: String, packageName: String): String {
-        return patchAssetsPath?.let { patchedPackageAssetLookupKey(it, asset, packageName) }
-            ?: super.getLookupKeyForAsset(asset, packageName)
     }
 }

@@ -73,7 +73,9 @@ class AuthenticatedDownloadRaceTest {
             }
         }
         val executor = Executors.newFixedThreadPool(3)
-        val manager = BytecodePatchManager(context)
+        val manager = PatchHost.of(context, HostTrustConfig.load(context)!!)
+        // Only the active candidate keeps files.
+        fun kept() = File(root, "files/flutter_patcher_bytecode").list()?.sorted() ?: emptyList()
         manager.bootPayload(fixture.getString("fingerprint"), fixture.getString("public"))
         fun transfer(seq: Int, readers: Int = 1) = Transfer(Base64.getDecoder().decode(fixture.getString("bytes$seq")), readers)
             .also { transfers["/$seq"] = it }
@@ -101,6 +103,8 @@ class AuthenticatedDownloadRaceTest {
             assertTrue(retryA.get(5, TimeUnit.SECONDS))
             assertTrue(retryB.get(5, TimeUnit.SECONDS))
             assertEquals("8", manager.currentVersion())
+            val eight = kept()
+            assertEquals(1, eight.size)
 
             val slow = transfer(9)
             val older = apply(9)
@@ -110,6 +114,8 @@ class AuthenticatedDownloadRaceTest {
             slow.release.countDown()
             assertFalse("Old download replaced newer candidate", older.get(5, TimeUnit.SECONDS))
             assertEquals("10", manager.currentVersion())
+            assertEquals("Replaced candidate left files", 1, kept().size)
+            assertNotEquals(eight, kept())
 
             val revoked = transfer(11)
             val pending = apply(11)
@@ -118,6 +124,7 @@ class AuthenticatedDownloadRaceTest {
             revoked.release.countDown()
             assertFalse("Revoked publisher committed in-flight bytes", pending.get(5, TimeUnit.SECONDS))
             assertNull("Revoked installed candidate survived", manager.currentVersion())
+            assertEquals("Rolled back candidate left files", emptyList<String>(), kept())
         } finally {
             transfers.values.forEach { it.release.countDown() }
             executor.shutdownNow()

@@ -146,7 +146,8 @@ final class ManifestStateStore {
 
 /// Durable state of signed FPTC candidates: content-addressed files, the
 /// active candidate, the boot attempt, crash counts, blacklist and sequence
-/// high-water marks. Callers serialize access.
+/// high-water marks. Only the active candidate keeps its file, as on
+/// Android. Callers serialize access.
 final class CandidateStore {
   typealias Meta = [String: Any]
 
@@ -316,6 +317,18 @@ final class CandidateStore {
     var next = state
     change(&next)
     try file.write(next)
+    let replaced = (state["active"] as? Meta).map { id($0) } != (next["active"] as? Meta).map { id($0) }
     state = next
+    // One candidate per host: whatever stops being active loses its files.
+    // A running patch already holds its bytes.
+    if replaced { prune() }
+  }
+
+  private func prune() {
+    let keep = active().map { fileURL($0).lastPathComponent }
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    for name in names where name != keep {
+      try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+    }
   }
 }

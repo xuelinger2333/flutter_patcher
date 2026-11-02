@@ -3,7 +3,7 @@
   "channel": "flutter_patcher",
   "events": "flutter_patcher/events",
   "methods": {
-    "bootPayload": {"args": {"fingerprint": "String", "publicKeyBase64": "String"}, "returns": "Map? {transportVersion: int, envelopeBytes: Uint8List, attempt: String, ...}"},
+    "bootPayload": {"args": {"fingerprint": "String", "publicKeyBase64": "String"}, "returns": "Map? {transportVersion: int, attempt: String, and envelopeBytes: Uint8List (bytecode) | kind: libapp, assets: Map<String, Uint8List>, fonts: Map<String, List<Uint8List>> (so)}"},
     "markBooting": {"args": {"attempt": "String?"}, "returns": "null"},
     "reportBootSuccess": {"args": {"attempt": "String?"}, "returns": "null"},
     "reportDartBootError": {"args": {"attempt": "String?", "message": "String", "quarantine": "bool?"}, "returns": "null"},

@@ -3,9 +3,11 @@ package com.flutter_patcher.flutter_patcher
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 
-/** FPTC v1: never allocate from the unauthenticated payload length. */
-internal object BytecodeEnvelope {
+/** FPTC v1, the signed envelope of every patch: never allocate from the unauthenticated payload length. */
+internal object PatchEnvelope {
     const val MAX_BYTES = 320 * 1024 * 1024
+    /** Header fields and Ed25519 signature before the signed payload. */
+    const val HEADER = 146
     fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(bytes).joinToString("") { "%02x".format(it) }
 

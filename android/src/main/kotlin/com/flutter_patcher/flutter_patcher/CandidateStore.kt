@@ -12,9 +12,14 @@ import org.json.JSONObject
 /**
  * Durable state of signed FPTC candidates for one strategy: content-addressed
  * files, the active candidate, the boot attempt, crash counts, blacklist and
- * sequence high-water marks. Callers serialize access.
+ * sequence high-water marks. Only the active candidate keeps its files
+ * ([owned] names them), as on iOS. Callers serialize access.
  */
-internal class CandidateStore(private val context: Context, private val strategy: String) {
+internal class CandidateStore(
+    private val context: Context,
+    private val strategy: String,
+    private val owned: (JSONObject) -> Set<String> = { emptySet() },
+) {
     private val prefs = context.getSharedPreferences("flutter_patcher_$strategy", Context.MODE_PRIVATE)
     private val directory = File(context.filesDir, "flutter_patcher_$strategy")
 
@@ -49,7 +54,8 @@ internal class CandidateStore(private val context: Context, private val strategy
 
     fun active(): JSONObject? = prefs.getString("active", null)?.let { JSONObject(it) }
     fun id(meta: JSONObject) = "${meta.getString("fingerprint")}:${meta.getLong("seq")}:${meta.getString("sha256")}"
-    fun file(meta: JSONObject) = File(directory, meta.getString("sha256") + ".fptc")
+    /** Where the [CandidateFormat] keeps candidates' files. */
+    val root: File get() = directory
 
     /** Settles the attempt left by the previous process; a crash counts as a failure. */
     fun recoverAttempt() {
@@ -86,16 +92,10 @@ internal class CandidateStore(private val context: Context, private val strategy
         }
     }
 
-    /** Makes [meta] active, keeping [bytes] as its envelope file when given. */
-    fun save(meta: JSONObject, bytes: ByteArray?) {
+    /** Makes [meta] active; its files are already in [root]. */
+    fun save(meta: JSONObject) {
         requireNewer(meta)
         val fingerprint = meta.getString("fingerprint")
-        if (bytes != null) {
-            check(directory.isDirectory || directory.mkdirs()) { "Cannot create $strategy directory" }
-            val temporary = File(directory, UUID.randomUUID().toString() + ".pending")
-            FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }
-            check(temporary.renameTo(file(meta))) { "Cannot commit $strategy file" }
-        }
         commit(prefs.edit().putString("active", meta.toString())
             .putLong("high:$fingerprint", maxOf(meta.getLong("seq"), prefs.getLong("high:$fingerprint", 0))))
     }
@@ -140,11 +140,22 @@ internal class CandidateStore(private val context: Context, private val strategy
 
     private fun clearingAttempt(edit: SharedPreferences.Editor) =
         edit.remove("attempt_meta").remove("pid").putBoolean("loading", false)
-    private fun commit(edit: SharedPreferences.Editor) { check(edit.commit()) { "Cannot commit $strategy state" } }
+    private fun commit(edit: SharedPreferences.Editor) {
+        val before = active()?.let { id(it) }
+        check(edit.commit()) { "Cannot commit $strategy state" }
+        // One candidate per host: whatever stops being active loses its files.
+        // A running patch already holds its code and bytes.
+        if (active()?.let { id(it) } != before) prune()
+    }
+
+    private fun prune() {
+        val keep = active()?.let(owned) ?: emptySet()
+        directory.listFiles()?.filter { it.name !in keep }?.forEach { it.deleteRecursively() }
+    }
 
     companion object {
         /** InputStream.readNBytes needs API 33; this bounded read works from API 24. */
-        fun readBounded(stream: InputStream, limit: Int = BytecodeEnvelope.MAX_BYTES, what: String = "Patch"): ByteArray = stream.use {
+        fun readBounded(stream: InputStream, limit: Int = PatchEnvelope.MAX_BYTES, what: String = "Patch"): ByteArray = stream.use {
             val out = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(65536)
             while (true) {

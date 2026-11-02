@@ -7,7 +7,7 @@ import android.system.OsConstants
 import java.io.File
 import org.json.JSONObject
 
-/** Called only under the owning BytecodePatchManager monitor, in the main process.
+/** Called only under the owning PatchHost monitor, in the main process.
  * Missing state after initialization and corrupted state both fail closed. */
 internal class ManifestStateStore(context: Context, private val host: HostTrustConfig) {
     data class State(val manifest: PublishManifest.State = PublishManifest.State(),

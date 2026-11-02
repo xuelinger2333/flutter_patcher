@@ -34,3 +34,15 @@ Future<void> installRuntimePackage(
   });
   await writeObject(configPath, config);
 }
+
+/// Writes the generated host entry ([bootstrapSource]) into the runtime
+/// package of the build copy [project] and returns it as the build target.
+/// Inside the package it compiles as a package: URI; a file URI would embed
+/// the run's work path in libapp.so.
+Future<String> writeBootstrapEntry(String project, String source) async {
+  final target =
+      p.join(project, '.dart_tool/flutter_patcher/runtime/lib/main.dart');
+  await File(target).parent.create(recursive: true);
+  await File(target).writeAsString(source);
+  return target;
+}

@@ -23,8 +23,8 @@ import io.flutter.plugin.common.MethodChannel.Result
  *
  * MethodChannel 方法：
  * - saveConfig(maxCrashCount, loaderFieldCandidates, loaderFallbackHeuristic)
- * - markBooting()               — 字节码启动尝试开始
- * - reportBootSuccess()         — Dart 首帧渲染时调用，确认本次补丁启动成功
+ * - bootPayload / markBooting   — 生成的入口取本次启动的补丁并开始启动尝试
+ * - reportBootSuccess()         — 首帧确认本次补丁启动成功（原生首帧监听也会确认）
  * - reportDartBootError(Map)    — 引导阶段 Dart 未捕获异常上报，等同一次真崩溃
  * - checkSignedManifest / applySignedManifest / updatePublicationTrust — 签名清单
  * - rollback()
@@ -47,18 +47,24 @@ class FlutterPatcherPlugin :
     private lateinit var channel: MethodChannel
     private lateinit var eventChannel: EventChannel
     private lateinit var appContext: Context
-    private lateinit var bytecode: BytecodePatchManager
-    // Loaded off the main thread on first use; null unless this is an authenticated SO host.
-    private val so by lazy { HostTrustConfig.load(appContext)?.takeIf { it.strategy == "so" }?.let { SoPatchManager(appContext, it) } }
+    // The host's patch side; null without a policy. Loaded off the main
+    // thread on first use (it reads the APK).
+    private val hostLoader = lazy<PatchHost?> {
+        HostTrustConfig.load(appContext)?.let { PatchHost.of(appContext, it) }
+    }
+    private val host by hostLoader
     private var bootstrapBridge: BootstrapBridge? = null
     private val bootProfiler = BootChannelProfiler()
     private var renderer: FlutterRenderer? = null
     private val firstFrame = object : FlutterUiDisplayListener {
         override fun onFlutterUiDisplayed() {
-            val token = bytecode.frameToken ?: return
+            // Only a loaded host can have started an attempt.
+            if (!hostLoader.isInitialized()) return
+            val patches = host ?: return
+            val token = patches.frameToken ?: return
             Thread {
-                try { bytecode.firstFrame(token) }
-                catch (error: Exception) { Log.w(TAG, "Cannot persist bytecode first frame", error) }
+                try { patches.success(token) }
+                catch (error: Exception) { Log.w(TAG, "Cannot persist first frame", error) }
             }.start()
         }
         override fun onFlutterUiNoLongerDisplayed() {}
@@ -70,8 +76,7 @@ class FlutterPatcherPlugin :
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
-        bytecode = BytecodePatchManager(appContext)
-        bootstrapBridge = BootstrapBridge(appContext, bytecode)
+        bootstrapBridge = BootstrapBridge(appContext) { host }
         renderer = binding.textureRegistry as? FlutterRenderer
         renderer?.addIsDisplayingFlutterUiListener(firstFrame)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL, bootProfiler.codec)
@@ -103,68 +108,40 @@ class FlutterPatcherPlugin :
     override fun onMethodCall(call: MethodCall, result: Result) {
         val trace = bootProfiler.take()
         when (call.method) {
-            "bootPayload" -> {
-                bytecode.announceBootstrap()
-                bytecodeCall(result, trace) {
-                    try {
-                        bytecode.bootPayload(call.argument<String>("fingerprint") ?: "",
-                            call.argument<String>("publicKeyBase64") ?: "")
-                    } catch (error: Exception) {
-                        BootDiagnosticStore.record(appContext, BootDiagnosticStore.UNKNOWN,
-                            message = "Bytecode boot payload rejected: ${error.message}")
-                        null
-                    }
-                }
+            "bootPayload" -> hostCall(result, trace) {
+                bootPayload(appContext, host, call.argument<String>("fingerprint") ?: "",
+                    call.argument<String>("publicKeyBase64") ?: "")
             }
             "saveConfig" -> handleSaveConfig(call, result)
-            "markBooting" -> {
-                if (bytecode.bootstrapped) {
-                    bytecodeCall(result, trace) { bytecode.markBooting(call.argument<String>("attempt")) }
-                    return
-                }
-                // An SO attempt is armed natively before the engine starts.
-                result.success(null)
-            }
-            "reportBootSuccess" -> {
-                if (bytecode.bootstrapped) {
-                    bytecodeCall(result) { bytecode.success(call.argument<String>("attempt")); null }
-                    return
-                }
-                SoPatchManager.success(appContext)
-                result.success(null)
-            }
-            "reportDartBootError" -> if (bytecode.bootstrapped) {
-                // A user's init() inside a whole module owns its FlutterError
-                // hook; bind that existing RPC to the currently armed attempt.
-                val token = call.argument<String>("attempt") ?: bytecode.frameToken
-                bytecodeCall(result) { bytecode.error(token, call.argument<String>("message"), call.argument<Boolean>("quarantine") == true); null }
-            } else {
-                SoPatchManager.error(appContext, call.argument<String>("message"))
-                result.success(null)
+            // A legacy call without a token starts and settles nothing.
+            "markBooting" -> hostCall(result, trace) { host?.markBooting(call.argument<String>("attempt")) ?: false }
+            "reportBootSuccess" -> hostCall(result) { host?.success(call.argument<String>("attempt")); null }
+            "reportDartBootError" -> hostCall(result) {
+                // A user's init() owns its FlutterError hook and reports
+                // without a token; bind it to the started attempt.
+                val patches = host
+                patches?.error(call.argument<String>("attempt") ?: patches.frameToken,
+                    call.argument<String>("message"), call.argument<Boolean>("quarantine") == true)
+                null
             }
             "applySignedManifest" -> authenticatedCall(result) {
-                val wire = call.argument<String>("wire") ?: ""
-                so?.applyManifest(wire, ::emitProgress) ?: bytecode.applyManifest(wire, ::emitProgress)
+                authenticated().applyManifest(call.argument<String>("wire") ?: "", ::emitProgress)
             }
-            "hostStrategy" -> bytecodeCall(result) { HostTrustConfig.load(appContext)?.strategy }
+            "hostStrategy" -> hostCall(result) { HostTrustConfig.load(appContext)?.strategy }
             "checkSignedManifest" -> authenticatedCall(result) {
-                val wire = call.argument<String>("wire") ?: ""
-                so?.inspect(wire) ?: bytecode.inspect(wire)
+                authenticated().inspect(call.argument<String>("wire") ?: "")
             }
             "updatePublicationTrust" -> authenticatedCall(result) {
-                val wire = call.argument<String>("wire") ?: ""
-                so?.updateTrust(wire) ?: bytecode.updateTrust(wire)
+                authenticated().updateTrust(call.argument<String>("wire") ?: "")
                 mapOf("ok" to true)
             }
             "rollback" -> handleRollback(result)
-            "currentVersion" -> handleCurrentVersion(result)
+            "currentVersion" -> hostCall(result) { host?.currentVersion() }
             "lastBootDiagnostic" -> handleLastBootDiagnostic(result)
             "appVersionCode" -> result.success(PatcherConfig.currentVersionCode(appContext))
             "deviceAbi" -> result.success(Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
-            "blacklist" -> bytecodeCall(result) {
-                bytecode.blacklist() + (so?.blacklist() ?: emptyList())
-            }
-            "clearBlacklist" -> bytecodeCall(result) { bytecode.clearBlacklist(); so?.clearBlacklist(); null }
+            "blacklist" -> hostCall(result) { host?.blacklist() ?: emptyList<Map<String, Any?>>() }
+            "clearBlacklist" -> hostCall(result) { host?.clearBlacklist(); null }
             else -> result.notImplemented()
         }
     }
@@ -181,6 +158,8 @@ class FlutterPatcherPlugin :
 
     // ==================== handlers ====================
 
+    private fun authenticated(): PatchHost = host ?: error("Host has no authenticated policy")
+
     private fun authenticatedCall(result: Result, operation: () -> Any?) {
         Thread {
             try {
@@ -195,7 +174,7 @@ class FlutterPatcherPlugin :
         }.start()
     }
 
-    private fun bytecodeCall(result: Result, trace: BootChannelProfiler.Trace? = null, operation: () -> Any?) {
+    private fun hostCall(result: Result, trace: BootChannelProfiler.Trace? = null, operation: () -> Any?) {
         if (trace != null) trace.submitted = System.nanoTime()
         Thread {
             if (trace != null) {
@@ -245,8 +224,7 @@ class FlutterPatcherPlugin :
     private fun handleRollback(result: Result) {
         Thread {
             try {
-                so?.rollback()
-                bytecode.rollback()
+                host?.rollback()
             } catch (e: Exception) {
                 Log.e(TAG, "rollback error", e)
                 main.post { result.error("ROLLBACK_FAILED", "Could not persist rollback", null) }
@@ -256,14 +234,6 @@ class FlutterPatcherPlugin :
         }.start()
     }
 
-    private fun handleCurrentVersion(result: Result) {
-        if (bytecode.bootstrapped) {
-            bytecodeCall(result) { bytecode.currentVersion() }
-            return
-        }
-        val v = PatchManager(appContext).currentVersion()
-        result.success(if (v.isEmpty()) null else v)
-    }
 
     private fun handleLastBootDiagnostic(result: Result) {
         // null 表示从未 record 过（首次安装 / pm clear 后第一次启动且尚未到首帧）

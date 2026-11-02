@@ -1,8 +1,13 @@
 import 'dart:convert';
 import '../core.dart';
 
+/// The generated main of a host: it runs [PatchBootstrap] before the app's
+/// own main. A bytecode host also retains the runtime that loads modules;
+/// an SO host ([modules] false) runs a patch as its whole libapp.so and only
+/// receives the patch's resources.
 String bootstrapSource(
-    String package, String entry, String fingerprint, String key) {
+    String package, String entry, String fingerprint, String key,
+    {bool modules = true}) {
   require(
       RegExp(r'^[a-zA-Z_][a-zA-Z_0-9]*$').hasMatch(package) &&
           RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint),
@@ -18,11 +23,13 @@ String bootstrapSource(
   require(bytes.length == 32, 'BUILD_CONFIG_INVALID',
       'Public key must contain 32 bytes.');
   return "import 'package:flutter_patcher/flutter_patcher.dart';\n"
-      "import 'package:dynamic_modules/dynamic_modules.dart';\n"
-      "import 'package:dynamic_modules/host.dart' as host;\n"
+      '${modules ? "import 'package:dynamic_modules/dynamic_modules.dart';\n"
+          "import 'package:dynamic_modules/host.dart' as host;\n" : ''}'
       'import ${jsonEncode('package:$package/$entry').replaceAll(r'$', r'\$')} as app;\n'
       'const _fingerprint = ${jsonEncode(fingerprint)};\n'
       'const _publicKey = ${jsonEncode(key)};\n'
-      'Future<void> main() { host.retainRuntime(); return PatchBootstrap.run(original: app.main,\n'
-      '  fingerprint: _fingerprint, publicKeyBase64: _publicKey, loadModule: loadModule); }\n';
+      'Future<void> main() { ${modules ? 'host.retainRuntime(); ' : ''}'
+      'return PatchBootstrap.run(original: app.main,\n'
+      '  fingerprint: _fingerprint, publicKeyBase64: _publicKey'
+      '${modules ? ', loadModule: loadModule' : ''}); }\n';
 }

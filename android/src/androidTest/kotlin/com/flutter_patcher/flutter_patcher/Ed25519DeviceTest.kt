@@ -21,28 +21,28 @@ class Ed25519DeviceTest {
         val header = ByteBuffer.allocate(82).putInt(0x46505443).putShort(1)
             .put(ByteArray(32) { 0xab.toByte() }).putInt(7).putLong(4)
             .put(MessageDigest.getInstance("SHA-256").digest(payload)).array()
-        // OpenSSL-generated fixture also used by BytecodeEnvelopeTest (public RFC8032 seed).
+        // OpenSSL-generated fixture also used by PatchEnvelopeTest (public RFC8032 seed).
         val sig = hex("3d0df6da5e5a032899403ba3e00b815bc5ea1779f5ecbdf652cc70cb5aa572a02cd54f7fce63795cac5ee096eb49bb6dcfb8fd1bd52f603d75709b41313f9c01")
         return header + sig + payload
     }
 
     @Test fun authenticEnvelopePassesRepeatedlyWithoutMutatingBytes() {
         val bytes = envelope(); val original = bytes.clone()
-        assertEquals(7L, BytecodeEnvelope.verify(bytes, fingerprint, key))
-        assertEquals(7L, BytecodeEnvelope.verify(bytes, fingerprint, key))
+        assertEquals(7L, PatchEnvelope.verify(bytes, fingerprint, key))
+        assertEquals(7L, PatchEnvelope.verify(bytes, fingerprint, key))
         assertArrayEquals(original, bytes)
     }
 
     @Test fun wrongKeyAndTamperedEnvelopeAreRejected() {
         val wrongKey = hex("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c")
         try {
-            BytecodeEnvelope.verify(envelope(), fingerprint, wrongKey)
+            PatchEnvelope.verify(envelope(), fingerprint, wrongKey)
             fail("Wrong signing key accepted")
         } catch (e: IllegalArgumentException) { assertEquals("Envelope signature", e.message) }
         for (offset in listOf(0, 4, 6, 38, 42, 50, 82, 145, 146)) {
             val bytes = envelope(); bytes[offset] = (bytes[offset].toInt() xor 1).toByte()
             try {
-                BytecodeEnvelope.verify(bytes, fingerprint, key)
+                PatchEnvelope.verify(bytes, fingerprint, key)
                 fail("Tampered byte $offset accepted")
             } catch (_: IllegalArgumentException) { }
         }

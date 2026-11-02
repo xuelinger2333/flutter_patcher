@@ -8,7 +8,7 @@ import org.json.JSONObject
 /**
  * 上次冷启动时补丁加载结果的持久化存储。
  *
- * 补丁能否生效取决于候选状态（`CandidateStore`）、`PatchManager.getValidPatch`
+ * 补丁能否生效取决于候选状态（`CandidateStore`）、解包文件的校验（SO）
  * 与 `LoaderHook.install`。本对象在每次冷启动时把"补丁的加载结果 + 上下文"
  * 一次性覆写到 SharedPreferences，Dart 侧通过 `FlutterPatcher.lastBootDiagnostic` 查询。
  *

@@ -94,10 +94,10 @@ void main() {
       final module = File(p.join(work.path, 'module.bc'))
         ..writeAsStringSync('synthetic signing contract only');
       final packed = await packPatch(
-          module: module.path,
+          kind: 'bytecode',
+          code: module.path,
           work: work.path,
           metadata: {
-            'format_version': 1,
             'fingerprint': 'ab' * 32,
             'patch_seq': 1,
             'tier': 'lean'

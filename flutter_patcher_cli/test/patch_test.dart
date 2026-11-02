@@ -118,10 +118,10 @@ void main() {
     await module.writeAsString(
         'explicit synthetic bytecode for envelope contract only');
     final result = await packPatch(
-        module: module.path,
+        kind: 'bytecode',
+        code: module.path,
         work: root,
         metadata: {
-          'format_version': 1,
           'fingerprint': 'a' * 64,
           'patch_seq': 7,
           'tier': 'lean'

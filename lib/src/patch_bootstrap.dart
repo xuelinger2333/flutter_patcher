@@ -6,6 +6,8 @@ import 'bootstrap/transport.dart';
 import 'bootstrap/runner.dart';
 
 /// Generated build entry calls this before the application's own binding.
+/// A bytecode host passes [loadModule]; an SO host, whose patch is the
+/// libapp.so already running, passes none.
 class PatchBootstrap {
   PatchBootstrap._();
   static bool _started = false;
@@ -14,7 +16,7 @@ class PatchBootstrap {
       {required FutureOr<void> Function() original,
       required String fingerprint,
       required String publicKeyBase64,
-      required ModuleLoader loadModule}) async {
+      ModuleLoader? loadModule}) async {
     if (_started) return;
     _started = true;
     var watching = true;

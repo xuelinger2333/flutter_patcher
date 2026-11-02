@@ -18,15 +18,15 @@ class BytecodeCorpusTest {
         for (i in 0 until cases.length()) {
             val row = cases.getJSONObject(i)
             val bytes = File(root, row.getString("file")).readBytes()
-            assertEquals(row.getString("sha256"), BytecodeEnvelope.digest(bytes), row.getString("id"))
+            assertEquals(row.getString("sha256"), PatchEnvelope.digest(bytes), row.getString("id"))
             if (row.getString("layer") == "envelope") {
                 val error = assertFailsWith<IllegalArgumentException>(row.getString("id")) {
-                    BytecodeEnvelope.verify(bytes, suite.getString("fingerprint"), key)
+                    PatchEnvelope.verify(bytes, suite.getString("fingerprint"), key)
                 }
                 assertEquals(row.getString("reason"), error.message, row.getString("id"))
             } else {
                 // A valid outer signature is mandatory for deeper-layer cases.
-                BytecodeEnvelope.verify(bytes, suite.getString("fingerprint"), key)
+                PatchEnvelope.verify(bytes, suite.getString("fingerprint"), key)
             }
         }
     }

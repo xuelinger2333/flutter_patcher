@@ -10,8 +10,17 @@ import '../crypto/ed25519.dart';
 import '../crypto/signing.dart';
 export '../crypto/signing.dart' show signingKey, hexBytes;
 
+/// Patch archive manifest version; must match the plugin's reader.
+const patchFormatVersion = 2;
+
+/// The archive entry of each kind of code: a bytecode module the plugin
+/// loads, or an SO host's rebuilt libapp.so that native code loads.
+const codePaths = {'bytecode': 'module.bc', 'libapp': 'libapp.so'};
+
+/// Packs [code] of [kind] with the patch's resources into a signed envelope.
 Future<Map<String, Object?>> packPatch(
-    {required String module,
+    {required String kind,
+    required String code,
     required String work,
     required Map<String, dynamic> metadata,
     required List<int> key,
@@ -19,7 +28,9 @@ Future<Map<String, Object?>> packPatch(
     Map<String, List<int>> extraEntries = const {},
     List<Map<String, dynamic>> fonts = const [],
     List<Map<String, dynamic>> assets = const []}) async {
-  final bytes = await File(module).readAsBytes();
+  final codePath = codePaths[kind];
+  require(codePath != null, 'PATCH_PACKAGE_INVALID', 'Unknown code kind: $kind');
+  final bytes = await File(code).readAsBytes();
   require(
       extraEntries.length <= 4094 &&
           extraEntries.values.every((v) => v.length <= 64 * 1024 * 1024) &&
@@ -61,37 +72,48 @@ Future<Map<String, Object?>> packPatch(
   require(listed.length == extraEntries.length, 'PATCH_PACKAGE_INVALID',
       'Unlisted resource entry');
   require(bytes.isNotEmpty && bytes.length <= 64 * 1024 * 1024,
-      'PATCH_PACKAGE_INVALID', 'Invalid bytecode size');
+      'PATCH_PACKAGE_INVALID', 'Invalid code size');
   final manifest = {
     ...metadata,
-    'module': {
-      'path': 'module.bc',
+    'format_version': patchFormatVersion,
+    'code': {
+      'kind': kind,
+      'path': codePath,
       'length': bytes.length,
       'sha256': sha256.convert(bytes).toString()
     },
     'fonts': fonts,
     'assets': assets
   };
+  // The Dart bootstrap reads a bytecode archive in place, so every entry is
+  // STORED. Native code unpacks a libapp.so once at install: it is deflated,
+  // which more than halves an SO patch's download.
+  final deflated = kind == 'libapp' ? codePath : null;
   final archive = Archive();
   for (final entry in {
-    'module.bc': bytes,
+    codePath!: bytes,
     'patch_manifest.json': utf8.encode(jsonEncode(manifest)),
     ...extraEntries
   }.entries) {
     archive.addFile(ArchiveFile(entry.key, entry.value.length, entry.value)
-      ..compression = CompressionType.none);
+      ..compression = entry.key == deflated
+          ? CompressionType.deflate
+          : CompressionType.none);
   }
   // A fixed entry time keeps the signed payload reproducible.
-  final payload =
-      ZipEncoder().encode(archive, level: 0, modified: DateTime.utc(1980));
+  final payload = ZipEncoder().encode(archive, modified: DateTime.utc(1980));
   final zip = ZipDecoder().decodeBytes(payload);
   require(
       zip.length == 2 + extraEntries.length &&
           zip.length <= 4096 &&
           zip.every((f) => f.size <= 64 * 1024 * 1024) &&
-          zip.every((f) => f.compression == CompressionType.none),
+          zip.every((f) =>
+              f.compression ==
+              (f.name == deflated
+                  ? CompressionType.deflate
+                  : CompressionType.none)),
       'PATCH_PACKAGE_INVALID',
-      'Only STORED entries are allowed');
+      'Only the libapp.so of an SO patch may be compressed');
   return {
     ...await sealPatch(
         payload: payload,

@@ -15,7 +15,8 @@ void main() {
     await module.writeAsBytes([1]);
     await expectLater(
         packPatch(
-            module: module.path,
+            kind: 'bytecode',
+            code: module.path,
             work: dir.path,
             metadata: {},
             key: [],
@@ -29,7 +30,8 @@ void main() {
         throwsA(isA<Failure>()));
     await expectLater(
         packPatch(
-            module: module.path,
+            kind: 'bytecode',
+            code: module.path,
             work: dir.path,
             metadata: {},
             key: [],
@@ -95,7 +97,7 @@ void main() {
         PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
     await patch.collectFonts([
       {'fontFamily': null, 'codePoint': 128842}
-    ], []);
+    ]);
     expect(
         patch.fonts, isEmpty); // System fallback, not a missing bundled font.
     await patch.collect(baseline, []);
@@ -109,7 +111,10 @@ void main() {
         bad.collect(baseline, ['a', 'a']), throwsA(isA<Failure>()));
     await File(p.join(dir.path, 'AssetManifest.bin'))
         .writeAsBytes(AssetCodec.encode({'b': manifest['b']}));
-    await expectLater(bad.collect(baseline, []), throwsA(isA<Failure>()));
+    final gone =
+        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
+    await gone.collect(baseline, []);
+    expect(gone.deleted, ['a']);
   });
   test('fonts the host already has are not carried', () async {
     final dir = await Directory.systemTemp.createTemp('resources-host-fonts-');
@@ -140,7 +145,7 @@ void main() {
         PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
     await patch.collectFonts([
       {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000}
-    ], [], hostIcons: [
+    ], hostIcons: [
       {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000},
       {'fontFamily': 'MaterialIcons', 'codePoint': 0xe001},
     ], hostFiles: {
@@ -150,16 +155,44 @@ void main() {
     });
     expect(patch.fonts, isEmpty);
   });
-  test('dynamic or missing icon fonts cannot silently disappear', () async {
+  test('missing icon fonts cannot silently disappear', () async {
     final dir = await Directory.systemTemp.createTemp('resources-fonts-');
     addTearDown(() => dir.delete(recursive: true));
     final patch =
         PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
-    await expectLater(patch.collectFonts([], [{}]), throwsA(isA<Failure>()));
     await expectLater(
         patch.collectFonts([
           {'fontFamily': 'Absent', 'codePoint': 65}
-        ], []),
+        ]),
         throwsA(isA<Failure>()));
+  });
+  test('an SO bundle ships every changed font file whole', () async {
+    final dir = await Directory.systemTemp.createTemp('resources-so-fonts-');
+    addTearDown(() => dir.delete(recursive: true));
+    final files = {
+      'fonts/Text.otf': 'text',
+      'fonts/MaterialIcons-Regular.otf': 'icons subset by the rebuild',
+    };
+    for (final e in files.entries) {
+      await File(p.join(dir.path, e.key)).create(recursive: true);
+      await File(p.join(dir.path, e.key)).writeAsString(e.value);
+    }
+    await File(p.join(dir.path, 'FontManifest.json')).writeAsString(jsonEncode([
+      for (final family in ['Text', 'MaterialIcons'])
+        {
+          'family': family,
+          'fonts': [
+            {'asset': files.keys.firstWhere((k) => k.contains(family))}
+          ]
+        }
+    ]));
+    final patch =
+        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
+    await patch.collectFonts(const [], wholeFamilies: true, hostFiles: {
+      'fonts/Text.otf': {'sha256': sha256.convert(utf8.encode('text')).toString()}
+    });
+    expect(patch.fonts.map((f) => [f['family'], f['subset']]), [
+      ['MaterialIcons', false]
+    ]);
   });
 }

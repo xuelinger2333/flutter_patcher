@@ -286,13 +286,10 @@ class BuildPipeline {
       final sourceInputs = await packageInputs(packages, application: package);
       final hostTrust =
           await writeHostTrust(project, baseline, request.hostPolicy, identity);
-      // Inside the runtime package the entry compiles as a package: URI; a
-      // file URI would embed this run's work path in libapp.so.
-      final target =
-          p.join(project, '.dart_tool/flutter_patcher/runtime/lib/main.dart');
-      await File(target).parent.create(recursive: true);
-      await File(target).writeAsString(bootstrapSource(
-          package, request.target.substring(4), identity, request.publicKey));
+      final target = await writeBootstrapEntry(
+          project,
+          bootstrapSource(package, request.target.substring(4), identity,
+              request.publicKey));
       final ios = request.platform == 'ios';
       phase = ios ? 'ipa' : 'apk';
       final trace = p.join(work, 'precompiler-trace.json'),
@@ -390,8 +387,9 @@ class BuildPipeline {
     }
   }
 
-  /// SO host: the app's own entry built with the managed engine and its host
-  /// policy packaged, archived as one release object. No kernel or interface.
+  /// SO host: the app built with the managed engine behind the generated
+  /// entry that hands a patch's resources to the engine, its host policy
+  /// packaged, archived as one release object. No kernel or interface.
   Future<Map<String, dynamic>> buildSo(BuildRequest request) async {
     await request.validate();
     final policy = request.hostPolicy;
@@ -424,12 +422,20 @@ class BuildPipeline {
       await Directory(release).create();
       final identity = soFingerprint(
           sdk.version, sdk.engine, engine['build_id'] as String, policy.digest);
+      // As for a bytecode host: package inputs include the runtime package,
+      // read before the generated entry is written into it.
+      await installRuntimePackage(
+          packages, package, request.target.substring(4));
       final sourceInputs = await packageInputs(packages, application: package);
       final hostTrust =
           await writeHostTrust(project, release, policy, identity);
+      final target = await writeBootstrapEntry(
+          project,
+          bootstrapSource(package, request.target.substring(4), identity,
+              request.publicKey,
+              modules: false));
       phase = 'apk';
-      final apk =
-          await assembleApk(run, project, request, request.target, const []);
+      final apk = await assembleApk(run, project, request, target, const []);
       phase = 'verify-apk';
       final apkInfo = await verifyApk(apk, release, request, hostTrust);
       final virtual = await VirtualPackages.write(
@@ -467,6 +473,7 @@ class BuildPipeline {
       rethrow;
     }
   }
+
 
   void _requireOutsideSdk(String output) => require(
       !p.equals(p.absolute(output), p.absolute(sdk.root)) &&
