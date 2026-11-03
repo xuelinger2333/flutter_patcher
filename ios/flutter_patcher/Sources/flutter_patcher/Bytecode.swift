@@ -76,7 +76,7 @@ final class BytecodeAttempt {
 /// Authorization transactions; the caller holds the manager lock except while downloading.
 final class AuthenticatedUpdates {
   /// Must equal the pubspec version (checked by test/channel_contract_test.dart).
-  static let pluginVersion = "0.1.4"
+  static let pluginVersion = "1.0.0"
 
   let host: HostTrustConfig
   private let store: ManifestStateStore

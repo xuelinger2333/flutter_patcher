@@ -1,6 +1,6 @@
 > Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
 
-## Unreleased
+## 1.0.0
 
 ### Added
 

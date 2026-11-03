@@ -1,6 +1,6 @@
 name: flutter_patcher
 description: Open-source, self-hosted code push (OTA updates) for Flutter Android. Patches Dart AOT libapp.so and assets on cold start with integrity checks and crash rollback.
-version: 0.1.4
+version: 1.0.0
 homepage: https://github.com/xuelinger2333/flutter_patcher
 repository: https://github.com/xuelinger2333/flutter_patcher
 issue_tracker: https://github.com/xuelinger2333/flutter_patcher/issues

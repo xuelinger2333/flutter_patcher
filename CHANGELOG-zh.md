@@ -2,7 +2,7 @@
 
 [English](CHANGELOG.md) | **简体中文**
 
-## 未发布
+## 1.0.0
 
 ### Added
 
