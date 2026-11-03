@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Resolved by each developer's own Flutter SDK.
+pubspec.lock
+
+# flutter_patcher keys, settings, baselines and updates belong to each developer.
+/flutter_patcher_keys/
+/flutter_patcher.yaml
+/.flutter_patcher/
