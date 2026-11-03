@@ -80,9 +80,22 @@ class BuildPipeline {
   final Map<String, dynamic> engine;
   final BaselineRepository baselines;
   final EnvironmentBuilder environment;
+
+  /// The artifact releases this host is built with; its release records
+  /// them, so every patch of it uses the same ones.
+  final Map<String, ArtifactRelease> releases;
   BuildPipeline(this.commands, this.sdk, this.managed, this.tool, this.cache,
-      this.aapt, this.engine, this.baselines)
+      this.aapt, this.engine, this.baselines, this.releases)
       : environment = EnvironmentBuilder(cache, commands);
+
+  /// Release receipt fields naming what the host was built with.
+  Map<String, Object?> get _built => {
+        'artifacts': {
+          for (final release in releases.values) release.kind: release.toJson()
+        },
+        // What a patch may rely on at boot.
+        'engine_capabilities': engine['capabilities'],
+      };
 
   Future<Map<String, dynamic>> build(BuildRequest request) async {
     await request.validate();
@@ -340,10 +353,7 @@ class BuildPipeline {
         'public_key': request.publicKey,
         'package_inputs': sourceInputs,
         'pinned_packages': pins.pinned,
-        // Engine patches decide what a patch may rely on at boot.
-        'engine_patches': [
-          for (final row in engine['patches'] as List) row['file'] as String
-        ],
+        ..._built,
         'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
         'crlf_dart_sources': crlf
       };
@@ -442,6 +452,7 @@ class BuildPipeline {
         ...apkInfo,
         'public_key': request.publicKey,
         'package_inputs': sourceInputs,
+        ..._built,
         'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
         'crlf_dart_sources': const <String>[],
       };

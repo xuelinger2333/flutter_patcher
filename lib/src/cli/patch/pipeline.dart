@@ -156,7 +156,7 @@ class PatchCode {
       {required this.kind,
       required this.file,
       required this.bundle,
-      required this.enginePatches,
+
       required this.fonts,
       this.metadata = const {},
       this.report = const {}});
@@ -167,8 +167,6 @@ class PatchCode {
   /// A flutter_assets directory built from the patch's sources.
   final String bundle;
 
-  /// Engine patches of the host's engine build.
-  final List<String> enginePatches;
 
   /// Collects the fonts the patch ships.
   final Future<void> Function(PatchResources) fonts;
@@ -189,6 +187,19 @@ abstract class CodeProducer {
   Future<PatchCode> produce();
 }
 
+/// The artifact releases [resolved]'s host was built with.
+Iterable<ArtifactRelease> builtWith(ResolvedRelease resolved) {
+  final recorded = resolved.receipt['artifacts'];
+  require(
+      recorded is Map && recorded.isNotEmpty,
+      'BASELINE_ARTIFACTS_MISSING',
+      'The host was built before its engine and tools releases were '
+          'recorded; rebuild it with this flutter_patcher.');
+  return [
+    for (final row in (recorded as Map).values) ArtifactRelease.fromJson(row)
+  ];
+}
+
 class PatchPipeline {
   final Commands commands;
   final SdkIdentity sdk;
@@ -201,7 +212,9 @@ class PatchPipeline {
       this.baselines,
       {this.engine});
 
-  Future<Map<String, Object?>> patch(PatchRequest req) async {
+  /// Builds [req]'s patch of the [resolved] release.
+  Future<Map<String, Object?>> patch(
+      PatchRequest req, ResolvedRelease resolved) async {
     await req.validate();
     for (final protected in [sdk.root, managed]) {
       require(
@@ -213,11 +226,6 @@ class PatchPipeline {
     final work = await RunWork.create(p.join(cache, 'patches/run'));
     PatchRun? run;
     try {
-      final resolved = await baselines.resolve(
-          req.flavor, req.minBuild.toString(),
-          abi: req.abi,
-          expectedFingerprint: req.fingerprint,
-          sdkRoot: sdk.root);
       final receipt = resolved.receipt;
       require(
           req.minBuild.toString() == receipt['version_code'],
@@ -283,7 +291,10 @@ class PatchPipeline {
       final facts = current.facts
         ..assets = [for (final row in payload.assets) row['key'] as String]
         ..deletedAssets = payload.deleted
-        ..enginePatches = code.enginePatches;
+        ..engineCapabilities = [
+          for (final name in receipt['engine_capabilities'] as List? ?? const [])
+            name as String
+        ];
       for (final key in facts.assets) {
         if (key != 'AssetManifest.bin') facts.changed.add('asset:$key');
       }

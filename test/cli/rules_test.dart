@@ -140,7 +140,7 @@ void main() {
         final f = facts(strategy)..assets = ['a'];
         expect(() => PatchRules().check(PatchStage.resources, f),
             rejects('PATCH_ENGINE_UNSUPPORTED'));
-        f.enginePatches = [engineAssetChannelPatch];
+        f.engineCapabilities = [assetOverlay];
         PatchRules().check(PatchStage.resources, f);
         f.deletedAssets = ['b'];
         expect(() => PatchRules().check(PatchStage.resources, f),

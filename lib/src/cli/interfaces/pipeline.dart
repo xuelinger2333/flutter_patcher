@@ -76,7 +76,7 @@ class InterfacePipeline {
           '--out-details'
         ].every(usage.contains),
         'TOOLS_VERSION_UNSUPPORTED',
-        'Cached tool lacks required interface/detail capabilities. Run doctor --refresh-tools after updated tools are published.');
+        'The tools release lacks required interface/detail subcommands; it predates this flutter_patcher.');
     final staging = temporaryName(p.absolute(request.output));
     await Directory(staging).create(recursive: true);
     Future<void> call(List<String> args) async {

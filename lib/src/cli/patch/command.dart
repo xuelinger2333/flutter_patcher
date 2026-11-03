@@ -34,8 +34,6 @@ Future<int> patchCommand(ArgResults args) async {
     await Directory(cache).create(recursive: true);
     final commands = Commands(cache);
     final offline = args['offline'] == true;
-    require(!(offline && args['refresh-tools'] == true), 'CONFIG_INVALID',
-        'Cannot refresh tools offline');
     final project =
         p.absolute(args['project'] as String? ?? Directory.current.path);
     final request = PatchRequest(
@@ -65,26 +63,32 @@ Future<int> patchCommand(ArgResults args) async {
         commands);
     require(sdk.root != p.join(cache, 'flutter', sdk.version), 'CONFIG_INVALID',
         'Select the stock SDK');
-    final store = ArtifactStore(
-        cache,
-        Uri.parse(args['artifacts-url'] as String),
-        Uri.parse(args['supported-versions-url'] as String),
-        Downloads(offline: offline));
     trace('identify sdk');
-    await store.checkSupport(sdk.version);
-    // The Android engine serves only SO rebuilds; an iOS patch needs none.
-    final engine =
-        platform == 'android' ? await store.obtain('engine', sdk) : null;
-    await store.obtain('tools', sdk, refresh: args['refresh-tools'] == true);
-    trace('artifacts');
-    final managed = await EnvironmentBuilder(cache, commands, offline: offline)
-        .prepare(sdk, store, android: engine);
-    trace('managed sdk');
     final baselines = BaselineRepository(
         p.join(cache, 'baselines'),
         offline
             ? null
             : BaselineStore.open(Uri.parse(value('baseline-store')), commands));
+    final resolved = await baselines.resolve(
+        request.flavor, request.minBuild.toString(),
+        abi: request.abi,
+        expectedFingerprint: request.fingerprint,
+        sdkRoot: sdk.root);
+    // A patch uses the releases its host was built with, never newer ones.
+    final store = ArtifactStore(
+        cache,
+        Uri.parse(args['artifacts-url'] as String),
+        Uri.parse(args['index-url'] as String),
+        Downloads(offline: offline))
+      ..select(builtWith(resolved));
+    // The Android engine serves only SO rebuilds; an iOS patch needs none.
+    final engine =
+        platform == 'android' ? await store.obtain('engine', sdk) : null;
+    await store.obtain('tools', sdk);
+    trace('artifacts');
+    final managed = await EnvironmentBuilder(cache, commands, offline: offline)
+        .prepare(sdk, store, android: engine);
+    trace('managed sdk');
     final result = await PatchPipeline(
             commands,
             sdk,
@@ -94,7 +98,7 @@ Future<int> patchCommand(ArgResults args) async {
             cache,
             baselines,
             engine: engine)
-        .patch(request);
+        .patch(request, resolved);
     for (final warning in result['warnings'] as List? ?? const []) {
       stderr.writeln('WARNING: ${warning['code']}: ${warning['message']}');
     }

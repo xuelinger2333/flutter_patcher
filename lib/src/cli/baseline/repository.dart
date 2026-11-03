@@ -319,7 +319,7 @@ class BaselineRepository {
       'flavor': flavor,
       'version_code': versionCode,
       'abi': fields['abi'],
-      for (final k in ['application_id', 'public_key', 'libapp_sha256', 'resources', 'package_inputs'])
+      for (final k in ['application_id', 'public_key', 'libapp_sha256', 'resources', 'package_inputs', 'artifacts', 'engine_capabilities'])
         k: receipt[k],
       'build_id': buildId,
     };

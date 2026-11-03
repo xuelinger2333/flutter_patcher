@@ -99,7 +99,7 @@ void notAppCode() {}
       final rules = PatchRules();
       final f = facts('bytecode')
         ..assets = ['assets/intro.mp4', 'AssetManifest.bin']
-        ..enginePatches = [engineAssetChannelPatch]
+        ..engineCapabilities = [assetOverlay]
         ..nativeAssetReaders = {'video': site}
         ..assetsPassed = {
           'assets/intro.mp4': [site]
@@ -140,25 +140,25 @@ void notAppCode() {}
           PatchStage.resources,
           facts('so')
             ..assets = ['a.png']
-            ..enginePatches = [engineAssetChannelPatch]
+            ..engineCapabilities = [assetOverlay]
             ..backgroundEntries = [('callbackDispatcher', site)]);
       expect(assets.warnings.single['message'],
           contains("this patch's code but the release's assets"));
     });
     test('an engine with the entry hook boots background engines too', () {
-      const hooked = [engineAssetChannelPatch, engineEntryHookPatch];
+      const hooked = [assetOverlay, isolateEntry];
       final so = PatchRules();
       so.check(
           PatchStage.resources,
           facts('so')
             ..changed.add('libapp.so')
             ..assets = ['a.png']
-            ..enginePatches = hooked
+            ..engineCapabilities = hooked
             ..backgroundEntries = [('callbackDispatcher', site)]);
       expect(so.warnings, isEmpty);
       PatchFacts bytecode(List<String> entries) => facts('bytecode')
         ..changed.add('package:app/main.dart')
-        ..enginePatches = hooked
+        ..engineCapabilities = hooked
         ..report = {'entries': entries}
         ..backgroundEntries = [
           ('callbackDispatcher', site),

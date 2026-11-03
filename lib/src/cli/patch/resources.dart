@@ -8,12 +8,13 @@ import '../core.dart';
 import '../baseline/manifest.dart';
 import '../sdk/host.dart';
 
-/// The engine patch that installs patch assets in front of the app bundle.
-const engineAssetChannelPatch = '0001-patcher-asset-channel.patch';
+/// The engine capability that installs patch assets in front of the app
+/// bundle.
+const assetOverlay = 'asset_overlay';
 
-/// The engine patch that boots every engine's isolate with the patch: it
-/// asks the generated `flutterPatcherEntry` for each entry point but main.
-const engineEntryHookPatch = '0002-patcher-entry-hook.patch';
+/// The engine capability that boots every engine's isolate with the patch:
+/// it asks the generated `flutterPatcherEntry` for each entry point but main.
+const isolateEntry = 'isolate_entry';
 
 void assetKey(String key) {
   require(

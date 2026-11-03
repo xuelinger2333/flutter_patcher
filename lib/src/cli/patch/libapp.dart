@@ -38,7 +38,8 @@ class LibappProducer implements CodeProducer {
         await resolveAndroidSdk(_p.commands, _p.sdk.host, _p.sdk.flutter);
     checkJavaHome(_p.sdk.host);
     builder = BuildPipeline(_p.commands, _p.sdk, _p.managed, _p.tool, _p.cache,
-        await selectAapt(android, _p.sdk.host), _p.engine!, _p.baselines);
+        await selectAapt(android, _p.sdk.host), _p.engine!, _p.baselines,
+        {for (final release in builtWith(resolved)) release.kind: release});
   }
 
   /// A rebuilt libapp.so carries every Dart change, of any package.
@@ -92,11 +93,7 @@ class LibappProducer implements CodeProducer {
         kind: 'libapp',
         file: p.join(host, 'libapp.so'),
         bundle: bundle,
-        // The release requires this engine build, so it has its patches.
-        enginePatches: [
-          for (final row in _p.engine!['patches'] as List)
-            (row as Map)['file'] as String
-        ],
+
         fonts: (payload) => payload.collectFonts(const [],
             hostFiles: hostFiles ?? const {}, wholeFamilies: true));
   }

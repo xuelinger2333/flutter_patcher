@@ -68,6 +68,8 @@ class Fixture {
       'engine_stamp': sdk.engine,
       'depot_tools_rev': 'e' * 40,
       'build_id': '930ce683-2072-4028-ba2c-e739451cf2a1',
+      'engine_api': 1,
+      'capabilities': ['asset_overlay', 'isolate_entry'],
       'built_at': '2026-09-07T16:28:58Z',
       'verify': {
         'snapshot': 'passed',
@@ -259,28 +261,66 @@ void main() {
         throwsA(failure('CONFIG_INVALID')));
   });
 
-  group('HTTP artifact cache', () {
+  test('an engine without the CLI\'s engine API is rejected', () {
+    for (final mutate in <void Function(Map<String, dynamic>)>[
+      (m) => m['engine_api'] = 2,
+      (m) => m.remove('capabilities'),
+      (m) => m['capabilities'] = ['Asset'],
+    ]) {
+      final manifest = copy(fixture.engine);
+      mutate(manifest);
+      expect(() => checkManifest(manifest, 'engine', sdk),
+          throwsA(failure('ENGINE_MANIFEST_INVALID')));
+    }
+  });
+  test('a release record round-trips and needs a well-formed tag', () {
+    final release = ArtifactRelease('engine-3.47.2-930ce683', 'a' * 64);
+    expect(release.kind, 'engine');
+    expect(ArtifactRelease.fromJson(release.toJson()).tag, release.tag);
+    for (final tag in ['flutter-3.47.2', 'engine-3.47-930ce683', 'ios-3.47.2-930ce683']) {
+      expect(() => ArtifactRelease(tag, 'a' * 64),
+          throwsA(failure('ENGINE_MANIFEST_INVALID')));
+    }
+  });
+
+  group('HTTP artifact releases', () {
     late HttpServer server;
     late Downloads network;
     late ArtifactStore store;
+    late Map<String, dynamic> index;
     var omitSnapshot = false;
     var corruptSnapshot = false;
-    var supported = '3.47.2\n';
+    List<int> manifestBytes(Map<String, dynamic> m) => utf8.encode(jsonEncode(m));
+    String digest(Map<String, dynamic> m) =>
+        sha256.convert(manifestBytes(m)).toString();
+    String toolsTag() =>
+        'tools-3.47.2-${(fixture.tools['files'][0]['sha256'] as String).substring(0, 8)}';
+    const engineTag = 'engine-3.47.2-930ce683';
+    Map<String, dynamic> indexOf() => {
+          'schema': 1,
+          'flutter': {
+            '3.47.2': {
+              'current': {'engine': engineTag, 'tools': toolsTag()},
+              'releases': {
+                engineTag: {'kind': 'engine', 'manifest_sha256': digest(fixture.engine)},
+                toolsTag(): {'kind': 'tools', 'manifest_sha256': digest(fixture.tools)},
+              }
+            }
+          }
+        };
+    String cached(String tag, [String? host]) =>
+        p.joinAll([temp.path, 'artifacts', tag, ?host]);
     setUp(() async {
       omitSnapshot = false;
       corruptSnapshot = false;
-      supported = '3.47.2\n';
+      index = indexOf();
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       server.listen((request) async {
         final name = p.posix.basename(request.uri.path);
         List<int>? body;
-        if (name == 'supported_versions.txt') body = utf8.encode(supported);
-        if (name == 'engine.manifest.json') {
-          body = utf8.encode(jsonEncode(fixture.engine));
-        }
-        if (name == 'tools.manifest.json') {
-          body = utf8.encode(jsonEncode(fixture.tools));
-        }
+        if (name == 'index.json') body = utf8.encode(jsonEncode(index));
+        if (name == 'engine.manifest.json') body = manifestBytes(fixture.engine);
+        if (name == 'tools.manifest.json') body = manifestBytes(fixture.tools);
         body ??= fixture.bytes[name];
         if (name == 'gen_snapshot-linux-x64' && omitSnapshot) body = null;
         if (name == 'gen_snapshot-linux-x64' && corruptSnapshot) body = [0];
@@ -294,153 +334,90 @@ void main() {
       network = Downloads();
       final base = Uri.parse('http://127.0.0.1:${server.port}/');
       store = ArtifactStore(temp.path, base.resolve('releases'),
-          base.resolve('supported_versions.txt'), network);
+          base.resolve('index.json'), network);
     });
     tearDown(() async {
       await server.close(force: true);
     });
-    test('cold download, warm hit checks only the manifest, offline no HTTP',
+    ArtifactStore offline() =>
+        ArtifactStore(temp.path, store.base, store.index, Downloads(offline: true));
+
+    test('a new host uses the current releases; a cached release needs no request',
         () async {
-      await store.checkSupport(sdk.version);
+      await store.selectCurrent(sdk.version);
+      expect(store.selected.keys, unorderedEquals(['engine', 'tools']));
       await store.obtain('engine', sdk);
       await store.obtain('tools', sdk);
       final count = network.requests;
-      await store.checkSupport(sdk.version);
       await store.obtain('engine', sdk);
-      expect(network.requests, count + 1);
-      final offline = ArtifactStore(
-          temp.path, store.base, store.supportUri, Downloads(offline: true));
-      await offline.checkSupport(sdk.version);
-      await offline.obtain('tools', sdk);
-      expect(offline.downloads.requests, 0);
+      await store.obtain('tools', sdk);
+      expect(network.requests, count);
+      final local = offline();
+      await local.selectCurrent(sdk.version);
+      await local.obtain('tools', sdk);
+      expect(local.downloads.requests, 0);
     });
-    test('unsupported versions stop before any artifact request', () async {
-      await expectLater(store.checkSupport('3.38.7'),
-          throwsA(failure('ENGINE_ARTIFACT_MISSING')));
+    test('a baseline\'s releases need no index', () async {
+      store.select([ArtifactRelease(toolsTag(), digest(fixture.tools))]);
+      await store.obtain('tools', sdk);
+      expect(network.requests, 2);
+      await expectLater(
+          store.obtain('engine', sdk), throwsA(failure('ENGINE_ARTIFACT_MISSING')));
+    });
+    test('an unsupported version names the supported ones', () async {
+      await expectLater(
+          store.selectCurrent('3.38.7'),
+          throwsA(isA<Failure>()
+              .having((e) => e.code, 'code', 'ENGINE_ARTIFACT_MISSING')
+              .having((e) => e.message, 'message', contains('3.47.2'))));
       expect(network.requests, 1);
     });
-    test('failed refresh preserves previously verified tools', () async {
-      await store.obtain('tools', sdk);
-      final name = 'flutter_patcher_tools-${sdk.version}.dill';
-      final oldBytes = await File(store.file(sdk, 'tools', name)).readAsBytes();
-      fixture.bytes[name] = [0];
-      await expectLater(
-          store.obtain('tools', sdk, refresh: true), throwsA(isA<Failure>()));
-      expect(
-          await File(store.file(sdk, 'tools', name)).readAsBytes(), oldBytes);
-      final offline = ArtifactStore(
-          temp.path, store.base, store.supportUri, Downloads(offline: true));
-      await offline.obtain('tools', sdk);
-      await expectLater(offline.obtain('tools', sdk, refresh: true),
-          throwsA(failure('CONFIG_INVALID')));
-    });
-    test('successful refresh fetches tools again without touching engine',
-        () async {
-      await store.obtain('engine', sdk);
-      await store.obtain('tools', sdk);
-      final count = network.requests;
-      await store.obtain('tools', sdk, refresh: true);
-      expect(network.requests, count + 2);
-      await store.obtain('engine', sdk);
-      expect(network.requests, count + 3);
-    });
-    test('a release rebuilt under the same version replaces the cache',
-        () async {
-      await store.obtain('tools', sdk);
-      const name = 'flutter_patcher_tools-3.47.2.dill';
-      fixture.bytes[name] = [144, 171, 205, 239, 2];
-      (fixture.tools['files'] as List)[0] = {
-        'role': 'tools',
-        'name': name,
-        'size': 5,
-        'sha256': sha256.convert(fixture.bytes[name]!).toString()
-      };
-      await store.obtain('tools', sdk);
-      expect(await File(store.file(sdk, 'tools', name)).readAsBytes(),
-          fixture.bytes[name]);
-      // A superseded cache was valid: nothing is kept for diagnosis.
-      expect(
-          Directory(p.join(temp.path, 'artifacts', '3.47.2'))
-              .listSync()
-              .map((e) => p.basename(e.path))
-              .where((n) => n.startsWith('tools')),
-          ['tools']);
-    });
-    test('an unreachable source keeps using verified artifacts', () async {
-      await store.obtain('tools', sdk);
-      await server.close(force: true);
-      final manifest = await store.obtain('tools', sdk);
-      expect(manifest['files'], fixture.tools['files']);
-    });
-    test('refreshes a cached support table for a newly supported version',
-        () async {
-      await store.checkSupport('3.47.2');
-      supported = '3.47.2\n3.47.3\n';
-      await store.checkSupport('3.47.3');
-      expect(network.requests, 2);
-    });
-    test('invalid support table is never committed and can be retried',
-        () async {
-      supported = '<html>error</html>';
-      await expectLater(store.checkSupport('3.47.2'),
-          throwsA(failure('ENGINE_MANIFEST_INVALID')));
-      supported = '3.47.2\n';
-      await store.checkSupport('3.47.2');
-      expect(network.requests, 2);
-    });
-    test('failed download never creates the usable cache directory', () async {
-      omitSnapshot = true;
-      await expectLater(store.obtain('engine', sdk),
+    test('an unreachable index keeps the cached one; offline needs one', () async {
+      await expectLater(offline().selectCurrent(sdk.version),
           throwsA(failure('ENGINE_ARTIFACT_MISSING')));
-      expect(
-          Directory(p.join(temp.path, 'artifacts/3.47.2/engine/linux-x64'))
-              .existsSync(),
-          isFalse);
+      await store.selectCurrent(sdk.version);
+      await server.close(force: true);
+      final again = ArtifactStore(temp.path, store.base, store.index, Downloads());
+      await again.selectCurrent(sdk.version);
+      expect(again.selected['engine']!.tag, engineTag);
+    });
+    test('an invalid index is never cached and can be retried', () async {
+      index = {'schema': 1, 'flutter': {'3.47.2': {'current': {'engine': 'x'}, 'releases': {}}}};
+      await expectLater(store.selectCurrent(sdk.version),
+          throwsA(failure('ENGINE_MANIFEST_INVALID')));
+      index = indexOf();
+      await store.selectCurrent(sdk.version);
+    });
+    test('a manifest other than the recorded one is rejected', () async {
+      await store.selectCurrent(sdk.version);
+      fixture.tools['dart_sdk_commit'] = '2' * 40;
+      await expectLater(
+          store.obtain('tools', sdk), throwsA(failure('ARTIFACT_HASH_MISMATCH')));
+      expect(Directory(cached(toolsTag())).existsSync(), isFalse);
+    });
+    test('a tag that does not name its manifest is rejected', () async {
+      store.select([ArtifactRelease('engine-3.47.2-deadbeef', digest(fixture.engine))]);
+      await expectLater(
+          store.obtain('engine', sdk), throwsA(failure('ARTIFACT_HASH_MISMATCH')));
+    });
+    test('a failed or corrupt download never creates the cache', () async {
+      await store.selectCurrent(sdk.version);
+      omitSnapshot = true;
+      await expectLater(
+          store.obtain('engine', sdk), throwsA(failure('ENGINE_ARTIFACT_MISSING')));
       omitSnapshot = false;
-      await store.obtain('engine', sdk);
-    });
-    test('bad bytes fail before cache commit', () async {
       corruptSnapshot = true;
-      await expectLater(store.obtain('engine', sdk),
-          throwsA(failure('ARTIFACT_HASH_MISMATCH')));
-      expect(
-          Directory(p.join(temp.path, 'artifacts/3.47.2/engine/linux-x64'))
-              .existsSync(),
-          isFalse);
-    });
-    test('an engine cache without a host directory is migrated into one',
-        () async {
-      final legacy = p.join(temp.path, 'artifacts', '3.47.2', 'engine');
-      await Directory(legacy).create(recursive: true);
-      for (final name in [
-        'libflutter-arm64_v8a-release.jar',
-        'flutter_embedding_release.jar',
-        'gen_snapshot-linux-x64'
-      ]) {
-        await File(p.join(legacy, name)).writeAsBytes(fixture.bytes[name]!);
-      }
-      await File(p.join(legacy, 'engine.manifest.json'))
-          .writeAsString(jsonEncode(fixture.schema1()));
-      final source =
-          '${store.base.toString().replaceAll(RegExp(r'/+$'), '')}/flutter-3.47.2/';
-      await File(p.join(legacy, 'source.json'))
-          .writeAsString(jsonEncode({'url': source}));
-      final offline = ArtifactStore(
-          temp.path, store.base, store.supportUri, Downloads(offline: true));
-      await offline.obtain('engine', sdk);
-      expect(
-          File(p.join(legacy, 'engine.manifest.json')).existsSync(), isFalse);
-      expect(
-          File(p.join(legacy, 'linux-x64', 'gen_snapshot-linux-x64'))
-              .existsSync(),
-          isTrue);
+      await expectLater(
+          store.obtain('engine', sdk), throwsA(failure('ARTIFACT_HASH_MISMATCH')));
+      expect(Directory(cached(engineTag, 'linux-x64')).existsSync(), isFalse);
+      corruptSnapshot = false;
+      await store.obtain('engine', sdk);
     });
     test('only this host\'s gen_snapshot is downloaded and cached', () async {
+      await store.selectCurrent(sdk.version);
       await store.obtain('engine', sdk);
-      final cache =
-          p.join(temp.path, 'artifacts', '3.47.2', 'engine', 'linux-x64');
-      expect(
-          File(p.join(cache, 'gen_snapshot-linux-x64')).existsSync(), isTrue);
+      final cache = cached(engineTag, 'linux-x64');
+      expect(File(p.join(cache, 'gen_snapshot-linux-x64')).existsSync(), isTrue);
       expect(File(p.join(cache, 'gen_snapshot-windows-x64.exe')).existsSync(),
           isFalse);
       expect(store.file(sdk, 'engine', 'gen_snapshot-linux-x64'),
@@ -449,26 +426,22 @@ void main() {
           sdk.root, sdk.version, sdk.engine, sdk.dartVersion, sdk.framework,
           host: const HostIdentity('windows', 'x64'));
       await store.obtain('engine', windows);
-      final windowsCache =
-          p.join(temp.path, 'artifacts/3.47.2/engine/windows-x64');
-      expect(
-          File(p.join(windowsCache, 'gen_snapshot-windows-x64.exe'))
-              .existsSync(),
+      final windowsCache = cached(engineTag, 'windows-x64');
+      expect(File(p.join(windowsCache, 'gen_snapshot-windows-x64.exe')).existsSync(),
           isTrue);
       expect(File(p.join(windowsCache, 'gen_snapshot-linux-x64')).existsSync(),
           isFalse);
     });
     test('corrupted cached file is quarantined and repaired online', () async {
+      await store.selectCurrent(sdk.version);
       await store.obtain('engine', sdk);
       final path = store.file(sdk, 'engine', 'gen_snapshot-linux-x64');
       await File(path).writeAsBytes([1]);
-      final offline = ArtifactStore(
-          temp.path, store.base, store.supportUri, Downloads(offline: true));
-      await expectLater(offline.obtain('engine', sdk),
-          throwsA(failure('ARTIFACT_HASH_MISMATCH')));
+      final local = offline()..select(store.selected.values);
+      await expectLater(
+          local.obtain('engine', sdk), throwsA(failure('ARTIFACT_HASH_MISMATCH')));
       await store.obtain('engine', sdk);
-      expect(await File(path).readAsBytes(),
-          fixture.bytes['gen_snapshot-linux-x64']);
+      expect(await File(path).readAsBytes(), fixture.bytes['gen_snapshot-linux-x64']);
       expect(
           Directory(p.dirname(p.dirname(path)))
               .listSync()

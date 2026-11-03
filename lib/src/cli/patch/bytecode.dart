@@ -294,10 +294,7 @@ class BytecodeProducer implements CodeProducer {
         kind: 'bytecode',
         file: p.join(work, 'module.bc'),
         bundle: bundle,
-        enginePatches: [
-          for (final name in compileReceipt['engine_patches'] as List? ?? [])
-            name as String
-        ],
+
         fonts: (payload) => payload.collectFonts(
             outcome['fonts'] as List? ?? [],
             hostIcons: outcome['host_icons'] as List?,

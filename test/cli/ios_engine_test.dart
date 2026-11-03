@@ -40,6 +40,8 @@ class IosRelease {
       ],
       'depot_tools_rev': 'e' * 40,
       'build_id': '930ce683-2072-4028-ba2c-e739451cf2a1',
+      'engine_api': 1,
+      'capabilities': ['asset_overlay', 'isolate_entry'],
       'built_at': '2026-10-30T08:00:00Z',
       'verify': {
         'snapshot': 'passed',
@@ -118,7 +120,8 @@ void main() {
   test('the managed SDK gets the patched framework and gen_snapshot', () async {
     final release = IosRelease();
     final store = ArtifactStore(temp.path, Uri.parse('http://127.0.0.1/'),
-        Uri.parse('http://127.0.0.1/'), Downloads(offline: true));
+        Uri.parse('http://127.0.0.1/'), Downloads(offline: true))
+      ..select([ArtifactRelease('engine-ios-3.47.2-930ce683', 'a' * 64)]);
     final cached = p.dirname(store.file(sdk, 'engine-ios', iosFrameworkZip));
     await Directory(cached).create(recursive: true);
     await release.write(cached);

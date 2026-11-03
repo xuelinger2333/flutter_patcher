@@ -22,8 +22,8 @@ import 'version.dart';
 
 const releaseBase =
     'https://github.com/xuelinger2333/flutter_patcher_artifacts/releases/download';
-const supportTable =
-    'https://api.github.com/repos/xuelinger2333/flutter_patcher_artifacts/contents/supported_versions.txt';
+const releaseIndex =
+    'https://raw.githubusercontent.com/xuelinger2333/flutter_patcher_artifacts/main/index.json';
 
 ArgParser environmentOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
@@ -31,10 +31,7 @@ ArgParser environmentOptions() => ArgParser()
       negatable: false, help: 'Print a structured diagnostic report.')
   ..addFlag('offline',
       negatable: false, help: 'Use verified local caches only.')
-  ..addFlag('refresh-tools',
-      negatable: false,
-      help:
-          'Re-download and verify tools before replacing their cache (online only).')
+
   ..addOption('flutter-sdk',
       help: 'Select the Flutter SDK; defaults to Flutter on PATH.')
   ..addOption('cache-dir',
@@ -43,9 +40,9 @@ ArgParser environmentOptions() => ArgParser()
   ..addOption('artifacts-url',
       defaultsTo: releaseBase,
       help: 'Maintainer/test override for the release download base.')
-  ..addOption('supported-versions-url',
-      defaultsTo: supportTable,
-      help: 'Maintainer/test override for the support table.')
+  ..addOption('index-url',
+      defaultsTo: releaseIndex,
+      help: 'Maintainer/test override for the artifact release index.')
   ..addOption('public-key', help: 'Optional signing public key file to check.')
   ..addOption('private-key',
       help: 'Optional signing private key file to check.')
@@ -205,8 +202,6 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
   void pending(String id, String message) =>
       checks.add({'id': id, 'status': 'not_run', 'message': message});
   try {
-    require(!(args['offline'] == true && args['refresh-tools'] == true),
-        'CONFIG_INVALID', '--refresh-tools cannot be used offline.');
     InterfaceRequest? interfaceRequest;
     if (generateInterface) {
       String input(String name) {
@@ -267,10 +262,10 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);
     await lock.lock(FileLock.blockingExclusive);
     final base = Uri.parse(args['artifacts-url'] as String);
-    final support = Uri.parse(args['supported-versions-url'] as String);
+    final index = Uri.parse(args['index-url'] as String);
     Downloads.validateUri(base);
-    Downloads.validateUri(support);
-    final store = ArtifactStore(cache, base, support, downloads);
+    Downloads.validateUri(index);
+    final store = ArtifactStore(cache, base, index, downloads);
     late SdkIdentity sdk;
     await check('flutter_sdk', () async {
       final selected =
@@ -283,15 +278,14 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
           'Select your stock SDK, not the managed SDK that doctor modifies.');
       report['sdk'] = {...sdk.toJson(), 'path': selected};
     }, 'Selected SDK identity verified');
-    await check('supported_version', () => store.checkSupport(sdk.version),
+    await check('supported_version', () => store.selectCurrent(sdk.version),
         'Flutter version is supported');
     late Map<String, dynamic> engine, toolsManifest;
     await check('engine_artifacts', () async {
       engine = await store.obtain('engine', sdk);
     }, 'Engine, gen_snapshot and embedding size/hash/format verified');
     await check('tools_artifacts', () async {
-      toolsManifest = await store.obtain('tools', sdk,
-          refresh: args['refresh-tools'] as bool);
+      toolsManifest = await store.obtain('tools', sdk);
     }, 'Unified dill size/hash/format and Dart version verified');
     report['engine_build_id'] = engine['build_id'];
     report['tools_builder_commit'] = toolsManifest['builder_repo_commit'];

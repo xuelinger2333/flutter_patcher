@@ -54,8 +54,8 @@ class PatchFacts {
   /// `lean` or `whole` (bytecode).
   String? tier;
 
-  /// Engine patches the host was built with.
-  List<String> enginePatches = const [];
+  /// What the host's engine offers (its release's capabilities).
+  List<String> engineCapabilities = const [];
 
   /// Asset keys the patch carries, and those the release has but it lacks.
   List<String> assets = const [], deletedAssets = const [];
@@ -185,15 +185,15 @@ final patchRules = <PatchRule>[
               'Resource deletion requires a new host: $key',
           ]),
   // The engine installs patch assets in front of the app bundle; under an
-  // engine without that patch every boot of this patch would fail.
+  // engine without that capability every boot of this patch would fail.
   PatchRule(
       'PATCH_ENGINE_UNSUPPORTED',
       PatchStage.resources,
       (f) => [
             if (f.assets.isNotEmpty &&
-                !f.enginePatches.contains(engineAssetChannelPatch))
+                !f.engineCapabilities.contains(assetOverlay))
               'Asset changes need a host whose engine installs patch assets '
-                  '($engineAssetChannelPatch); rebuild the host with the current '
+                  '($assetOverlay); rebuild the host with the current '
                   'engine, or ship the assets in a host release',
           ]),
   // Warnings: the patch ships, but part of it may not take effect.
@@ -215,7 +215,7 @@ final patchRules = <PatchRule>[
   // installs a patch. With it every engine boots with the patch, and a
   // bytecode patch runs its version of each entry point it carries.
   PatchRule('PATCH_BACKGROUND_ENTRY', PatchStage.resources, (f) {
-    if (f.enginePatches.contains(engineEntryHookPatch)) {
+    if (f.engineCapabilities.contains(isolateEntry)) {
       if (f.strategy == 'so' || !f.codeChanged) return const [];
       final carried =
           (f.report?['entries'] as List? ?? const []).cast<String>();

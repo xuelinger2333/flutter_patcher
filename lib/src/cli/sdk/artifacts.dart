@@ -96,6 +96,23 @@ void _checkBuild(
       'Invalid build timestamp.');
 }
 
+/// The engine API generation this CLI builds hosts with and patches for.
+const engineApi = 1;
+
+/// An engine release's API generation and what it offers the plugin, from
+/// the engine patches it was built with.
+void _checkCapabilities(
+    Map<String, dynamic> value, void Function(bool, String) valid) {
+  final names = value['capabilities'];
+  valid(
+      value['engine_api'] == engineApi &&
+          names is List &&
+          names.every((name) =>
+              name is String && RegExp(r'^[a-z_]+$').hasMatch(name)),
+      'Engine API $engineApi with its capabilities is required; '
+      'a newer engine needs a newer flutter_patcher.');
+}
+
 bool _hash(dynamic value, RegExp pattern) =>
     value is String && pattern.hasMatch(value);
 
@@ -107,6 +124,7 @@ void _checkIosEngine(Map<String, dynamic> value, SdkIdentity sdk) {
   valid(value['schema'] == 1, 'Unknown engine-ios manifest schema.');
   _checkSource(value, 'engine-ios', sdk, valid);
   _checkBuild(value, valid);
+  _checkCapabilities(value, valid);
   valid(verificationPassed(value['verify'], platform: 'ios'),
       'iOS engine verification did not pass.');
   final files = value['files'];
@@ -283,6 +301,7 @@ void checkManifest(Map<String, dynamic> value, String kind, SdkIdentity sdk) {
           'gen_snapshot verification for ${sdk.host.key} did not pass.');
     }
     _checkBuild(value, valid);
+    _checkCapabilities(value, valid);
     valid(hash(value['engine_stamp'], hex40), 'Invalid engine provenance.');
     valid(verificationPassed(value['verify']),
         'Engine verification did not pass.');
@@ -349,175 +368,187 @@ Future<void> validateFiles(String directory, Map<String, dynamic> manifest,
   }
 }
 
-class ArtifactStore {
-  final String root;
-  final Uri base, supportUri;
-  final Downloads downloads;
-  ArtifactStore(this.root, this.base, this.supportUri, this.downloads);
+/// One published artifact release: `<kind>-<flutter>-<id>`, where the id is
+/// an engine's build_id or the reproducible tools snapshot's digest.
+class ArtifactRelease {
+  final String kind, tag;
 
-  Future<void> checkSupport(String version) async {
-    require(versionPattern.hasMatch(version), 'ENGINE_ARTIFACT_MISSING',
-        'Unsupported Flutter version: $version');
-    final key = sha256.convert(utf8.encode(supportUri.toString())).toString();
-    final cache = p.join(root, 'support', '$key.txt');
-    await rejectLinks(cache);
-    Future<List<String>> parse(String file) async {
-      final versions = (await File(file).readAsLines())
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      require(
-          versions.isNotEmpty &&
-              versions.every(versionPattern.hasMatch) &&
-              versions.toSet().length == versions.length,
-          'ENGINE_MANIFEST_INVALID',
-          'Invalid supported_versions.txt');
-      return versions;
-    }
-
-    List<String>? versions;
-    if (await File(cache).exists()) {
-      try {
-        versions = await parse(cache);
-      } on Failure {
-        if (downloads.offline) rethrow;
-      }
-    }
-    if (versions == null ||
-        (!versions.contains(version) && !downloads.offline)) {
-      final staging = temporaryName(cache);
-      await downloads.fetch(supportUri, staging, maxBytes: 65536);
-      versions = await parse(staging);
-      if (await File(cache).exists()) await quarantine(cache);
-      await File(staging).renameRetry(cache);
-    }
-    require(versions.contains(version), 'ENGINE_ARTIFACT_MISSING',
-        'Flutter $version is not supported. Supported versions: ${versions.join(', ')}');
+  /// The release manifest's SHA-256, from the index or a baseline.
+  final String manifestSha256;
+  ArtifactRelease(this.tag, this.manifestSha256)
+      : kind = _tagPattern.firstMatch(tag)?.group(1) ?? '' {
+    require(kind.isNotEmpty && hex64.hasMatch(manifestSha256),
+        'ENGINE_MANIFEST_INVALID', 'Invalid artifact release $tag.');
   }
 
-  Future<Map<String, dynamic>> obtain(String kind, SdkIdentity sdk,
-      {bool refresh = false}) async {
-    require(!refresh || (kind == 'tools' && !downloads.offline),
-        'CONFIG_INVALID', 'Tool refresh requires online mode.');
-    final directory = _directory(sdk, kind);
-    await rejectLinks(directory);
-    if (kind == 'engine') await _migrateLegacyEngineCache(sdk, directory);
-    final source =
-        '${base.toString().replaceAll(RegExp(r'/+$'), '')}/flutter-${sdk.version}/';
-    final manifestName = '$kind.manifest.json';
-    final missing = kind.startsWith('engine')
-        ? 'ENGINE_ARTIFACT_MISSING'
-        : 'TOOLS_ARTIFACT_MISSING';
-    final staging = temporaryName(directory);
-    var outdated = false;
-    if (!refresh && await Directory(directory).exists()) {
-      Map<String, dynamic>? cached;
+  static final _tagPattern =
+      RegExp(r'^(engine|engine-ios|tools)-(\d+\.\d+\.\d+)-[0-9a-f]{8}$');
+
+  /// [value] as a baseline records it ([toJson]).
+  factory ArtifactRelease.fromJson(Object? value) {
+    require(value is Map && value['tag'] is String && value['manifest_sha256'] is String,
+        'ENGINE_MANIFEST_INVALID', 'Invalid artifact release record.');
+    final row = value as Map;
+    return ArtifactRelease(row['tag'] as String, row['manifest_sha256'] as String);
+  }
+
+  Map<String, String> toJson() => {'tag': tag, 'manifest_sha256': manifestSha256};
+
+  /// Whether [manifest] is the one this tag names.
+  bool names(Map<String, dynamic> manifest) {
+    final version = _tagPattern.firstMatch(tag)!.group(2);
+    final files = manifest['files'] as List;
+    final id = kind == 'tools'
+        ? (files.single as Map)['sha256'] as String
+        : (manifest['build_id'] as String).replaceAll('-', '');
+    return manifest['flutter_version'] == version && tag.endsWith('-${id.substring(0, 8)}');
+  }
+}
+
+/// Published, immutable artifact releases on this machine. A store serves the
+/// releases [select]ed for one run: the index's current ones for a new host,
+/// or those a baseline recorded for a patch. A release never changes, so a
+/// verified cached copy is used as it is.
+class ArtifactStore {
+  final String root;
+
+  /// Release downloads (`<base>/<tag>/<file>`) and the release index.
+  final Uri base, index;
+  final Downloads downloads;
+  final Map<String, ArtifactRelease> _selected = {};
+  ArtifactStore(this.root, this.base, this.index, this.downloads);
+
+  /// The releases selected so far, by kind.
+  Map<String, ArtifactRelease> get selected => Map.unmodifiable(_selected);
+
+  void select(Iterable<ArtifactRelease> releases) {
+    for (final release in releases) {
+      _selected[release.kind] = release;
+    }
+  }
+
+  /// Selects the index's current releases for Flutter [version]: what a new
+  /// host is built with.
+  Future<void> selectCurrent(String version) async {
+    require(versionPattern.hasMatch(version), 'ENGINE_ARTIFACT_MISSING',
+        'Unsupported Flutter version: $version');
+    final flutter = (await _index())['flutter'] as Map;
+    final entry = flutter[version];
+    require(entry is Map, 'ENGINE_ARTIFACT_MISSING',
+        'Flutter $version is not supported. Supported versions: '
+        '${(flutter.keys.toList()..sort()).join(', ')}');
+    final releases = entry['releases'] as Map;
+    select([
+      for (final e in (entry['current'] as Map).entries)
+        ArtifactRelease(e.value as String,
+            (releases[e.value] as Map)['manifest_sha256'] as String)
+    ]);
+  }
+
+  /// The index, fetched when online; a cached copy serves offline runs and
+  /// an unreachable index.
+  Future<Map<String, dynamic>> _index() async {
+    final key = sha256.convert(utf8.encode(index.toString())).toString();
+    final cache = p.join(root, 'index', '$key.json');
+    await rejectLinks(cache);
+    if (!downloads.offline) {
+      final staging = temporaryName(cache);
       try {
-        final provenance = await readObject(p.join(directory, 'source.json'));
-        require(provenance['url'] == source, 'CACHE_INVALID',
-            'Cached source changed.');
-        final manifest = await readObject(p.join(directory, manifestName));
-        checkManifest(manifest, kind, sdk);
-        await validateFiles(directory, manifest, host: sdk.host);
-        cached = manifest;
+        await downloads.fetch(index, staging,
+            missingCode: 'ENGINE_ARTIFACT_MISSING', maxBytes: 4 * 1024 * 1024);
+        _checkIndex(await readObject(staging));
+        await File(staging).renameRetry(cache);
+      } catch (error) {
+        if (await File(staging).exists()) await File(staging).delete();
+        if (!await File(cache).exists()) rethrow;
+        stderr.writeln('WARNING: ARTIFACT_CHECK_SKIPPED: using the cached '
+            'artifact index; cannot read $index ($error)');
+      }
+    }
+    require(await File(cache).exists(), 'ENGINE_ARTIFACT_MISSING',
+        'No artifact index is cached for offline use; run once online.');
+    final value = await readObject(cache);
+    _checkIndex(value);
+    return value;
+  }
+
+  /// Every version's current release of a kind is a listed release of it.
+  static void _checkIndex(Map<String, dynamic> value) {
+    bool version(MapEntry entry) {
+      final row = entry.value;
+      if (row is! Map || !versionPattern.hasMatch('${entry.key}')) return false;
+      final current = row['current'], releases = row['releases'];
+      return current is Map &&
+          releases is Map &&
+          current.entries.every((e) {
+            final release = releases[e.value];
+            return release is Map && release['kind'] == e.key;
+          });
+    }
+
+    final flutter = value['flutter'];
+    require(value['schema'] == 1 && flutter is Map && flutter.entries.every(version),
+        'ENGINE_MANIFEST_INVALID', 'Invalid artifact index.');
+  }
+
+  /// The selected [kind] release, downloaded or reused, checked against
+  /// [sdk] and the digest its selection recorded.
+  Future<Map<String, dynamic>> obtain(String kind, SdkIdentity sdk) async {
+    final release = _selected[kind];
+    require(
+        release != null,
+        kind == 'tools' ? 'TOOLS_ARTIFACT_MISSING' : 'ENGINE_ARTIFACT_MISSING',
+        'Flutter ${sdk.version} has no published $kind release.');
+    final directory = _directory(release!, sdk);
+    final manifestName = '$kind.manifest.json';
+    await rejectLinks(directory);
+    Future<Map<String, dynamic>> verified(String root) async {
+      final file = p.join(root, manifestName);
+      final manifest = await readObject(file);
+      require(await hashFile(file) == release.manifestSha256 && release.names(manifest),
+          'ARTIFACT_HASH_MISMATCH', '${release.tag}: manifest differs from its record.');
+      checkManifest(manifest, kind, sdk);
+      await validateFiles(root, manifest, host: sdk.host);
+      return manifest;
+    }
+
+    if (await Directory(directory).exists()) {
+      try {
+        return await verified(directory);
       } catch (_) {
         if (downloads.offline) rethrow;
         await quarantine(directory);
       }
-      if (cached != null) {
-        if (downloads.offline) return cached;
-        // A release can be rebuilt under the same Flutter version (a new
-        // engine patch, fixed tools): the small manifest says whether the
-        // cached files are still the source's.
-        try {
-          await downloads.fetch(
-              Uri.parse('$source$manifestName'), p.join(staging, manifestName),
-              missingCode: missing, maxBytes: 1024 * 1024);
-        } catch (error) {
-          // Unreachable or failing source: the verified cache still works.
-          await _discard(staging);
-          stderr.writeln('WARNING: ARTIFACT_CHECK_SKIPPED: using cached $kind '
-              'artifacts; cannot reach $source ($error)');
-          return cached;
-        }
-        if (await _sameBytes(
-            p.join(staging, manifestName), p.join(directory, manifestName))) {
-          await _discard(staging);
-          return cached;
-        }
-        outdated = true;
-      }
     }
-    if (!outdated) {
-      await downloads.fetch(
-          Uri.parse('$source$manifestName'), p.join(staging, manifestName),
-          missingCode: missing, maxBytes: 1024 * 1024);
-    }
-    final manifest = await readObject(p.join(staging, manifestName));
-    checkManifest(manifest, kind, sdk);
-    for (final file in hostFiles(manifest, sdk.host)) {
+    final source = '${base.toString().replaceAll(RegExp(r'/+$'), '')}/${release.tag}/';
+    final missing =
+        kind == 'tools' ? 'TOOLS_ARTIFACT_MISSING' : 'ENGINE_ARTIFACT_MISSING';
+    final staging = temporaryName(directory);
+    await downloads.fetch(
+        Uri.parse('$source$manifestName'), p.join(staging, manifestName),
+        missingCode: missing, maxBytes: 1024 * 1024);
+    final listed = await readObject(p.join(staging, manifestName));
+    checkManifest(listed, kind, sdk);
+    for (final file in hostFiles(listed, sdk.host)) {
       await downloads.fetch(Uri.parse('$source${file['name']}'),
           p.join(staging, file['name'] as String),
           missingCode: missing, maxBytes: file['size'] as int);
     }
-    await validateFiles(staging, manifest, host: sdk.host);
-    await writeObject(p.join(staging, 'source.json'), {'url': source});
-    if (outdated) {
-      // Valid but superseded: nothing to diagnose, so it is not kept.
-      final retired = temporaryName('$directory.retired');
-      await Directory(directory).renameRetry(retired);
-      await Directory(staging).renameRetry(directory);
-      await _discard(retired);
-    } else {
-      if (await Directory(directory).exists()) await quarantine(directory);
-      await Directory(staging).renameRetry(directory);
-    }
+    final manifest = await verified(staging);
+    await Directory(staging).renameRetry(directory);
     return manifest;
   }
 
-  static Future<bool> _sameBytes(String a, String b) async {
-    final left = await File(a).readAsBytes(),
-        right = await File(b).readAsBytes();
-    if (left.length != right.length) return false;
-    for (var i = 0; i < left.length; i++) {
-      if (left[i] != right[i]) return false;
-    }
-    return true;
-  }
-
-  static Future<void> _discard(String path) async {
-    try {
-      if (await Directory(path).exists()) {
-        await Directory(path).deleteRetry(recursive: true);
-      }
-    } on FileSystemException {
-      // A leftover staging directory is never read as a cache.
-    }
-  }
-
-  /// Moves a flat engine cache (`engine/engine.manifest.json` directly under
-  /// the version) into this host's directory, so offline users keep their
-  /// validated artifacts. The normal validation then accepts or quarantines it.
-  Future<void> _migrateLegacyEngineCache(
-      SdkIdentity sdk, String directory) async {
-    final legacy = p.dirname(directory);
-    if (await Directory(directory).exists() ||
-        !await File(p.join(legacy, 'engine.manifest.json')).exists()) {
-      return;
-    }
-    await rejectLinks(legacy);
-    final parked = temporaryName(legacy);
-    await Directory(legacy).renameRetry(parked);
-    await Directory(legacy).create(recursive: true);
-    await Directory(parked).renameRetry(directory);
-  }
-
-  /// Engine artifacts are cached per host so a cache directory shared between
+  /// Engine releases are cached per host so a cache directory shared between
   /// hosts (WSL2 and Windows, for example) never fights over gen_snapshot.
-  String _directory(SdkIdentity sdk, String kind) => kind.startsWith('engine')
-      ? p.join(root, 'artifacts', sdk.version, kind, sdk.host.key)
-      : p.join(root, 'artifacts', sdk.version, kind);
+  String _directory(ArtifactRelease release, SdkIdentity sdk) =>
+      release.kind == 'tools'
+          ? p.join(root, 'artifacts', release.tag)
+          : p.join(root, 'artifacts', release.tag, sdk.host.key);
 
-  String file(SdkIdentity sdk, String kind, String name) =>
-      p.join(_directory(sdk, kind), name);
+  String file(SdkIdentity sdk, String kind, String name) {
+    final release = _selected[kind];
+    require(release != null, 'ENGINE_ARTIFACT_MISSING', 'No $kind release selected.');
+    return p.join(_directory(release!, sdk), name);
+  }
 }

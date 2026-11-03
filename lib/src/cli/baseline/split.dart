@@ -30,6 +30,8 @@ const releaseReceiptKeys = {
   'libapp_sha256',
   'resources',
   'package_inputs',
+  'artifacts',
+  'engine_capabilities',
 };
 
 /// Differ between rebuilds of identical inputs (APK signing blocks, host OS),
@@ -157,6 +159,8 @@ SplitBaseline splitBaseline(
     'build_id': legacy['build_id'],
     'resources': receipt['resources'],
     'package_inputs': receipt['package_inputs'],
+    'artifacts': receipt['artifacts'],
+    'engine_capabilities': receipt['engine_capabilities'],
   };
   final release = <String, dynamic>{
     'schema': 5,
@@ -320,7 +324,7 @@ Future<Map<String, dynamic>> verifyReleaseObject(String root,
   await validatePackages(root);
   final receipt = await baselineObject(p.join(root, 'release_receipt.json'));
   valid(
-      receipt.length == 10 &&
+      receipt.length == releaseReceiptKeys.length + 4 &&
           receipt.keys.toSet().containsAll(
               {...releaseReceiptKeys, 'schema', 'flavor', 'abi', 'build_id'}) &&
           receipt['schema'] == 1 &&

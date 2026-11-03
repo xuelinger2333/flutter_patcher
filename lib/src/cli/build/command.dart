@@ -56,8 +56,6 @@ Future<int> buildCommand(ArgResults args) async {
         'build ios requires macOS with Xcode; patch ios runs on every host.');
     await request.validate();
     final offline = args['offline'] == true;
-    require(!(offline && args['refresh-tools'] == true), 'CONFIG_INVALID',
-        'Cannot refresh tools offline.');
     final baselineStore = BaselineStore.open(
         Uri.parse(required('baseline-store')), commands,
         offline: offline);
@@ -80,13 +78,13 @@ Future<int> buildCommand(ArgResults args) async {
     final artifacts = ArtifactStore(
         cache,
         Uri.parse(args['artifacts-url'] as String),
-        Uri.parse(args['supported-versions-url'] as String),
+        Uri.parse(args['index-url'] as String),
         Downloads(offline: offline));
-    await artifacts.checkSupport(sdk.version);
+    // A new host uses the current releases; its baseline records them.
+    await artifacts.selectCurrent(sdk.version);
     final engine = await artifacts.obtain(
         platform == 'ios' ? 'engine-ios' : 'engine', sdk);
-    await artifacts.obtain('tools', sdk,
-        refresh: args['refresh-tools'] == true);
+    await artifacts.obtain('tools', sdk);
     final environment = EnvironmentBuilder(cache, commands, offline: offline);
     final managed = await (platform == 'ios'
         ? environment.prepare(sdk, artifacts, ios: engine)
@@ -100,7 +98,8 @@ Future<int> buildCommand(ArgResults args) async {
         cache,
         aapt,
         engine,
-        BaselineRepository(p.join(cache, 'baselines'), baselineStore));
+        BaselineRepository(p.join(cache, 'baselines'), baselineStore),
+        artifacts.selected);
     final result = request.hostPolicy.fields['strategy'] == 'so'
         ? await pipeline.buildSo(request)
         : await pipeline.build(request);
