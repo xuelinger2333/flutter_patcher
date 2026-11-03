@@ -144,15 +144,15 @@ internal class PatchHost private constructor(
         store.clearAttempt()
     }
 
-    fun applyManifest(wire: String, progress: ProgressCallback): Map<String, Any?> {
+    /** Applies [wire] with the payload Dart downloaded to [payload]; a withdrawal has none. */
+    fun applyManifest(wire: String, payload: String?, progress: ProgressCallback): Map<String, Any?> {
         val decision = synchronized(lock) { auth.verify(wire) }
         if (decision.action == "withdraw") {
             synchronized(lock) { auth.accept(wire); invalidateUnauthorized() }
             return mapOf("action" to "withdraw", "ok" to true)
         }
-        progress("downloading", 0, decision.fields.getValue("size").toLong())
         // Accept only an intact payload, so a failed download stays retryable.
-        val bytes = AuthenticatedUpdates.download(decision.fields)
+        val bytes = AuthenticatedUpdates.payload(decision.fields, requireNotNull(payload) { "Payload required" })
         return synchronized(lock) {
             auth.accept(wire)
             install(auth.checkCommit(wire).fields, bytes, wire, progress).toMap() + mapOf("action" to "publish")

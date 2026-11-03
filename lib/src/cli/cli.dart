@@ -18,6 +18,7 @@ import 'patch/command.dart';
 import 'keys/command.dart';
 import 'publish/command.dart';
 import 'publish/trust_command.dart';
+import 'serve/command.dart';
 import 'version.dart';
 
 const releaseBase =
@@ -110,6 +111,7 @@ ArgParser parser() {
     ..addCommand('build', build)
     ..addCommand('patch', patch)
     ..addCommand('publish', publishOptions())
+    ..addCommand('serve', serveOptions())
     ..addCommand('baseline', baselineOptions())
     ..addCommand('keys', keysOptions())
     ..addCommand('trust', trustOptions())
@@ -129,7 +131,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--commit]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
@@ -159,6 +161,9 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed.command!.name == 'patch') {
       return await patchCommand(parsed.command!);
+    }
+    if (parsed.command!.name == 'serve') {
+      return await serveCommand(parsed.command!);
     }
     if (parsed.command!.name == 'publish') {
       try {

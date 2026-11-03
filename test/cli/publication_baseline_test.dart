@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path/path.dart' as p;
@@ -99,7 +100,6 @@ void main() {
       'operation': 'a' * 32,
       'store': Directory(p.join(temp.path, 'publication')).uri.toString(),
       'baseline_store': Directory(store.root).uri.toString(),
-      'public_base_url': 'https://example.com/publication',
       'private_key': priv.path,
       'public_key': pub.path,
       'patch': patch.path,
@@ -132,7 +132,7 @@ void main() {
           req.path,
           '--action',
           'withdraw',
-          '--commit'
+          '--yes'
         ]),
         2);
     expect(
@@ -140,12 +140,22 @@ void main() {
         false);
     expect(
         await runCli(
-            ['publish', '--production', '--request', req.path, '--commit']),
+            ['publish', '--production', '--request', req.path, '--yes']),
         0);
     expect(
         await runCli(
-            ['publish', '--production', '--request', req.path, '--commit']),
+            ['publish', '--production', '--request', req.path, '--yes']),
         0);
+    // Devices read the signed head next to the objects it names.
+    final manifests =
+        Directory(p.join(temp.path, 'publication', 'manifests')).listSync();
+    expect(manifests, hasLength(1));
+    final catalog = jsonDecode(
+        File(p.join(temp.path, 'publication', 'catalog.json'))
+            .readAsStringSync()) as Map;
+    final head = (catalog['heads'] as Map).values.single;
+    expect((manifests.single as File).readAsStringSync(),
+        (catalog['releases'] as Map)[head]['wire']);
     await File(p.join(temp.path, 'store', 'compile-$fp.tar.gz')).delete();
     await expectLater(
         publicationBaseline(store, fields, p.join(temp.path, 'new-fetch')),

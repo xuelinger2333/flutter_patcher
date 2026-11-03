@@ -32,9 +32,17 @@ abstract class PublishStore {
 void publicationName(String name) => require(
     name == 'catalog.json' ||
         name == 'trust.json' ||
+        RegExp(r'^manifests/[a-f0-9]{64}\.json$').hasMatch(name) ||
         RegExp(r'^objects/[a-f0-9]{32}/[a-f0-9]{64}\.fptc$').hasMatch(name),
     'PUBLISH_STORE_INVALID',
     'Invalid publication object name');
+
+/// The largest object [name] may be: signed documents are small.
+int publicationLimit(String name) => name == 'catalog.json'
+    ? 8 * 1024 * 1024
+    : name.endsWith('.fptc')
+        ? 320 * 1024 * 1024
+        : 24000;
 
 class FilePublishStore implements PublishStore {
   FilePublishStore(String root) : root = p.normalize(p.absolute(root));
@@ -60,15 +68,8 @@ class FilePublishStore implements PublishStore {
     await rejectLinks(path);
     final file = File(path);
     if (!await file.exists()) return null;
-    require(
-        await file.length() <=
-            (name == 'catalog.json'
-                ? 8 * 1024 * 1024
-                : name == 'trust.json'
-                    ? 24000
-                    : 320 * 1024 * 1024),
-        'PUBLISH_STORE_INVALID',
-        'Object exceeds limit');
+    require(await file.length() <= publicationLimit(name),
+        'PUBLISH_STORE_INVALID', 'Object exceeds limit');
     final bytes = await file.readAsBytes();
     return StoredObject(bytes, sha256.convert(bytes).toString());
   }
@@ -167,11 +168,7 @@ class S3PublishStore implements PublishStore {
     publicationName(name);
     await Directory(work).create(recursive: true);
     final destination = temporaryName(p.join(work, 'read'));
-    final max = name == 'catalog.json'
-        ? 8 * 1024 * 1024
-        : name == 'trust.json'
-            ? 24000
-            : 320 * 1024 * 1024;
+    final max = publicationLimit(name);
     final result = await _call('get-object',
         ['--key', '$prefix$name', '--range', 'bytes=0-$max', destination]);
     if (result.exitCode != 0 &&

@@ -151,85 +151,17 @@ final class AuthenticatedUpdates {
       "Candidate authorization withdrawn")
   }
 
-  /// No ambient credentials, redirects, caches, unbounded bodies or URL diagnostics.
-  static func download(_ fields: [String: String]) throws -> Data {
+  /// The payload Dart downloaded to [path]: the signed size and digest, then deleted.
+  static func payload(_ fields: [String: String], path: String) throws -> Data {
+    defer { try? FileManager.default.removeItem(atPath: path) }
     let expected = Int(fields["size"]!)!
-    guard let url = URL(string: fields["url"]!), url.scheme == "https" else { throw PatcherError("HTTPS required") }
-    let bytes = try Download(expected: expected).run(url)
-    try require(bytes.count == expected && sha256Hex(bytes) == fields["sha256"], "Download digest/size")
+    let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int
+    try require(size == expected, "Payload size")
+    let bytes = try Data(contentsOf: URL(fileURLWithPath: path))
+    try require(bytes.count == expected && sha256Hex(bytes) == fields["sha256"], "Payload digest/size")
     return bytes
   }
 }
-
-/// One bounded HTTPS GET on a private ephemeral session.
-private final class Download: NSObject, URLSessionDataDelegate {
-  private let expected: Int
-  private let done = DispatchSemaphore(value: 0)
-  private var body = Data()
-  private var rejected: String?
-  private var failed = false
-
-  init(expected: Int) { self.expected = expected }
-
-  func run(_ url: URL) throws -> Data {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.httpCookieStorage = nil
-    configuration.urlCredentialStorage = nil
-    configuration.urlCache = nil
-    configuration.timeoutIntervalForRequest = 15
-    configuration.timeoutIntervalForResource = 120
-    let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-    defer { session.invalidateAndCancel() }
-    session.dataTask(with: url).resume()
-    done.wait()
-    if let rejected = rejected { throw PatcherError(rejected) }
-    if failed { throw PatcherIOError() }
-    return body
-  }
-
-  func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-    completionHandler(nil) // A redirect response then fails the status check.
-  }
-
-  func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
-    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-    // Server trust follows the system policy; no other credential is offered.
-    completionHandler(
-      challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust
-        ? .performDefaultHandling : .cancelAuthenticationChallenge, nil)
-  }
-
-  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
-    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-    let http = response as? HTTPURLResponse
-    if http?.statusCode != 200 {
-      rejected = "Download HTTP status rejected"
-    } else if response.expectedContentLength != -1 && response.expectedContentLength != Int64(expected)
-      && (http?.value(forHTTPHeaderField: "Content-Encoding") ?? "identity").lowercased() == "identity"
-    {
-      // A compressed body's length is not the patch's: URLSession hands over
-      // the decoded bytes, which the size bound and digest below then check.
-      rejected = "Download length"
-    }
-    completionHandler(rejected == nil ? .allow : .cancel)
-  }
-
-  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-    if body.count + data.count > expected {
-      rejected = "Download size"
-      dataTask.cancel()
-      return
-    }
-    body.append(data)
-  }
-
-  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    if error != nil && rejected == nil { failed = true }
-    done.signal()
-  }
-}
-
 typealias Progress = (_ phase: String, _ received: Int64, _ total: Int64) -> Void
 
 /// Bytecode candidates of an authenticated host. All state changes hold [lock].
@@ -397,7 +329,8 @@ final class BytecodePatchManager {
     }
   }
 
-  func applyManifest(_ wire: String, progress: Progress) throws -> [String: Any] {
+  /// Applies [wire] with the payload Dart downloaded to [payload]; a withdrawal has none.
+  func applyManifest(_ wire: String, payload: String?, progress: Progress) throws -> [String: Any] {
     guard let auth = try locked({ try authenticated() }) else { throw PatcherError("Host has no authenticated policy") }
     let decision = try locked { try auth.verify(wire) }
     if decision.action == "withdraw" {
@@ -407,9 +340,9 @@ final class BytecodePatchManager {
       }
       return ["action": "withdraw", "ok": true]
     }
-    progress("downloading", 0, Int64(decision.fields["size"]!)!)
     // Accept only an intact payload, so a failed download stays retryable.
-    let bytes = try AuthenticatedUpdates.download(decision.fields)
+    guard let payload = payload else { throw PatcherError("Payload required") }
+    let bytes = try AuthenticatedUpdates.payload(decision.fields, path: payload)
     return try locked {
       _ = try auth.accept(wire)
       let fields = try auth.checkCommit(wire).fields

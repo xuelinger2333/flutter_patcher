@@ -64,14 +64,19 @@ Future<int> buildCommand(ArgResults args) async {
         'build ios requires macOS with Xcode; patch ios runs on every host.');
     await request.validate();
     final offline = args['offline'] == true;
-    final baselineStore = BaselineStore.open(
-        Uri.parse(args['baseline-store'] as String? ?? config.baselineStore),
-        commands,
-        offline: offline);
+    final baselineUri =
+        Uri.parse(args['baseline-store'] as String? ?? config.baselineStore);
+    final baselineStore =
+        BaselineStore.open(baselineUri, commands, offline: offline);
     if (args['baseline-store'] == null && config.baselinesInProject) {
       stderr.writeln('WARNING: BASELINE_STORE_LOCAL: this host\'s baseline is '
           'kept only in ${config.baselineStore}; every patch of the host needs '
           'it, so set baseline_store in ${ProjectConfig.file} to a durable store.');
+    }
+    // build archives a host's first baseline, so a new file store starts here.
+    if (baselineUri.scheme == 'file') {
+      await rejectLinks(baselineUri.toFilePath());
+      await Directory(baselineUri.toFilePath()).create(recursive: true);
     }
     await baselineStore.probe();
     await rejectLinks(p.join(cache, 'doctor.lock'));

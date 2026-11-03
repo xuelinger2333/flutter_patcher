@@ -43,7 +43,7 @@ enum PublishManifest {
     let f = try JSONText.strings(text)
     let publish = f["action"] == "publish"
     try require(
-      Set(f.keys) == common.union(publish ? ["patch_seq", "sha256", "size", "url"] : ["withdraw_through_seq"]),
+      Set(f.keys) == common.union(publish ? ["patch_seq", "sha256", "size", "path"] : ["withdraw_through_seq"]),
       "Unexpected fields")
     try require(f["schema"] == "1" && (publish || f["action"] == "withdraw"), "Schema/action")
     try require(
@@ -74,14 +74,10 @@ enum PublishManifest {
     if publish {
       try number("size", 320 * 1024 * 1024)
       try require(matches("sha256", "[0-9a-f]{64}"), "SHA256")
+      // Relative to the manifest, so the store can move between hosts.
       try require(
-        matches("url",
-          "https://[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[1-9][0-9]{0,4})?(?:/(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-F]{2})*)?"),
-        "URL syntax")
-      let url = URLComponents(string: f["url"]!)
-      try require(
-        url?.scheme == "https" && !(url?.host ?? "").isEmpty && (url?.port ?? 0) <= 65535
-          && url?.user == nil && url?.fragment == nil, "HTTPS URL required")
+        matches("path", "objects/[0-9a-f]{32}/[0-9a-f]{64}\\.fptc")
+          && f["path"]!.hasSuffix("/\(f["sha256"]!).fptc"), "Payload path")
     }
     try require(text == canonical(f), "Noncanonical manifest")
     return f

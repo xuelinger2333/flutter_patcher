@@ -10,8 +10,9 @@
     "reportDartBootError": {"args": {"attempt": "String?", "message": "String", "quarantine": "bool?"}, "returns": "null"},
     "saveConfig": {"args": {"maxCrashCount": "int", "loaderFieldCandidates": "List<String>", "loaderFallbackHeuristic": "bool"}, "returns": "null"},
     "hostStrategy": {"args": {}, "returns": "String? (so | bytecode)"},
+    "hostScope": {"args": {}, "returns": "Map<String, String>? {application_id, channel, flavor, version_code, abi, fingerprint, strategy}"},
     "checkSignedManifest": {"args": {"wire": "String"}, "returns": "Map {action: String, fresh: bool, patch_seq: String?}"},
-    "applySignedManifest": {"args": {"wire": "String"}, "returns": "Map {action: String, ok: bool, error: String?, message: String?}"},
+    "applySignedManifest": {"args": {"wire": "String", "payload": "String? (path of the downloaded patch; null for a withdrawal)"}, "returns": "Map {action: String, ok: bool, error: String?, message: String?}"},
     "updatePublicationTrust": {"args": {"wire": "String"}, "returns": "Map {ok: true}"},
     "rollback": {"args": {}, "returns": "null"},
     "currentVersion": {"args": {}, "returns": "String?"},
@@ -21,7 +22,7 @@
     "blacklist": {"args": {}, "returns": "List<Map>"},
     "clearBlacklist": {"args": {}, "returns": "null"}
   },
-  "channel_errors": ["AUTH_UPDATE_IO", "AUTH_UPDATE_REJECTED", "BYTECODE_REJECTED", "ROLLBACK_FAILED"],
+  "channel_errors": ["AUTH_UPDATE_REJECTED", "BYTECODE_REJECTED", "ROLLBACK_FAILED"],
   "apply_errors": ["INVALID_ARGS", "BLACKLISTED", "NETWORK", "MD5_MISMATCH", "SIGNATURE_INVALID", "UNSUPPORTED_ABI", "ASSET_PACKAGE_INVALID", "IO_ERROR", "UNKNOWN"],
   "boot_statuses": ["NO_PATCH", "PATCHED", "DROPPED_VERSION_CODE_MISMATCH", "DROPPED_MD5_MISMATCH", "DROPPED_META_CORRUPTED", "DROPPED_CIRCUIT_BREAKER", "HOOK_INSTALL_FAILED", "BYTECODE_UNSUPPORTED", "BYTECODE_BOOT_FAILED", "UNKNOWN"],
   "progress_phases": ["downloading", "verifying", "finalizing"]

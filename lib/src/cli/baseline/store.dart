@@ -55,8 +55,11 @@ class FileBaselineStore implements BaselineStore {
   @override
   Future<void> probe() async {
     await rejectLinks(root);
-    require(await Directory(root).exists(), 'BASELINE_STORE_UNREACHABLE',
-        'File store directory does not exist.');
+    require(
+        await Directory(root).exists(),
+        'BASELINE_STORE_UNREACHABLE',
+        'File store directory $root does not exist; build creates it, so a '
+            'host built elsewhere keeps its baselines in another store.');
   }
 
   @override

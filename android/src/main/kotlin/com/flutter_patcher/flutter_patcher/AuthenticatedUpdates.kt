@@ -1,8 +1,7 @@
 package com.flutter_patcher.flutter_patcher
 
 import android.content.Context
-import java.net.HttpURLConnection
-import java.net.URI
+import java.io.File
 import org.json.JSONObject
 
 /** Authorization transactions; caller holds the bytecode monitor except download. */
@@ -56,34 +55,16 @@ internal class AuthenticatedUpdates(context: Context, val host: HostTrustConfig)
     }
 
     companion object {
-        /** No ambient credentials, redirects, unbounded bodies, or URL diagnostics. */
-        fun download(fields: Map<String, String>): ByteArray {
-            val expected = fields.getValue("size").toInt()
-            val uri = URI(fields.getValue("url"))
-            require(uri.scheme == "https" && uri.rawUserInfo == null && uri.rawFragment == null) { "HTTPS required" }
-            val connection = uri.toURL().openConnection() as HttpURLConnection
-            val started = System.nanoTime()
+        /** The payload Dart downloaded to [path]: the signed size and digest, then deleted. */
+        fun payload(fields: Map<String, String>, path: String): ByteArray {
+            val file = File(path)
             try {
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                require(connection.responseCode == 200) { "Download HTTP status rejected" }
-                require(connection.contentLengthLong == -1L || connection.contentLengthLong == expected.toLong()) { "Download length" }
-                val out = java.io.ByteArrayOutputStream(minOf(expected, 65536))
-                connection.inputStream.use { stream ->
-                    val buffer = ByteArray(65536)
-                    while (true) {
-                        require(System.nanoTime() - started < 120_000_000_000L) { "Download deadline" }
-                        val count = stream.read(buffer)
-                        if (count < 0) break
-                        require(out.size().toLong() + count <= expected) { "Download size" }
-                        out.write(buffer, 0, count)
-                    }
-                }
-                val bytes = out.toByteArray()
-                require(bytes.size == expected && PatchEnvelope.digest(bytes) == fields["sha256"]) { "Download digest/size" }
+                val expected = fields.getValue("size").toLong()
+                require(file.isFile && file.length() == expected) { "Payload size" }
+                val bytes = file.readBytes()
+                require(bytes.size.toLong() == expected && PatchEnvelope.digest(bytes) == fields["sha256"]) { "Payload digest/size" }
                 return bytes
-            } finally { connection.disconnect() }
+            } finally { file.delete() }
         }
     }
 }

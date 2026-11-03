@@ -37,7 +37,7 @@ internal object PublishManifest {
         val text = decode(bytes)
         val f = strings(text)
         val publish = f["action"] == "publish"
-        require(f.keys == common + if (publish) setOf("patch_seq", "sha256", "size", "url")
+        require(f.keys == common + if (publish) setOf("patch_seq", "sha256", "size", "path")
             else setOf("withdraw_through_seq")) { "Unexpected fields" }
         require(f["schema"] == "1" && (publish || f["action"] == "withdraw")) { "Schema/action" }
         require(f.values.all { v -> v.length <= 2048 && v.all { it.code in 33..126 && it != '"' && it != '\\' } }) { "ASCII values" }
@@ -57,9 +57,9 @@ internal object PublishManifest {
         if (publish) {
             number("size", 320L * 1024 * 1024)
             require(matches("sha256", "[0-9a-f]{64}")) { "SHA256" }
-            require(matches("url", "https://[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[1-9][0-9]{0,4})?(?:/(?:[A-Za-z0-9._~!${'$'}&'()*+,;=:@/?-]|%[0-9A-F]{2})*)?")) { "URL syntax" }
-            val uri = java.net.URI(f.getValue("url"))
-            require(uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.port <= 65535 && uri.rawUserInfo == null && uri.rawFragment == null) { "HTTPS URL required" }
+            // Relative to the manifest, so the store can move between hosts.
+            require(matches("path", "objects/[0-9a-f]{32}/[0-9a-f]{64}\\.fptc") &&
+                f.getValue("path").endsWith("/${f["sha256"]}.fptc")) { "Payload path" }
         }
         require(text == canonical(f)) { "Noncanonical manifest" }
         return f.toMap()

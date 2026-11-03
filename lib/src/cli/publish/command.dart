@@ -15,8 +15,11 @@ import 'transaction.dart';
 
 ArgParser publishOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
-  ..addFlag('commit',
-      negatable: false, help: 'Publish; without it, preview only.')
+  ..addFlag('yes',
+      abbr: 'y',
+      negatable: false,
+      help: 'Publish without asking; otherwise preview, then ask when '
+          'interactive.')
   ..addOption('project',
       help: 'Application directory; default the current one.')
   ..addOption('patch',
@@ -27,13 +30,20 @@ ArgParser publishOptions() => ArgParser()
   ..addOption('receipt', help: 'New output JSON file for the result.');
 
 Future<int> productionPublish(ArgResults args) async {
+  stdout.writeln(jsonEncode(
+      {'command': 'publish', 'scope': 'production', ...await publication(args)}));
+  return 0;
+}
+
+/// Runs a publish or cleanup request and returns its receipt.
+Future<Map<String, dynamic>> publication(ArgResults args) async {
   requireSupportedHost();
   require(
       args.rest.isEmpty &&
           (args['request'] == null) == (args['production'] != true),
       'PUBLISH_CONFIG_INVALID',
-      'Use publish [--patch DIR] [--commit], or publish --production '
-      '--request FILE [--commit]');
+      'Use publish [--patch DIR] [--yes], or publish --production '
+      '--request FILE [--yes]');
   final request = args['request'] == null
       ? await projectRequest(args)
       : await readObject(args['request'] as String);
@@ -66,7 +76,7 @@ Future<int> productionPublish(ArgResults args) async {
   Map<String, dynamic> result;
   if (request['kind'] == 'cleanup') {
     final retention = PublicationRetention(transaction);
-    if (args['commit'] == true) {
+    if (args['yes'] == true) {
       require(request['approved_plan'] is String, 'PUBLISH_CONFIG_INVALID',
           'Explicit approved_plan file required for cleanup commit');
       result = await retention.execute(
@@ -87,19 +97,9 @@ Future<int> productionPublish(ArgResults args) async {
     }
     final bytes = source == null ? null : await File(source).readAsBytes();
     if (bytes != null) {
-      final direct = request['download_url'] as String?;
-      final base = Uri.parse(direct ?? request['public_base_url'] as String);
-      require(
-          base.scheme == 'https' &&
-              base.userInfo.isEmpty &&
-              (direct != null || !base.hasQuery) &&
-              !base.hasFragment,
-          'PUBLISH_CONFIG_INVALID',
-          'Public base must be HTTPS without credentials/query');
       fields['sha256'] = digest(bytes);
       fields['size'] = bytes.length.toString();
-      fields['url'] = direct ??
-          '${base.toString().replaceFirst(RegExp(r'/$'), '')}/objects/$operation/${digest(bytes)}.fptc';
+      fields['path'] = 'objects/$operation/${digest(bytes)}.fptc';
     }
     final baselineUri = Uri.parse(request['baseline_store'] as String);
     if (uri.scheme == 'file' && baselineUri.scheme == 'file') {
@@ -115,20 +115,32 @@ Future<int> productionPublish(ArgResults args) async {
     for (final key in ['private_key', 'public_key']) {
       await rejectLinks(request[key] as String);
     }
-    result = await PublicationPipeline(transaction, commands, work.path)
-        .execute(
+    final seed = await File(request['private_key'] as String).readAsString(),
+        publicKey = await File(request['public_key'] as String).readAsString();
+    Future<Map<String, dynamic>> execute(bool commit) =>
+        PublicationPipeline(transaction, commands, work.path).execute(
             operation: operation,
             fields: fields,
             expectedRevision: request['expected_revision'] as int,
-            seed: await File(request['private_key'] as String).readAsString(),
-            publicKey:
-                await File(request['public_key'] as String).readAsString(),
+            seed: seed,
+            publicKey: publicKey,
             createdAt: request['created_at'].toString(),
             baseline: release.identity,
             target: release.target,
             patch: bytes,
-            commit: args['commit'] == true,
+            commit: commit,
             pin: request['pin'] == true);
+    result = await execute(false);
+    final what = fields['action'] == 'publish'
+        ? 'patch ${fields['patch_seq']}'
+        : 'withdrawal through ${fields['withdraw_through_seq']}';
+    if (await confirmed(
+        args,
+        'Publish $what to ${fields['application_id']} ${fields['channel']} '
+        'versionCode ${fields['version_code']} '
+        '(revision ${fields['revision']})?')) {
+      result = await execute(true);
+    }
   }
   if (args['receipt'] != null) {
     final path = args['receipt'] as String;
@@ -137,9 +149,31 @@ Future<int> productionPublish(ArgResults args) async {
         'Receipt target already exists');
     await writeObject(path, result);
   }
-  stdout.writeln(
-      jsonEncode({'command': 'publish', 'scope': 'production', ...result}));
-  return 0;
+  return result;
+}
+
+/// The newest finished output `patch` wrote to [project]. Outputs are named
+/// by creation time; one still being written has a `.pending-` suffix.
+Future<String?> latestPatchOutput(String project) async {
+  final patches = Directory(
+      p.join(project, '.dart_tool', 'flutter_patcher', 'patches'));
+  if (!await patches.exists()) return null;
+  final runs = await patches
+      .list()
+      .where((e) =>
+          e is Directory && RegExp(r'^\d+$').hasMatch(p.basename(e.path)))
+      .map((e) => e.path)
+      .toList();
+  return runs.isEmpty ? null : (runs..sort()).last;
+}
+
+/// Publishing changes what devices install: unless --yes says so, ask
+/// before committing, and only preview when no one can answer.
+Future<bool> confirmed(ArgResults args, String question) async {
+  if (args['yes'] == true) return true;
+  if (!stdin.hasTerminal) return false;
+  stderr.write('$question [y/N] ');
+  return (stdin.readLineSync() ?? '').trim().toLowerCase() == 'y';
 }
 
 /// The request publishing a project's patch: its scope and sequence from
@@ -149,16 +183,8 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   final project =
       p.absolute(args['project'] as String? ?? Directory.current.path);
   final config = await ProjectConfig.load(project);
-  final patches = Directory(
-      p.join(project, '.dart_tool', 'flutter_patcher', 'patches'));
-  // Patch outputs are named by creation time.
-  final runs = await patches.exists()
-      ? (await patches.list().where((e) => e is Directory).toList())
-          .map((e) => e.path)
-          .toList()
-      : <String>[];
   final directory =
-      args['patch'] as String? ?? (runs.isEmpty ? null : (runs..sort()).last);
+      args['patch'] as String? ?? await latestPatchOutput(project);
   require(directory != null, 'PUBLISH_CONFIG_INVALID',
       'No patch to publish; run patch first or pass --patch.');
   final report = await readObject(p.join(directory!, 'patch.json'));
@@ -166,14 +192,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   require(report['status'] == 'patch_created' && scope is Map,
       'PUBLISH_CONFIG_INVALID',
       '$directory is not a patch output of this flutter_patcher.');
-  String setting(String name) {
-    final value = config[name];
-    require(value != null, 'PUBLISH_CONFIG_INVALID',
-        'Set $name in ${ProjectConfig.file}.');
-    return value!;
-  }
-
-  final store = setting('store'), publicUrl = setting('public_url');
+  final store = config.store;
   final fields = Map<String, String>.from(scope as Map);
   final cache = managedCache(null);
   await Directory(cache).create(recursive: true);
@@ -196,7 +215,6 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
     'application_id': fields['application_id'],
     'store': store,
     'baseline_store': config.baselineStore,
-    'public_base_url': publicUrl,
     'operation': [
       for (var i = 0; i < 16; i++)
         random.nextInt(256).toRadixString(16).padLeft(2, '0')

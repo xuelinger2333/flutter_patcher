@@ -7,9 +7,6 @@ struct PatcherError: Error, CustomStringConvertible {
   init(_ description: String) { self.description = description }
 }
 
-/// A transport failure while downloading; reported without its message.
-struct PatcherIOError: Error {}
-
 func require(_ condition: Bool, _ message: @autoclosure () -> String) throws {
   if !condition { throw PatcherError(message()) }
 }

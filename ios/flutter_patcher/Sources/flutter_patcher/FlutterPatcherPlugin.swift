@@ -115,7 +115,11 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
     case "checkSignedManifest":
       authenticatedCall(result) { [bytecode] in try bytecode.inspect(wire) }
     case "applySignedManifest":
-      authenticatedCall(result) { [bytecode] in try bytecode.applyManifest(wire, progress: self.emitProgress) }
+      authenticatedCall(result) { [bytecode] in
+        try bytecode.applyManifest(wire, payload: args["payload"] as? String, progress: self.emitProgress)
+      }
+    case "hostScope":
+      bytecodeCall(result) { try HostTrustConfig.load()?.scope }
     case "updatePublicationTrust":
       authenticatedCall(result) { [bytecode] in
         try bytecode.updateTrust(wire)
@@ -167,16 +171,12 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
     }
   }
 
-  /// Network messages may contain credential-bearing URLs; none reach Dart.
+  /// A rejection reaches Dart as a code only, never as a native message.
   private func authenticatedCall(_ result: @escaping FlutterResult, _ operation: @escaping () throws -> Any?) {
     worker.async {
       do {
         let value = try operation()
         DispatchQueue.main.async { result(value) }
-      } catch is PatcherIOError {
-        DispatchQueue.main.async {
-          result(FlutterError(code: "AUTH_UPDATE_IO", message: "Authenticated update I/O failed", details: nil))
-        }
       } catch {
         DispatchQueue.main.async {
           result(FlutterError(code: "AUTH_UPDATE_REJECTED", message: "Authenticated update rejected", details: nil))

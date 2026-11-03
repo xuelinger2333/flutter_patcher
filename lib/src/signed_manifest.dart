@@ -19,6 +19,11 @@ class SignedManifest {
   Uint8List get payload => Uint8List.fromList(_payload);
   Uint8List get signature => Uint8List.fromList(_signature);
 
+  /// The payload's fields, unauthenticated: only where and how large the
+  /// patch is may be read from them. Native code verifies before trusting.
+  Map<String, String> get fields =>
+      Map<String, String>.from(jsonDecode(utf8.decode(_payload)) as Map);
+
   factory SignedManifest.parse(String wire) {
     if (wire.length > 24000) throw const FormatException('Envelope too large');
     final json = jsonDecode(wire);

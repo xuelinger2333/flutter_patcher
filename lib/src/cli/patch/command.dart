@@ -141,18 +141,15 @@ Future<int> patchCommand(ArgResults args) async {
   }
 }
 
-/// The next sequence the configured publication store accepts for
+/// The next sequence the project's publication store accepts for
 /// [resolved]'s fingerprint.
 Future<int> _nextSequence(ProjectConfig config, ResolvedRelease resolved,
     Commands commands, String cache) async {
-  final store = config['store'];
-  require(store != null, 'PATCH_CONFIG_INVALID',
-      'Pass --seq, or set store in ${ProjectConfig.file} so the next sequence '
-      'is read from what was published.');
+  final store = config.store;
   final work = await Directory(cache).createTemp('patch-seq-');
   try {
     final catalog = await PublicationTransaction(
-            openPublishStore(Uri.parse(store!), commands, work.path),
+            openPublishStore(Uri.parse(store), commands, work.path),
             resolved.receipt['application_id'] as String)
         .snapshot();
     return nextSequence(catalog, resolved.fingerprint);

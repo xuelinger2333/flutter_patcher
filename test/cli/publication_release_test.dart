@@ -58,7 +58,7 @@ void main() {
       'patch_seq': '$seq',
       'sha256': sha,
       'size': '${patch.length}',
-      'url': 'https://example.com/objects/$operation/$sha.fptc'
+      'path': 'objects/$operation/$sha.fptc'
     };
   }
 

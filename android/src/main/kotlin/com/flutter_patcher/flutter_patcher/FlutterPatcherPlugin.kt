@@ -130,9 +130,11 @@ class FlutterPatcherPlugin :
                 null
             }
             "applySignedManifest" -> authenticatedCall(result) {
-                authenticated().applyManifest(call.argument<String>("wire") ?: "", ::emitProgress)
+                authenticated().applyManifest(call.argument<String>("wire") ?: "",
+                    call.argument<String>("payload"), ::emitProgress)
             }
             "hostStrategy" -> hostCall(result) { HostTrustConfig.load(appContext)?.strategy }
+            "hostScope" -> hostCall(result) { HostTrustConfig.load(appContext)?.scope }
             "checkSignedManifest" -> authenticatedCall(result) {
                 authenticated().inspect(call.argument<String>("wire") ?: "")
             }
@@ -170,10 +172,8 @@ class FlutterPatcherPlugin :
             try {
                 val value = operation()
                 main.post { result.success(value) }
-            } catch (_: java.io.IOException) {
-                // Network exception messages may contain credential-bearing URLs.
-                main.post { result.error("AUTH_UPDATE_IO", "Authenticated update I/O failed", null) }
             } catch (_: Exception) {
+                // A rejection reaches Dart as a code only, never as a native message.
                 main.post { result.error("AUTH_UPDATE_REJECTED", "Authenticated update rejected", null) }
             }
         }.start()

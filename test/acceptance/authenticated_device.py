@@ -11,6 +11,7 @@ snapshot of this working tree, fetches the outputs and verifies locally.
 import argparse
 import base64
 from datetime import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -133,9 +134,9 @@ def prepare(args, repo, out):
                        private_key=str(out / 'keys/publisher/private-key.base64'),
                        public_key=str(out / 'keys/publisher/public-key.base64'), created_at=int(time.time()))
         if extra['action'] == 'publish':
-            request.update(patch=str(out / f'patch{extra["patch_seq"]}/patch.fptc'), public_base_url=ORIGIN + '/pub')
+            request.update(patch=str(out / f'patch{extra["patch_seq"]}/patch.fptc'))
         write(out / f'publish{revision}.json', json.dumps(request, indent=2))
-        patcher(f'publish{revision}', 'publish', '--production', '--commit', '--request', out / f'publish{revision}.json')
+        patcher(f'publish{revision}', 'publish', '--production', '--yes', '--request', out / f'publish{revision}.json')
         write(srv / f'manifest{revision}.json',
               json.loads((srv / 'pub/catalog.json').read_text())['releases'][operation]['wire'])
     write(srv / 'tampered.json', tamper((srv / 'manifest1.json').read_text()))
@@ -219,13 +220,20 @@ def verify(args, out):
         asset = 'asset-patched' if args.strategy == 'so' else 'asset-original'
         original = dict(revision='original', asset='asset-original', version=None, diagnostic='noPatch')
         patched = dict(revision='patched', asset=asset, version='1', diagnostic='patched')
-        check = lambda n: lambda: control('/check', {'url': f'{ORIGIN}/manifest{n}.json'})
-        payload = srv / json.loads(base64.b64decode(json.loads((srv / 'manifest1.json').read_text())['payload']))[
-            'url'].removeprefix(ORIGIN + '/')
+        fields = json.loads(base64.b64decode(json.loads((srv / 'manifest1.json').read_text())['payload']))
+        scope = hashlib.sha256(json.dumps({k: fields[k] for k in ['application_id', 'channel', 'flavor',
+            'version_code', 'abi', 'fingerprint', 'strategy']}, separators=(',', ':')).encode()).hexdigest()
+
+        def offer(name):  # The device reads its scope's manifest in the store by convention.
+            shutil.copyfile(srv / name, srv / 'pub/manifests' / f'{scope}.json')
+            return control('/check', {'url': ORIGIN + '/pub'})
+
+        check = lambda n: lambda: offer(f'manifest{n}.json')
+        payload = srv / 'pub' / fields['path']
         good = payload.read_bytes()
 
         def rejected():  # Must fail native verification, not an earlier parse.
-            actual = control('/check', {'url': ORIGIN + '/tampered.json'})
+            actual = offer('tampered.json')
             return {**actual, 'native': 'AUTH_UPDATE_REJECTED' in actual.get('error', '')}
 
         def corrupt():  # The origin serves altered bytes for an authentic manifest.

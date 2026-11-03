@@ -164,7 +164,7 @@ void main() {
       expect(file.existsSync(), true);
       expect(result.stdout, isNot(contains(file.readAsStringSync().trim())));
       expect(File(p.join(root.path, 'flutter_patcher.yaml')).readAsStringSync(),
-          contains('public_url'));
+          contains('baseline_store'));
     });
   });
 }

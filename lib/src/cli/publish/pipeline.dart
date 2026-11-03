@@ -11,6 +11,8 @@ import '../core.dart';
 import '../crypto/signing.dart';
 import 'protocol.dart';
 import 'transaction.dart';
+import '../../publication_scope.dart';
+export '../../publication_scope.dart' show scopeOf;
 
 /// The verified baseline identity of the target release, and the target a
 /// patch for it must carry. Legacy releases keep their original identity
@@ -174,19 +176,6 @@ Future<void> verifyPublicationPatch(Uint8List bytes, Map<String, String> fields,
       bytes.sublist(82, 146), publicKey);
 }
 
-String scopeOf(Map<String, String> fields) => digest(utf8.encode(jsonEncode({
-      for (final k in [
-        'application_id',
-        'channel',
-        'flavor',
-        'version_code',
-        'abi',
-        'fingerprint',
-        'strategy'
-      ])
-        k: fields[k]
-    })));
-
 /// The smallest sequence a new patch of [fingerprint] can be published with:
 /// above every sequence published or withdrawn for it, in any release.
 int nextSequence(Map<String, dynamic> catalog, String fingerprint) {
@@ -259,9 +248,9 @@ class PublicationPipeline {
       require(
           f['sha256'] == digest(patch!) &&
               f['size'] == patch.length.toString() &&
-              Uri.parse(f['url']!).path.endsWith('/$name'),
+              f['path'] == name,
           'PUBLISH_PATCH_INVALID',
-          'Payload URL/identity differs');
+          'Payload path/identity differs');
       await verifyPublicationPatch(
           patch,
           f,
@@ -320,11 +309,12 @@ class PublicationPipeline {
         'scope': scope,
         'manifest_sha256': digest(utf8.encode(manifest.canonical)),
         'object': name,
+        'manifest': 'manifests/$scope.json',
         'fingerprint': f['fingerprint'],
         'revision': f['revision']
       };
     }
-    return transaction.run(operation, intent, (current) async {
+    final receipt = await transaction.run(operation, intent, (current) async {
       final oldId = (current['heads'] as Map)[scope];
       final old =
           oldId == null ? null : (current['releases'] as Map)[oldId] as Map;
@@ -381,5 +371,44 @@ class PublicationPipeline {
       (current['heads'] as Map)[scope] = operation;
       return receipt;
     });
+    await writeHeadManifest(transaction, scope);
+    return {...receipt, 'manifest': 'manifests/$scope.json'};
   }
+}
+
+/// Devices read `manifests/<scope>.json`: the exact signed head of the scope,
+/// copied from the catalog after it commits. A write only moves it to a newer
+/// revision, so a slower publisher cannot put an older one back.
+Future<void> writeHeadManifest(
+    PublicationTransaction transaction, String scope) async {
+  final name = 'manifests/$scope.json';
+  int revision(List<int> wire) {
+    try {
+      final envelope = jsonDecode(utf8.decode(wire)) as Map;
+      final fields =
+          jsonDecode(utf8.decode(base64Decode(envelope['payload'] as String)))
+              as Map;
+      return int.parse(fields['revision'] as String);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  for (var attempt = 0; attempt < 5; attempt++) {
+    final catalog = await transaction.snapshot();
+    final head = (catalog['heads'] as Map)[scope];
+    if (head == null) return;
+    final record = (catalog['releases'] as Map)[head] as Map;
+    final current = await transaction.store.read(name);
+    if (current != null &&
+        revision(current.bytes) >= (record['revision'] as int)) {
+      return;
+    }
+    if (await transaction.store
+        .write(name, utf8.encode(record['wire'] as String), current?.token)) {
+      return;
+    }
+  }
+  throw Failure('PUBLISH_MANIFEST_CONFLICT',
+      '$name kept changing; publish again to rewrite it');
 }

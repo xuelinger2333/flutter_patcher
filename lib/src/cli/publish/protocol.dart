@@ -75,7 +75,7 @@ class PublishManifest {
     final publish = fields['action'] == 'publish';
     final expected = {
       ...common,
-      if (publish) ...{'patch_seq', 'sha256', 'size', 'url'} else
+      if (publish) ...{'patch_seq', 'sha256', 'size', 'path'} else
         'withdraw_through_seq'
     };
     check(
@@ -115,19 +115,11 @@ class PublishManifest {
     if (publish) {
       number('size', 320 * 1024 * 1024);
       check(matches('sha256', r'[0-9a-f]{64}'), 'SHA256');
+      // Relative to the manifest, so the store can move between hosts.
       check(
-          matches('url',
-              r"https://[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[1-9][0-9]{0,4})?(?:/(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-F]{2})*)?"),
-          'URL syntax');
-      final uri = Uri.tryParse(fields['url']!);
-      check(
-          uri != null &&
-              uri.scheme == 'https' &&
-              uri.host.isNotEmpty &&
-              uri.port <= 65535 &&
-              uri.userInfo.isEmpty &&
-              !uri.hasFragment,
-          'HTTPS URL required');
+          matches('path', r'objects/[0-9a-f]{32}/[0-9a-f]{64}\.fptc') &&
+              fields['path']!.endsWith('/${fields['sha256']}.fptc'),
+          'Payload path');
     }
   }
 }

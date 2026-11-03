@@ -240,7 +240,7 @@ void main() {
       'patch_seq': '1',
       'sha256': digest(patch),
       'size': '${patch.length}',
-      'url': 'https://example.com/objects/${'a' * 32}/${digest(patch)}.fptc'
+      'path': 'objects/${'a' * 32}/${digest(patch)}.fptc'
     };
     Future<Map<String, dynamic>> publish(bool commit) => pipe.execute(
         operation: 'a' * 32,
@@ -257,6 +257,9 @@ void main() {
     final receipt = await publish(true);
     expect(receipt['status'], 'published');
     expect(await publish(true), receipt);
+    expect(utf8.decode((await store.read(receipt['manifest'] as String))!.bytes),
+        ((jsonDecode(utf8.decode((await store.read('catalog.json'))!.bytes))
+            as Map)['releases'] as Map)['a' * 32]['wire']);
     await expectLater(
         pipe.execute(
             operation: 'a' * 32,
@@ -293,7 +296,7 @@ void main() {
             fields: {
               ...fields,
               'revision': '3',
-              'url': fields['url']!.replaceAll('a' * 32, 'c' * 32)
+              'path': fields['path']!.replaceAll('a' * 32, 'c' * 32)
             },
             expectedRevision: 2,
             seed: seed,
