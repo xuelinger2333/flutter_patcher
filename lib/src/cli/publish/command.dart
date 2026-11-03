@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import '../baseline/store.dart';
 import '../core.dart';
 import '../sdk/host.dart';
+import '../project.dart';
+import '../version.dart';
 import 'pipeline.dart';
 import 'retention.dart';
 import 'store.dart';
@@ -12,21 +15,28 @@ import 'transaction.dart';
 
 ArgParser publishOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
-  ..addFlag('production',
-      negatable: false, help: 'Required; publishes the request to its store.')
   ..addFlag('commit',
-      negatable: false,
-      help: 'Commit a production request; otherwise preview only.')
-  ..addOption('request', help: 'Production request JSON file.')
-  ..addOption('receipt', help: 'New output JSON file for production result.');
+      negatable: false, help: 'Publish; without it, preview only.')
+  ..addOption('project',
+      help: 'Application directory; default the current one.')
+  ..addOption('patch',
+      help: 'A patch output directory; default the project\'s latest patch.')
+  ..addFlag('production',
+      negatable: false, help: 'With --request: publish that request instead.')
+  ..addOption('request', help: 'Advanced: a production request JSON file.')
+  ..addOption('receipt', help: 'New output JSON file for the result.');
 
 Future<int> productionPublish(ArgResults args) async {
   requireSupportedHost();
   require(
-      args['production'] == true && args.rest.isEmpty && args['request'] != null,
+      args.rest.isEmpty &&
+          (args['request'] == null) == (args['production'] != true),
       'PUBLISH_CONFIG_INVALID',
-      'Use publish --production --request FILE [--commit]');
-  final request = await readObject(args['request'] as String);
+      'Use publish [--patch DIR] [--commit], or publish --production '
+      '--request FILE [--commit]');
+  final request = args['request'] == null
+      ? await projectRequest(args)
+      : await readObject(args['request'] as String);
   require(
       request['kind'] == null ||
           {'publish', 'cleanup'}.contains(request['kind']),
@@ -50,11 +60,7 @@ Future<int> productionPublish(ArgResults args) async {
   final work = await Directory(cache).createTemp('publish-');
   final commands = Commands(cache);
   final uri = Uri.parse(request['store'] as String);
-  require(uri.userInfo.isEmpty && uri.query.isEmpty && uri.fragment.isEmpty,
-      'PUBLISH_CONFIG_INVALID', 'Store URI must not contain credentials');
-  final PublishStore store = uri.scheme == 'file'
-      ? FilePublishStore(uri.toFilePath())
-      : S3PublishStore(uri, commands, p.join(work.path, 's3'));
+  final store = openPublishStore(uri, commands, work.path);
   final transaction = PublicationTransaction(store, application);
   final operation = request['operation'] as String;
   Map<String, dynamic> result;
@@ -134,4 +140,80 @@ Future<int> productionPublish(ArgResults args) async {
   stdout.writeln(
       jsonEncode({'command': 'publish', 'scope': 'production', ...result}));
   return 0;
+}
+
+/// The request publishing a project's patch: its scope and sequence from
+/// the patch output, the store and keys from the project, and the revision
+/// that follows the store's current one.
+Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
+  final project =
+      p.absolute(args['project'] as String? ?? Directory.current.path);
+  final config = await ProjectConfig.load(project);
+  final patches = Directory(
+      p.join(project, '.dart_tool', 'flutter_patcher', 'patches'));
+  // Patch outputs are named by creation time.
+  final runs = await patches.exists()
+      ? (await patches.list().where((e) => e is Directory).toList())
+          .map((e) => e.path)
+          .toList()
+      : <String>[];
+  final directory =
+      args['patch'] as String? ?? (runs.isEmpty ? null : (runs..sort()).last);
+  require(directory != null, 'PUBLISH_CONFIG_INVALID',
+      'No patch to publish; run patch first or pass --patch.');
+  final report = await readObject(p.join(directory!, 'patch.json'));
+  final scope = report['scope'];
+  require(report['status'] == 'patch_created' && scope is Map,
+      'PUBLISH_CONFIG_INVALID',
+      '$directory is not a patch output of this flutter_patcher.');
+  String setting(String name) {
+    final value = config[name];
+    require(value != null, 'PUBLISH_CONFIG_INVALID',
+        'Set $name in ${ProjectConfig.file}.');
+    return value!;
+  }
+
+  final store = setting('store'), publicUrl = setting('public_url');
+  final fields = Map<String, String>.from(scope as Map);
+  final cache = managedCache(null);
+  await Directory(cache).create(recursive: true);
+  final work = await Directory(cache).createTemp('publish-revision-');
+  int revision;
+  try {
+    final catalog = await PublicationTransaction(
+            openPublishStore(Uri.parse(store), Commands(cache), work.path),
+            fields['application_id']!)
+        .snapshot();
+    final head = (catalog['heads'] as Map)[scopeOf(fields)];
+    revision = head == null
+        ? 0
+        : ((catalog['releases'] as Map)[head] as Map)['revision'] as int;
+  } finally {
+    await work.delete(recursive: true);
+  }
+  final random = Random.secure();
+  return {
+    'application_id': fields['application_id'],
+    'store': store,
+    'baseline_store': config.baselineStore,
+    'public_base_url': publicUrl,
+    'operation': [
+      for (var i = 0; i < 16; i++)
+        random.nextInt(256).toRadixString(16).padLeft(2, '0')
+    ].join(),
+    'expected_revision': revision,
+    'created_at': DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
+    'private_key': config.key('publisher', private: true),
+    'public_key': config.key('publisher'),
+    'patch': p.join(directory, 'patch.fptc'),
+    'fields': {
+      ...fields,
+      'schema': '1',
+      'key_id': 'release',
+      'minPluginVersion': packageVersion,
+      'revision': '${revision + 1}',
+      'action': 'publish',
+      'patch_seq': '${report['patch_seq']}',
+    },
+  };
 }

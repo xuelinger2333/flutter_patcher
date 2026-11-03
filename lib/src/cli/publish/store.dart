@@ -12,6 +12,15 @@ class StoredObject {
   StoredObject(this.bytes, this.token);
 }
 
+/// The publication store at [uri]: a directory (`file://`) or S3.
+PublishStore openPublishStore(Uri uri, Commands commands, String work) {
+  require(uri.userInfo.isEmpty && uri.query.isEmpty && uri.fragment.isEmpty,
+      'PUBLISH_CONFIG_INVALID', 'Store URI must not contain credentials');
+  return uri.scheme == 'file'
+      ? FilePublishStore(uri.toFilePath())
+      : S3PublishStore(uri, commands, p.join(work, 's3'));
+}
+
 /// ETags are concurrency tokens, never content checksums. Null expects absence.
 abstract class PublishStore {
   Future<StoredObject?> read(String name);

@@ -5,7 +5,9 @@ import '../core.dart';
 import '../run_work.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
+import '../build/host_policy.dart';
 import '../build/runtime_package.dart';
+import '../publish/trust.dart';
 import '../build/workspace.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/package_inputs.dart';
@@ -342,8 +344,19 @@ class PatchPipeline {
       await workspace.verifyOriginals();
       await baselines.recheck(resolved, sdkRoot: sdk.root);
       final so = resolved.strategy == 'so';
+      final policy = HostPolicy.parse(await File(p.join(
+              so ? resolved.releaseRoot : resolved.compileRoot,
+              'host_policy.json'))
+          .readAsString());
       final output = await writeOutput(req, artifact['file'] as String, {
         'status': 'patch_created',
+        // What publish signs this patch for.
+        'scope': {
+          for (final key in TrustUpdate.scopeKeys)
+            key: key == 'fingerprint'
+                ? resolved.fingerprint
+                : policy.fields[key]
+        },
         'platform': req.platform,
         'abi': req.abi,
         'strategy': resolved.strategy,

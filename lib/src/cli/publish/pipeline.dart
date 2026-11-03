@@ -187,6 +187,20 @@ String scopeOf(Map<String, String> fields) => digest(utf8.encode(jsonEncode({
         k: fields[k]
     })));
 
+/// The smallest sequence a new patch of [fingerprint] can be published with:
+/// above every sequence published or withdrawn for it, in any release.
+int nextSequence(Map<String, dynamic> catalog, String fingerprint) {
+  var high = 0;
+  for (final record in (catalog['releases'] as Map).values) {
+    if (record is! Map || record['fingerprint'] != fingerprint) continue;
+    for (final key in ['high_seq', 'withdrawn_through']) {
+      final seq = record[key];
+      if (seq is int && seq > high) high = seq;
+    }
+  }
+  return high + 1;
+}
+
 /// Matches native policy; integration vectors exercise both implementations.
 void publicationPolicy(Map<String, String> f, Map? prior, int expected) {
   final revision = prior?['revision'] as int? ?? 0;

@@ -35,21 +35,36 @@ void main() {
       expect(result.stderr, contains('USAGE_ERROR'));
     }
   });
-  test('build needs a host policy and publish is production-only', () async {
+  test('build derives its policy from the project; a request needs --production',
+      () async {
     final temp = await Directory.systemTemp.createTemp('cli-policy-');
-    final key = File('${temp.path}/public.base64')..writeAsStringSync('k');
-    final build = await cli([
-      'build',
-      'android',
-      '--public-key',
-      key.path,
-      '--out',
-      '${temp.path}/out'
-    ]);
-    final publish = await cli(['publish', '--request', key.path]);
+    final pubspec = File('${temp.path}/pubspec.yaml')
+      ..writeAsStringSync('name: app\nversion: 1.0.0+3\n');
+    File('${temp.path}/android/app/build.gradle.kts')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(
+          'android { defaultConfig { applicationId = "com.example.app" } }');
+    Future<ProcessResult> build([List<String> extra = const []]) => cli([
+          'build',
+          'android',
+          '--project',
+          temp.path,
+          ...extra,
+          '--out',
+          '${temp.path}/out'
+        ]);
+    final derived = await build();
+    final named = await build(['--application-id', 'com.example.app']);
+    pubspec.writeAsStringSync('name: app\nversion: 1.0.0\n');
+    final unnumbered = await build();
+    final publish = await cli(['publish', '--request', pubspec.path]);
     await temp.delete(recursive: true);
-    expect(build.exitCode, 2);
-    expect(build.stderr, contains('Missing --host-policy'));
+    for (final result in [derived, named]) {
+      expect(result.exitCode, 2);
+      // The policy came from the project; only its keys are missing.
+      expect(result.stderr, contains('KEYS_MISSING'));
+    }
+    expect(unnumbered.stderr, contains('build number'));
     expect(publish.exitCode, 2);
     expect(publish.stderr, contains('PUBLISH_CONFIG_INVALID'));
   },

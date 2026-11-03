@@ -5,34 +5,33 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../crypto/ed25519.dart';
+import '../project.dart';
 import '../sdk/host.dart';
 
 ArgParser keysOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
   ..addFlag('json', negatable: false, help: 'Output contains metadata only.')
   ..addOption('out',
-      help: 'New key directory; default ~/.flutter_patcher/keys.');
+      help: 'New key directory; default ${ProjectConfig.defaultKeys} in the '
+          'current project, which then also gets ${ProjectConfig.file}.');
+
+/// The key pairs of a host: `root` signs trust updates, `publisher` signs
+/// publications and `patch` signs patch envelopes.
+const keyRoles = ['root', 'publisher', 'patch'];
 
 Future<int> keysCommand(ArgResults args) async {
   require(args.rest.length == 1 && args.rest.single == 'init', 'USAGE_ERROR',
       'Use keys init [--out <new-directory>].');
   final host = requireSupportedHost();
-  final home = hostHome();
-  require(args['out'] != null || home != null && home.isNotEmpty,
-      'KEYS_CONFIG_INVALID', 'Specify --out when HOME is unavailable.');
+  final project = Directory.current.path;
   final out = p.normalize(p.absolute(
-      args['out'] as String? ?? p.join(home!, '.flutter_patcher', 'keys')));
+      args['out'] as String? ?? p.join(project, ProjectConfig.defaultKeys)));
   await rejectLinks(out);
   require(
       await FileSystemEntity.type(out, followLinks: false) ==
           FileSystemEntityType.notFound,
       'KEYS_OUTPUT_EXISTS',
       'Refusing to overwrite an existing key directory: $out');
-  // The seed never leaves this process except as the base64 private-key file.
-  final seed = ed25519GenerateSeed();
-  final public = ed25519PublicKey(seed);
-  require(ed25519Verify(public, ed25519Sign(seed, const [0]), const [0]),
-      'KEYS_CRYPTO_FAILED', 'Generated key pair failed its self-check.');
   await Directory(p.dirname(out)).create(recursive: true);
   await rejectLinks(out);
   // mkdir is exclusive, unlike Directory.create: competing initializers cannot
@@ -55,21 +54,43 @@ Future<int> keysCommand(ArgResults args) async {
     require(acl != null && acl.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
         'Cannot restrict key directory permissions: $out');
   }
-  final privateFile = File(p.join(out, 'private-key.base64'));
-  final publicFile = File(p.join(out, 'public-key.base64'));
   final ignoreFile = File(p.join(out, '.gitignore'));
+  final written = <File>[ignoreFile];
   try {
-    await privateFile.create();
-    if (host.isPosix) {
-      // macOS chmod has no `--`; an absolute path cannot read as an option.
-      final mode = await Process.run(
-          '/bin/chmod', ['600', p.absolute(privateFile.path)]);
-      require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
-          'Cannot protect private-key permissions.');
+    await ignoreFile.writeAsString('*/private-key.base64\n', flush: true);
+    final roles = <String, Object?>{};
+    for (final role in keyRoles) {
+      // Inside the claimed directory: its permissions already cover these.
+      final directory = Directory(p.join(out, role));
+      await directory.create();
+      // A seed never leaves this process except as a base64 private-key file.
+      final seed = ed25519GenerateSeed();
+      final public = ed25519PublicKey(seed);
+      require(ed25519Verify(public, ed25519Sign(seed, const [0]), const [0]),
+          'KEYS_CRYPTO_FAILED', 'Generated key pair failed its self-check.');
+      final privateFile = File(p.join(directory.path, 'private-key.base64'));
+      final publicFile = File(p.join(directory.path, 'public-key.base64'));
+      written.addAll([privateFile, publicFile]);
+      await privateFile.create();
+      if (host.isPosix) {
+        // macOS chmod has no `--`; an absolute path cannot read as an option.
+        final mode = await Process.run(
+            '/bin/chmod', ['600', p.absolute(privateFile.path)]);
+        require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
+            'Cannot protect private-key permissions.');
+      }
+      await privateFile.writeAsString('${base64Encode(seed)}\n', flush: true);
+      await publicFile.writeAsString('${base64Encode(public)}\n', flush: true);
+      roles[role] = {
+        'private_key': privateFile.path,
+        'public_key': publicFile.path,
+        'public_key_sha256': sha256.convert(public).toString()
+      };
     }
-    await privateFile.writeAsString('${base64Encode(seed)}\n', flush: true);
-    await publicFile.writeAsString('${base64Encode(public)}\n', flush: true);
-    await ignoreFile.writeAsString('private-key.base64\n', flush: true);
+    // The project's settings start from a commented template.
+    final config = File(p.join(project, ProjectConfig.file));
+    final configured = args['out'] == null && !await config.exists();
+    if (configured) await config.writeAsString(ProjectConfig.template);
     stdout.writeln(jsonEncode({
       'command': 'keys init',
       'status': 'keys_created',
@@ -77,15 +98,21 @@ Future<int> keysCommand(ArgResults args) async {
       'private_key_format': 'base64-raw32-seed',
       'public_key_format': 'base64-raw32',
       'directory': out,
-      'private_key': privateFile.path,
-      'public_key': publicFile.path,
-      'public_key_sha256': sha256.convert(public).toString()
+      'keys': roles,
+      if (configured) 'config': config.path,
+      'notice': 'Back up the private keys; a lost root key cannot be replaced '
+          'for hosts already shipped.'
     }));
     return 0;
   } catch (_) {
     // Only our known files; never recursively delete an output directory.
-    for (final file in [privateFile, publicFile, ignoreFile]) {
+    for (final file in written) {
       if (await file.exists()) await file.deleteRetry();
+    }
+    for (final role in keyRoles) {
+      try {
+        await Directory(p.join(out, role)).deleteRetry();
+      } on FileSystemException {/* Absent, or holds foreign files. */}
     }
     try {
       await Directory(out).deleteRetry();

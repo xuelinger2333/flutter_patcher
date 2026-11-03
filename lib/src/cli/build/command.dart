@@ -11,6 +11,7 @@ import '../baseline/repository.dart';
 import '../baseline/store.dart';
 import 'pipeline.dart';
 import 'host_policy.dart';
+import '../project.dart';
 
 Future<int> buildCommand(ArgResults args) async {
   RandomAccessFile? lock;
@@ -23,12 +24,6 @@ Future<int> buildCommand(ArgResults args) async {
     final platform = args.rest.single;
 
     final host = requireSupportedHost(target: platform);
-    String required(String key) {
-      final value = args[key] as String?;
-      require(value != null && value.isNotEmpty, 'BUILD_CONFIG_INVALID',
-          'Missing --$key');
-      return value!;
-    }
 
     final cache = managedCache(args['cache-dir'] as String?);
     await rejectLinks(cache);
@@ -36,15 +31,28 @@ Future<int> buildCommand(ArgResults args) async {
     final commands = Commands(cache);
     final project =
         p.absolute(args['project'] as String? ?? Directory.current.path);
-    final key = (await File(required('public-key')).readAsString()).trim();
+    final config = await ProjectConfig.load(project);
+    final policy = args['host-policy'] == null
+        ? await HostPolicy.of(project, config,
+            platform: platform,
+            applicationId: args['application-id'] as String?,
+            versionCode: args['version-code'] as String?,
+            flavor: args['flavor'] as String?,
+            channel: args['channel'] as String?,
+            strategy: args['strategy'] as String?)
+        : HostPolicy.read(
+            await File(args['host-policy'] as String).readAsString());
+    // The patch public key: what the host verifies envelopes with.
+    final key = args['public-key'] == null
+        ? policy.fields['fptc_key']!
+        : (await File(args['public-key'] as String).readAsString()).trim();
     final request = BuildRequest(
         project: project,
         output: p.absolute(args['out'] as String? ??
             p.join(project, '.dart_tool/flutter_patcher/releases',
                 DateTime.now().microsecondsSinceEpoch.toString())),
         publicKey: key,
-        hostPolicy: HostPolicy.parse(
-            await File(required('host-policy')).readAsString()),
+        hostPolicy: policy,
         target: args['target'] as String,
         flavor: args['flavor'] as String?,
         versionCode: args['version-code'] as String?,
@@ -57,8 +65,14 @@ Future<int> buildCommand(ArgResults args) async {
     await request.validate();
     final offline = args['offline'] == true;
     final baselineStore = BaselineStore.open(
-        Uri.parse(required('baseline-store')), commands,
+        Uri.parse(args['baseline-store'] as String? ?? config.baselineStore),
+        commands,
         offline: offline);
+    if (args['baseline-store'] == null && config.baselinesInProject) {
+      stderr.writeln('WARNING: BASELINE_STORE_LOCAL: this host\'s baseline is '
+          'kept only in ${config.baselineStore}; every patch of the host needs '
+          'it, so set baseline_store in ${ProjectConfig.file} to a durable store.');
+    }
     await baselineStore.probe();
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);

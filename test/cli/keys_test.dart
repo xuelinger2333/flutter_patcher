@@ -10,10 +10,13 @@ import 'package:flutter_patcher/src/cli/patch/package.dart';
 
 void main() {
   Future<ProcessResult> cli(List<String> args,
-          {Map<String, String>? environment}) =>
+          {Map<String, String>? environment, String? workingDirectory}) =>
       Process.run(dartVm,
-          ['bin/flutter_patcher.dart', 'keys', ...args],
-          environment: environment);
+          [p.absolute('bin/flutter_patcher.dart'), 'keys', ...args],
+          environment: environment, workingDirectory: workingDirectory);
+  Map role(ProcessResult result, String name) =>
+      ((jsonDecode(result.stdout as String) as Map)['keys'] as Map)[name]
+          as Map;
   test('keys help and invalid usage require no SDK or output directory',
       () async {
     expect((await cli(['init', '--help'])).exitCode, 0);
@@ -55,14 +58,24 @@ void main() {
         expect(result.exitCode, 0, reason: '${result.stderr}');
         final report = jsonDecode(result.stdout as String) as Map;
         expect(report['status'], 'keys_created');
-        final privateFile = File(report['private_key'] as String);
-        final secret = privateFile.readAsStringSync().trim();
-        final public =
-            File(report['public_key'] as String).readAsStringSync().trim();
-        expect(base64Decode(secret).length, 32);
-        expect(base64Decode(public).length, 32);
-        expect(result.stdout, isNot(contains(secret)));
-        expect(result.stderr, isNot(contains(secret)));
+        expect((report['keys'] as Map).keys, ['root', 'publisher', 'patch']);
+        for (final name in ['root', 'publisher', 'patch']) {
+          final privateFile = File(role(result, name)['private_key'] as String);
+          final secret = privateFile.readAsStringSync().trim();
+          final public = File(role(result, name)['public_key'] as String)
+              .readAsStringSync()
+              .trim();
+          expect(base64Decode(secret).length, 32);
+          expect(base64Decode(public).length, 32);
+          expect(result.stdout, isNot(contains(secret)));
+          expect(result.stderr, isNot(contains(secret)));
+          if (!Platform.isWindows) {
+            expect(privateFile.statSync().mode & 0x1ff, 0x180); // 0600
+          }
+          expect(bootstrapSource('app', 'main.dart', 'ab' * 32, public),
+              contains(public));
+          publicKeys.add(public);
+        }
         if (Platform.isWindows) {
           // Inheritance removed and only the current user granted.
           final acl = Process.runSync('icacls', [out]).stdout as String;
@@ -71,24 +84,20 @@ void main() {
           expect(acl, isNot(contains('Everyone')));
         } else {
           expect(Directory(out).statSync().mode & 0x1ff, 0x1c0); // 0700
-          expect(privateFile.statSync().mode & 0x1ff, 0x180); // 0600
         }
         expect(File(p.join(out, '.gitignore')).readAsStringSync(),
-            contains('private-key.base64'));
-        expect(bootstrapSource('app', 'main.dart', 'ab' * 32, public),
-            contains(public));
-        publicKeys.add(public);
+            contains('*/private-key.base64'));
       }
-      expect(publicKeys.toSet().length, 2);
+      expect(publicKeys.toSet().length, 6);
     });
     test('generated keys sign and pack a patch', () async {
       final out = p.join(root.path, 'keys');
       final result = await cli(['init', '--out', out]);
       expect(result.exitCode, 0, reason: '${result.stderr}');
-      final report = jsonDecode(result.stdout as String) as Map;
       // Use the files exactly as written, trailing newline included.
-      final secret = File(report['private_key'] as String).readAsStringSync();
-      final public = File(report['public_key'] as String).readAsStringSync();
+      final patch = role(result, 'patch');
+      final secret = File(patch['private_key'] as String).readAsStringSync();
+      final public = File(patch['public_key'] as String).readAsStringSync();
       final work = Directory(p.join(root.path, 'work'))..createSync();
       final commands = Commands(root.path);
       final key = signingKey(secret, expectedPublic: public);
@@ -110,11 +119,11 @@ void main() {
     test('existing keys remain byte-for-byte unchanged on retry', () async {
       final out = p.join(root.path, 'keys');
       expect((await cli(['init', '--out', out])).exitCode, 0);
-      final before = File(p.join(out, 'private-key.base64')).readAsBytesSync();
+      final before = File(p.join(out, 'root', 'private-key.base64')).readAsBytesSync();
       final retry = await cli(['init', '--out', out]);
       expect(retry.exitCode, 2);
       expect(retry.stderr, contains('KEYS_OUTPUT_EXISTS'));
-      expect(File(p.join(out, 'private-key.base64')).readAsBytesSync(), before);
+      expect(File(p.join(out, 'root', 'private-key.base64')).readAsBytesSync(), before);
     });
     test('concurrent initializers have exactly one winner', () async {
       final out = p.join(root.path, 'keys');
@@ -125,7 +134,7 @@ void main() {
       expect(results.where((r) => r.exitCode == 0).length, 1);
       expect(results.where((r) => r.exitCode == 2).length, 1);
       expect(
-          base64Decode(File(p.join(out, 'private-key.base64'))
+          base64Decode(File(p.join(out, 'root', 'private-key.base64'))
                   .readAsStringSync()
                   .trim())
               .length,
@@ -144,16 +153,18 @@ void main() {
       final result =
           await cli(['init', '--out', out], environment: {'PATH': ''});
       expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(File(p.join(out, 'public-key.base64')).existsSync(), true);
+      expect(File(p.join(out, 'patch', 'public-key.base64')).existsSync(), true);
     });
-    test('default location uses HOME and never prints private material',
+    test('by default the project gets its keys and a settings template',
         () async {
-      final result = await cli(['init'], environment: {'HOME': root.path});
+      final result = await cli(['init'], workingDirectory: root.path);
       expect(result.exitCode, 0, reason: '${result.stderr}');
-      final file =
-          File(p.join(root.path, '.flutter_patcher/keys/private-key.base64'));
+      final file = File(p.join(
+          root.path, 'flutter_patcher_keys/publisher/private-key.base64'));
       expect(file.existsSync(), true);
       expect(result.stdout, isNot(contains(file.readAsStringSync().trim())));
+      expect(File(p.join(root.path, 'flutter_patcher.yaml')).readAsStringSync(),
+          contains('public_url'));
     });
   });
 }

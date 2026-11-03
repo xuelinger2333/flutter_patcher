@@ -1,5 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
+import '../core.dart';
+import '../project.dart';
 import '../publish/protocol.dart';
 import '../publish/trust.dart';
 
@@ -51,4 +56,84 @@ class HostPolicy {
   String get canonical => jsonEncode(
       {for (final key in fields.keys.toList()..sort()) key: fields[key]});
   String get digest => sha256.convert(utf8.encode(canonical)).toString();
+
+  /// A policy file a developer wrote: any JSON layout, all values strings.
+  factory HostPolicy.read(String text) {
+    require(text.length <= 16384, 'BUILD_CONFIG_INVALID',
+        'Host policy too large');
+    final value = jsonDecode(text);
+    require(value is Map && value.values.every((v) => v is String),
+        'BUILD_CONFIG_INVALID', 'A host policy is a JSON object of strings.');
+    return HostPolicy((value as Map).cast<String, String>());
+  }
+
+  /// The policy of a [project] built without one: the app identity and
+  /// build number its build gets, the project's keys, and one channel.
+  static Future<HostPolicy> of(String project, ProjectConfig config,
+      {required String platform,
+      String? applicationId,
+      String? versionCode,
+      String? flavor,
+      String? channel,
+      String? strategy}) async {
+    strategy ??= 'bytecode';
+    require(platform == 'android' || strategy == 'bytecode',
+        'BUILD_CONFIG_INVALID', 'An iOS host is a bytecode host.');
+    return HostPolicy({
+      'schema': '1',
+      'strategy': strategy,
+      'abi': platform == 'ios' ? 'ios-arm64' : 'arm64-v8a',
+      'application_id':
+          applicationId ?? await _applicationId(project, platform),
+      'version_code': versionCode ?? await buildNumber(project),
+      'flavor': flavor ?? 'default',
+      'channel': channel ?? 'production',
+      'root_key': await config.read('root'),
+      'fptc_key': await config.read('patch'),
+      'keys': 'release:${await config.read('publisher')}',
+    });
+  }
+}
+
+/// The build number of [project]'s pubspec version (`1.2.0+7` is 7): the
+/// versionCode and CFBundleVersion Flutter builds it with.
+Future<String> buildNumber(String project) async {
+  final pubspec = loadYaml(
+      await File(p.join(project, 'pubspec.yaml')).readAsString()) as Map;
+  final match =
+      RegExp(r'^[^+]+\+([1-9][0-9]*)$').firstMatch('${pubspec['version']}');
+  require(match != null, 'BUILD_CONFIG_INVALID',
+      'Give pubspec.yaml a build number (version: 1.0.0+1), or pass --version-code.');
+  return match!.group(1)!;
+}
+
+/// The one application id [project]'s Gradle or Xcode project declares.
+Future<String> _applicationId(String project, String platform) async {
+  final ids = <String>{};
+  if (platform == 'android') {
+    for (final name in ['build.gradle.kts', 'build.gradle']) {
+      final file = File(p.join(project, 'android', 'app', name));
+      if (!await file.exists()) continue;
+      for (final match in RegExp(r'''applicationId\s*=?\s*["']([^"'$]+)["']''')
+          .allMatches(await file.readAsString())) {
+        ids.add(match.group(1)!);
+      }
+    }
+  } else {
+    final file =
+        File(p.join(project, 'ios', 'Runner.xcodeproj', 'project.pbxproj'));
+    if (await file.exists()) {
+      for (final match in RegExp(r'PRODUCT_BUNDLE_IDENTIFIER = "?([^";$]+)"?;')
+          .allMatches(await file.readAsString())) {
+        if (!match.group(1)!.endsWith('.RunnerTests')) ids.add(match.group(1)!);
+      }
+    }
+  }
+  require(
+      ids.length == 1,
+      'BUILD_CONFIG_INVALID',
+      ids.isEmpty
+          ? 'Cannot find the application id; pass --application-id.'
+          : 'The project declares several application ids (${ids.join(', ')}); pass --application-id.');
+  return ids.single;
 }

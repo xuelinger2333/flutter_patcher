@@ -8,6 +8,11 @@ import '../sdk/host.dart';
 import '../sdk/environment.dart';
 import '../baseline/repository.dart';
 import '../baseline/store.dart';
+import '../build/host_policy.dart';
+import '../project.dart';
+import '../publish/pipeline.dart' show nextSequence;
+import '../publish/store.dart';
+import '../publish/transaction.dart';
 import 'pipeline.dart';
 
 Future<int> patchCommand(ArgResults args) async {
@@ -36,24 +41,12 @@ Future<int> patchCommand(ArgResults args) async {
     final offline = args['offline'] == true;
     final project =
         p.absolute(args['project'] as String? ?? Directory.current.path);
-    final request = PatchRequest(
-        project: project,
-        fingerprint: args['fingerprint'] as String?,
-        flavor: args['flavor'] as String? ?? 'default',
-        privateKey: await File(value('private-key')).readAsString(),
-        output: p.absolute(args['out'] as String? ??
-            p.join(project, '.dart_tool/flutter_patcher/patches',
-                DateTime.now().microsecondsSinceEpoch.toString())),
-        seq: int.tryParse(value('seq')) ?? -1,
-        minBuild: int.tryParse(value('version-code')) ?? -1,
-        previousSeq: args['previous-seq'] == null
-            ? null
-            : int.tryParse(value('previous-seq')) ?? -1,
-        target: args['target'] as String,
-        assets: (args['assets'] as List).cast<String>(),
-        platform: platform,
-        offline: offline);
-    await request.validate();
+    final config = await ProjectConfig.load(project);
+    final flavor = args['flavor'] as String? ?? 'default';
+    // The host this patch is for: by default the build this project builds.
+    final versionCode =
+        args['version-code'] as String? ?? await buildNumber(project);
+    final abi = platform == 'ios' ? 'ios-arm64' : 'arm64-v8a';
     await rejectLinks(p.join(cache, 'doctor.lock'));
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);
     await lock.lock(FileLock.blockingExclusive);
@@ -68,12 +61,36 @@ Future<int> patchCommand(ArgResults args) async {
         p.join(cache, 'baselines'),
         offline
             ? null
-            : BaselineStore.open(Uri.parse(value('baseline-store')), commands));
-    final resolved = await baselines.resolve(
-        request.flavor, request.minBuild.toString(),
-        abi: request.abi,
-        expectedFingerprint: request.fingerprint,
+            : BaselineStore.open(
+                Uri.parse(
+                    args['baseline-store'] as String? ?? config.baselineStore),
+                commands));
+    final resolved = await baselines.resolve(flavor, versionCode,
+        abi: abi,
+        expectedFingerprint: args['fingerprint'] as String?,
         sdkRoot: sdk.root);
+    final request = PatchRequest(
+        project: project,
+        fingerprint: args['fingerprint'] as String?,
+        flavor: flavor,
+        privateKey: await File(args['private-key'] as String? ??
+                config.key('patch', private: true))
+            .readAsString(),
+        output: p.absolute(args['out'] as String? ??
+            p.join(project, '.dart_tool/flutter_patcher/patches',
+                DateTime.now().microsecondsSinceEpoch.toString())),
+        seq: args['seq'] == null
+            ? await _nextSequence(config, resolved, commands, cache)
+            : int.tryParse(value('seq')) ?? -1,
+        minBuild: int.tryParse(versionCode) ?? -1,
+        previousSeq: args['previous-seq'] == null
+            ? null
+            : int.tryParse(value('previous-seq')) ?? -1,
+        target: args['target'] as String,
+        assets: (args['assets'] as List).cast<String>(),
+        platform: platform,
+        offline: offline);
+    await request.validate();
     // A patch uses the releases its host was built with, never newer ones.
     final store = ArtifactStore(
         cache,
@@ -121,5 +138,25 @@ Future<int> patchCommand(ArgResults args) async {
       await lock.unlock();
       await lock.close();
     }
+  }
+}
+
+/// The next sequence the configured publication store accepts for
+/// [resolved]'s fingerprint.
+Future<int> _nextSequence(ProjectConfig config, ResolvedRelease resolved,
+    Commands commands, String cache) async {
+  final store = config['store'];
+  require(store != null, 'PATCH_CONFIG_INVALID',
+      'Pass --seq, or set store in ${ProjectConfig.file} so the next sequence '
+      'is read from what was published.');
+  final work = await Directory(cache).createTemp('patch-seq-');
+  try {
+    final catalog = await PublicationTransaction(
+            openPublishStore(Uri.parse(store!), commands, work.path),
+            resolved.receipt['application_id'] as String)
+        .snapshot();
+    return nextSequence(catalog, resolved.fingerprint);
+  } finally {
+    await work.delete(recursive: true);
   }
 }
