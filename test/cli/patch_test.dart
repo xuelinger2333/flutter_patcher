@@ -5,6 +5,7 @@ import 'package:test/test.dart';
 import 'host_tools.dart';
 import 'package:path/path.dart' as p;
 import 'package:archive/archive.dart';
+import 'package:flutter_patcher/src/bootstrap/patch_archive.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/patch/sources.dart';
 import 'package:flutter_patcher/src/cli/patch/package.dart';
@@ -139,6 +140,9 @@ void main() {
             .decodeBytes(bytes.sublist(146))
             .every((f) => f.compression == CompressionType.none),
         true);
+    // The device's strict reader accepts what the CLI writes.
+    expect(readPatchArchive(Uint8List.sublistView(bytes, 146)).keys,
+        ['module.bc', 'patch_manifest.json']);
     expect(await File(p.join(root, 'signing-key.der')).exists(), false);
     final signed = File(p.join(root, 'signed.bin'));
     final damaged = await signed.readAsBytes();

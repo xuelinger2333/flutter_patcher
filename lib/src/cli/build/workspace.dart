@@ -63,6 +63,14 @@ class BuildWorkspace {
         final relative =
             p.relative(entry.path, from: original).replaceAll('\\', '/');
         if (skipped(relative)) continue;
+        // A dependency's nested package, such as its example app and that
+        // app's build outputs, is not part of it; one it depends on by path
+        // is copied on its own.
+        if (!application &&
+            entry is Directory &&
+            await File(p.join(entry.path, 'pubspec.yaml')).exists()) {
+          continue;
+        }
         if (entry is Directory) {
           rejectCaseVariant(
               p.basename(entry.path),

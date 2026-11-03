@@ -52,6 +52,9 @@ void main() {
     }
     await File(p.join(root, 'app/pubspec.yaml'))
         .writeAsString('name: app\ndependencies:\n  dep:\n    path: ../dep\n');
+    await Directory(p.join(root, 'dep/example/build')).create(recursive: true);
+    await File(p.join(root, 'dep/example/pubspec.yaml'))
+        .writeAsString('name: example\n');
     await File(p.join(root, 'app/pubspec_overrides.yaml')).writeAsString(
         'dependency_overrides:\n  dep:\n    path: ../override\n');
     await File(p.join(root, 'app/pubspec.lock')).writeAsString(jsonEncode({
@@ -71,6 +74,11 @@ void main() {
           isNot(contains('../')));
     }
     expect(work.copies.length, 3);
+    // The dependency's example app is not part of the dependency.
+    expect(
+        await Directory(p.join(work.copies[p.join(root, 'dep')]!, 'example'))
+            .exists(),
+        false);
     final locked =
         jsonDecode(await File(p.join(copy, 'pubspec.lock')).readAsString())
             as Map;
