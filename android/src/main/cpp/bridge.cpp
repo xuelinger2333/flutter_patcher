@@ -1,6 +1,6 @@
 // Bounded asynchronous bootstrap transport. Kotlin remains the only patch manager.
 #include <jni.h>
-#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -19,7 +19,8 @@ std::mutex mutex;
 using Clock=std::chrono::steady_clock;
 // Microseconds a worker spent: waiting to start, attaching, in Kotlin, copying the response.
 constexpr int span_count=4;
-struct Task { std::vector<uint8_t> bytes; int state=0; bool input=false; bool cancelled=false; int64_t spans[span_count]={-1,-1,-1,-1}; };
+using Spans=std::array<int64_t,span_count>;
+struct Task { std::vector<uint8_t> bytes; int state=0; bool input=false; bool cancelled=false; Spans spans{-1,-1,-1,-1}; };
 std::unordered_map<uint64_t,std::shared_ptr<Task>> tasks;
 uint64_t sequence=1;
 int workers=0;
@@ -28,7 +29,7 @@ int64_t micros(Clock::time_point from,Clock::time_point to) {
     return std::chrono::duration_cast<std::chrono::microseconds>(to-from).count();
 }
 void work(std::shared_ptr<Task> task,std::vector<uint8_t> request,Clock::time_point queued) {
-    int64_t spans[span_count]={-1,-1,-1,-1};
+    Spans spans=task->spans;
     auto mark=Clock::now();
     spans[0]=micros(queued,mark);
     JNIEnv* env=nullptr;
@@ -75,7 +76,7 @@ void work(std::shared_ptr<Task> task,std::vector<uint8_t> request,Clock::time_po
     --workers;
     if(!task->cancelled) {
         task->bytes=std::move(response);task->state=success && !disabled?1:-1;
-        std::copy(spans,spans+span_count,task->spans);
+        task->spans=spans;
     }
 }
 }

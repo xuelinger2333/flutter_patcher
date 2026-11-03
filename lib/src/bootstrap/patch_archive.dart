@@ -127,13 +127,9 @@ VerifiedPatch verifyPatchBytes(
 /// Consumes a private snapshot returned by native-bytes-v1 bootPayload.
 /// Native must already have authenticated these exact bytes. This is NOT an
 /// untrusted-file verifier; callers with file bytes must use verifyPatchBytes.
-/// All ZIP/manifest consistency checks remain mandatory for signed input too.
-///
-/// [checkedEntries] is the offer's `entries`: archive path to the envelope
-/// offset and length of each entry whose ZIP CRC and listed digest native
-/// checked in this same snapshot, reading the archive with these rules. Only
-/// an entry this parser selects at exactly that range skips those two checks;
-/// every other entry, and every other check, runs here.
+/// All ZIP/manifest consistency checks remain mandatory for signed input too;
+/// an entry selected at exactly a range in the offer's [checkedEntries] skips
+/// only the CRC and digest native checked (doc/bootstrap-performance-budget.md).
 VerifiedPatch parseAuthenticatedPatchBytes(Uint8List bytes, String fingerprint,
         {Object? checkedEntries, Map<String, int>? profile}) =>
     _parsePatch(bytes, fingerprint, null,
@@ -187,7 +183,7 @@ VerifiedPatch _parsePatch(
   }
 
   final entries = readPatchArchive(payload,
-      profile: profile, checked: checked == null ? null : native);
+      profile: profile, checked: native);
   mark('zip_total_us');
   bootRequire(
       entries.containsKey('module.bc') &&
@@ -218,7 +214,7 @@ VerifiedPatch _parsePatch(
     final data = content!;
     bootRequire(
         row['length'] is int && row['length'] == data.length, 'Entry digest');
-    if (checked != null && native(path, data)) {
+    if (native(path, data)) {
       vouched++;
       return data;
     }
