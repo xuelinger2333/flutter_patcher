@@ -66,8 +66,7 @@ class FlutterPatcher {
       );
 
   /// Authenticate, download and commit a publication, or persist a withdrawal.
-  /// Requires a host built with `flutter_patcher build`. Failure never enables
-  /// legacy mode.
+  /// Requires a host built with `flutter_patcher build`.
   ///
   /// A publication needs its patch: [payload] when the app fetched it itself,
   /// for example from its own server, or else [baseUrl], the store URL the
@@ -132,7 +131,6 @@ class FlutterPatcher {
   }
 
   static bool _inited = false;
-  static bool _bootReported = false;
   static bool _bootErrorReported = false;
   static bool _unsupportedWarned = false;
 
@@ -195,7 +193,9 @@ class FlutterPatcher {
     }();
   }
 
-  /// Initializes patch configuration and crash protection.
+  /// Configures crash protection. A patched start is confirmed natively at
+  /// its first frame; uncaught Dart errors still count as a failed start for
+  /// [verifyAfter] after it.
   ///
   /// Call this in `main()` before `runApp()`. The method is idempotent.
   ///
@@ -218,12 +218,6 @@ class FlutterPatcher {
     _inited = true;
     _verifyAfter = verifyAfter;
 
-    try {
-      await PatcherChannel.markBooting();
-    } catch (e, s) {
-      _log('markBooting failed: $e', s);
-    }
-
     _installBootErrorCatchers();
 
     try {
@@ -237,21 +231,6 @@ class FlutterPatcher {
     }
 
     _BootVerifier.start();
-  }
-
-  /// Marks the current patched boot as successful and clears native crash
-  /// protection state.
-  ///
-  /// Usually called automatically by [init] after the first frame.
-  static Future<void> reportBootSuccess() async {
-    if (_unsupportedGuard('reportBootSuccess')) return;
-    if (_bootReported) return;
-    _bootReported = true;
-    try {
-      await PatcherChannel.reportBootSuccess();
-    } catch (e, s) {
-      _log('reportBootSuccess failed: $e', s);
-    }
   }
 
   /// Checks the store `flutter_patcher publish` writes, served at [url]: an
@@ -364,7 +343,7 @@ class FlutterPatcher {
     }
   }
 
-  /// Deletes the current patch. The next cold start uses the APK built-in
+  /// Deletes the current patch. The next cold start runs the app's built-in
   /// version. Manual rollback does not blacklist the patch.
   static Future<void> rollback() async {
     if (_unsupportedGuard('rollback')) return;
@@ -519,8 +498,6 @@ class _BootVerifier with WidgetsBindingObserver {
   }
 
   void _begin() {
-    FlutterPatcher.reportBootSuccess();
-
     final binding = WidgetsBinding.instance;
     binding.addObserver(this);
     final state = binding.lifecycleState;

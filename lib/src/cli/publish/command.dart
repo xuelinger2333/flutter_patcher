@@ -39,7 +39,7 @@ ArgParser publishOptions() => ArgParser()
     negatable: false,
     help:
         'Withdraw that patch\'s release instead: devices remove its '
-        'patches at their next update check.',
+        'patches when the app next applies updates.',
   )
   ..addOption(
     'through',

@@ -68,10 +68,10 @@ class PatchBootDiagnostic {
   /// Patch target versionCode, mainly used for version mismatch diagnostics.
   final int? patchTargetVersionCode;
 
-  /// Current host APK versionCode.
+  /// The installed app's build number: Android versionCode, iOS CFBundleVersion.
   final int? appVersionCode;
 
-  /// Crash count when the circuit breaker tripped.
+  /// Failed starts counted for the patch, for a failed start or a tripped circuit breaker.
   final int? crashCount;
 
   /// FlutterInjector loader field candidates attempted when hook install failed.

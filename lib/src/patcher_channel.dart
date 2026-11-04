@@ -21,16 +21,6 @@ class PatcherChannel {
     });
   }
 
-  /// Dart init 最开头调用：字节码宿主据此开始本次启动尝试。
-  static Future<void> markBooting() async {
-    await channel.invokeMethod<void>('markBooting');
-  }
-
-  /// Dart 首帧完成 → 确认本次补丁启动成功。
-  static Future<void> reportBootSuccess() async {
-    await channel.invokeMethod<void>('reportBootSuccess');
-  }
-
   /// 引导阶段 Dart 层未捕获异常上报。原生侧把它当成一次启动失败：达到阈值则
   /// 熔断、回滚并拉黑当前补丁。
   ///

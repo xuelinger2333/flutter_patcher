@@ -49,9 +49,8 @@ class PatchApplyProgress {
   /// Meaningful only when [phase] is [PatchApplyPhase.downloading].
   final int bytesReceived;
 
-  /// Meaningful only when [phase] is [PatchApplyPhase.downloading].
-  ///
-  /// `-1` means the server did not provide `Content-Length`.
+  /// The signed patch size. Meaningful only when [phase] is
+  /// [PatchApplyPhase.downloading].
   final int totalBytes;
 
   const PatchApplyProgress({
@@ -92,8 +91,8 @@ class PatchApplyProgress {
 
 /// Classified failure reason for `FlutterPatcher.applyPatch`.
 enum PatchApplyError {
-  /// Not a [PatchInfo] from `checkUpdate`, or metadata that differs from the
-  /// signed payload.
+  /// Not a [PatchInfo] from `checkUpdate`, a patch whose sequence or hash
+  /// differs from its manifest, or a sequence this device already installed.
   invalidArgs,
 
   /// The payload is in the local bad-patch blacklist after a failed start.
@@ -173,7 +172,7 @@ class PatchApplyResult {
 
 /// Result returned by `FlutterPatcher.checkUpdate`.
 class PatchCheckResult {
-  /// Whether a new patch is available.
+  /// Whether there is an update to apply: a new patch or a withdrawal.
   final bool hasUpdate;
 
   /// Patch metadata. Null when [hasUpdate] is false.

@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-/// 本地补丁黑名单条目，与原生侧 `CandidateStore.blacklist()` 返回的结构一一对应。
+/// A patch blacklisted on this device after its starts failed.
 ///
-/// 业务侧通常用法：
+/// For example:
 /// ```dart
 /// final entries = await FlutterPatcher.blacklist;
 /// for (final e in entries) {
@@ -11,14 +11,14 @@ import 'package:flutter/foundation.dart';
 /// ```
 @immutable
 class BlacklistEntry {
-  /// 入黑补丁的标识：`<宿主指纹>:<补丁序号>:<补丁 SHA-256>`。
+  /// The patch: `<host fingerprint>:<sequence>:<patch SHA-256>`.
   final String version;
 
-  /// 入黑原因（原生常量，跨边界用字符串而非 enum 保留前向兼容）。
-  /// 当前只有 `BOOT_CRASH`：启动失败次数达到 `maxCrashCount`，触发熔断。
+  /// Why it was blacklisted, as a string so newer reasons stay readable.
+  /// Currently always `BOOT_CRASH`: its starts failed `maxCrashCount` times.
   final String reason;
 
-  /// 入黑时间。
+  /// When it was blacklisted.
   final DateTime blacklistedAt;
 
   const BlacklistEntry({
