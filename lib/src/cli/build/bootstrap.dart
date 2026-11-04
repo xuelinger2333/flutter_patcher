@@ -40,7 +40,7 @@ String bootstrapSource(
   );
   final library = jsonEncode('package:$package/$entry').replaceAll(r'$', r'\$');
   final loader = modules ? ', loadModule: loadModule' : '';
-  return "import 'package:flutter_patcher/flutter_patcher.dart';\n"
+  return "import 'package:flutter_patcher/src/patch_bootstrap.dart';\n"
       '${modules ? "import 'package:dynamic_modules/dynamic_modules.dart';\n"
                 "import 'package:dynamic_modules/host.dart' as host;\n" : ''}'
       'import $library as app;\n'

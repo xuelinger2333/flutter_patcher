@@ -15,7 +15,6 @@ import 'src/signed_manifest.dart';
 export 'src/blacklist.dart';
 export 'src/boot_diagnostic.dart';
 export 'src/patch_info.dart';
-export 'src/patch_bootstrap.dart';
 export 'src/signed_manifest.dart';
 
 /// Flutter hot-update entrypoint for Android and iOS.
