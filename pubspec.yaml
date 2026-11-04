@@ -14,8 +14,8 @@ topics:
   - ota-update
 
 environment:
-  sdk: '>=3.12.0 <4.0.0'
-  flutter: '>=3.44.0'
+  sdk: '>=3.13.0 <4.0.0'
+  flutter: '>=3.47.0'
 
 # The command-line tool (bin/flutter_patcher.dart, `dart run flutter_patcher`)
 # needs args, archive, path and yaml; the app code never imports them.
