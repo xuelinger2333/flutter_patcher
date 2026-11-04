@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'patch_info.dart';
 
 /// Native result distinguishes withdrawing a candidate from installing one.
@@ -37,7 +38,7 @@ class SignedManifest {
     final signature = base64.decode(json['signature'] as String);
     final canonical = jsonEncode({
       'payload': base64.encode(payload),
-      'signature': base64.encode(signature)
+      'signature': base64.encode(signature),
     });
     if (signature.length != 64 ||
         payload.isEmpty ||
@@ -46,6 +47,9 @@ class SignedManifest {
       throw const FormatException('Noncanonical envelope');
     }
     return SignedManifest._(
-        wire, List.unmodifiable(payload), List.unmodifiable(signature));
+      wire,
+      List.unmodifiable(payload),
+      List.unmodifiable(signature),
+    );
   }
 }

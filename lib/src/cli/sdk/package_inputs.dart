@@ -1,27 +1,35 @@
 import 'dart:io';
 import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
+
 import '../core.dart';
 
 /// Portable dependency identity, including native plugin sources unavailable
 /// in the Dart kernel. Recorded at build time; patch cannot invent it later.
-Future<Map<String, dynamic>> packageInputs(String config,
-    {String? application}) async {
+Future<Map<String, dynamic>> packageInputs(
+  String config, {
+  String? application,
+}) async {
   final data = await readObject(config), inputs = <String, dynamic>{};
   for (final row in data['packages'] as List) {
     final root = File(config).absolute.uri.resolve(
-        '${(row['rootUri'] as String).replaceFirst(RegExp(r'/+$'), '')}/');
+      '${(row['rootUri'] as String).replaceFirst(RegExp(r'/+$'), '')}/',
+    );
     final spec = File.fromUri(root.resolve('pubspec.yaml'));
-    require(await spec.exists(), 'PACKAGE_INPUT_INVALID',
-        'Package pubspec is missing: ${row['name']}');
+    require(
+      await spec.exists(),
+      'PACKAGE_INPUT_INVALID',
+      'Package pubspec is missing: ${row['name']}',
+    );
     final yaml = loadYaml(await spec.readAsString()) as Map;
     final portable = jsonDecode(jsonEncode(yaml)) as Map;
     for (final section in [
       'dependencies',
       'dev_dependencies',
-      'dependency_overrides'
+      'dependency_overrides',
     ]) {
       final deps = portable[section];
       if (deps is Map) {
@@ -43,9 +51,9 @@ Future<Map<String, dynamic>> packageInputs(String config,
         'darwin',
         'linux',
         'macos',
-        'windows'
+        'windows',
       ],
-      'hook'
+      'hook',
     ]) {
       final dir = Directory.fromUri(root.resolve('$part/'));
       if (!await dir.exists()) continue;
@@ -77,23 +85,31 @@ Future<Map<String, dynamic>> packageInputs(String config,
             'generated_plugins.cmake',
             'Generated.xcconfig',
             'flutter_export_environment.sh',
-            'ephemeral'
+            'ephemeral',
           ].contains(p.basename(file.path))) {
             continue;
           }
-          require(file is! Link, 'PACKAGE_INPUT_INVALID',
-              'Native package contains a symlink');
+          require(
+            file is! Link,
+            'PACKAGE_INPUT_INVALID',
+            'Native package contains a symlink',
+          );
           if (file is Directory) {
-            rejectCaseVariant(
-                p.basename(file.path),
-                const ['build', '.gradle', '.dart_tool', '.git', '.cxx'],
-                'PACKAGE_INPUT_INVALID');
+            rejectCaseVariant(p.basename(file.path), const [
+              'build',
+              '.gradle',
+              '.dart_tool',
+              '.git',
+              '.cxx',
+            ], 'PACKAGE_INPUT_INVALID');
             await visit(file);
           }
           if (file is File) {
             files[p
                 .relative(file.path, from: root.toFilePath())
-                .replaceAll('\\', '/')] = await hashFile(file.path);
+                .replaceAll('\\', '/')] = await hashFile(
+              file.path,
+            );
           }
         }
       }
@@ -113,15 +129,16 @@ Future<Map<String, dynamic>> packageInputs(String config,
       }
     }
     inputs[row['name'] as String] = {
-      'pubspec_sha256':
-          sha256.convert(utf8.encode(jsonEncode(portable))).toString(),
+      'pubspec_sha256': sha256
+          .convert(utf8.encode(jsonEncode(portable)))
+          .toString(),
       'version': '${yaml['version']}',
       'native': native,
       'native_files': {
-        for (final k in files.keys.toList()..sort()) k: files[k]
+        for (final k in files.keys.toList()..sort()) k: files[k],
       },
       if (row['name'] == application)
-        'dart_files': {for (final k in dart.keys.toList()..sort()) k: dart[k]}
+        'dart_files': {for (final k in dart.keys.toList()..sort()) k: dart[k]},
     };
   }
   return inputs;

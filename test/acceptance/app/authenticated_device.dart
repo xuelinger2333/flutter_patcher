@@ -9,6 +9,7 @@
 // iOS app, so the container comes from fixture_support (host-side FFI).
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fixture_support/fixture_support.dart';
@@ -64,9 +65,8 @@ Future<void> main() async {
   if (Platform.isIOS) {
     final documents = '${iosHome()}/Documents';
     // Evidence of how far a launch got when no result appears.
-    await File(
-      '$documents/flutter_patcher_started.json',
-    ).writeAsString(jsonEncode({'revision': revision}));
+    await File('$documents/flutter_patcher_started.json')
+        .writeAsString(jsonEncode({'revision': revision}));
     final command = File('$documents/flutter_patcher_command.json');
     if (!await command.exists()) return;
     final request = jsonDecode(await command.readAsString()) as Map;
@@ -85,9 +85,8 @@ Future<void> main() async {
     } catch (e) {
       out = {'http': HttpStatus.conflict, 'error': '$e'};
     }
-    await File(
-      '$documents/flutter_patcher_test.json',
-    ).writeAsString(jsonEncode({'id': request['id'], 'result': out}));
+    await File('$documents/flutter_patcher_test.json')
+        .writeAsString(jsonEncode({'id': request['id'], 'result': out}));
     return;
   }
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 8767);

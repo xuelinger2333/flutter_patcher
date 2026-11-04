@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/host.dart';
@@ -19,10 +21,11 @@ Future<int> patchCommand(ArgResults args) async {
   RandomAccessFile? lock;
   try {
     require(
-        args.rest.length == 1 &&
-            const ['android', 'ios'].contains(args.rest.single),
-        'USAGE_ERROR',
-        'Use patch android or patch ios');
+      args.rest.length == 1 &&
+          const ['android', 'ios'].contains(args.rest.single),
+      'USAGE_ERROR',
+      'Use patch android or patch ios',
+    );
     // iOS patches compile Dart only, so every supported host makes them.
     final platform = args.rest.single;
 
@@ -30,7 +33,10 @@ Future<int> patchCommand(ArgResults args) async {
     String value(String name) {
       final v = args[name] as String?;
       require(
-          v != null && v.isNotEmpty, 'PATCH_CONFIG_INVALID', 'Missing --$name');
+        v != null && v.isNotEmpty,
+        'PATCH_CONFIG_INVALID',
+        'Missing --$name',
+      );
       return v!;
     }
 
@@ -39,8 +45,9 @@ Future<int> patchCommand(ArgResults args) async {
     await Directory(cache).create(recursive: true);
     final commands = Commands(cache);
     final offline = args['offline'] == true;
-    final project =
-        p.absolute(args['project'] as String? ?? Directory.current.path);
+    final project = p.absolute(
+      args['project'] as String? ?? Directory.current.path,
+    );
     final config = await ProjectConfig.load(project);
     final flavor = args['flavor'] as String? ?? 'default';
     // The host this patch is for: by default the build this project builds.
@@ -51,71 +58,90 @@ Future<int> patchCommand(ArgResults args) async {
     lock = await File(p.join(cache, 'doctor.lock')).open(mode: FileMode.append);
     await lock.lock(FileLock.blockingExclusive);
     final sdk = await identify(
-        await Directory(findFlutter(args['flutter-sdk'] as String?))
-            .resolveSymbolicLinks(),
-        commands);
-    require(sdk.root != p.join(cache, 'flutter', sdk.version), 'CONFIG_INVALID',
-        'Select the stock SDK');
+      await Directory(findFlutter(args['flutter-sdk'] as String?))
+          .resolveSymbolicLinks(),
+      commands,
+    );
+    require(
+      sdk.root != p.join(cache, 'flutter', sdk.version),
+      'CONFIG_INVALID',
+      'Select the stock SDK',
+    );
     trace('identify sdk');
     final baselines = BaselineRepository(
-        p.join(cache, 'baselines'),
-        offline
-            ? null
-            : BaselineStore.open(
-                Uri.parse(
-                    args['baseline-store'] as String? ?? config.baselineStore),
-                commands));
-    final resolved = await baselines.resolve(flavor, versionCode,
-        abi: abi,
-        expectedFingerprint: args['fingerprint'] as String?,
-        sdkRoot: sdk.root);
+      p.join(cache, 'baselines'),
+      offline
+          ? null
+          : BaselineStore.open(
+              Uri.parse(
+                args['baseline-store'] as String? ?? config.baselineStore,
+              ),
+              commands,
+            ),
+    );
+    final resolved = await baselines.resolve(
+      flavor,
+      versionCode,
+      abi: abi,
+      expectedFingerprint: args['fingerprint'] as String?,
+      sdkRoot: sdk.root,
+    );
     final request = PatchRequest(
-        project: project,
-        fingerprint: args['fingerprint'] as String?,
-        flavor: flavor,
-        privateKey: await File(args['private-key'] as String? ??
-                config.key('patch', private: true))
-            .readAsString(),
-        output: p.absolute(args['out'] as String? ??
-            p.join(project, '.dart_tool/flutter_patcher/patches',
-                DateTime.now().microsecondsSinceEpoch.toString())),
-        seq: args['seq'] == null
-            ? await _nextSequence(config, resolved, commands, cache)
-            : int.tryParse(value('seq')) ?? -1,
-        minBuild: int.tryParse(versionCode) ?? -1,
-        previousSeq: args['previous-seq'] == null
-            ? null
-            : int.tryParse(value('previous-seq')) ?? -1,
-        target: args['target'] as String,
-        assets: (args['assets'] as List).cast<String>(),
-        platform: platform,
-        offline: offline);
+      project: project,
+      fingerprint: args['fingerprint'] as String?,
+      flavor: flavor,
+      privateKey: await File(
+        args['private-key'] as String? ?? config.key('patch', private: true),
+      ).readAsString(),
+      output: p.absolute(
+        args['out'] as String? ??
+            p.join(
+              project,
+              '.dart_tool/flutter_patcher/patches',
+              DateTime.now().microsecondsSinceEpoch.toString(),
+            ),
+      ),
+      seq: args['seq'] == null
+          ? await _nextSequence(config, resolved, commands, cache)
+          : int.tryParse(value('seq')) ?? -1,
+      minBuild: int.tryParse(versionCode) ?? -1,
+      previousSeq: args['previous-seq'] == null
+          ? null
+          : int.tryParse(value('previous-seq')) ?? -1,
+      target: args['target'] as String,
+      assets: (args['assets'] as List).cast<String>(),
+      platform: platform,
+      offline: offline,
+    );
     await request.validate();
     // A patch uses the releases its host was built with, never newer ones.
     final store = ArtifactStore(
-        cache,
-        Uri.parse(args['artifacts-url'] as String),
-        Uri.parse(args['index-url'] as String),
-        Downloads(offline: offline))
-      ..select(builtWith(resolved));
+      cache,
+      Uri.parse(args['artifacts-url'] as String),
+      Uri.parse(args['index-url'] as String),
+      Downloads(offline: offline),
+    )..select(builtWith(resolved));
     // The Android engine serves only SO rebuilds; an iOS patch needs none.
-    final engine =
-        platform == 'android' ? await store.obtain('engine', sdk) : null;
+    final engine = platform == 'android'
+        ? await store.obtain('engine', sdk)
+        : null;
     await store.obtain('tools', sdk);
     trace('artifacts');
-    final managed = await EnvironmentBuilder(cache, commands, offline: offline)
-        .prepare(sdk, store, android: engine);
+    final managed = await EnvironmentBuilder(
+      cache,
+      commands,
+      offline: offline,
+    ).prepare(sdk, store, android: engine);
     trace('managed sdk');
     final result = await PatchPipeline(
-            commands,
-            sdk,
-            managed,
-            store.file(
-                sdk, 'tools', 'flutter_patcher_tools-${sdk.version}.dill'),
-            cache,
-            baselines,
-            engine: engine)
-        .patch(request, resolved);
+      commands,
+      sdk,
+      managed,
+      store.file(sdk, 'tools', 'flutter_patcher_tools-${sdk.version}.dill'),
+      cache,
+      baselines,
+      engine: engine,
+    ).patch(request, resolved);
     for (final warning in result['warnings'] as List? ?? const []) {
       stderr.writeln('WARNING: ${warning['code']}: ${warning['message']}');
     }
@@ -125,13 +151,15 @@ Future<int> patchCommand(ArgResults args) async {
     final failure = error is Failure
         ? error
         : unexpectedFailure('PATCH_FAILED', 'Patch', error);
-    stderr.writeln(jsonEncode({
-      'command': 'patch',
-      'status': 'failed',
-      'code': failure.code,
-      'message': failure.message,
-      if (failure is PatchFailure) 'details': failure.details
-    }));
+    stderr.writeln(
+      jsonEncode({
+        'command': 'patch',
+        'status': 'failed',
+        'code': failure.code,
+        'message': failure.message,
+        if (failure is PatchFailure) 'details': failure.details,
+      }),
+    );
     return 2;
   } finally {
     if (lock != null) {
@@ -143,15 +171,19 @@ Future<int> patchCommand(ArgResults args) async {
 
 /// The next sequence the project's publication store accepts for
 /// [resolved]'s fingerprint.
-Future<int> _nextSequence(ProjectConfig config, ResolvedRelease resolved,
-    Commands commands, String cache) async {
+Future<int> _nextSequence(
+  ProjectConfig config,
+  ResolvedRelease resolved,
+  Commands commands,
+  String cache,
+) async {
   final store = config.store;
   final work = await Directory(cache).createTemp('patch-seq-');
   try {
     final catalog = await PublicationTransaction(
-            openPublishStore(Uri.parse(store), commands, work.path),
-            resolved.receipt['application_id'] as String)
-        .snapshot();
+      openPublishStore(Uri.parse(store), commands, work.path),
+      resolved.receipt['application_id'] as String,
+    ).snapshot();
     return nextSequence(catalog, resolved.fingerprint);
   } finally {
     await work.delete(recursive: true);

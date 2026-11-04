@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'protocol.dart';
 
 /// Complete publication key set, authorized only by the host's trust root.
@@ -12,7 +13,7 @@ class TrustUpdate {
     'version_code',
     'abi',
     'fingerprint',
-    'strategy'
+    'strategy',
   };
   final Map<String, String> fields;
   TrustUpdate(Map<String, String> values) : fields = Map.unmodifiable(values) {
@@ -59,15 +60,16 @@ class TrustUpdate {
     return keys;
   }
 
-  String get canonical => jsonEncode(
-      {for (final key in fields.keys.toList()..sort()) key: fields[key]});
+  String get canonical => jsonEncode({
+    for (final key in fields.keys.toList()..sort()) key: fields[key],
+  });
   Uint8List get signingBytes =>
       Uint8List.fromList(utf8.encode('$domain$canonical'));
   String envelope(List<int> signature) {
     if (signature.length != 64) throw const FormatException('Signature size');
     return jsonEncode({
       'payload': base64Encode(utf8.encode(canonical)),
-      'signature': base64Encode(signature)
+      'signature': base64Encode(signature),
     });
   }
 }

@@ -24,13 +24,16 @@ Failure unexpectedFailure(String code, String what, Object error) {
     final os = error.osError;
     if (os != null && _diskFull(os.errorCode)) return _noSpace(error.path);
     final path = error.path == null ? '' : ': ${error.path}';
-    final reason =
-        os == null ? '' : ' (${os.message.trim()}, error ${os.errorCode})';
+    final reason = os == null
+        ? ''
+        : ' (${os.message.trim()}, error ${os.errorCode})';
     return Failure(code, '$what failed: ${error.message}$path$reason.');
   }
   if (error is ProcessException) {
-    return Failure(code,
-        '$what failed: cannot run ${error.executable}: ${error.message.trim()}.');
+    return Failure(
+      code,
+      '$what failed: cannot run ${error.executable}: ${error.message.trim()}.',
+    );
   }
   return Failure(code, '$what failed (${error.runtimeType}).');
 }
@@ -38,7 +41,11 @@ Failure unexpectedFailure(String code, String what, Object error) {
 /// The failure of a step that exited with [result]: [code], with the last
 /// lines the step printed, or `DISK_FULL` when it ran out of space.
 Failure stepFailure(
-    String code, String what, CommandResult result, String evidence) {
+  String code,
+  String what,
+  CommandResult result,
+  String evidence,
+) {
   final lines = '${result.stdout}\n${result.stderr}'
       .split('\n')
       .map((line) => line.trim())
@@ -55,20 +62,23 @@ Failure stepFailure(
   }
   final tail = [
     for (final line in lines.skip(lines.length > 2 ? lines.length - 2 : 0))
-      line.length > 300 ? '${line.substring(0, 300)}...' : line
+      line.length > 300 ? '${line.substring(0, 300)}...' : line,
   ].join(' | ');
-  return Failure(code,
-      '$what failed (exit ${result.exitCode})${tail.isEmpty ? '' : ': $tail'}; evidence: $evidence');
+  return Failure(
+    code,
+    '$what failed (exit ${result.exitCode})${tail.isEmpty ? '' : ': $tail'}; evidence: $evidence',
+  );
 }
 
 bool _diskFull(int errno) =>
     Platform.isWindows ? errno == 112 || errno == 39 : errno == 28;
 
 Failure _noSpace(String? path, {String? evidence}) => Failure(
-    'DISK_FULL',
-    'No space left on the device${path == null ? '' : ' writing $path'}; '
-        'free space and retry.'
-        '${evidence == null ? '' : ' Evidence: $evidence'}');
+  'DISK_FULL',
+  'No space left on the device${path == null ? '' : ' writing $path'}; '
+      'free space and retry.'
+      '${evidence == null ? '' : ' Evidence: $evidence'}',
+);
 void require(bool condition, String code, String message) {
   if (!condition) throw Failure(code, message);
 }
@@ -79,8 +89,11 @@ void require(bool condition, String code, String message) {
 void rejectCaseVariant(String name, Iterable<String> excluded, String code) {
   final lower = name.toLowerCase();
   for (final reserved in excluded) {
-    require(name == reserved || lower != reserved.toLowerCase(), code,
-        'Directory "$name" differs from the excluded "$reserved" only by case.');
+    require(
+      name == reserved || lower != reserved.toLowerCase(),
+      code,
+      'Directory "$name" differs from the excluded "$reserved" only by case.',
+    );
   }
 }
 
@@ -89,16 +102,20 @@ String managedCache(String? requested, {String? home, String? project}) {
   home ??= Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
   require(home != null, 'CONFIG_INVALID', 'HOME (or USERPROFILE) is not set.');
   final base = p.join(home!, '.flutter_patcher');
-  final local = p.join(p.absolute(project ?? Directory.current.path),
-      '.dart_tool', 'flutter_patcher');
+  final local = p.join(
+    p.absolute(project ?? Directory.current.path),
+    '.dart_tool',
+    'flutter_patcher',
+  );
   final cache = p.normalize(p.absolute(requested ?? base));
   require(
-      cache == base ||
-          p.isWithin(base, cache) ||
-          cache == local ||
-          p.isWithin(local, cache),
-      'CONFIG_INVALID',
-      'Cache must be under ~/.flutter_patcher or this project\'s .dart_tool/flutter_patcher.');
+    cache == base ||
+        p.isWithin(base, cache) ||
+        cache == local ||
+        p.isWithin(local, cache),
+    'CONFIG_INVALID',
+    'Cache must be under ~/.flutter_patcher or this project\'s .dart_tool/flutter_patcher.',
+  );
   return cache;
 }
 
@@ -176,8 +193,9 @@ Future<void> writeObject(String path, Map<String, dynamic> value) async {
   await Directory(p.dirname(path)).create(recursive: true);
   final staging = File(temporaryName(path));
   await staging.writeAsString(
-      '${const JsonEncoder.withIndent('  ').convert(value)}\n',
-      flush: true);
+    '${const JsonEncoder.withIndent('  ').convert(value)}\n',
+    flush: true,
+  );
   await staging.renameRetry(path);
 }
 
@@ -189,9 +207,9 @@ Future<T> retryOnSharingViolation<T>(Future<T> Function() operation) async {
   const retriable = {
     5,
     32,
-    145
+    145,
   }; // ACCESS_DENIED, SHARING_VIOLATION, DIR_NOT_EMPTY
-  for (var attempt = 0;; attempt++) {
+  for (var attempt = 0; ; attempt++) {
     try {
       return await operation();
     } on FileSystemException catch (error) {
@@ -229,10 +247,11 @@ Future<void> rejectLinks(String path) async {
   var current = p.absolute(path);
   while (true) {
     require(
-        await FileSystemEntity.type(current, followLinks: false) !=
-            FileSystemEntityType.link,
-        'CACHE_INVALID',
-        'Cache path contains a symbolic link: $current');
+      await FileSystemEntity.type(current, followLinks: false) !=
+          FileSystemEntityType.link,
+      'CACHE_INVALID',
+      'Cache path contains a symbolic link: $current',
+    );
     final parent = p.dirname(current);
     if (parent == current) break;
     current = parent;
@@ -242,12 +261,12 @@ Future<void> rejectLinks(String path) async {
 class Commands {
   final Map<String, String> environment;
   Commands(String cache)
-      : environment = {
-          ...Platform.environment,
-          'PUB_CACHE': p.join(cache, 'pub-cache'),
-          'CI': 'true',
-          'FLUTTER_SUPPRESS_ANALYTICS': 'true'
-        } {
+    : environment = {
+        ...Platform.environment,
+        'PUB_CACHE': p.join(cache, 'pub-cache'),
+        'CI': 'true',
+        'FLUTTER_SUPPRESS_ANALYTICS': 'true',
+      } {
     environment.remove('FLUTTER_STORAGE_BASE_URL');
     for (final key in [
       'FLUTTER_TOOL_ARGS',
@@ -255,41 +274,51 @@ class Commands {
       'FLUTTER_REALM',
       'GIT_DIR',
       'GIT_INDEX_FILE',
-      'GIT_WORK_TREE'
+      'GIT_WORK_TREE',
     ]) {
       environment.remove(key);
     }
   }
 
-  Future<String> run(String executable, List<String> args,
-      {String? cwd,
-      List<int>? inputBytes,
-      String code = 'TOOL_FAILED',
-      Duration timeout = const Duration(minutes: 15),
-      Map<String, String>? extraEnvironment}) async {
-    final result = await runResult(executable, args,
-        inputBytes: inputBytes,
-        cwd: cwd,
-        code: code,
-        timeout: timeout,
-        extraEnvironment: extraEnvironment);
+  Future<String> run(
+    String executable,
+    List<String> args, {
+    String? cwd,
+    List<int>? inputBytes,
+    String code = 'TOOL_FAILED',
+    Duration timeout = const Duration(minutes: 15),
+    Map<String, String>? extraEnvironment,
+  }) async {
+    final result = await runResult(
+      executable,
+      args,
+      inputBytes: inputBytes,
+      cwd: cwd,
+      code: code,
+      timeout: timeout,
+      extraEnvironment: extraEnvironment,
+    );
     if (result.exitCode != 0) {
       final detail = '${result.stderr}\n${result.stdout}'.trim();
       throw Failure(
-          code,
-          '${p.basename(executable)} exited ${result.exitCode}: '
-          '${detail.length > 6000 ? detail.substring(detail.length - 6000) : detail}');
+        code,
+        '${p.basename(executable)} exited ${result.exitCode}: '
+        '${detail.length > 6000 ? detail.substring(detail.length - 6000) : detail}',
+      );
     }
     return result.stdout;
   }
 
-  Future<CommandResult> runResult(String executable, List<String> args,
-      {String? cwd,
-      List<int>? inputBytes,
-      String code = 'TOOL_FAILED',
-      Duration timeout = const Duration(minutes: 15),
-      Map<String, String>? extraEnvironment,
-      String? logPath}) async {
+  Future<CommandResult> runResult(
+    String executable,
+    List<String> args, {
+    String? cwd,
+    List<int>? inputBytes,
+    String code = 'TOOL_FAILED',
+    Duration timeout = const Duration(minutes: 15),
+    Map<String, String>? extraEnvironment,
+    String? logPath,
+  }) async {
     final started = DateTime.now();
     Process process;
     try {
@@ -301,11 +330,13 @@ class Commands {
       final extension = p.extension(executable).toLowerCase();
       final batch =
           Platform.isWindows && (extension == '.bat' || extension == '.cmd');
-      process = await Process.start(batch ? 'cmd.exe' : executable,
-          batch ? ['/c', 'call', executable, ...args] : args,
-          workingDirectory: cwd,
-          environment: {...environment, ...?extraEnvironment},
-          includeParentEnvironment: false);
+      process = await Process.start(
+        batch ? 'cmd.exe' : executable,
+        batch ? ['/c', 'call', executable, ...args] : args,
+        workingDirectory: cwd,
+        environment: {...environment, ...?extraEnvironment},
+        includeParentEnvironment: false,
+      );
     } on ProcessException catch (error) {
       throw Failure(code, 'Cannot start $executable: ${error.message}');
     }
@@ -338,8 +369,10 @@ class Commands {
       await Future.wait([output, diagnostic])
           .timeout(const Duration(seconds: 30), onTimeout: () => const []);
       await log?.close();
-      throw Failure(code,
-          'Timed out after ${timeout.inMinutes} min running ${p.basename(executable)} ${args.take(2).join(' ')}${logPath == null ? '' : '; log: $logPath'}');
+      throw Failure(
+        code,
+        'Timed out after ${timeout.inMinutes} min running ${p.basename(executable)} ${args.take(2).join(' ')}${logPath == null ? '' : '; log: $logPath'}',
+      );
     }
     final out = await output;
     final err = await diagnostic;
@@ -352,7 +385,9 @@ class Commands {
 /// (GBK on a Chinese system); undecodable output must never abort a command.
 Future<String> collectOutput(Stream<List<int>> stream) async {
   final bytes = await stream.fold<BytesBuilder>(
-      BytesBuilder(copy: false), (all, chunk) => all..add(chunk));
+    BytesBuilder(copy: false),
+    (all, chunk) => all..add(chunk),
+  );
   final data = bytes.takeBytes();
   try {
     return utf8.decode(data);
@@ -376,18 +411,25 @@ class Downloads {
 
   static void validateUri(Uri uri) {
     require(
-        uri.scheme == 'https' ||
-            (uri.scheme == 'http' &&
-                ['127.0.0.1', 'localhost', '::1'].contains(uri.host)),
-        'CONFIG_INVALID',
-        'Use HTTPS (HTTP is allowed only for loopback test servers).');
-    require(uri.userInfo.isEmpty && uri.fragment.isEmpty, 'CONFIG_INVALID',
-        'Artifact URLs must not contain credentials or fragments.');
+      uri.scheme == 'https' ||
+          (uri.scheme == 'http' &&
+              ['127.0.0.1', 'localhost', '::1'].contains(uri.host)),
+      'CONFIG_INVALID',
+      'Use HTTPS (HTTP is allowed only for loopback test servers).',
+    );
+    require(
+      uri.userInfo.isEmpty && uri.fragment.isEmpty,
+      'CONFIG_INVALID',
+      'Artifact URLs must not contain credentials or fragments.',
+    );
   }
 
-  Future<void> fetch(Uri uri, String destination,
-      {String missingCode = 'ENGINE_ARTIFACT_MISSING',
-      int maxBytes = 512 * 1024 * 1024}) async {
+  Future<void> fetch(
+    Uri uri,
+    String destination, {
+    String missingCode = 'ENGINE_ARTIFACT_MISSING',
+    int maxBytes = 512 * 1024 * 1024,
+  }) async {
     validateUri(uri);
     require(!offline, missingCode, 'Not available in offline cache: $uri');
     final client = HttpClient()
@@ -399,8 +441,9 @@ class Downloads {
       for (var redirect = 0; redirect <= 5; redirect++) {
         validateUri(next);
         requests++;
-        final request =
-            await client.getUrl(next).timeout(const Duration(seconds: 30));
+        final request = await client
+            .getUrl(next)
+            .timeout(const Duration(seconds: 30));
         request.followRedirects = false;
         request.headers.set('User-Agent', 'flutter-patcher-cli');
         if (next.host == 'api.github.com') {
@@ -409,25 +452,37 @@ class Downloads {
         response = await request.close().timeout(const Duration(seconds: 60));
         if ([301, 302, 303, 307, 308].contains(response.statusCode)) {
           final location = response.headers.value('location');
-          require(location != null, missingCode,
-              'Download redirect has no location.');
+          require(
+            location != null,
+            missingCode,
+            'Download redirect has no location.',
+          );
           next = next.resolve(location!);
           continue;
         }
         break;
       }
-      require(response?.statusCode == 200, missingCode,
-          'Download failed (HTTP ${response?.statusCode}): $uri');
-      require(response!.contentLength <= maxBytes, 'ARTIFACT_INVALID',
-          'Download exceeds size limit.');
+      require(
+        response?.statusCode == 200,
+        missingCode,
+        'Download failed (HTTP ${response?.statusCode}): $uri',
+      );
+      require(
+        response!.contentLength <= maxBytes,
+        'ARTIFACT_INVALID',
+        'Download exceeds size limit.',
+      );
       await rejectLinks(destination);
       await Directory(p.dirname(destination)).create(recursive: true);
       sink = File(destination).openWrite();
       var bytes = 0;
       await for (final chunk in response.timeout(const Duration(seconds: 60))) {
         bytes += chunk.length;
-        require(bytes <= maxBytes, 'ARTIFACT_INVALID',
-            'Download exceeds size limit.');
+        require(
+          bytes <= maxBytes,
+          'ARTIFACT_INVALID',
+          'Download exceeds size limit.',
+        );
         sink.add(chunk);
       }
       await sink.flush();

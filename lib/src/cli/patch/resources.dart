@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../baseline/manifest.dart';
 import '../sdk/host.dart';
@@ -18,14 +20,15 @@ const isolateEntry = 'isolate_entry';
 
 void assetKey(String key) {
   require(
-      key.isNotEmpty &&
-          !key.contains('\\') &&
-          !key.contains(':') &&
-          !key.contains('\u0000') &&
-          !key.startsWith('/') &&
-          key.split('/').every((s) => s.isNotEmpty && s != '.' && s != '..'),
-      'PATCH_ASSET_INVALID',
-      'Unsafe asset key: $key');
+    key.isNotEmpty &&
+        !key.contains('\\') &&
+        !key.contains(':') &&
+        !key.contains('\u0000') &&
+        !key.startsWith('/') &&
+        key.split('/').every((s) => s.isNotEmpty && s != '.' && s != '..'),
+    'PATCH_ASSET_INVALID',
+    'Unsafe asset key: $key',
+  );
 }
 
 Future<List<String>> readObjectFontSources(String bundle) async {
@@ -35,7 +38,7 @@ Future<List<String>> readObjectFontSources(String bundle) async {
   return [
     for (final row in rows)
       if (row['family'] != 'MaterialIcons')
-        for (final font in row['fonts'] as List) font['asset'] as String
+        for (final font in row['fonts'] as List) font['asset'] as String,
   ];
 }
 
@@ -47,8 +50,11 @@ class AssetCodec {
   int offset = 0;
   late final ByteData data = ByteData.sublistView(bytes);
   void need(int count) {
-    require(count >= 0 && offset + count <= bytes.length, 'PATCH_ASSET_INVALID',
-        'Truncated asset manifest');
+    require(
+      count >= 0 && offset + count <= bytes.length,
+      'PATCH_ASSET_INVALID',
+      'Truncated asset manifest',
+    );
   }
 
   int byte() {
@@ -64,14 +70,20 @@ class AssetCodec {
         ? data.getUint16(offset, Endian.host)
         : data.getUint32(offset, Endian.host);
     offset += n == 254 ? 2 : 4;
-    require(value <= 65536, 'PATCH_ASSET_INVALID',
-        'Asset manifest collection too large');
+    require(
+      value <= 65536,
+      'PATCH_ASSET_INVALID',
+      'Asset manifest collection too large',
+    );
     return value;
   }
 
   Object? read([int depth = 0]) {
     require(
-        depth < 16, 'PATCH_ASSET_INVALID', 'Asset manifest nesting too deep');
+      depth < 16,
+      'PATCH_ASSET_INVALID',
+      'Asset manifest nesting too deep',
+    );
     switch (byte()) {
       case 0:
         return null;
@@ -98,30 +110,41 @@ class AssetCodec {
         final result = <String, Object?>{}, n = size();
         for (var i = 0; i < n; i++) {
           final key = read(depth + 1);
-          require(key is String && !result.containsKey(key),
-              'PATCH_ASSET_INVALID', 'Duplicate/invalid manifest key');
+          require(
+            key is String && !result.containsKey(key),
+            'PATCH_ASSET_INVALID',
+            'Duplicate/invalid manifest key',
+          );
           result[key as String] = read(depth + 1);
         }
         return result;
       default:
         throw Failure(
-            'PATCH_ASSET_INVALID', 'Unsupported asset manifest value');
+          'PATCH_ASSET_INVALID',
+          'Unsupported asset manifest value',
+        );
     }
   }
 
   static Map<String, dynamic> decode(List<int> bytes) {
     final reader = AssetCodec(Uint8List.fromList(bytes)),
         result = reader.read();
-    require(result is Map && reader.offset == bytes.length,
-        'PATCH_ASSET_INVALID', 'Invalid asset manifest');
+    require(
+      result is Map && reader.offset == bytes.length,
+      'PATCH_ASSET_INVALID',
+      'Invalid asset manifest',
+    );
     return Map<String, dynamic>.from(result as Map);
   }
 
   static List<int> encode(Object? value) {
     final out = <int>[];
     void size(int n) {
-      require(n <= 65536, 'PATCH_ASSET_INVALID',
-          'Asset manifest collection too large');
+      require(
+        n <= 65536,
+        'PATCH_ASSET_INVALID',
+        'Asset manifest collection too large',
+      );
       if (n < 254) {
         out.add(n);
       } else {
@@ -188,13 +211,16 @@ Map<String, dynamic> resourceReceipt(Archive archive) {
     assetKey(key);
     final raw = f.content as List<int>;
     require(
-        !files.containsKey(key), 'PATCH_ASSET_INVALID', 'Duplicate APK asset');
+      !files.containsKey(key),
+      'PATCH_ASSET_INVALID',
+      'Duplicate APK asset',
+    );
     // NOTICES.Z is gzip, whose header records the building OS (zlib OS_CODE):
     // identify it by the license text, so hosts agree.
     final bytes = key == 'NOTICES.Z' ? gzip.decode(raw) : raw;
     files[key] = {
       'sha256': sha256.convert(bytes).toString(),
-      'length': bytes.length
+      'length': bytes.length,
     };
     if (key == 'AssetManifest.bin') manifest = AssetCodec.decode(bytes);
   }
@@ -215,39 +241,51 @@ class PatchResources {
     assetKey(key);
     final file = File(p.join(bundle, key));
     await rejectLinks(file.path);
-    require(await file.exists() && await file.length() <= 64 * 1024 * 1024,
-        'PATCH_ASSET_INVALID', 'Missing or oversized resource: $key');
+    require(
+      await file.exists() && await file.length() <= 64 * 1024 * 1024,
+      'PATCH_ASSET_INVALID',
+      'Missing or oversized resource: $key',
+    );
     return file.readAsBytes();
   }
 
   void addAsset(String key, List<int> bytes) {
     assetKey(key);
     final path = 'assets/$key';
-    require(!entries.containsKey(path), 'PATCH_ASSET_INVALID',
-        'Duplicate resource: $key');
+    require(
+      !entries.containsKey(path),
+      'PATCH_ASSET_INVALID',
+      'Duplicate resource: $key',
+    );
     entries[path] = bytes;
     assets.add({
       'key': key,
       'path': path,
       'length': bytes.length,
-      'sha256': sha256.convert(bytes).toString()
+      'sha256': sha256.convert(bytes).toString(),
     });
   }
 
   Future<void> collect(
-      Map<String, dynamic> baseline, List<String> requested) async {
+    Map<String, dynamic> baseline,
+    List<String> requested,
+  ) async {
     require(
-        baseline['schema'] == 1 &&
-            baseline['files'] is Map &&
-            baseline['manifest'] is Map,
-        'PATCH_BASELINE_INCOMPATIBLE',
-        'Baseline lacks resource inventory; rebuild host');
+      baseline['schema'] == 1 &&
+          baseline['files'] is Map &&
+          baseline['manifest'] is Map,
+      'PATCH_BASELINE_INCOMPATIBLE',
+      'Baseline lacks resource inventory; rebuild host',
+    );
     final old = Map<String, dynamic>.from(baseline['manifest'] as Map);
     final current = AssetCodec.decode(await read('AssetManifest.bin'));
     Set<String> variants(Map<String, dynamic> manifest, String key) {
       final rows = manifest[key];
       require(
-          rows is List, 'PATCH_ASSET_INVALID', 'Asset is not declared: $key');
+        rows is List,
+        'PATCH_ASSET_INVALID',
+        'Asset is not declared: $key',
+      );
       return {key, for (final row in rows as List) row['asset'] as String};
     }
 
@@ -260,8 +298,11 @@ class PatchResources {
       }
     }
     final selected = <String>{};
-    require(requested.toSet().length == requested.length, 'PATCH_ASSET_INVALID',
-        'Duplicate --assets key');
+    require(
+      requested.toSet().length == requested.length,
+      'PATCH_ASSET_INVALID',
+      'Duplicate --assets key',
+    );
     for (final key in requested) {
       assetKey(key);
       variants(current, key);
@@ -300,10 +341,12 @@ class PatchResources {
   /// With [wholeFamilies] (an SO patch, whose bundle was built with its own
   /// code and already subsets the icon font to it) every font file whose
   /// bytes differ from the host's ships as built.
-  Future<void> collectFonts(List<dynamic> icons,
-      {List<dynamic>? hostIcons,
-      Map<dynamic, dynamic> hostFiles = const {},
-      bool wholeFamilies = false}) async {
+  Future<void> collectFonts(
+    List<dynamic> icons, {
+    List<dynamic>? hostIcons,
+    Map<dynamic, dynamic> hostFiles = const {},
+    bool wholeFamilies = false,
+  }) async {
     final fontFile = File(p.join(bundle, 'FontManifest.json'));
     final definitions = await fontFile.exists()
         ? jsonDecode(await fontFile.readAsString()) as List
@@ -315,22 +358,24 @@ class PatchResources {
           package = raw['fontPackage'],
           point = raw['codePoint'];
       require(
-          (family == null || family is String) &&
-              point is int &&
-              point >= 0 &&
-              point <= 0x10ffff,
-          'FONT_SUBSET_FAILED',
-          'IconData must identify a valid code point');
+        (family == null || family is String) &&
+            point is int &&
+            point >= 0 &&
+            point <= 0x10ffff,
+        'FONT_SUBSET_FAILED',
+        'IconData must identify a valid code point',
+      );
       for (final fallback in raw['fontFamilyFallback'] as List? ?? []) {
-        fallbackFamilies.add(package == null
-            ? fallback as String
-            : 'packages/$package/$fallback');
+        fallbackFamilies.add(
+          package == null ? fallback as String : 'packages/$package/$fallback',
+        );
       }
       // Icon builds a non-inheriting TextStyle. A null family uses system
       // fallback (e.g. Flutter's U+1F74A debug icon), not a bundled icon font.
       if (family == null) continue;
-      final name =
-          package == null ? family as String : 'packages/$package/$family';
+      final name = package == null
+          ? family as String
+          : 'packages/$package/$family';
       groups.putIfAbsent(name, () => {}).add(point as int);
     }
     final hostGroups = <String, Set<int>>{};
@@ -339,7 +384,9 @@ class PatchResources {
       if (family is! String || raw['codePoint'] is! int) continue;
       hostGroups
           .putIfAbsent(
-              package == null ? family : 'packages/$package/$family', () => {})
+            package == null ? family : 'packages/$package/$family',
+            () => {},
+          )
           .add(raw['codePoint'] as int);
     }
     final found = <String>{};
@@ -348,7 +395,8 @@ class PatchResources {
           sources = definition['fonts'] as List;
       // Only the SDK's dedicated Material icon face is known to be icon-only.
       // Custom/package families may also be used by Text and must remain whole.
-      final points = wholeFamilies ||
+      final points =
+          wholeFamilies ||
               fallbackFamilies.contains(family) ||
               family != 'MaterialIcons' ||
               sources.length != 1 ||
@@ -364,8 +412,11 @@ class PatchResources {
         continue;
       }
       found.add(family);
-      require(points == null || sources.length == 1, 'FONT_SUBSET_FAILED',
-          'Ambiguous icon font family: $family');
+      require(
+        points == null || sources.length == 1,
+        'FONT_SUBSET_FAILED',
+        'Ambiguous icon font family: $family',
+      );
       final shipped = hostGroups[family];
       if (points != null && hostIcons != null) {
         if (shipped != null && shipped.containsAll(points)) continue;
@@ -382,15 +433,22 @@ class PatchResources {
           final output = p.join(work, 'font-${fonts.length}.otf');
           final host = HostIdentity.current();
           final binary = p.join(sdk, host.toolchain(host.exe('font-subset')));
-          require(await File(binary).exists(), 'FONT_SUBSET_FAILED',
-              'SDK font-subset is missing');
-          await commands.run(binary, [output, p.join(bundle, source)],
-              inputBytes: utf8.encode((points.toList()..sort()).join(' ')),
-              code: 'FONT_SUBSET_FAILED');
           require(
-              await File(output).exists() && await File(output).length() > 0,
-              'FONT_SUBSET_FAILED',
-              'font-subset produced no font');
+            await File(binary).exists(),
+            'FONT_SUBSET_FAILED',
+            'SDK font-subset is missing',
+          );
+          await commands.run(
+            binary,
+            [output, p.join(bundle, source)],
+            inputBytes: utf8.encode((points.toList()..sort()).join(' ')),
+            code: 'FONT_SUBSET_FAILED',
+          );
+          require(
+            await File(output).exists() && await File(output).length() > 0,
+            'FONT_SUBSET_FAILED',
+            'font-subset produced no font',
+          );
           bytes = await File(output).readAsBytes();
         }
         final path =
@@ -402,11 +460,14 @@ class PatchResources {
           'length': bytes.length,
           'sha256': sha256.convert(bytes).toString(),
           if (points != null) 'codepoints': points.length,
-          'subset': points != null
+          'subset': points != null,
         });
       }
     }
-    require(found.containsAll(groups.keys), 'FONT_SUBSET_FAILED',
-        'Referenced font is absent from Flutter bundle');
+    require(
+      found.containsAll(groups.keys),
+      'FONT_SUBSET_FAILED',
+      'Referenced font is absent from Flutter bundle',
+    );
   }
 }

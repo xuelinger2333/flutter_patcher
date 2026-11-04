@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/patch/resources.dart';
@@ -36,48 +37,63 @@ class Jobs {
 ''');
     // A reader in main sources; only its test reads assets in another plugin.
     await file(
-        'cache/hosted/pub.dev/video/pubspec.yaml', 'name: video\n$plugin');
+      'cache/hosted/pub.dev/video/pubspec.yaml',
+      'name: video\n$plugin',
+    );
     await file('cache/hosted/pub.dev/video/lib/video.dart', '');
-    await file('cache/hosted/pub.dev/video/android/src/main/V.kt',
-        'val key = loader.getLookupKeyForAsset(asset)\n');
     await file(
-        'cache/hosted/pub.dev/quiet/pubspec.yaml', 'name: quiet\n$plugin');
+      'cache/hosted/pub.dev/video/android/src/main/V.kt',
+      'val key = loader.getLookupKeyForAsset(asset)\n',
+    );
+    await file(
+      'cache/hosted/pub.dev/quiet/pubspec.yaml',
+      'name: quiet\n$plugin',
+    );
     await file('cache/hosted/pub.dev/quiet/lib/quiet.dart', '''
 @pragma('vm:entry-point')
 void notAppCode() {}
 ''');
-    await file('cache/hosted/pub.dev/quiet/android/src/test/T.kt',
-        'getLookupKeyForAsset("x")\n');
-    await file('cache/hosted/pub.dev/quiet/ios/Classes/Q.swift',
-        'registrar.lookupKey(forAsset: "x")\n');
+    await file(
+      'cache/hosted/pub.dev/quiet/android/src/test/T.kt',
+      'getLookupKeyForAsset("x")\n',
+    );
+    await file(
+      'cache/hosted/pub.dev/quiet/ios/Classes/Q.swift',
+      'registrar.lookupKey(forAsset: "x")\n',
+    );
     await file('sdk/packages/flutter/lib/f.dart', '');
     Uri lib(String dir) => Directory(p.join(temp.path, dir, 'lib')).uri;
     scan = SourceScan(
-        {
-          'app': lib('app'),
-          'local': lib('local'),
-          'video': lib('cache/hosted/pub.dev/video'),
-          'quiet': lib('cache/hosted/pub.dev/quiet'),
-          'flutter': lib('sdk/packages/flutter'),
-        },
-        'app',
-        sdkRoots: [p.join(temp.path, 'sdk')]);
+      {
+        'app': lib('app'),
+        'local': lib('local'),
+        'video': lib('cache/hosted/pub.dev/video'),
+        'quiet': lib('cache/hosted/pub.dev/quiet'),
+        'flutter': lib('sdk/packages/flutter'),
+      },
+      'app',
+      sdkRoots: [p.join(temp.path, 'sdk')],
+    );
   });
   tearDown(() => temp.delete(recursive: true));
 
   test('own code is the app and its local packages', () {
     expect(scan.own, ['app', 'local']);
   });
-  test('native asset readers: main sources of plugins on that platform',
-      () async {
-    final android = await scan.nativeAssetReaders('android');
-    expect(android.keys, ['video']);
-    expect(siteText(android['video']!), 'video/android/src/main/V.kt:1');
-    expect((await scan.nativeAssetReaders('ios')).keys, isEmpty);
-  });
+  test(
+    'native asset readers: main sources of plugins on that platform',
+    () async {
+      final android = await scan.nativeAssetReaders('android');
+      expect(android.keys, ['video']);
+      expect(siteText(android['video']!), 'video/android/src/main/V.kt:1');
+      expect((await scan.nativeAssetReaders('ios')).keys, isEmpty);
+    },
+  );
   test('an asset named beside an import of a reader', () async {
-    final passed = await scan
-        .assetsPassedTo(['video'], ['assets/intro.mp4', 'assets/other.png']);
+    final passed = await scan.assetsPassedTo(
+      ['video'],
+      ['assets/intro.mp4', 'assets/other.png'],
+    );
     expect(passed.keys, ['assets/intro.mp4']);
     expect(siteText(passed['assets/intro.mp4']!.single), 'app/lib/main.dart:4');
   });
@@ -102,7 +118,7 @@ void notAppCode() {}
         ..engineCapabilities = [assetOverlay]
         ..nativeAssetReaders = {'video': site}
         ..assetsPassed = {
-          'assets/intro.mp4': [site]
+          'assets/intro.mp4': [site],
         }
         ..backgroundEntries = [('callbackDispatcher', site)]
         ..resourceBytes = resourceWarnBytes + 1
@@ -122,39 +138,47 @@ void notAppCode() {}
     test('an SO patch only loses assets in a background engine', () {
       final codeOnly = PatchRules();
       codeOnly.check(
-          PatchStage.resources,
-          facts('so')
-            ..changed.add('libapp.so')
-            ..backgroundEntries = [('callbackDispatcher', site)]);
+        PatchStage.resources,
+        facts('so')
+          ..changed.add('libapp.so')
+          ..backgroundEntries = [('callbackDispatcher', site)],
+      );
       expect(codeOnly.warnings, isEmpty);
       final bytecode = PatchRules();
       bytecode.check(
-          PatchStage.resources,
-          facts('bytecode')
-            ..changed.add('package:app/main.dart')
-            ..backgroundEntries = [('callbackDispatcher', site)]);
-      expect(bytecode.warnings.single['message'],
-          contains("release's code and assets"));
+        PatchStage.resources,
+        facts('bytecode')
+          ..changed.add('package:app/main.dart')
+          ..backgroundEntries = [('callbackDispatcher', site)],
+      );
+      expect(
+        bytecode.warnings.single['message'],
+        contains("release's code and assets"),
+      );
       final assets = PatchRules();
       assets.check(
-          PatchStage.resources,
-          facts('so')
-            ..assets = ['a.png']
-            ..engineCapabilities = [assetOverlay]
-            ..backgroundEntries = [('callbackDispatcher', site)]);
-      expect(assets.warnings.single['message'],
-          contains("this patch's code but the release's assets"));
+        PatchStage.resources,
+        facts('so')
+          ..assets = ['a.png']
+          ..engineCapabilities = [assetOverlay]
+          ..backgroundEntries = [('callbackDispatcher', site)],
+      );
+      expect(
+        assets.warnings.single['message'],
+        contains("this patch's code but the release's assets"),
+      );
     });
     test('an engine with the entry hook boots background engines too', () {
       const hooked = [assetOverlay, isolateEntry];
       final so = PatchRules();
       so.check(
-          PatchStage.resources,
-          facts('so')
-            ..changed.add('libapp.so')
-            ..assets = ['a.png']
-            ..engineCapabilities = hooked
-            ..backgroundEntries = [('callbackDispatcher', site)]);
+        PatchStage.resources,
+        facts('so')
+          ..changed.add('libapp.so')
+          ..assets = ['a.png']
+          ..engineCapabilities = hooked
+          ..backgroundEntries = [('callbackDispatcher', site)],
+      );
       expect(so.warnings, isEmpty);
       PatchFacts bytecode(List<String> entries) => facts('bytecode')
         ..changed.add('package:app/main.dart')
@@ -166,23 +190,28 @@ void notAppCode() {}
         ];
       final carried = PatchRules();
       carried.check(
-          PatchStage.resources,
-          bytecode([
-            'package:app/main.dart#main',
-            'package:app/main.dart#callbackDispatcher',
-            'package:app/src/jobs.dart#Jobs.run',
-          ]));
+        PatchStage.resources,
+        bytecode([
+          'package:app/main.dart#main',
+          'package:app/main.dart#callbackDispatcher',
+          'package:app/src/jobs.dart#Jobs.run',
+        ]),
+      );
       expect(carried.warnings, isEmpty);
       // Same name, other library: not this entry point.
       final missed = PatchRules();
-      missed.check(PatchStage.resources,
-          bytecode(['package:app/other.dart#callbackDispatcher']));
+      missed.check(
+        PatchStage.resources,
+        bytecode(['package:app/other.dart#callbackDispatcher']),
+      );
       expect(
-          missed.warnings.single['message'],
-          allOf(
-              contains('does not carry'),
-              contains('callbackDispatcher (app/lib/main.dart:6)'),
-              contains('run (app/lib/src/jobs.dart:3)')));
+        missed.warnings.single['message'],
+        allOf(
+          contains('does not carry'),
+          contains('callbackDispatcher (app/lib/main.dart:6)'),
+          contains('run (app/lib/src/jobs.dart:3)'),
+        ),
+      );
     });
   });
 }

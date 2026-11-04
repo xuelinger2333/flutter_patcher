@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 
 /// Multi-root scheme for host-independent kernel source URIs.
@@ -26,14 +27,16 @@ class VirtualPackages {
   String get path => p.join(roots.first, _name);
 
   List<String> get compilerArgs => [
-        '--filesystem-scheme',
-        virtualScheme,
-        for (final root in roots) ...['--filesystem-root', root]
-      ];
+    '--filesystem-scheme',
+    virtualScheme,
+    for (final root in roots) ...['--filesystem-root', root],
+  ];
 
   /// Writes the rewritten copy of [packages] into `roots.first`.
   static Future<VirtualPackages> write(
-      String packages, List<String> roots) async {
+    String packages,
+    List<String> roots,
+  ) async {
     final source = File(packages).absolute;
     final config = jsonDecode(await source.readAsString()) as Map;
     final rows = <Map>[];
@@ -60,9 +63,15 @@ class VirtualPackages {
       final segments = p.split(p.relative(path, from: roots[i]));
       if (segments.first == '.') segments.clear();
       if (segments.isNotEmpty &&
-          roots.take(i).any((earlier) =>
-              FileSystemEntity.typeSync(p.join(earlier, segments.first)) !=
-              FileSystemEntityType.notFound)) {
+          roots
+              .take(i)
+              .any(
+                (earlier) =>
+                    FileSystemEntity.typeSync(
+                      p.join(earlier, segments.first),
+                    ) !=
+                    FileSystemEntityType.notFound,
+              )) {
         return null;
       }
       return '$virtualScheme:///${segments.map(Uri.encodeComponent).join('/')}/';

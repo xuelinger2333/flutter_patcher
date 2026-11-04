@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
@@ -7,13 +8,15 @@ import 'package:flutter_patcher/src/cli/sdk/environment.dart';
 class GitIdentity extends Commands {
   GitIdentity(super.cache);
   @override
-  Future<String> run(String executable, List<String> args,
-          {String? cwd,
-          List<int>? inputBytes,
-          String code = 'TOOL_FAILED',
-          Duration timeout = const Duration(minutes: 15),
-          Map<String, String>? extraEnvironment}) async =>
-      'framework';
+  Future<String> run(
+    String executable,
+    List<String> args, {
+    String? cwd,
+    List<int>? inputBytes,
+    String code = 'TOOL_FAILED',
+    Duration timeout = const Duration(minutes: 15),
+    Map<String, String>? extraEnvironment,
+  }) async => 'framework';
 }
 
 void main() {
@@ -33,7 +36,7 @@ void main() {
       'bin/cache/flutter_tools.stamp': 'framework:',
       'bin/cache/engine.realm': '',
       'packages/flutter_tools/pubspec.yaml': 'name: flutter_tools',
-      'packages/flutter_tools/pubspec.lock': ''
+      'packages/flutter_tools/pubspec.lock': '',
     }.entries) {
       await write(item.key, item.value);
     }
@@ -42,29 +45,37 @@ void main() {
   test('initialized SDK passes read-only preflight', () async {
     await checkSdkReady(root.path, GitIdentity(root.path));
   });
-  test('the stock Windows launcher stamp ":" is accepted only with its bug',
-      () async {
-    await write('bin/cache/flutter_tools.stamp', '":"');
-    await expectLater(checkSdkReady(root.path, GitIdentity(root.path)),
-        throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')));
-    await write('bin/internal/shared.bat',
-        "FOR /f %%r IN ('PUSHD %FLUTTER_ROOT% ^& \$git rev-parse HEAD') DO (");
-    await checkSdkReady(root.path, GitIdentity(root.path));
-    await write('bin/cache/flutter_tools.stamp', '"other:"');
-    await expectLater(checkSdkReady(root.path, GitIdentity(root.path)),
-        throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')));
-  });
+  test(
+    'the stock Windows launcher stamp ":" is accepted only with its bug',
+    () async {
+      await write('bin/cache/flutter_tools.stamp', '":"');
+      await expectLater(
+        checkSdkReady(root.path, GitIdentity(root.path)),
+        throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')),
+      );
+      await write(
+        'bin/internal/shared.bat',
+        "FOR /f %%r IN ('PUSHD %FLUTTER_ROOT% ^& \$git rev-parse HEAD') DO (",
+      );
+      await checkSdkReady(root.path, GitIdentity(root.path));
+      await write('bin/cache/flutter_tools.stamp', '"other:"');
+      await expectLater(
+        checkSdkReady(root.path, GitIdentity(root.path)),
+        throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')),
+      );
+    },
+  );
   for (final path in [
     'bin/cache/engine.stamp',
     'bin/cache/flutter_tools.stamp',
-    'bin/cache/engine-dart-sdk.stamp'
+    'bin/cache/engine-dart-sdk.stamp',
   ]) {
     test('stale $path is refused before Flutter starts', () async {
       await write(path, 'stale');
       await expectLater(
-          checkSdkReady(root.path, GitIdentity(root.path)),
-          throwsA(
-              isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')));
+        checkSdkReady(root.path, GitIdentity(root.path)),
+        throwsA(isA<Failure>().having((e) => e.code, 'code', 'SDK_NOT_READY')),
+      );
     });
   }
 }

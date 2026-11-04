@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -29,7 +30,7 @@ class SourceScan {
   late final List<String> own = [
     app,
     for (final name in roots.keys)
-      if (name != app && !_reserved.contains(name) && _local(name)) name
+      if (name != app && !_reserved.contains(name) && _local(name)) name,
   ];
 
   bool _local(String name) {
@@ -50,10 +51,12 @@ class SourceScan {
     'android': ['android'],
     'ios': ['ios', 'darwin'],
   };
-  static final _testDir =
-      RegExp(r'(^|/)(test|androidTest|RunnerTests|Tests?)/');
-  static final _assetLookup =
-      RegExp(r'getLookupKeyForAsset|lookupKeyForAsset|flutter_assets/');
+  static final _testDir = RegExp(
+    r'(^|/)(test|androidTest|RunnerTests|Tests?)/',
+  );
+  static final _assetLookup = RegExp(
+    r'getLookupKeyForAsset|lookupKeyForAsset|flutter_assets/',
+  );
 
   /// Packages whose native code on [platform] opens Flutter assets itself,
   /// through the platform's asset manager rather than the engine. Plugins
@@ -68,14 +71,17 @@ class SourceScan {
       for (final top in _platformDirs[platform]!) {
         final dir = Directory(p.join(base.path, top));
         if (!await dir.exists()) continue;
-        await for (final entity
-            in dir.list(recursive: true, followLinks: false)) {
+        await for (final entity in dir.list(
+          recursive: true,
+          followLinks: false,
+        )) {
           if (entity is! File ||
               !_nativeFile[platform]!.hasMatch(entity.path)) {
             continue;
           }
-          final relative =
-              p.relative(entity.path, from: base.path).replaceAll('\\', '/');
+          final relative = p
+              .relative(entity.path, from: base.path)
+              .replaceAll('\\', '/');
           if (_testDir.hasMatch(relative)) continue;
           final line = _firstLine(await _read(entity), _assetLookup);
           if (line != null) {
@@ -101,41 +107,50 @@ class SourceScan {
   /// Where own Dart code that imports one of [readers] names one of [assets]
   /// in a string literal: the asset most likely reaches that native reader.
   Future<Map<String, List<SourceSite>>> assetsPassedTo(
-      Iterable<String> readers, Iterable<String> assets) async {
+    Iterable<String> readers,
+    Iterable<String> assets,
+  ) async {
     final result = <String, List<SourceSite>>{};
     if (readers.isEmpty || assets.isEmpty) return result;
     final imports = RegExp(
-        "import\\s+['\"]package:(${readers.map(RegExp.escape).join('|')})/");
+      "import\\s+['\"]package:(${readers.map(RegExp.escape).join('|')})/",
+    );
     await _eachOwnDart((site, text) {
       if (!imports.hasMatch(text)) return;
       for (final key in assets) {
-        final line =
-            _firstLine(text, RegExp("['\"]${RegExp.escape(key)}['\"]"));
+        final line = _firstLine(
+          text,
+          RegExp("['\"]${RegExp.escape(key)}['\"]"),
+        );
         if (line != null) {
-          result
-              .putIfAbsent(key, () => [])
-              .add((package: site.package, file: site.file, line: line));
+          result.putIfAbsent(key, () => []).add((
+            package: site.package,
+            file: site.file,
+            line: line,
+          ));
         }
       }
     });
     return result;
   }
 
-  static final _entryPoint =
-      RegExp(r'''@pragma\(\s*['"]vm:entry-point['"][^)]*\)\s*'''
-          r'''(?:@\w+(?:\([^)]*\))?\s*)*'''
-          r'''(?:(?:static|external)\s+)*'''
-          r'''(?:[\w<>?,\s]+?\s+)?(\w+)\s*\(''');
+  static final _entryPoint = RegExp(
+    r'''@pragma\(\s*['"]vm:entry-point['"][^)]*\)\s*'''
+    r'''(?:@\w+(?:\([^)]*\))?\s*)*'''
+    r'''(?:(?:static|external)\s+)*'''
+    r'''(?:[\w<>?,\s]+?\s+)?(\w+)\s*\(''',
+  );
   static final _registration = RegExp(
-      r'PluginUtilities\.getCallbackHandle|onBackgroundMessage|'
-      r'Workmanager\(\)\s*\.\s*(?:initialize|registerOneOffTask|registerPeriodicTask)|'
-      r'AndroidAlarmManager\.|BackgroundFetch\.|FlutterBackgroundService|'
-      r'onDidReceiveBackgroundNotificationResponse|registerHeadlessTask');
+    r'PluginUtilities\.getCallbackHandle|onBackgroundMessage|'
+    r'Workmanager\(\)\s*\.\s*(?:initialize|registerOneOffTask|registerPeriodicTask)|'
+    r'AndroidAlarmManager\.|BackgroundFetch\.|FlutterBackgroundService|'
+    r'onDidReceiveBackgroundNotificationResponse|registerHeadlessTask',
+  );
 
   /// Functions of own code that native code may start in a separate engine
   /// (entry points other than main), and the calls that register them.
   Future<({List<(String, SourceSite)> entries, List<SourceSite> registrations})>
-      backgroundEntries() async {
+  backgroundEntries() async {
     final entries = <(String, SourceSite)>[];
     final registrations = <SourceSite>[];
     await _eachOwnDart((site, text) {
@@ -148,15 +163,15 @@ class SourceScan {
             package: site.package,
             file: site.file,
             // The function's own line, not its annotation's.
-            line: _lineAt(text, m.start + m.group(0)!.lastIndexOf(name))
-          )
+            line: _lineAt(text, m.start + m.group(0)!.lastIndexOf(name)),
+          ),
         ));
       }
       for (final m in _registration.allMatches(text)) {
         registrations.add((
           package: site.package,
           file: site.file,
-          line: _lineAt(text, m.start)
+          line: _lineAt(text, m.start),
         ));
       }
     });
@@ -168,11 +183,14 @@ class SourceScan {
       final lib = Directory.fromUri(roots[name] as Uri);
       if (!await lib.exists()) continue;
       final base = _dir(name).path;
-      await for (final entity
-          in lib.list(recursive: true, followLinks: false)) {
+      await for (final entity in lib.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
-        final relative =
-            p.relative(entity.path, from: base).replaceAll('\\', '/');
+        final relative = p
+            .relative(entity.path, from: base)
+            .replaceAll('\\', '/');
         visit((package: name, file: relative, line: 0), await _read(entity));
       }
     }

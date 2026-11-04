@@ -52,14 +52,18 @@ class FlutterPatcher {
   static Future<Map<String, String>> _hostScope() => _scope ??= PatcherChannel
       .channel
       .invokeMapMethod<String, String>('hostScope')
-      .then((scope) =>
-          scope ?? (throw PatcherException('This host has no host policy')));
+      .then(
+        (scope) =>
+            scope ?? (throw PatcherException('This host has no host policy')),
+      );
 
   /// Fetch an untrusted envelope, preserving its exact signed representation.
   /// Authentication and replay checks occur only in [applySignedManifest].
   static Future<SignedManifest> fetchSignedManifest(String url) async =>
-      SignedManifest.parse(await platform_io.getSignedWire(url) ??
-          (throw const FormatException('No signed manifest published')));
+      SignedManifest.parse(
+        await platform_io.getSignedWire(url) ??
+            (throw const FormatException('No signed manifest published')),
+      );
 
   /// Authenticate, download and commit a publication, or persist a withdrawal.
   /// Requires a host built with `flutter_patcher build`. Failure never enables
@@ -70,9 +74,10 @@ class FlutterPatcher {
   /// manifest's relative patch path is resolved against. Native code checks
   /// the patch against the signed manifest either way.
   static Future<SignedUpdateResult> applySignedManifest(
-      SignedManifest manifest,
-      {String? baseUrl,
-      List<int>? payload}) async {
+    SignedManifest manifest, {
+    String? baseUrl,
+    List<int>? payload,
+  }) async {
     String? file;
     final fields = manifest.fields;
     if (fields['action'] == 'publish') {
@@ -83,23 +88,35 @@ class FlutterPatcher {
           throw ArgumentError('Pass baseUrl or payload for a publication');
         }
         final size = int.parse(fields['size']!);
-        _downloads.add(PatchApplyProgress(
-            phase: PatchApplyPhase.downloading, totalBytes: size));
+        _downloads.add(
+          PatchApplyProgress(
+            phase: PatchApplyPhase.downloading,
+            totalBytes: size,
+          ),
+        );
         file = await platform_io.downloadPayload(
-            '${baseUrl.replaceFirst(RegExp(r'/+$'), '')}/${fields['path']}',
-            size,
-            (received) => _downloads.add(PatchApplyProgress(
-                phase: PatchApplyPhase.downloading,
-                bytesReceived: received,
-                totalBytes: size)));
+          '${baseUrl.replaceFirst(RegExp(r'/+$'), '')}/${fields['path']}',
+          size,
+          (received) => _downloads.add(
+            PatchApplyProgress(
+              phase: PatchApplyPhase.downloading,
+              bytesReceived: received,
+              totalBytes: size,
+            ),
+          ),
+        );
       }
     }
     try {
       final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
-          'applySignedManifest', {'wire': manifest.wire, 'payload': file});
+        'applySignedManifest',
+        {'wire': manifest.wire, 'payload': file},
+      );
       if (raw == null) throw StateError('Missing authenticated update result');
       return SignedUpdateResult(
-          raw['action'] as String, PatchApplyResult.fromNative(raw));
+        raw['action'] as String,
+        PatchApplyResult.fromNative(raw),
+      );
     } finally {
       if (file != null) await platform_io.deletePayload(file);
     }
@@ -109,7 +126,9 @@ class FlutterPatcher {
   /// native checks its domain, scope, root signature and durable trust revision.
   static Future<void> updatePublicationTrust(SignedManifest document) async {
     await PatcherChannel.channel.invokeMethod<Object?>(
-        'updatePublicationTrust', {'wire': document.wire});
+      'updatePublicationTrust',
+      {'wire': document.wire},
+    );
   }
 
   static bool _inited = false;
@@ -154,19 +173,24 @@ class FlutterPatcher {
     return _progressStream ??= () {
       final subscriptions = <StreamSubscription<PatchApplyProgress>>[];
       late final StreamController<PatchApplyProgress> merged;
-      merged = StreamController<PatchApplyProgress>.broadcast(onListen: () {
-        subscriptions
-          ..add(_downloads.stream.listen(merged.add))
-          ..add(_eventChannel
-              .receiveBroadcastStream()
-              .map((raw) => PatchApplyProgress.fromNative(raw))
-              .listen(merged.add, onError: merged.addError));
-      }, onCancel: () {
-        for (final subscription in subscriptions) {
-          subscription.cancel();
-        }
-        subscriptions.clear();
-      });
+      merged = StreamController<PatchApplyProgress>.broadcast(
+        onListen: () {
+          subscriptions
+            ..add(_downloads.stream.listen(merged.add))
+            ..add(
+              _eventChannel
+                  .receiveBroadcastStream()
+                  .map((raw) => PatchApplyProgress.fromNative(raw))
+                  .listen(merged.add, onError: merged.addError),
+            );
+        },
+        onCancel: () {
+          for (final subscription in subscriptions) {
+            subscription.cancel();
+          }
+          subscriptions.clear();
+        },
+      );
       return merged.stream;
     }();
   }
@@ -252,8 +276,10 @@ class FlutterPatcher {
 
     try {
       if (await _hostStrategy() == null) {
-        throw PatcherException('This app was not built with flutter_patcher; '
-            'build it with dart run flutter_patcher build android|ios');
+        throw PatcherException(
+          'This app was not built with flutter_patcher; '
+          'build it with dart run flutter_patcher build android|ios',
+        );
       }
       return await _checkSigned(url, timeout);
     } on PatcherException {
@@ -264,25 +290,33 @@ class FlutterPatcher {
     }
   }
 
-  static Future<PatchCheckResult> _checkSigned(String url, Duration timeout) async {
+  static Future<PatchCheckResult> _checkSigned(
+    String url,
+    Duration timeout,
+  ) async {
     final base = url.replaceFirst(RegExp(r'/+$'), '');
     final wire = await platform_io.getSignedWire(
-        '$base/manifests/${scopeOf(await _hostScope())}.json',
-        timeout: timeout);
+      '$base/manifests/${scopeOf(await _hostScope())}.json',
+      timeout: timeout,
+    );
     if (wire == null) return PatchCheckResult.none();
     final manifest = SignedManifest.parse(wire);
     final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
-        'checkSignedManifest', {'wire': manifest.wire});
+      'checkSignedManifest',
+      {'wire': manifest.wire},
+    );
     if (raw == null || raw['fresh'] != true) return PatchCheckResult.none();
     return PatchCheckResult(
-        hasUpdate: true,
-        patch: PatchInfo(
-            version: raw['patch_seq'] as String? ?? raw['action'] as String,
-            raw: {
-              'signed_manifest': manifest.wire,
-              'action': raw['action'],
-              'base_url': base
-            }));
+      hasUpdate: true,
+      patch: PatchInfo(
+        version: raw['patch_seq'] as String? ?? raw['action'] as String,
+        raw: {
+          'signed_manifest': manifest.wire,
+          'action': raw['action'],
+          'base_url': base,
+        },
+      ),
+    );
   }
 
   /// Applies the update [checkUpdate] returned: downloads the patch the signed
@@ -309,12 +343,15 @@ class FlutterPatcher {
     try {
       final wire = patchInfo.raw['signed_manifest'];
       if (wire is! String) {
-        return PatchApplyResult.failure(PatchApplyError.invalidArgs,
-            'Pass the PatchInfo returned by checkUpdate');
+        return PatchApplyResult.failure(
+          PatchApplyError.invalidArgs,
+          'Pass the PatchInfo returned by checkUpdate',
+        );
       }
-      return (await applySignedManifest(SignedManifest.parse(wire),
-              baseUrl: patchInfo.raw['base_url'] as String?))
-          .result;
+      return (await applySignedManifest(
+        SignedManifest.parse(wire),
+        baseUrl: patchInfo.raw['base_url'] as String?,
+      )).result;
     } on platform_io.PayloadDownloadException catch (e) {
       return PatchApplyResult.failure(PatchApplyError.network, e.toString());
     } on PlatformException catch (e) {
@@ -326,7 +363,6 @@ class FlutterPatcher {
       await sub?.cancel();
     }
   }
-
 
   /// Deletes the current patch. The next cold start uses the APK built-in
   /// version. Manual rollback does not blacklist the patch.

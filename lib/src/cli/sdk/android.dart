@@ -1,14 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import 'host.dart';
 
 /// Android SDK root: `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then the
 /// location Android Studio uses on each host. Returns null when none holds a
 /// `build-tools` directory.
-String? locateAndroidSdk(HostIdentity host,
-    {Map<String, String>? environment}) {
+String? locateAndroidSdk(
+  HostIdentity host, {
+  Map<String, String>? environment,
+}) {
   final env = environment ?? Platform.environment;
   final home = env['HOME'] ?? env['USERPROFILE'];
   final candidates = <String?>[
@@ -34,25 +38,36 @@ String? locateAndroidSdk(HostIdentity host,
 /// --android-sdk` first, then [locateAndroidSdk]. Gradle builds use Flutter's
 /// choice, so the CLI must not reject a host where only the config is set.
 Future<String> resolveAndroidSdk(
-    Commands commands, HostIdentity host, String flutterLauncher) async {
+  Commands commands,
+  HostIdentity host,
+  String flutterLauncher,
+) async {
   String? configured;
-  final result = await commands.runResult(
-      flutterLauncher, ['--suppress-analytics', 'config', '--machine']);
+  final result = await commands.runResult(flutterLauncher, [
+    '--suppress-analytics',
+    'config',
+    '--machine',
+  ]);
   final start = result.stdout.indexOf('{');
   if (result.exitCode == 0 && start >= 0) {
     try {
-      configured = (jsonDecode(result.stdout.substring(start))
-          as Map)['android-sdk'] as String?;
+      configured =
+          (jsonDecode(result.stdout.substring(start)) as Map)['android-sdk']
+              as String?;
     } on FormatException {
       configured = null;
     }
   }
-  final sdk = configured != null &&
+  final sdk =
+      configured != null &&
           Directory(p.join(configured, 'build-tools')).existsSync()
       ? configured
       : locateAndroidSdk(host);
-  require(sdk != null, 'ANDROID_SDK_MISSING',
-      'No Android SDK: select one with flutter config --android-sdk or ANDROID_HOME.');
+  require(
+    sdk != null,
+    'ANDROID_SDK_MISSING',
+    'No Android SDK: select one with flutter config --android-sdk or ANDROID_HOME.',
+  );
   return sdk!;
 }
 
@@ -87,8 +102,9 @@ Future<String> selectAapt(String androidSdk, HostIdentity host) async {
       .where((f) => f is Directory)
       .map((d) => d.path)
       .toList();
-  buildTools
-      .sort((a, b) => compareBuildToolsVersions(p.basename(b), p.basename(a)));
+  buildTools.sort(
+    (a, b) => compareBuildToolsVersions(p.basename(b), p.basename(a)),
+  );
   for (final directory in buildTools) {
     final aapt = p.join(directory, host.exe('aapt'));
     if (File(aapt).existsSync()) return aapt;
@@ -102,6 +118,9 @@ Future<String> selectAapt(String androidSdk, HostIdentity host) async {
 void checkJavaHome(HostIdentity host, {Map<String, String>? environment}) {
   final javaHome = (environment ?? Platform.environment)['JAVA_HOME'];
   if (javaHome == null || javaHome.isEmpty) return;
-  require(File(p.join(javaHome, 'bin', host.exe('java'))).existsSync(),
-      'JAVA_HOME_INVALID', 'JAVA_HOME does not contain bin/java: $javaHome');
+  require(
+    File(p.join(javaHome, 'bin', host.exe('java'))).existsSync(),
+    'JAVA_HOME_INVALID',
+    'JAVA_HOME does not contain bin/java: $javaHome',
+  );
 }

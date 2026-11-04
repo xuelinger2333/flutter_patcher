@@ -11,11 +11,11 @@ Future<void> main(List<String> args) async {
   final context = SecurityContext()
     ..useCertificateChainBytes(p12, password: args[2])
     ..usePrivateKeyBytes(p12, password: args[2]);
-  final server =
-      await HttpServer.bindSecure(
-      args.length > 3 ? InternetAddress(args[3]) : InternetAddress.loopbackIPv4,
-      8443,
-      context);
+  final server = await HttpServer.bindSecure(
+    args.length > 3 ? InternetAddress(args[3]) : InternetAddress.loopbackIPv4,
+    8443,
+    context,
+  );
   print('READY');
   await for (final request in server) {
     final file = File.fromUri(root.resolve(request.uri.path.substring(1)));
@@ -26,6 +26,8 @@ Future<void> main(List<String> args) async {
       await request.response.addStream(file.openRead());
     }
     await request.response.close();
-    print('${request.method} ${request.uri.path} ${request.response.statusCode}');
+    print(
+      '${request.method} ${request.uri.path} ${request.response.statusCode}',
+    );
   }
 }

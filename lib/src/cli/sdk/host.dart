@@ -1,6 +1,8 @@
 import 'dart:ffi' show Abi;
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 
 /// Build-host identity.
@@ -20,7 +22,9 @@ class HostIdentity {
   const HostIdentity(this.os, this.arch);
 
   factory HostIdentity.current() => HostIdentity(
-      Platform.operatingSystem, Abi.current().toString().split('_').last);
+    Platform.operatingSystem,
+    Abi.current().toString().split('_').last,
+  );
 
   static const linuxX64 = HostIdentity('linux', 'x64');
 
@@ -98,33 +102,42 @@ String? hostHome() =>
 /// The single host-support gate for every command. A command that builds
 /// or patches for one platform passes it as [target]; other commands need a
 /// host verified for any platform.
-HostIdentity requireSupportedHost(
-    {String? target, HostIdentity? host, Map<String, String>? environment}) {
+HostIdentity requireSupportedHost({
+  String? target,
+  HostIdentity? host,
+  Map<String, String>? environment,
+}) {
   final current = host ?? HostIdentity.current();
   final targets = HostIdentity.verifiedTargets[current.key] ?? const <String>{};
-  final verified =
-      target == null ? targets.isNotEmpty : targets.contains(target);
+  final verified = target == null
+      ? targets.isNotEmpty
+      : targets.contains(target);
   // Maintainers bring up a new host, or platform, before it is verified.
-  final unverified = (environment ??
+  final unverified =
+      (environment ??
               Platform.environment)['FLUTTER_PATCHER_UNVERIFIED_HOST'] ==
           '1' &&
       HostIdentity.implemented.contains(current.key);
   require(
-      verified || unverified,
-      'HOST_UNSUPPORTED',
-      !HostIdentity.implemented.contains(current.key)
-          ? 'Supported build hosts: ${HostIdentity.verified.join(', ')}; detected ${current.key}.'
-          : targets.isEmpty
-              ? 'Host ${current.key} is implemented but not yet verified for release.'
-              : '$target on ${current.key} is not yet verified for release; '
-                  'this host is verified for ${(targets.toList()..sort()).join(', ')}.');
+    verified || unverified,
+    'HOST_UNSUPPORTED',
+    !HostIdentity.implemented.contains(current.key)
+        ? 'Supported build hosts: ${HostIdentity.verified.join(', ')}; detected ${current.key}.'
+        : targets.isEmpty
+        ? 'Host ${current.key} is implemented but not yet verified for release.'
+        : '$target on ${current.key} is not yet verified for release; '
+              'this host is verified for ${(targets.toList()..sort()).join(', ')}.',
+  );
   return current;
 }
 
 /// Marks a downloaded tool executable. No-op on Windows, where the loader
 /// does not consult a mode bit.
-Future<void> markExecutable(Commands commands, String path,
-    {HostIdentity? host}) async {
+Future<void> markExecutable(
+  Commands commands,
+  String path, {
+  HostIdentity? host,
+}) async {
   if ((host ?? HostIdentity.current()).isPosix) {
     await commands.run('chmod', ['755', path]);
   }

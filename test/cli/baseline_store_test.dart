@@ -1,10 +1,12 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/baseline/repository.dart';
 import 'package:flutter_patcher/src/cli/baseline/split.dart';
 import 'package:flutter_patcher/src/cli/baseline/store.dart';
+
 import 'baseline_test.dart' show buildFixture, buildMetadata, writeReceipt;
 
 void main() {
@@ -21,13 +23,16 @@ void main() {
     rejectAuth = false;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     store = HttpBaselineStore(
-        Uri.parse('http://127.0.0.1:${server.port}/store'),
-        token: 'test-secret');
+      Uri.parse('http://127.0.0.1:${server.port}/store'),
+      token: 'test-secret',
+    );
     server.listen((request) async {
       if (redirect) {
         request.response.statusCode = 307;
-        request.response.headers
-            .set('location', 'https://example.invalid/credentials');
+        request.response.headers.set(
+          'location',
+          'https://example.invalid/credentials',
+        );
       } else if (rejectAuth ||
           request.headers.value('authorization') != 'Bearer test-secret') {
         request.response.statusCode = 403;
@@ -66,104 +71,164 @@ void main() {
     expect(await store.get(name, dest), true);
     expect(await File(dest).readAsString(), 'original');
     expect(
-        await store.get(
-            'baseline-${'b' * 64}.tar.gz', p.join(temp.path, 'missing')),
-        false);
+      await store.get(
+        'baseline-${'b' * 64}.tar.gz',
+        p.join(temp.path, 'missing'),
+      ),
+      false,
+    );
   });
-  test('redirects and auth failures are explicit and do not disclose token',
-      () async {
-    redirect = true;
-    await expectLater(
+  test(
+    'redirects and auth failures are explicit and do not disclose token',
+    () async {
+      redirect = true;
+      await expectLater(
         store.probe(),
-        throwsA(isA<Failure>().having(
-            (e) => e.message.contains('test-secret'), 'secret leaked', false)));
-    redirect = false;
-    rejectAuth = true;
-    await expectLater(store.probe(), throwsA(isA<Failure>()));
-  });
+        throwsA(
+          isA<Failure>().having(
+            (e) => e.message.contains('test-secret'),
+            'secret leaked',
+            false,
+          ),
+        ),
+      );
+      redirect = false;
+      rejectAuth = true;
+      await expectLater(store.probe(), throwsA(isA<Failure>()));
+    },
+  );
   test('upload error propagates without sidecar', () async {
     final source = p.join(temp.path, 'source');
     await File(source).writeAsString('bytes');
     rejectPut = true;
-    await expectLater(store.put('baseline-${'c' * 64}.tar.gz', source),
-        throwsA(isA<Failure>()));
+    await expectLater(
+      store.put('baseline-${'c' * 64}.tar.gz', source),
+      throwsA(isA<Failure>()),
+    );
     expect(objects, isEmpty);
   });
   test('HTTP complete archive roundtrip into independent cache', () async {
     final input = p.join(temp.path, 'input');
     await buildFixture(input, versionCode: '1');
     final first = BaselineRepository(p.join(temp.path, 'one'), store);
-    final saved = await first.save(input, buildMetadata(),
-        flavor: 'default', versionCode: '1');
+    final saved = await first.save(
+      input,
+      buildMetadata(),
+      flavor: 'default',
+      versionCode: '1',
+    );
     expect(objects.keys.map((k) => k.split('/').last).toSet(), {
       'compile-${saved['fingerprint']}.tar.gz',
       'release-default-1-arm64-v8a.tar.gz',
-      'apk-${'d' * 64}.json'
+      'apk-${'d' * 64}.json',
     });
     final second = BaselineRepository(p.join(temp.path, 'two'), store);
     final restored = await second.fetchCompile(saved['fingerprint'] as String);
-    expect(manifestDigest(await verifyCompile(restored)),
-        saved['compile']['manifest_sha256']);
-    expect((await second.verifyRelease('default', '1'))['fingerprint'],
-        saved['fingerprint']);
-    final again = await first.save(input, buildMetadata(),
-        flavor: 'default', versionCode: '1');
+    expect(
+      manifestDigest(await verifyCompile(restored)),
+      saved['compile']['manifest_sha256'],
+    );
+    expect(
+      (await second.verifyRelease('default', '1'))['fingerprint'],
+      saved['fingerprint'],
+    );
+    final again = await first.save(
+      input,
+      buildMetadata(),
+      flavor: 'default',
+      versionCode: '1',
+    );
     expect(again['release_status'], 'existing');
     expect(again['attestation']['status'], 'existing');
     // Staging directories go once each save or fetch returns.
     for (final cache in ['one', 'two']) {
       expect(
-          Directory(p.join(temp.path, cache))
-              .listSync()
-              .where((e) => p.basename(e.path).startsWith('.work')),
-          isEmpty);
+        Directory(p.join(temp.path, cache))
+            .listSync()
+            .where((e) => p.basename(e.path).startsWith('.work')),
+        isEmpty,
+      );
     }
   });
 
   test(
-      'real AWS CLI with isolated S3 emulator: roundtrip, conflict and missing',
-      () async {
-    final commands = Commands(temp.path);
-    commands.environment['FLUTTER_PATCHER_S3_ENDPOINT'] =
-        Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT']!;
-    final s3 = S3BaselineStore(
+    'real AWS CLI with isolated S3 emulator: roundtrip, conflict and missing',
+    () async {
+      final commands = Commands(temp.path);
+      commands.environment['FLUTTER_PATCHER_S3_ENDPOINT'] =
+          Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT']!;
+      final s3 = S3BaselineStore(
         Uri.parse(
-            's3://flutter-patcher-test/${DateTime.now().microsecondsSinceEpoch}'),
-        commands);
-    await s3.probe();
-    final input = p.join(temp.path, 'input');
-    await buildFixture(input, versionCode: '1');
-    final first = BaselineRepository(p.join(temp.path, 's3-one'), s3);
-    final saved = await first.save(input, buildMetadata(),
-        flavor: 'default', versionCode: '1');
-    await first.save(input, buildMetadata(),
-        flavor: 'default', versionCode: '1');
-    final second = BaselineRepository(p.join(temp.path, 's3-two'), s3);
-    await verifyCompile(
-        await second.fetchCompile(saved['fingerprint'] as String));
-    expect(
+          's3://flutter-patcher-test/${DateTime.now().microsecondsSinceEpoch}',
+        ),
+        commands,
+      );
+      await s3.probe();
+      final input = p.join(temp.path, 'input');
+      await buildFixture(input, versionCode: '1');
+      final first = BaselineRepository(p.join(temp.path, 's3-one'), s3);
+      final saved = await first.save(
+        input,
+        buildMetadata(),
+        flavor: 'default',
+        versionCode: '1',
+      );
+      await first.save(
+        input,
+        buildMetadata(),
+        flavor: 'default',
+        versionCode: '1',
+      );
+      final second = BaselineRepository(p.join(temp.path, 's3-two'), s3);
+      await verifyCompile(
+        await second.fetchCompile(saved['fingerprint'] as String),
+      );
+      expect(
         await s3.get(
-            'baseline-${'e' * 64}.tar.gz', p.join(temp.path, 'missing')),
-        false);
-    await File(p.join(input, 'libapp.so')).writeAsString('new');
-    await writeReceipt(input,
-        versionCode: '1', overrides: {'apk_sha256': 'e' * 64});
-    await expectLater(
+          'baseline-${'e' * 64}.tar.gz',
+          p.join(temp.path, 'missing'),
+        ),
+        false,
+      );
+      await File(p.join(input, 'libapp.so')).writeAsString('new');
+      await writeReceipt(
+        input,
+        versionCode: '1',
+        overrides: {'apk_sha256': 'e' * 64},
+      );
+      await expectLater(
         first.save(input, buildMetadata(), flavor: 'default', versionCode: '1'),
-        throwsA(isA<Failure>()
-            .having((e) => e.code, 'code', 'BASELINE_RELEASE_CONFLICT')));
-    await writeReceipt(input,
-        versionCode: '2', overrides: {'apk_sha256': 'e' * 64});
-    expect(
-        (await first.save(input, buildMetadata(),
-            flavor: 'default', versionCode: '2'))['release_status'],
-        'created');
-    final unavailable =
-        S3BaselineStore(Uri.parse('s3://missing-test-bucket'), commands);
-    await expectLater(unavailable.probe(), throwsA(isA<Failure>()));
-  },
-      skip: Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT'] == null
-          ? 'Set isolated S3 emulator endpoint and test-only AWS credentials'
-          : false,
-      timeout: const Timeout(Duration(minutes: 3)));
+        throwsA(
+          isA<Failure>().having(
+            (e) => e.code,
+            'code',
+            'BASELINE_RELEASE_CONFLICT',
+          ),
+        ),
+      );
+      await writeReceipt(
+        input,
+        versionCode: '2',
+        overrides: {'apk_sha256': 'e' * 64},
+      );
+      expect(
+        (await first.save(
+          input,
+          buildMetadata(),
+          flavor: 'default',
+          versionCode: '2',
+        ))['release_status'],
+        'created',
+      );
+      final unavailable = S3BaselineStore(
+        Uri.parse('s3://missing-test-bucket'),
+        commands,
+      );
+      await expectLater(unavailable.probe(), throwsA(isA<Failure>()));
+    },
+    skip: Platform.environment['FLUTTER_PATCHER_TEST_S3_ENDPOINT'] == null
+        ? 'Set isolated S3 emulator endpoint and test-only AWS credentials'
+        : false,
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }

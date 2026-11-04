@@ -1,6 +1,8 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
+
 import 'core.dart';
 
 /// A project's `flutter_patcher.yaml` and key directory: what the commands

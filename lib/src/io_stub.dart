@@ -11,13 +11,16 @@ class PayloadDownloadException implements Exception {
 Uri updateUri(String url) =>
     throw UnsupportedError('Signed updates require Android or iOS');
 
-Future<String?> getSignedWire(String url,
-        {Duration timeout = const Duration(seconds: 30)}) =>
-    throw UnsupportedError('Signed updates require Android or iOS');
+Future<String?> getSignedWire(
+  String url, {
+  Duration timeout = const Duration(seconds: 30),
+}) => throw UnsupportedError('Signed updates require Android or iOS');
 
 Future<String> downloadPayload(
-        String url, int size, void Function(int received) progress) =>
-    throw UnsupportedError('Signed updates require Android or iOS');
+  String url,
+  int size,
+  void Function(int received) progress,
+) => throw UnsupportedError('Signed updates require Android or iOS');
 
 Future<String> writePayload(List<int> bytes) =>
     throw UnsupportedError('Signed updates require Android or iOS');

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:typed_data';
+
 import 'package:crypto/crypto.dart';
 
 /// Ed25519 (RFC 8032 §5.1) in plain Dart, mirroring the verification-only
@@ -11,12 +12,15 @@ import 'package:crypto/crypto.dart';
 /// into anything that signs on behalf of untrusted callers.
 
 final BigInt _p = (BigInt.one << 255) - BigInt.from(19);
-final BigInt _order = (BigInt.one << 252) +
+final BigInt _order =
+    (BigInt.one << 252) +
     BigInt.parse('27742317777372353535851937790883648493');
 final BigInt _d =
     (BigInt.from(-121665) * BigInt.from(121666).modInverse(_p)) % _p;
-final BigInt _sqrtMinusOne =
-    BigInt.two.modPow((_p - BigInt.one) ~/ BigInt.from(4), _p);
+final BigInt _sqrtMinusOne = BigInt.two.modPow(
+  (_p - BigInt.one) ~/ BigInt.from(4),
+  _p,
+);
 final BigInt _sqrtExponent = (_p + BigInt.from(3)) ~/ BigInt.from(8);
 
 class _Point {
@@ -24,10 +28,15 @@ class _Point {
   const _Point(this.x, this.y, this.z, this.t);
 }
 
-final _Point _identity =
-    _Point(BigInt.zero, BigInt.one, BigInt.one, BigInt.zero);
-final _Point _base =
-    _decodePoint(Uint8List.fromList(List<int>.filled(32, 0x66)..[0] = 0x58))!;
+final _Point _identity = _Point(
+  BigInt.zero,
+  BigInt.one,
+  BigInt.one,
+  BigInt.zero,
+);
+final _Point _base = _decodePoint(
+  Uint8List.fromList(List<int>.filled(32, 0x66)..[0] = 0x58),
+)!;
 
 _Point _add(_Point p, _Point q) {
   final a = ((p.y - p.x) * (q.y - q.x)) % _p;
@@ -139,7 +148,10 @@ Uint8List ed25519Sign(List<int> seed, List<int> message) {
 /// prime order (rejects the identity and small-order keys), matching the
 /// Android verifier's policy.
 bool ed25519Verify(
-    List<int> publicKey, List<int> signature, List<int> message) {
+  List<int> publicKey,
+  List<int> signature,
+  List<int> message,
+) {
   if (publicKey.length != 32 || signature.length != 64) return false;
   final s = _littleEndian(signature.sublist(32));
   if (s >= _order) return false;
@@ -150,8 +162,10 @@ bool ed25519Verify(
       !_samePoint(_multiply(_order, a), _identity)) {
     return false;
   }
-  final k = _littleEndian(
-          _sha512([...signature.sublist(0, 32), ...publicKey, ...message])) %
+  final k =
+      _littleEndian(
+        _sha512([...signature.sublist(0, 32), ...publicKey, ...message]),
+      ) %
       _order;
   return _samePoint(_multiply(s, _base), _add(r, _multiply(k, a)));
 }

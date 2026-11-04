@@ -1,11 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 
 /// Rewrite URI literals only in directives, leaving runtime strings untouched.
-String rewriteImports(String source, Map<String, String> names,
-    {Map<String, String> relativeUriRewrites = const {}}) {
+String rewriteImports(
+  String source,
+  Map<String, String> names, {
+  Map<String, String> relativeUriRewrites = const {},
+}) {
   var directive = false, previous = 0;
   final out = StringBuffer();
   var i = 0;
@@ -33,7 +38,8 @@ String rewriteImports(String source, Map<String, String> names,
       continue;
     }
     final start = i;
-    final raw = source[i] == 'r' &&
+    final raw =
+        source[i] == 'r' &&
         i + 1 < source.length &&
         ["'", '"'].contains(source[i + 1]);
     if (raw) i++;
@@ -61,8 +67,9 @@ String rewriteImports(String source, Map<String, String> names,
     // which the language concatenates; rewrite the run as one literal.
     final parts = <String>[];
     String readLiteral(bool isRaw) {
-      final delimiter =
-          source.startsWith(source[i] * 3, i) ? source[i] * 3 : source[i];
+      final delimiter = source.startsWith(source[i] * 3, i)
+          ? source[i] * 3
+          : source[i];
       i += delimiter.length;
       final begin = i;
       while (i < source.length && !source.startsWith(delimiter, i)) {
@@ -72,8 +79,11 @@ String rewriteImports(String source, Map<String, String> names,
           i++;
         }
       }
-      require(i < source.length, 'PATCH_SOURCE_INVALID',
-          'Unterminated source string');
+      require(
+        i < source.length,
+        'PATCH_SOURCE_INVALID',
+        'Unterminated source string',
+      );
       final end = i;
       i += delimiter.length;
       return source.substring(begin, end);
@@ -85,7 +95,8 @@ String rewriteImports(String source, Map<String, String> names,
       while (j < source.length && ' \t\r\n'.contains(source[j])) {
         j++;
       }
-      final nextRaw = j + 1 < source.length &&
+      final nextRaw =
+          j + 1 < source.length &&
           source[j] == 'r' &&
           ["'", '"'].contains(source[j + 1]);
       if (!nextRaw && (j >= source.length || !["'", '"'].contains(source[j]))) {
@@ -97,17 +108,20 @@ String rewriteImports(String source, Map<String, String> names,
     if (!directive) continue;
     final content = parts.join();
     require(
-        !content.contains('\\') && !content.contains(r'$'),
-        'PATCH_SOURCE_INVALID',
-        'Escaped/interpolated directive URIs are unsupported');
+      !content.contains('\\') && !content.contains(r'$'),
+      'PATCH_SOURCE_INVALID',
+      'Escaped/interpolated directive URIs are unsupported',
+    );
     final uri = Uri.tryParse(content);
     String? replacement = relativeUriRewrites[content];
     if (replacement == null &&
         uri?.scheme == 'package' &&
         uri!.pathSegments.isNotEmpty &&
         names.containsKey(uri.pathSegments.first)) {
-      replacement = content.replaceFirst('package:${uri.pathSegments.first}/',
-          'package:${names[uri.pathSegments.first]}/');
+      replacement = content.replaceFirst(
+        'package:${uri.pathSegments.first}/',
+        'package:${names[uri.pathSegments.first]}/',
+      );
     }
     if (replacement == null) continue;
     out.write(source.substring(previous, start));
@@ -122,17 +136,20 @@ Future<Map<String, dynamic>> packageRoots(String config) async {
   final data = await readObject(config);
   return {
     for (final row in data['packages'] as List)
-      row['name'] as String: File(config)
-          .absolute
-          .uri
+      row['name'] as String: File(config).absolute.uri
           .resolve(
-              '${(row['rootUri'] as String).replaceFirst(RegExp(r'/+$'), '')}/')
-          .resolve(row['packageUri'] as String? ?? 'lib/')
+            '${(row['rootUri'] as String).replaceFirst(RegExp(r'/+$'), '')}/',
+          )
+          .resolve(row['packageUri'] as String? ?? 'lib/'),
   };
 }
 
 Future<Map<String, Object?>> remapSources(
-    String config, String destination, Set<String> own, int seq) async {
+  String config,
+  String destination,
+  Set<String> own,
+  int seq,
+) async {
   final data = await readObject(config);
   final roots = await packageRoots(config);
   final names = {for (final name in own) name: 'patch.$seq.$name'};
@@ -149,8 +166,10 @@ Future<Map<String, Object?>> remapSources(
     }
     final target = p.join(destination, name);
     await Directory(target).create(recursive: true);
-    await for (final entity
-        in source.list(recursive: true, followLinks: false)) {
+    await for (final entity in source.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       final output = p.join(target, p.relative(entity.path, from: source.path));
       if (entity is Link) {
         throw Failure('PATCH_SOURCE_INVALID', 'Symlink in module sources');
@@ -168,7 +187,7 @@ Future<Map<String, Object?>> remapSources(
       ...row,
       'name': names[name],
       'rootUri': Directory(target).absolute.uri.toString(),
-      'packageUri': ''
+      'packageUri': '',
     });
   }
   final result = p.join(destination, 'package_config.json');
@@ -176,8 +195,13 @@ Future<Map<String, Object?>> remapSources(
   return {'packages': result, 'names': names};
 }
 
-String patchEntry(String package, String target, int seq, String fingerprint,
-        String tier) =>
+String patchEntry(
+  String package,
+  String target,
+  int seq,
+  String fingerprint,
+  String tier,
+) =>
     'import ${jsonEncode('package:$package/$target').replaceAll(r'$', r'\$')} as app;\n'
     '@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
     'Object? dynamicModuleEntrypoint() => <Object?>[1,$seq,"$fingerprint","$tier",app.main,null];\n';

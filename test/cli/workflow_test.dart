@@ -1,12 +1,13 @@
 import 'dart:io';
+
 import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
 
 void main() {
   test('CI is read-only, hosted-only and pins every action', () {
-    final workflow =
-        loadYaml(File('.github/workflows/ci.yml').readAsStringSync())
-            as YamlMap;
+    final workflow = loadYaml(
+      File('.github/workflows/ci.yml').readAsStringSync(),
+    ) as YamlMap;
     expect(workflow['permissions']['contents'], 'read');
     final jobs = workflow['jobs'] as YamlMap;
     expect(jobs.keys, containsAll(['versions', 'fast']));

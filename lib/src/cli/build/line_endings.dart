@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
 import 'workspace.dart';
 
 /// Dart sources under [root] that contain CRLF, as sorted POSIX paths.
@@ -15,7 +17,8 @@ Future<List<String>> crlfDartSources(String root) async {
       final name = p.basename(entry.path);
       if (entry is Directory &&
           !BuildWorkspace.skipped(
-              p.relative(entry.path, from: root).replaceAll('\\', '/'))) {
+            p.relative(entry.path, from: root).replaceAll('\\', '/'),
+          )) {
         await visit(entry);
       } else if (entry is File && name.endsWith('.dart')) {
         final bytes = await entry.readAsBytes();

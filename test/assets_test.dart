@@ -1,24 +1,20 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_patcher/src/bootstrap/assets.dart';
 import 'package:flutter_patcher/src/bootstrap/fonts.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  test(
-    'authentic subset font loads before application main',
-    () async {
-      final bytes = await File(
-        Platform.environment['FLUTTER_PATCHER_TEST_FONT']!,
-      ).readAsBytes();
-      await patcherLoadFonts({
-        'OverlaySubset': [bytes],
-      });
-      await expectLater(patcherLoadFonts({'empty': []}), throwsArgumentError);
-    },
-    skip: Platform.environment['FLUTTER_PATCHER_TEST_FONT'] == null,
-  );
+  test('authentic subset font loads before application main', () async {
+    final bytes = await File(Platform.environment['FLUTTER_PATCHER_TEST_FONT']!)
+        .readAsBytes();
+    await patcherLoadFonts({
+      'OverlaySubset': [bytes],
+    });
+    await expectLater(patcherLoadFonts({'empty': []}), throwsArgumentError);
+  }, skip: Platform.environment['FLUTTER_PATCHER_TEST_FONT'] == null);
   test('engine asset payload is sorted, length-prefixed and little-endian', () {
     final encoded = encodePatcherAssets({
       'b': Uint8List.fromList([9]),

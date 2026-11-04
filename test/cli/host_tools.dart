@@ -22,6 +22,10 @@ final String dartVm = () {
   final name = self.split(RegExp(r'[\\/]')).last.toLowerCase();
   if (name == 'dart' || name == 'dart.exe') return self;
   final cache = File(self).parent.parent.parent.parent.path;
-  return [cache, 'dart-sdk', 'bin', Platform.isWindows ? 'dart.exe' : 'dart']
-      .join(Platform.pathSeparator);
+  return [
+    cache,
+    'dart-sdk',
+    'bin',
+    Platform.isWindows ? 'dart.exe' : 'dart',
+  ].join(Platform.pathSeparator);
 }();

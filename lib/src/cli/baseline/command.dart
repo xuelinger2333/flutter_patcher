@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../sdk/host.dart';
 import 'manifest.dart';
@@ -13,20 +15,29 @@ ArgParser baselineOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
   ..addFlag('json', negatable: false)
   ..addFlag('offline', negatable: false)
-  ..addOption('action',
-      allowed: ['save', 'fetch', 'verify', 'release'], defaultsTo: 'verify')
-  ..addOption('baseline',
-      help:
-          'save: completed build output (never modified); verify: extracted legacy, compile or release object.')
-  ..addOption('metadata',
-      help:
-          'Baseline input metadata JSON (schema/version/engine/build_id/platform).')
+  ..addOption(
+    'action',
+    allowed: ['save', 'fetch', 'verify', 'release'],
+    defaultsTo: 'verify',
+  )
+  ..addOption(
+    'baseline',
+    help: 'save: completed build output (never modified); verify: extracted legacy, compile or release object.',
+  )
+  ..addOption(
+    'metadata',
+    help: 'Baseline input metadata JSON (schema/version/engine/build_id/platform).',
+  )
   ..addOption('fingerprint')
-  ..addOption('baseline-store',
-      help: 'file://, s3:// or conditional-PUT HTTPS store.')
+  ..addOption(
+    'baseline-store',
+    help: 'file://, s3:// or conditional-PUT HTTPS store.',
+  )
   ..addOption('cache-dir')
-  ..addOption('flutter-sdk',
-      help: 'Optional initialized SDK to check platform binding.')
+  ..addOption(
+    'flutter-sdk',
+    help: 'Optional initialized SDK to check platform binding.',
+  )
   ..addOption('flavor', defaultsTo: 'default')
   ..addOption('version-code')
   ..addOption('abi', defaultsTo: 'arm64-v8a');
@@ -36,8 +47,11 @@ Future<int> baselineCommand(ArgResults args) async {
     requireSupportedHost();
     String required(String option) {
       final value = args[option] as String?;
-      require(value != null && value.isNotEmpty, 'CONFIG_INVALID',
-          'Missing --$option');
+      require(
+        value != null && value.isNotEmpty,
+        'CONFIG_INVALID',
+        'Missing --$option',
+      );
       return value!;
     }
 
@@ -53,14 +67,20 @@ Future<int> baselineCommand(ArgResults args) async {
     Map<String, dynamic> result;
     switch (args['action']) {
       case 'save':
-        require(!offline || store is FileBaselineStore, 'CONFIG_INVALID',
-            'Remote save is unavailable offline.');
+        require(
+          !offline || store is FileBaselineStore,
+          'CONFIG_INVALID',
+          'Remote save is unavailable offline.',
+        );
         final metadata = await baselineObject(required('metadata'));
         if (sdk != null) await verifyPlatform(metadata, sdk);
-        result = await repository.save(required('baseline'), metadata,
-            flavor: required('flavor'),
-            versionCode: required('version-code'),
-            abi: required('abi'));
+        result = await repository.save(
+          required('baseline'),
+          metadata,
+          flavor: required('flavor'),
+          versionCode: required('version-code'),
+          abi: required('abi'),
+        );
       case 'fetch':
         final fingerprint = required('fingerprint');
         String root;
@@ -73,20 +93,26 @@ Future<int> baselineCommand(ArgResults args) async {
         result = {
           'status': 'baseline_verified',
           'cache': root,
-          ...await verifyBaselineDir(root, sdkRoot: sdk)
+          ...await verifyBaselineDir(root, sdkRoot: sdk),
         };
       case 'release':
         result = {
           'status': 'release_baseline_verified',
           ...await repository.verifyRelease(
-              required('flavor'), required('version-code'),
-              abi: required('abi'), sdkRoot: sdk)
+            required('flavor'),
+            required('version-code'),
+            abi: required('abi'),
+            sdkRoot: sdk,
+          ),
         };
       default:
         result = {
           'status': 'baseline_verified',
-          ...await verifyBaselineDir(required('baseline'),
-              expected: args['fingerprint'] as String?, sdkRoot: sdk)
+          ...await verifyBaselineDir(
+            required('baseline'),
+            expected: args['fingerprint'] as String?,
+            sdkRoot: sdk,
+          ),
         };
     }
     stdout.writeln(jsonEncode({'command': 'baseline', ...result}));
@@ -95,13 +121,18 @@ Future<int> baselineCommand(ArgResults args) async {
     final failure = e is Failure
         ? e
         : unexpectedFailure(
-            'BASELINE_OPERATION_FAILED', 'Baseline operation', e);
-    stderr.writeln(jsonEncode({
-      'command': 'baseline',
-      'status': 'failed',
-      'code': failure.code,
-      'message': failure.message
-    }));
+            'BASELINE_OPERATION_FAILED',
+            'Baseline operation',
+            e,
+          );
+    stderr.writeln(
+      jsonEncode({
+        'command': 'baseline',
+        'status': 'failed',
+        'code': failure.code,
+        'message': failure.message,
+      }),
+    );
     return 2;
   }
 }

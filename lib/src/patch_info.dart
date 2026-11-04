@@ -183,5 +183,4 @@ class PatchCheckResult {
 
   factory PatchCheckResult.none() =>
       const PatchCheckResult(hasUpdate: false, patch: null);
-
 }

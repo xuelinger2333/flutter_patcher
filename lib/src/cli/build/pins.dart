@@ -1,6 +1,8 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
+
 import '../core.dart';
 
 /// The packages a patch never carries: it always uses the host's copy.
@@ -28,17 +30,22 @@ Future<PackagePins> computePackagePins(String config, String app) async {
   final roots = <String, Directory>{};
   for (final row in data['packages'] as List) {
     final uri = File(config).absolute.uri.resolve(
-        '${(row['rootUri'] as String).replaceFirst(RegExp(r'/+$'), '')}/');
+      '${(row['rootUri'] as String).replaceFirst(RegExp(r'/+$'), '')}/',
+    );
     roots[row['name'] as String] = Directory.fromUri(uri);
   }
-  require(roots.containsKey(app), 'BUILD_PROJECT_INVALID',
-      'Application package is missing from the package config');
+  require(
+    roots.containsKey(app),
+    'BUILD_PROJECT_INVALID',
+    'Application package is missing from the package config',
+  );
   final pubspecs = <String, Map>{};
   Future<Map> pubspec(String name) async {
     if (pubspecs[name] case final cached?) return cached;
     final file = File(p.join(roots[name]!.path, 'pubspec.yaml'));
-    final value =
-        await file.exists() ? loadYaml(await file.readAsString()) : null;
+    final value = await file.exists()
+        ? loadYaml(await file.readAsString())
+        : null;
     return pubspecs[name] = value is Map ? value : const {};
   }
 
@@ -47,7 +54,7 @@ Future<PackagePins> computePackagePins(String config, String app) async {
     return deps is Map
         ? [
             for (final d in deps.keys.cast<String>().toList()..sort())
-              if (roots.containsKey(d)) d
+              if (roots.containsKey(d)) d,
           ]
         : const [];
   }
@@ -70,8 +77,10 @@ Future<PackagePins> computePackagePins(String config, String app) async {
     }
     final lib = Directory(p.join(roots[name]!.path, 'lib'));
     if (await lib.exists()) {
-      final ffi = RegExp(r'''^\s*(import|export)\s+['"]dart:ffi['"]''',
-          multiLine: true);
+      final ffi = RegExp(
+        r'''^\s*(import|export)\s+['"]dart:ffi['"]''',
+        multiLine: true,
+      );
       await for (final file in lib.list(recursive: true, followLinks: false)) {
         if (file is File &&
             file.path.endsWith('.dart') &&
@@ -109,7 +118,7 @@ Future<PackagePins> computePackagePins(String config, String app) async {
       ..clear()
       ..addAll(next..sort());
   }
-  return PackagePins(
-      {for (final k in pinned.keys.toList()..sort()) k: pinned[k]!},
-      reachable.difference(pinned.keys.toSet()));
+  return PackagePins({
+    for (final k in pinned.keys.toList()..sort()) k: pinned[k]!,
+  }, reachable.difference(pinned.keys.toSet()));
 }

@@ -119,7 +119,8 @@ class PatchBootDiagnostic {
   }
 
   @override
-  String toString() => 'PatchBootDiagnostic(${status.name}'
+  String toString() =>
+      'PatchBootDiagnostic(${status.name}'
       '${patchVersion != null ? ', v=$patchVersion' : ''}'
       '${patchTargetVersionCode != null ? ', patchVc=$patchTargetVersionCode' : ''}'
       '${appVersionCode != null ? ', appVc=$appVersionCode' : ''}'

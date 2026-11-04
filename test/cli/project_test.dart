@@ -1,8 +1,11 @@
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
+
 import 'dart:convert';
+
 import 'package:flutter_patcher/src/cli/build/host_policy.dart';
 import 'package:flutter_patcher/src/cli/crypto/ed25519.dart';
 import 'package:flutter_patcher/src/cli/project.dart';
@@ -19,9 +22,8 @@ void main() {
   };
   setUp(() async {
     project = await Directory.systemTemp.createTemp('project-');
-    File(
-      p.join(project.path, 'pubspec.yaml'),
-    ).writeAsStringSync('name: app\nversion: 2.1.0+42\n');
+    File(p.join(project.path, 'pubspec.yaml'))
+        .writeAsStringSync('name: app\nversion: 2.1.0+42\n');
     for (final role in ['root', 'publisher', 'patch']) {
       File(
           p.join(
@@ -104,32 +106,28 @@ void main() {
     );
   });
   test('a pubspec version without a build number is refused', () async {
-    File(
-      p.join(project.path, 'pubspec.yaml'),
-    ).writeAsStringSync('name: app\nversion: 2.1.0\n');
+    File(p.join(project.path, 'pubspec.yaml'))
+        .writeAsStringSync('name: app\nversion: 2.1.0\n');
     await expectLater(
       buildNumber(project.path),
       failure('BUILD_CONFIG_INVALID'),
     );
   });
   test('settings are strings with known names', () async {
-    File(
-      p.join(project.path, ProjectConfig.file),
-    ).writeAsStringSync('store: file:///tmp/p\nkeys: other_keys\n');
+    File(p.join(project.path, ProjectConfig.file))
+        .writeAsStringSync('store: file:///tmp/p\nkeys: other_keys\n');
     final config = await ProjectConfig.load(project.path);
     expect(config['store'], 'file:///tmp/p');
     expect(config.keys, p.join(project.path, 'other_keys'));
     expect(config.baselinesInProject, isTrue);
-    File(
-      p.join(project.path, ProjectConfig.file),
-    ).writeAsStringSync('stores: x\n');
+    File(p.join(project.path, ProjectConfig.file))
+        .writeAsStringSync('stores: x\n');
     await expectLater(
       ProjectConfig.load(project.path),
       failure('CONFIG_INVALID'),
     );
-    File(
-      p.join(project.path, ProjectConfig.file),
-    ).writeAsStringSync(ProjectConfig.template);
+    File(p.join(project.path, ProjectConfig.file))
+        .writeAsStringSync(ProjectConfig.template);
     expect((await ProjectConfig.load(project.path))['store'], isNull);
   });
   test(

@@ -87,9 +87,8 @@ void main() {
         listed('channel_errors'),
       );
       expect(
-        listed(
-          'boot_statuses',
-        ).containsAll(scan(swift, r'static let \w+ = "([A-Z_]+)"')),
+        listed('boot_statuses')
+            .containsAll(scan(swift, r'static let \w+ = "([A-Z_]+)"')),
         isTrue,
       );
       final version = RegExp(

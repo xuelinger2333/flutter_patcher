@@ -1,6 +1,8 @@
 import 'dart:io';
+
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../build/bootstrap.dart';
 import '../build/host_policy.dart';
@@ -26,20 +28,33 @@ class LibappProducer implements CodeProducer {
   Future<void> prepare() async {
     final resolved = run.resolved;
     require(
-        resolved.compile['flutter_version'] == _p.sdk.version &&
-            resolved.compile['engine_commit'] == _p.sdk.engine &&
-            resolved.buildId == _p.engine?['build_id'],
-        'PATCH_BASELINE_INCOMPATIBLE',
-        'SDK or engine build differs from the release');
+      resolved.compile['flutter_version'] == _p.sdk.version &&
+          resolved.compile['engine_commit'] == _p.sdk.engine &&
+          resolved.buildId == _p.engine?['build_id'],
+      'PATCH_BASELINE_INCOMPATIBLE',
+      'SDK or engine build differs from the release',
+    );
     policy = HostPolicy.parse(
-        await File(p.join(resolved.releaseRoot, 'host_policy.json'))
-            .readAsString());
-    final android =
-        await resolveAndroidSdk(_p.commands, _p.sdk.host, _p.sdk.flutter);
+      await File(p.join(resolved.releaseRoot, 'host_policy.json'))
+          .readAsString(),
+    );
+    final android = await resolveAndroidSdk(
+      _p.commands,
+      _p.sdk.host,
+      _p.sdk.flutter,
+    );
     checkJavaHome(_p.sdk.host);
-    builder = BuildPipeline(_p.commands, _p.sdk, _p.managed, _p.tool, _p.cache,
-        await selectAapt(android, _p.sdk.host), _p.engine!, _p.baselines,
-        {for (final release in builtWith(resolved)) release.kind: release});
+    builder = BuildPipeline(
+      _p.commands,
+      _p.sdk,
+      _p.managed,
+      _p.tool,
+      _p.cache,
+      await selectAapt(android, _p.sdk.host),
+      _p.engine!,
+      _p.baselines,
+      {for (final release in builtWith(resolved)) release.kind: release},
+    );
   }
 
   /// A rebuilt libapp.so carries every Dart change, of any package.
@@ -52,25 +67,40 @@ class LibappProducer implements CodeProducer {
     final step = builder.runner(work, () => run.phase);
     run.phase = 'apk';
     final request = BuildRequest(
-        project: run.project,
-        output: p.join(work, 'unused'),
-        publicKey: receipt['public_key'] as String,
-        target: req.target,
-        flavor: req.flavor == 'default' ? null : req.flavor,
-        versionCode: req.minBuild.toString(),
-        hostPolicy: policy);
+      project: run.project,
+      output: p.join(work, 'unused'),
+      publicKey: receipt['public_key'] as String,
+      target: req.target,
+      flavor: req.flavor == 'default' ? null : req.flavor,
+      versionCode: req.minBuild.toString(),
+      hostPolicy: policy,
+    );
     final host = p.join(work, 'host');
     await Directory(host).create();
     final fingerprint = run.resolved.fingerprint;
-    final trust =
-        await builder.writeHostTrust(run.project, host, policy, fingerprint);
+    final trust = await builder.writeHostTrust(
+      run.project,
+      host,
+      policy,
+      fingerprint,
+    );
     final target = await writeBootstrapEntry(
-        run.project,
-        bootstrapSource(run.app, req.target.substring(4), fingerprint,
-            receipt['public_key'] as String,
-            modules: false));
-    final apk =
-        await builder.assembleApk(step, run.project, request, target, const []);
+      run.project,
+      bootstrapSource(
+        run.app,
+        req.target.substring(4),
+        fingerprint,
+        receipt['public_key'] as String,
+        modules: false,
+      ),
+    );
+    final apk = await builder.assembleApk(
+      step,
+      run.project,
+      request,
+      target,
+      const [],
+    );
     run.phase = 'verify-apk';
     final info = await builder.verifyApk(apk, host, request, trust);
     if (info['libapp_sha256'] != receipt['libapp_sha256']) {
@@ -79,8 +109,9 @@ class LibappProducer implements CodeProducer {
     run.phase = 'resources';
     final bundle = p.join(work, 'flutter_assets');
     const prefix = 'assets/flutter_assets/';
-    for (final file
-        in ZipDecoder().decodeBytes(await File(apk).readAsBytes())) {
+    for (final file in ZipDecoder().decodeBytes(
+      await File(apk).readAsBytes(),
+    )) {
       if (!file.isFile || !file.name.startsWith(prefix)) continue;
       final key = file.name.substring(prefix.length);
       assetKey(key);
@@ -90,11 +121,15 @@ class LibappProducer implements CodeProducer {
     }
     final hostFiles = (receipt['resources'] as Map?)?['files'] as Map?;
     return PatchCode(
-        kind: 'libapp',
-        file: p.join(host, 'libapp.so'),
-        bundle: bundle,
+      kind: 'libapp',
+      file: p.join(host, 'libapp.so'),
+      bundle: bundle,
 
-        fonts: (payload) => payload.collectFonts(const [],
-            hostFiles: hostFiles ?? const {}, wholeFamilies: true));
+      fonts: (payload) => payload.collectFonts(
+        const [],
+        hostFiles: hostFiles ?? const {},
+        wholeFamilies: true,
+      ),
+    );
   }
 }

@@ -1,12 +1,13 @@
 import 'raw_channel.dart';
-import 'transport_stub.dart' if (dart.library.ffi) 'transport_ffi.dart'
+import 'transport_stub.dart'
+    if (dart.library.ffi) 'transport_ffi.dart'
     as native;
 
 /// Select once, before consuming a boot offer. Errors never replay a request.
 class BootstrapTransport {
   BootstrapTransport({RawCall? Function()? open, RawCall? channel})
-      : _open = open ?? native.openBootstrapTransport,
-        _channel = channel ?? rawPatcherCall;
+    : _open = open ?? native.openBootstrapTransport,
+      _channel = channel ?? rawPatcherCall;
 
   final RawCall? Function() _open;
   final RawCall _channel;

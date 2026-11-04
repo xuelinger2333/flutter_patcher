@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
+
 import '../baseline/archive.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
@@ -25,43 +27,65 @@ class PublicationRelease {
 
 /// Always fetch into a fresh cache: a local hit must not mask a missing remote baseline.
 Future<PublicationRelease> resolvePublication(
-    BaselineStore store, Map<String, String> fields, String work,
-    {BaselineArchive? archive}) async {
-  final repo = BaselineRepository(p.join(work, 'baseline-cache'), store,
-      archive: archive);
-  final release = await repo.resolve(fields['flavor']!, fields['version_code']!,
-      abi: fields['abi'] ?? 'arm64-v8a');
-  require(release.compile['runtime_bootstrap'] != false, 'BASELINE_NOT_RELEASE',
-      'Pipeline validation baseline has no runtime bootstrap and is not a release.');
-  require(release.fingerprint == fields['fingerprint'],
-      'PUBLISH_TARGET_MISMATCH', 'Release fingerprint differs');
-  require(release.strategy == fields['strategy'], 'PUBLISH_TARGET_MISMATCH',
-      'Release strategy differs');
+  BaselineStore store,
+  Map<String, String> fields,
+  String work, {
+  BaselineArchive? archive,
+}) async {
+  final repo = BaselineRepository(
+    p.join(work, 'baseline-cache'),
+    store,
+    archive: archive,
+  );
+  final release = await repo.resolve(
+    fields['flavor']!,
+    fields['version_code']!,
+    abi: fields['abi'] ?? 'arm64-v8a',
+  );
+  require(
+    release.compile['runtime_bootstrap'] != false,
+    'BASELINE_NOT_RELEASE',
+    'Pipeline validation baseline has no runtime bootstrap and is not a release.',
+  );
+  require(
+    release.fingerprint == fields['fingerprint'],
+    'PUBLISH_TARGET_MISMATCH',
+    'Release fingerprint differs',
+  );
+  require(
+    release.strategy == fields['strategy'],
+    'PUBLISH_TARGET_MISMATCH',
+    'Release strategy differs',
+  );
   final receipt = release.receipt;
   require(
-      receipt['application_id'] == fields['application_id'] &&
-          receipt['version_code'] == fields['version_code'] &&
-          receipt['public_key'] is String,
-      'PUBLISH_TARGET_MISMATCH',
-      'Verified host identity/public key differs');
+    receipt['application_id'] == fields['application_id'] &&
+        receipt['version_code'] == fields['version_code'] &&
+        receipt['public_key'] is String,
+    'PUBLISH_TARGET_MISMATCH',
+    'Verified host identity/public key differs',
+  );
   if (release.legacy) {
     return PublicationRelease({
       'receipt': receipt,
       'baseline': await verifyBaseline(release.compileRoot),
-      'fingerprint': fields['fingerprint']
+      'fingerprint': fields['fingerprint'],
     }, release.target);
   }
   return PublicationRelease({
     'receipt': receipt,
     'compile': release.compile,
     'release': release.release,
-    'fingerprint': fields['fingerprint']
+    'fingerprint': fields['fingerprint'],
   }, release.target);
 }
 
 Future<Map<String, dynamic>> publicationBaseline(
-        BaselineStore store, Map<String, String> fields, String work,
-        {BaselineArchive? archive}) async =>
+  BaselineStore store,
+  Map<String, String> fields,
+  String work, {
+  BaselineArchive? archive,
+}) async =>
     (await resolvePublication(store, fields, work, archive: archive)).identity;
 
 /// The signed patch_manifest.json of a patch package, or null.
@@ -90,12 +114,17 @@ const codeKinds = {'bytecode': 'bytecode', 'so': 'libapp'};
 
 /// A schema 5 release accepts only patches pinned to it; a legacy release
 /// (one fingerprint per release) also accepts unpinned patches.
-void checkPatchTarget(Uint8List patch, String strategy,
-    Map<String, dynamic> baseline, Map<String, dynamic>? expected) {
+void checkPatchTarget(
+  Uint8List patch,
+  String strategy,
+  Map<String, dynamic> baseline,
+  Map<String, dynamic>? expected,
+) {
   final pinned = baseline.containsKey('release');
   if (pinned) {
-    expected =
-        releaseTarget(Map<String, dynamic>.from(baseline['release'] as Map));
+    expected = releaseTarget(
+      Map<String, dynamic>.from(baseline['release'] as Map),
+    );
   }
   final manifest = patchManifest(patch);
   if (manifest != null) {
@@ -104,19 +133,28 @@ void checkPatchTarget(Uint8List patch, String strategy,
     final kind = code is Map
         ? code['kind']
         : manifest.containsKey('module')
-            ? 'bytecode'
-            : null;
-    require(kind == codeKinds[strategy], 'PUBLISH_TARGET_MISMATCH',
-        'Patch code ($kind) does not run on a $strategy host');
+        ? 'bytecode'
+        : null;
+    require(
+      kind == codeKinds[strategy],
+      'PUBLISH_TARGET_MISMATCH',
+      'Patch code ($kind) does not run on a $strategy host',
+    );
   }
   final actual = patchTarget(patch);
   if (actual == null) {
-    require(!pinned, 'PUBLISH_TARGET_MISMATCH',
-        'Patch is not pinned to a release; create it with this CLI version');
+    require(
+      !pinned,
+      'PUBLISH_TARGET_MISMATCH',
+      'Patch is not pinned to a release; create it with this CLI version',
+    );
     return;
   }
-  require(expected != null && canonical(actual) == canonical(expected),
-      'PUBLISH_TARGET_MISMATCH', 'Patch was created for a different release');
+  require(
+    expected != null && canonical(actual) == canonical(expected),
+    'PUBLISH_TARGET_MISMATCH',
+    'Patch was created for a different release',
+  );
 }
 
 /// Releases built from the same Dart sources share a fingerprint, and the
@@ -129,51 +167,75 @@ void sharedFingerprintPolicy(Map<String, String> f, Map catalog) {
     if (record is! Map || record['fingerprint'] != f['fingerprint']) continue;
     Map signed;
     try {
-      signed = jsonDecode(utf8.decode(base64Decode(
-          (jsonDecode(record['wire'] as String) as Map)['payload']
-              as String))) as Map;
+      signed = jsonDecode(
+        utf8.decode(
+          base64Decode(
+            (jsonDecode(record['wire'] as String) as Map)['payload'] as String,
+          ),
+        ),
+      ) as Map;
     } catch (_) {
       // A rejection here releases the operation gate; a raw error would not.
-      throw Failure('PUBLISH_SEQUENCE_CONFLICT',
-          'A catalog record for this fingerprint is malformed; its sequence cannot be checked');
+      throw Failure(
+        'PUBLISH_SEQUENCE_CONFLICT',
+        'A catalog record for this fingerprint is malformed; its sequence cannot be checked',
+      );
     }
     if (signed['flavor'] == f['flavor'] &&
         signed['version_code'] == f['version_code']) {
       continue;
     }
     final seq = record['high_seq'] ?? 0;
-    require(seq is int, 'PUBLISH_SEQUENCE_CONFLICT',
-        'A catalog record for this fingerprint has no valid sequence');
+    require(
+      seq is int,
+      'PUBLISH_SEQUENCE_CONFLICT',
+      'A catalog record for this fingerprint has no valid sequence',
+    );
     if (seq as int > high) high = seq;
   }
-  require(int.parse(f['patch_seq']!) > high, 'PUBLISH_SEQUENCE_CONFLICT',
-      'Patch sequence must exceed $high, already published for another release with this fingerprint');
+  require(
+    int.parse(f['patch_seq']!) > high,
+    'PUBLISH_SEQUENCE_CONFLICT',
+    'Patch sequence must exceed $high, already published for another release with this fingerprint',
+  );
 }
 
-Future<void> verifyPublicationPatch(Uint8List bytes, Map<String, String> fields,
-    String publicKey, String work, Commands commands) async {
-  require(bytes.length >= 146 && bytes.length <= 320 * 1024 * 1024,
-      'PUBLISH_PATCH_INVALID', 'Envelope size');
+Future<void> verifyPublicationPatch(
+  Uint8List bytes,
+  Map<String, String> fields,
+  String publicKey,
+  String work,
+  Commands commands,
+) async {
+  require(
+    bytes.length >= 146 && bytes.length <= 320 * 1024 * 1024,
+    'PUBLISH_PATCH_INVALID',
+    'Envelope size',
+  );
   final h = ByteData.sublistView(bytes);
   require(
-      h.getUint32(0) == 0x46505443 &&
-          h.getUint16(4) == 1 &&
-          h.getUint64(42) == bytes.length - 146 &&
-          bytes
-                  .sublist(6, 38)
-                  .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                  .join() ==
-              fields['fingerprint'] &&
-          h.getUint32(38).toString() == fields['patch_seq'] &&
-          digest(bytes.sublist(146)) ==
-              bytes
-                  .sublist(50, 82)
-                  .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                  .join(),
-      'PUBLISH_PATCH_INVALID',
-      'Envelope identity/hash mismatch');
-  verifyMessage([...bytes.sublist(0, 82), ...bytes.sublist(146)],
-      bytes.sublist(82, 146), publicKey);
+    h.getUint32(0) == 0x46505443 &&
+        h.getUint16(4) == 1 &&
+        h.getUint64(42) == bytes.length - 146 &&
+        bytes
+                .sublist(6, 38)
+                .map((b) => b.toRadixString(16).padLeft(2, '0'))
+                .join() ==
+            fields['fingerprint'] &&
+        h.getUint32(38).toString() == fields['patch_seq'] &&
+        digest(bytes.sublist(146)) ==
+            bytes
+                .sublist(50, 82)
+                .map((b) => b.toRadixString(16).padLeft(2, '0'))
+                .join(),
+    'PUBLISH_PATCH_INVALID',
+    'Envelope identity/hash mismatch',
+  );
+  verifyMessage(
+    [...bytes.sublist(0, 82), ...bytes.sublist(146)],
+    bytes.sublist(82, 146),
+    publicKey,
+  );
 }
 
 /// The smallest sequence a new patch of [fingerprint] can be published with:
@@ -193,18 +255,21 @@ int nextSequence(Map<String, dynamic> catalog, String fingerprint) {
 /// Matches native policy; integration vectors exercise both implementations.
 void publicationPolicy(Map<String, String> f, Map? prior, int expected) {
   final revision = prior?['revision'] as int? ?? 0;
-  require(expected == revision && int.parse(f['revision']!) > revision,
-      'PUBLISH_CONFLICT', 'Expected/current revision mismatch');
+  require(
+    expected == revision && int.parse(f['revision']!) > revision,
+    'PUBLISH_CONFLICT',
+    'Expected/current revision mismatch',
+  );
   if (f['action'] == 'publish') {
     final seq = int.parse(f['patch_seq']!);
     final high = prior?['high_seq'] as int? ?? 0,
         floor = prior?['withdrawn_through'] as int? ?? 0;
     require(
-        seq > floor &&
-            (seq > high ||
-                (seq == high && f['sha256'] == prior?['patch_hash'])),
-        'PUBLISH_CONFLICT',
-        'Patch sequence conflict or withdrawn');
+      seq > floor &&
+          (seq > high || (seq == high && f['sha256'] == prior?['patch_hash'])),
+      'PUBLISH_CONFLICT',
+      'Patch sequence conflict or withdrawn',
+    );
   }
 }
 
@@ -214,53 +279,68 @@ class PublicationPipeline {
   final Commands commands;
   final String work;
 
-  Future<Map<String, dynamic>> execute(
-      {required String operation,
-      required Map<String, String> fields,
-      required int expectedRevision,
-      required String seed,
-      required String publicKey,
-      required String createdAt,
-      required Map<String, dynamic> baseline,
-      Map<String, dynamic>? target,
-      Uint8List? patch,
-      bool commit = false,
-      bool pin = false}) async {
+  Future<Map<String, dynamic>> execute({
+    required String operation,
+    required Map<String, String> fields,
+    required int expectedRevision,
+    required String seed,
+    required String publicKey,
+    required String createdAt,
+    required Map<String, dynamic> baseline,
+    Map<String, dynamic>? target,
+    Uint8List? patch,
+    bool commit = false,
+    bool pin = false,
+  }) async {
     require(
-        RegExp(r'^[a-f0-9]{32}$').hasMatch(operation),
-        'PUBLISH_CONFIG_INVALID',
-        'Operation must be 32 lowercase hex characters');
+      RegExp(r'^[a-f0-9]{32}$').hasMatch(operation),
+      'PUBLISH_CONFIG_INVALID',
+      'Operation must be 32 lowercase hex characters',
+    );
 
-    require(int.tryParse(createdAt) != null && int.parse(createdAt) >= 0,
-        'PUBLISH_CONFIG_INVALID', 'Stable created_at epoch seconds required');
     require(
-        baseline['fingerprint'] == fields['fingerprint'] &&
-            baseline['receipt']['application_id'] == fields['application_id'] &&
-            baseline['receipt']['version_code'] == fields['version_code'],
-        'PUBLISH_TARGET_MISMATCH',
-        'Baseline target differs');
+      int.tryParse(createdAt) != null && int.parse(createdAt) >= 0,
+      'PUBLISH_CONFIG_INVALID',
+      'Stable created_at epoch seconds required',
+    );
+    require(
+      baseline['fingerprint'] == fields['fingerprint'] &&
+          baseline['receipt']['application_id'] == fields['application_id'] &&
+          baseline['receipt']['version_code'] == fields['version_code'],
+      'PUBLISH_TARGET_MISMATCH',
+      'Baseline target differs',
+    );
     final f = Map<String, String>.from(fields);
-    final name =
-        patch == null ? null : 'objects/$operation/${digest(patch)}.fptc';
+    final name = patch == null
+        ? null
+        : 'objects/$operation/${digest(patch)}.fptc';
     if (f['action'] == 'publish') {
-      require(patch != null && name != null, 'PUBLISH_CONFIG_INVALID',
-          'Patch required');
       require(
-          f['sha256'] == digest(patch!) &&
-              f['size'] == patch.length.toString() &&
-              f['path'] == name,
-          'PUBLISH_PATCH_INVALID',
-          'Payload path/identity differs');
+        patch != null && name != null,
+        'PUBLISH_CONFIG_INVALID',
+        'Patch required',
+      );
+      require(
+        f['sha256'] == digest(patch!) &&
+            f['size'] == patch.length.toString() &&
+            f['path'] == name,
+        'PUBLISH_PATCH_INVALID',
+        'Payload path/identity differs',
+      );
       await verifyPublicationPatch(
-          patch,
-          f,
-          baseline['receipt']['public_key'] as String,
-          p.join(work, 'patch-verify'),
-          commands);
+        patch,
+        f,
+        baseline['receipt']['public_key'] as String,
+        p.join(work, 'patch-verify'),
+        commands,
+      );
       checkPatchTarget(patch, f['strategy']!, baseline, target);
     } else {
       require(
-          patch == null, 'PUBLISH_CONFIG_INVALID', 'Withdrawal has no payload');
+        patch == null,
+        'PUBLISH_CONFIG_INVALID',
+        'Withdrawal has no payload',
+      );
     }
     final manifest = PublishManifest(f), scope = scopeOf(f);
     final signature = signMessage(manifest.signingBytes, seed, publicKey);
@@ -271,35 +351,36 @@ class PublicationPipeline {
       'expected_revision': expectedRevision,
       'created_at': createdAt,
       'pin': pin,
-      'baseline': baseline
+      'baseline': baseline,
     };
     final catalog = await transaction.snapshot();
     final previous = (catalog['heads'] as Map)[scope];
     final completed = (catalog['operations'] as Map)[operation];
     final pending = catalog['pending'];
     require(
-        pending == null ||
-            (pending['operation'] == operation &&
-                pending['intent'] == digest(encode(intent))),
-        'PUBLISH_BUSY',
-        'Another operation is pending or recovery inputs differ');
+      pending == null ||
+          (pending['operation'] == operation &&
+              pending['intent'] == digest(encode(intent))),
+      'PUBLISH_BUSY',
+      'Another operation is pending or recovery inputs differ',
+    );
     if (completed != null) {
       require(
-          completed['intent'] == digest(encode(intent)) &&
-              completed['receipt']['status'] != 'rejected',
-          'PUBLISH_CONFLICT',
-          'Operation was reused or rejected; prepare a fresh operation');
+        completed['intent'] == digest(encode(intent)) &&
+            completed['receipt']['status'] != 'rejected',
+        'PUBLISH_CONFLICT',
+        'Operation was reused or rejected; prepare a fresh operation',
+      );
     }
     // A resumed pending operation is checked inside the transaction, where a
     // rejection also releases its gate.
     final resumed = pending != null && pending['operation'] == operation;
     if (completed == null && !resumed) {
       publicationPolicy(
-          f,
-          previous == null
-              ? null
-              : (catalog['releases'] as Map)[previous] as Map,
-          expectedRevision);
+        f,
+        previous == null ? null : (catalog['releases'] as Map)[previous] as Map,
+        expectedRevision,
+      );
       sharedFingerprintPolicy(f, catalog);
     }
     if (!commit) {
@@ -311,13 +392,14 @@ class PublicationPipeline {
         'object': name,
         'manifest': 'manifests/$scope.json',
         'fingerprint': f['fingerprint'],
-        'revision': f['revision']
+        'revision': f['revision'],
       };
     }
     final receipt = await transaction.run(operation, intent, (current) async {
       final oldId = (current['heads'] as Map)[scope];
-      final old =
-          oldId == null ? null : (current['releases'] as Map)[oldId] as Map;
+      final old = oldId == null
+          ? null
+          : (current['releases'] as Map)[oldId] as Map;
       publicationPolicy(f, old, expectedRevision);
       sharedFingerprintPolicy(f, current);
       if (patch != null) {
@@ -325,15 +407,18 @@ class PublicationPipeline {
         if (existing == null) {
           try {
             await transaction.store.write(name, patch, null);
-          } catch (_) {/* Readback resolves an interrupted immutable upload. */}
+          } catch (_) {
+            /* Readback resolves an interrupted immutable upload. */
+          }
         }
         final actual = await transaction.store.read(name);
         require(
-            actual != null &&
-                actual.bytes.length == patch.length &&
-                digest(actual.bytes) == digest(patch),
-            'PUBLISH_UPLOAD_FAILED',
-            'Payload readback failed; resume operation');
+          actual != null &&
+              actual.bytes.length == patch.length &&
+              digest(actual.bytes) == digest(patch),
+          'PUBLISH_UPLOAD_FAILED',
+          'Payload readback failed; resume operation',
+        );
       }
       final high = old?['high_seq'] as int? ?? 0,
           floor = old?['withdrawn_through'] as int? ?? 0;
@@ -357,7 +442,7 @@ class PublicationPipeline {
         'public_download_verified': false,
         'publisher_source': 'not_recorded',
         'patch_source': 'not_provided',
-        'publication_key_sha256': digest(base64Decode(publicKey.trim()))
+        'publication_key_sha256': digest(base64Decode(publicKey.trim())),
       };
       (current['releases'] as Map)[operation] = {
         ...receipt,
@@ -366,7 +451,7 @@ class PublicationPipeline {
         'pin': pin,
         'high_seq': seq > high ? seq : high,
         'withdrawn_through': newFloor,
-        'patch_hash': f['sha256'] ?? old?['patch_hash'] ?? ''
+        'patch_hash': f['sha256'] ?? old?['patch_hash'] ?? '',
       };
       (current['heads'] as Map)[scope] = operation;
       return receipt;
@@ -380,14 +465,16 @@ class PublicationPipeline {
 /// copied from the catalog after it commits. A write only moves it to a newer
 /// revision, so a slower publisher cannot put an older one back.
 Future<void> writeHeadManifest(
-    PublicationTransaction transaction, String scope) async {
+  PublicationTransaction transaction,
+  String scope,
+) async {
   final name = 'manifests/$scope.json';
   int revision(List<int> wire) {
     try {
       final envelope = jsonDecode(utf8.decode(wire)) as Map;
-      final fields =
-          jsonDecode(utf8.decode(base64Decode(envelope['payload'] as String)))
-              as Map;
+      final fields = jsonDecode(
+        utf8.decode(base64Decode(envelope['payload'] as String)),
+      ) as Map;
       return int.parse(fields['revision'] as String);
     } catch (_) {
       return 0;
@@ -404,11 +491,16 @@ Future<void> writeHeadManifest(
         revision(current.bytes) >= (record['revision'] as int)) {
       return;
     }
-    if (await transaction.store
-        .write(name, utf8.encode(record['wire'] as String), current?.token)) {
+    if (await transaction.store.write(
+      name,
+      utf8.encode(record['wire'] as String),
+      current?.token,
+    )) {
       return;
     }
   }
-  throw Failure('PUBLISH_MANIFEST_CONFLICT',
-      '$name kept changing; publish again to rewrite it');
+  throw Failure(
+    'PUBLISH_MANIFEST_CONFLICT',
+    '$name kept changing; publish again to rewrite it',
+  );
 }

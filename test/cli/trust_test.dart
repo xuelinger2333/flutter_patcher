@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/build/host_policy.dart';
 import 'package:flutter_patcher/src/cli/baseline/manifest.dart';
@@ -16,19 +17,25 @@ void main() {
     'strategy': 'bytecode',
     'fptc_key': key,
     'root_key': key,
-    'keys': 'one:$key'
+    'keys': 'one:$key',
   };
   test('trust policy changes create a new baseline; legacy is stable', () {
-    String identity([String? digest]) =>
-        fingerprint('a' * 64, 'b' * 40, 'c' * 64, '3.47.2',
-            hostPolicyHash: digest);
+    String identity([String? digest]) => fingerprint(
+      'a' * 64,
+      'b' * 40,
+      'c' * 64,
+      '3.47.2',
+      hostPolicyHash: digest,
+    );
     final first = HostPolicy(policy);
     final next = HostPolicy({...policy, 'channel': 'beta'});
     expect(identity(first.digest), isNot(identity()));
     expect(identity(first.digest), isNot(identity(next.digest)));
     expect(HostPolicy.parse(first.canonical).digest, first.digest);
     expect(
-        () => HostPolicy.parse('${first.canonical}\n'), throwsFormatException);
+      () => HostPolicy.parse('${first.canonical}\n'),
+      throwsFormatException,
+    );
   });
   test('policy forbids unknown fields and invalid target/key inputs', () {
     for (final change in [
@@ -37,7 +44,7 @@ void main() {
       {'fptc_key': 'bad'},
       {'version_code': '01'},
       {'abi': 'x86_64'},
-      {'keys': 'same:$key,same:$key'}
+      {'keys': 'same:$key,same:$key'},
     ]) {
       expect(() => HostPolicy({...policy, ...change}), throwsFormatException);
     }
@@ -49,17 +56,25 @@ void main() {
         k: k == 'fingerprint' ? 'a' * 64 : policy[k]!,
       'schema': '1',
       'revision': '1',
-      'keys': '-'
+      'keys': '-',
     };
     final update = TrustUpdate(fields);
-    expect(utf8.decode(update.signingBytes),
-        startsWith('flutter_patcher.trust.v1\n'));
+    expect(
+      utf8.decode(update.signingBytes),
+      startsWith('flutter_patcher.trust.v1\n'),
+    );
     expect(TrustUpdate.parseKeys('-'), isEmpty);
-    expect(() => TrustUpdate({...fields, 'keys': 'z:$key,a:$key'}),
-        throwsFormatException);
-    expect(() => TrustUpdate({...fields, 'revision': '9007199254740992'}),
-        throwsFormatException);
-    expect(() => TrustUpdate({...fields, 'key_id': 'self'}),
-        throwsFormatException);
+    expect(
+      () => TrustUpdate({...fields, 'keys': 'z:$key,a:$key'}),
+      throwsFormatException,
+    );
+    expect(
+      () => TrustUpdate({...fields, 'revision': '9007199254740992'}),
+      throwsFormatException,
+    );
+    expect(
+      () => TrustUpdate({...fields, 'key_id': 'self'}),
+      throwsFormatException,
+    );
   });
 }

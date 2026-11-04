@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../build/host_policy.dart';
 
@@ -16,29 +18,28 @@ const baselineFiles = <String>[
 ];
 const buildBaselineFiles = ['compiler_interface.json', 'build_receipt.json'];
 List<String> payloadFiles(Map<String, dynamic> m) => [
-      ...baselineFiles,
-      if ([2, 3].contains(m['schema'])) ...buildBaselineFiles,
-      if (m['schema'] == 3) 'host_policy.json',
-    ];
+  ...baselineFiles,
+  if ([2, 3].contains(m['schema'])) ...buildBaselineFiles,
+  if (m['schema'] == 3) 'host_policy.json',
+];
 final baselineHash = RegExp(r'^[0-9a-f]{64}$');
 final _commit = RegExp(r'^[0-9a-f]{40}$');
 final _version = RegExp(r'^\d+\.\d+\.\d+$');
 List<String> manifestDifferences(
-        Map<String, dynamic> a, Map<String, dynamic> b) =>
-    [
-      for (final k in {...a.keys, ...b.keys}.toList()..sort())
-        if (canonical(a[k]) != canonical(b[k]))
-          if (k == 'files' && a[k] is Map && b[k] is Map) ...[
-            for (final name
-                in {
-              ...(a[k] as Map).keys.cast<String>(),
-              ...(b[k] as Map).keys.cast<String>()
-            }.toList()
-                  ..sort())
-              if (canonical(a[k][name]) != canonical(b[k][name])) 'files.$name'
-          ] else
-            k,
-    ];
+  Map<String, dynamic> a,
+  Map<String, dynamic> b,
+) => [
+  for (final k in {...a.keys, ...b.keys}.toList()..sort())
+    if (canonical(a[k]) != canonical(b[k]))
+      if (k == 'files' && a[k] is Map && b[k] is Map) ...[
+        for (final name in {
+          ...(a[k] as Map).keys.cast<String>(),
+          ...(b[k] as Map).keys.cast<String>(),
+        }.toList()..sort())
+          if (canonical(a[k][name]) != canonical(b[k][name])) 'files.$name',
+      ] else
+        k,
+];
 void valid(bool value, String message) =>
     require(value, 'BASELINE_INVALID', message);
 
@@ -46,7 +47,7 @@ String canonical(Object? value) {
   Object? sort(Object? v) {
     if (v is Map) {
       return {
-        for (final k in v.keys.cast<String>().toList()..sort()) k: sort(v[k])
+        for (final k in v.keys.cast<String>().toList()..sort()) k: sort(v[k]),
       };
     }
     if (v is List) return v.map(sort).toList();
@@ -58,37 +59,52 @@ String canonical(Object? value) {
 
 Future<Map<String, dynamic>> baselineObject(String path) async {
   try {
-    valid(await File(path).length() <= 64 * 1024 * 1024,
-        'Baseline JSON exceeds size limit.');
+    valid(
+      await File(path).length() <= 64 * 1024 * 1024,
+      'Baseline JSON exceeds size limit.',
+    );
     final text = await File(path).readAsString();
     rejectDuplicateJsonKeys(text);
     return jsonDecode(text) as Map<String, dynamic>;
   } catch (_) {
     throw Failure(
-        'BASELINE_INVALID', 'Invalid JSON object: ${p.basename(path)}');
+      'BASELINE_INVALID',
+      'Invalid JSON object: ${p.basename(path)}',
+    );
   }
 }
 
 /// v1 uses a domain prefix and four newline-delimited, constrained ASCII fields.
 String fingerprint(
-    String appHash, String engine, String interfaceHash, String flutter,
-    {String? hostPolicyHash}) {
+  String appHash,
+  String engine,
+  String interfaceHash,
+  String flutter, {
+  String? hostPolicyHash,
+}) {
   valid(
-      baselineHash.hasMatch(appHash) &&
-          baselineHash.hasMatch(interfaceHash) &&
-          _commit.hasMatch(engine) &&
-          _version.hasMatch(flutter),
-      'Invalid fingerprint fields.');
+    baselineHash.hasMatch(appHash) &&
+        baselineHash.hasMatch(interfaceHash) &&
+        _commit.hasMatch(engine) &&
+        _version.hasMatch(flutter),
+    'Invalid fingerprint fields.',
+  );
   final legacy = sha256
-      .convert(utf8.encode(
-          'flutter-patcher-baseline-v1\n$appHash\n$engine\n$interfaceHash\n$flutter\n'))
+      .convert(
+        utf8.encode(
+          'flutter-patcher-baseline-v1\n$appHash\n$engine\n$interfaceHash\n$flutter\n',
+        ),
+      )
       .toString();
   var base = legacy;
   if (hostPolicyHash != null) {
     valid(baselineHash.hasMatch(hostPolicyHash), 'Invalid host policy digest.');
     base = sha256
-        .convert(utf8
-            .encode('flutter-patcher-baseline-v2\n$legacy\n$hostPolicyHash\n'))
+        .convert(
+          utf8.encode(
+            'flutter-patcher-baseline-v2\n$legacy\n$hostPolicyHash\n',
+          ),
+        )
         .toString();
   }
   return base;
@@ -96,26 +112,36 @@ String fingerprint(
 
 /// An SO host has no compile object: its release, engine and policy identify it.
 String soFingerprint(
-    String flutter, String engine, String buildId, String hostPolicyHash) {
+  String flutter,
+  String engine,
+  String buildId,
+  String hostPolicyHash,
+) {
   valid(
-      _version.hasMatch(flutter) &&
-          _commit.hasMatch(engine) &&
-          buildIdPattern.hasMatch(buildId) &&
-          baselineHash.hasMatch(hostPolicyHash),
-      'Invalid SO fingerprint fields.');
+    _version.hasMatch(flutter) &&
+        _commit.hasMatch(engine) &&
+        buildIdPattern.hasMatch(buildId) &&
+        baselineHash.hasMatch(hostPolicyHash),
+    'Invalid SO fingerprint fields.',
+  );
   return sha256
-      .convert(utf8.encode(
-          'flutter-patcher-so-v1\n$flutter\n$engine\n$buildId\n$hostPolicyHash\n'))
+      .convert(
+        utf8.encode(
+          'flutter-patcher-so-v1\n$flutter\n$engine\n$buildId\n$hostPolicyHash\n',
+        ),
+      )
       .toString();
 }
 
 final buildIdPattern = RegExp(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+);
 
 void validateSdkRelease(Map<String, dynamic> m) => valid(
-    _version.hasMatch('${m['flutter_version']}') &&
-        _commit.hasMatch('${m['engine_commit']}'),
-    'Invalid baseline Flutter version/engine.');
+  _version.hasMatch('${m['flutter_version']}') &&
+      _commit.hasMatch('${m['engine_commit']}'),
+  'Invalid baseline Flutter version/engine.',
+);
 
 /// Flutter release, engine and SDK-relative platform: what patch compilation
 /// needs from the selected SDK.
@@ -123,35 +149,43 @@ void validateSdkIdentity(Map<String, dynamic> m) {
   validateSdkRelease(m);
   final platform = m['platform'];
   valid(
-      platform is Map &&
-          platform['path'] ==
-              'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill' &&
-          baselineHash.hasMatch('${platform['sha256']}'),
-      'Invalid SDK-relative platform identity.');
+    platform is Map &&
+        platform['path'] ==
+            'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill' &&
+        baselineHash.hasMatch('${platform['sha256']}'),
+    'Invalid SDK-relative platform identity.',
+  );
 }
 
 void validateMetadata(Map<String, dynamic> m) {
-  require(m['schema'] != 4 && !m.containsKey('framework_partition_sha256'),
-      'BASELINE_SCHEMA_UNSUPPORTED',
-      'Framework reuse baselines (schema 4) are no longer supported; rebuild the host.');
-  valid(m['schema'] == 3 || !m.containsKey('host_policy_sha256'),
-      'Host policy requires baseline schema 3.');
+  require(
+    m['schema'] != 4 && !m.containsKey('framework_partition_sha256'),
+    'BASELINE_SCHEMA_UNSUPPORTED',
+    'Framework reuse baselines (schema 4) are no longer supported; rebuild the host.',
+  );
   valid(
-      m['schema'] is int &&
-          [1, 2, 3].contains(m['schema']) &&
-          _version.hasMatch('${m['flutter_version']}') &&
-          _commit.hasMatch('${m['engine_commit']}') &&
-          RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
-              .hasMatch('${m['build_id']}'),
-      'Invalid baseline schema/version/engine/build_id.');
+    m['schema'] == 3 || !m.containsKey('host_policy_sha256'),
+    'Host policy requires baseline schema 3.',
+  );
+  valid(
+    m['schema'] is int &&
+        [1, 2, 3].contains(m['schema']) &&
+        _version.hasMatch('${m['flutter_version']}') &&
+        _commit.hasMatch('${m['engine_commit']}') &&
+        RegExp(
+          r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        ).hasMatch('${m['build_id']}'),
+    'Invalid baseline schema/version/engine/build_id.',
+  );
   if ([2, 3].contains(m['schema'])) {
     valid(m['runtime_bootstrap'] is bool, 'Missing bootstrap status.');
   }
   if (m['schema'] == 3) {
     valid(
-        baselineHash.hasMatch('${m['host_policy_sha256']}') &&
-            m['runtime_bootstrap'] == true,
-        'Authenticated baseline policy missing.');
+      baselineHash.hasMatch('${m['host_policy_sha256']}') &&
+          m['runtime_bootstrap'] == true,
+      'Authenticated baseline policy missing.',
+    );
   }
   validateSdkIdentity(m);
 }
@@ -159,168 +193,210 @@ void validateMetadata(Map<String, dynamic> m) {
 Future<void> validateDetails(String root, String interfaceHash) async {
   final detail = await baselineObject(p.join(root, 'interface_detailed.json'));
   valid(
-      detail['schema'] == 1 &&
-          detail['interface_sha256'] == interfaceHash &&
-          detail['entries'] is List,
-      'Detailed interface does not match YAML.');
+    detail['schema'] == 1 &&
+        detail['interface_sha256'] == interfaceHash &&
+        detail['entries'] is List,
+    'Detailed interface does not match YAML.',
+  );
   final expected = <String>{};
   final yaml = decodeInterface(
-      await File(p.join(root, 'dynamic_interface.yaml')).readAsString());
+    await File(p.join(root, 'dynamic_interface.yaml')).readAsString(),
+  );
   valid(yaml is Map, 'Interface must be a mapping.');
   const sections = [
     'extendable',
     'can-be-overridden',
     'can-be-used-as-type',
     'callable',
-    'dynamically-callable'
+    'dynamically-callable',
   ];
   for (final section in (yaml as Map).keys) {
-    valid(sections.contains(section) && yaml[section] is List,
-        'Noncanonical interface section.');
+    valid(
+      sections.contains(section) && yaml[section] is List,
+      'Noncanonical interface section.',
+    );
     for (final row in yaml[section] as List) {
       valid(
-          row is Map &&
-              row['library'] is String &&
-              row.keys
-                  .every((k) => ['library', 'class', 'member'].contains(k)) &&
-              row.values.every((v) => v is String),
-          'Noncanonical interface row.');
-      expected.add(canonical(
-          {'section': section, ...Map<String, dynamic>.from(row as Map)}));
+        row is Map &&
+            row['library'] is String &&
+            row.keys.every((k) => ['library', 'class', 'member'].contains(k)) &&
+            row.values.every((v) => v is String),
+        'Noncanonical interface row.',
+      );
+      expected.add(
+        canonical({
+          'section': section,
+          ...Map<String, dynamic>.from(row as Map),
+        }),
+      );
     }
   }
   final actual = <String>{};
   for (final row in detail['entries'] as List) {
     valid(
-        row is Map &&
-            row['sources'] is List &&
-            (row['sources'] as List).isNotEmpty &&
-            (row['sources'] as List).every((v) => [
-                  'referenced',
-                  'protocol',
-                  'defaults',
-                  'compiler-hint',
-                  'platform-privates'
-                ].contains(v)) &&
-            row.containsKey('location'),
-        'Invalid detailed interface entry.');
+      row is Map &&
+          row['sources'] is List &&
+          (row['sources'] as List).isNotEmpty &&
+          (row['sources'] as List).every(
+            (v) => [
+              'referenced',
+              'protocol',
+              'defaults',
+              'compiler-hint',
+              'platform-privates',
+            ].contains(v),
+          ) &&
+          row.containsKey('location'),
+      'Invalid detailed interface entry.',
+    );
     final entry = Map<String, dynamic>.from(row as Map)
       ..remove('sources')
       ..remove('location');
     valid(actual.add(canonical(entry)), 'Duplicate detailed interface entry.');
   }
-  valid(expected.length == actual.length && expected.containsAll(actual),
-      'Detailed interface entries differ from YAML.');
+  valid(
+    expected.length == actual.length && expected.containsAll(actual),
+    'Detailed interface entries differ from YAML.',
+  );
 }
 
 /// Hashes each payload file; every one must exist, be nonempty and no link.
 Future<Map<String, dynamic>> hashPayload(
-    String root, Iterable<String> names) async {
+  String root,
+  Iterable<String> names,
+) async {
   final files = <String, dynamic>{};
   var total = 0;
   for (final name in names) {
     final path = p.join(root, name);
     await rejectLinks(path);
-    valid(await File(path).exists() && await File(path).length() > 0,
-        'Missing/empty $name');
+    valid(
+      await File(path).exists() && await File(path).length() > 0,
+      'Missing/empty $name',
+    );
     total += await File(path).length();
     valid(total <= 1024 * 1024 * 1024, 'Baseline exceeds size limit.');
     files[name] = {
       'sha256': await hashFile(path),
-      'size': await File(path).length()
+      'size': await File(path).length(),
     };
   }
   return files;
 }
 
 /// Content checks for the files patch compilation reads besides app.dill.
-Future<void> validateCompileFiles(String root,
-    {required String interfaceHash,
-    bool compilerInterface = true}) async {
+Future<void> validateCompileFiles(
+  String root, {
+  required String interfaceHash,
+  bool compilerInterface = true,
+}) async {
   await validateDetails(root, interfaceHash);
   if (compilerInterface) {
-    final compiler =
-        await baselineObject(p.join(root, 'compiler_interface.json'));
+    final compiler = await baselineObject(
+      p.join(root, 'compiler_interface.json'),
+    );
     valid(
-        compiler.isNotEmpty &&
-            compiler.values.every((v) =>
+      compiler.isNotEmpty &&
+          compiler.values.every(
+            (v) =>
                 v is List &&
-                v.every((r) => r is Map && r.values.every((x) => x is String))),
-        'Malformed compiler interface dump.');
+                v.every((r) => r is Map && r.values.every((x) => x is String)),
+          ),
+      'Malformed compiler interface dump.',
+    );
   }
   final sources = await baselineObject(p.join(root, 'source_hashes.json'));
   valid(
-      sources['schema'] == 1 &&
-          sources['files'] is Map &&
-          (sources['files'] as Map).isNotEmpty,
-      'Source hashes are required.');
+    sources['schema'] == 1 &&
+        sources['files'] is Map &&
+        (sources['files'] as Map).isNotEmpty,
+    'Source hashes are required.',
+  );
   for (final entry in (sources['files'] as Map).entries) {
     valid(
-        entry.key is String &&
-            RegExp(r'^package:[A-Za-z_][A-Za-z_0-9]*/[^\\]+$')
-                .hasMatch(entry.key as String) &&
-            !(entry.key as String)
-                .split('/')
-                .any((s) => s == '..' || s == '.' || s.isEmpty) &&
-            baselineHash.hasMatch('${entry.value}'),
-        'Invalid logical source identity/hash.');
+      entry.key is String &&
+          RegExp(r'^package:[A-Za-z_][A-Za-z_0-9]*/[^\\]+$')
+              .hasMatch(entry.key as String) &&
+          !(entry.key as String)
+              .split('/')
+              .any((s) => s == '..' || s == '.' || s.isEmpty) &&
+          baselineHash.hasMatch('${entry.value}'),
+      'Invalid logical source identity/hash.',
+    );
   }
-  final allocated =
-      await baselineObject(p.join(root, 'allocate_finalized.json'));
-  valid(allocated['schema'] == 1 && allocated['classes'] is List,
-      'Allocation class set is required.');
+  final allocated = await baselineObject(
+    p.join(root, 'allocate_finalized.json'),
+  );
+  valid(
+    allocated['schema'] == 1 && allocated['classes'] is List,
+    'Allocation class set is required.',
+  );
   final classes = allocated['classes'] as List;
   valid(
-      classes.every((v) =>
-              v is String &&
-              RegExp(r'^(package:|dart:).+::[^:]+$').hasMatch(v)) &&
-          classes.toSet().length == classes.length,
-      'Invalid/duplicate allocation class identity.');
+    classes.every(
+          (v) =>
+              v is String && RegExp(r'^(package:|dart:).+::[^:]+$').hasMatch(v),
+        ) &&
+        classes.toSet().length == classes.length,
+    'Invalid/duplicate allocation class identity.',
+  );
 }
 
 Future<void> validatePackages(String root) async {
   final packages = await baselineObject(p.join(root, 'package_config.json'));
-  valid(packages['configVersion'] == 2 && packages['packages'] is List,
-      'Invalid package configuration.');
+  valid(
+    packages['configVersion'] == 2 && packages['packages'] is List,
+    'Invalid package configuration.',
+  );
 }
 
 Future<Map<String, dynamic>> createManifest(
-    String root, Map<String, dynamic> metadata) async {
+  String root,
+  Map<String, dynamic> metadata,
+) async {
   validateMetadata(metadata);
   final files = await hashPayload(root, payloadFiles(metadata));
-  await validateCompileFiles(root,
-      interfaceHash: files['dynamic_interface.yaml']['sha256'] as String,
-      compilerInterface: [2, 3].contains(metadata['schema']));
+  await validateCompileFiles(
+    root,
+    interfaceHash: files['dynamic_interface.yaml']['sha256'] as String,
+    compilerInterface: [2, 3].contains(metadata['schema']),
+  );
   if (metadata['schema'] == 3) {
     final policy = HostPolicy.parse(
-        await File(p.join(root, 'host_policy.json')).readAsString());
-    valid(policy.digest == metadata['host_policy_sha256'],
-        'Host policy identity differs.');
+      await File(p.join(root, 'host_policy.json')).readAsString(),
+    );
+    valid(
+      policy.digest == metadata['host_policy_sha256'],
+      'Host policy identity differs.',
+    );
     final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
     valid(
-        receipt['host_policy_sha256'] == policy.digest &&
-            receipt['application_id'] == policy.fields['application_id'] &&
-            receipt['version_code'] == policy.fields['version_code'] &&
-            receipt['public_key'] == policy.fields['fptc_key'],
-        'Host policy receipt differs.');
+      receipt['host_policy_sha256'] == policy.digest &&
+          receipt['application_id'] == policy.fields['application_id'] &&
+          receipt['version_code'] == policy.fields['version_code'] &&
+          receipt['public_key'] == policy.fields['fptc_key'],
+      'Host policy receipt differs.',
+    );
   }
   if ([2, 3].contains(metadata['schema'])) {
     final receipt = await baselineObject(p.join(root, 'build_receipt.json'));
     valid(
-        receipt['runtime_bootstrap'] == metadata['runtime_bootstrap'] &&
-            receipt['fingerprint'] ==
-                fingerprint(
-                    files['app.dill']['sha256'] as String,
-                    metadata['engine_commit'] as String,
-                    files['dynamic_interface.yaml']['sha256'] as String,
-                    metadata['flutter_version'] as String,
-                    hostPolicyHash: metadata['host_policy_sha256'] as String?) &&
-            receipt['app_only'] == true &&
-            receipt['interface_sha256'] ==
-                files['dynamic_interface.yaml']['sha256'] &&
-            receipt['libapp_sha256'] == files['libapp.so']['sha256'] &&
-            baselineHash.hasMatch('${receipt['apk_sha256']}'),
-        'Build receipt binding differs.');
+      receipt['runtime_bootstrap'] == metadata['runtime_bootstrap'] &&
+          receipt['fingerprint'] ==
+              fingerprint(
+                files['app.dill']['sha256'] as String,
+                metadata['engine_commit'] as String,
+                files['dynamic_interface.yaml']['sha256'] as String,
+                metadata['flutter_version'] as String,
+                hostPolicyHash: metadata['host_policy_sha256'] as String?,
+              ) &&
+          receipt['app_only'] == true &&
+          receipt['interface_sha256'] ==
+              files['dynamic_interface.yaml']['sha256'] &&
+          receipt['libapp_sha256'] == files['libapp.so']['sha256'] &&
+          baselineHash.hasMatch('${receipt['apk_sha256']}'),
+      'Build receipt binding differs.',
+    );
   }
   await validatePackages(root);
   return {
@@ -335,40 +411,52 @@ Future<Map<String, dynamic>> createManifest(
     'platform': metadata['platform'],
     'files': files,
     'fingerprint': fingerprint(
-        files['app.dill']['sha256'] as String,
-        metadata['engine_commit'] as String,
-        files['dynamic_interface.yaml']['sha256'] as String,
-        metadata['flutter_version'] as String,
-        hostPolicyHash: metadata['host_policy_sha256'] as String?)
+      files['app.dill']['sha256'] as String,
+      metadata['engine_commit'] as String,
+      files['dynamic_interface.yaml']['sha256'] as String,
+      metadata['flutter_version'] as String,
+      hostPolicyHash: metadata['host_policy_sha256'] as String?,
+    ),
   };
 }
 
-Future<Map<String, dynamic>> verifyBaseline(String root,
-    {String? expected, String? sdkRoot}) async {
+Future<Map<String, dynamic>> verifyBaseline(
+  String root, {
+  String? expected,
+  String? sdkRoot,
+}) async {
   await rejectLinks(root);
   final manifest = await baselineObject(p.join(root, 'baseline.manifest.json'));
   final computed = await createManifest(root, manifest);
-  valid(canonical(manifest) == canonical(computed),
-      'Baseline manifest/files do not agree.');
+  valid(
+    canonical(manifest) == canonical(computed),
+    'Baseline manifest/files do not agree.',
+  );
   require(
-      expected == null || computed['fingerprint'] == expected,
-      'BASELINE_FINGERPRINT_MISMATCH',
-      'Requested fingerprint differs from baseline.');
+    expected == null || computed['fingerprint'] == expected,
+    'BASELINE_FINGERPRINT_MISMATCH',
+    'Requested fingerprint differs from baseline.',
+  );
   if (sdkRoot != null) await verifyPlatform(computed, sdkRoot);
   return computed;
 }
 
 Future<void> verifyPlatform(
-    Map<String, dynamic> metadata, String sdkRoot) async {
+  Map<String, dynamic> metadata,
+  String sdkRoot,
+) async {
   validateSdkIdentity(metadata);
   final platform = Map<String, dynamic>.from(metadata['platform'] as Map);
   final file = p.join(sdkRoot, platform['path'] as String);
-  valid(await File(file).exists() && await hashFile(file) == platform['sha256'],
-      'Selected SDK platform hash differs.');
   valid(
-      (await File(p.join(sdkRoot, 'bin/internal/engine.version'))
-                  .readAsString())
-              .trim() ==
-          metadata['engine_commit'],
-      'Selected SDK engine differs.');
+    await File(file).exists() && await hashFile(file) == platform['sha256'],
+    'Selected SDK platform hash differs.',
+  );
+  valid(
+    (await File(
+          p.join(sdkRoot, 'bin/internal/engine.version'),
+        ).readAsString()).trim() ==
+        metadata['engine_commit'],
+    'Selected SDK engine differs.',
+  );
 }

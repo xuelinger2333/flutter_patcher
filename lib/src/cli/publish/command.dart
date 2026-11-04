@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
+
 import '../baseline/store.dart';
 import '../core.dart';
 import '../sdk/host.dart';
@@ -16,30 +18,51 @@ import 'transaction.dart';
 
 ArgParser publishOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
-  ..addFlag('yes',
-      abbr: 'y',
-      negatable: false,
-      help: 'Publish without asking; otherwise preview, then ask when '
-          'interactive.')
-  ..addOption('project',
-      help: 'Application directory; default the current one.')
-  ..addOption('patch',
-      help: 'A patch output directory; default the project\'s latest patch.')
-  ..addFlag('withdraw',
-      negatable: false,
-      help: 'Withdraw that patch\'s release instead: devices remove its '
-          'patches at their next update check.')
-  ..addOption('through',
-      help: 'With --withdraw: the highest patch sequence to withdraw; '
-          'default the latest published.')
-  ..addFlag('production',
-      negatable: false, help: 'With --request: publish that request instead.')
+  ..addFlag(
+    'yes',
+    abbr: 'y',
+    negatable: false,
+    help:
+        'Publish without asking; otherwise preview, then ask when '
+        'interactive.',
+  )
+  ..addOption(
+    'project',
+    help: 'Application directory; default the current one.',
+  )
+  ..addOption(
+    'patch',
+    help: 'A patch output directory; default the project\'s latest patch.',
+  )
+  ..addFlag(
+    'withdraw',
+    negatable: false,
+    help:
+        'Withdraw that patch\'s release instead: devices remove its '
+        'patches at their next update check.',
+  )
+  ..addOption(
+    'through',
+    help:
+        'With --withdraw: the highest patch sequence to withdraw; '
+        'default the latest published.',
+  )
+  ..addFlag(
+    'production',
+    negatable: false,
+    help: 'With --request: publish that request instead.',
+  )
   ..addOption('request', help: 'Advanced: a production request JSON file.')
   ..addOption('receipt', help: 'New output JSON file for the result.');
 
 Future<int> productionPublish(ArgResults args) async {
-  stdout.writeln(jsonEncode(
-      {'command': 'publish', 'scope': 'production', ...await publication(args)}));
+  stdout.writeln(
+    jsonEncode({
+      'command': 'publish',
+      'scope': 'production',
+      ...await publication(args),
+    }),
+  );
   return 0;
 }
 
@@ -47,14 +70,17 @@ Future<int> productionPublish(ArgResults args) async {
 Future<Map<String, dynamic>> publication(ArgResults args) async {
   requireSupportedHost();
   require(
-      args.rest.isEmpty &&
-          (args['request'] == null) == (args['production'] != true),
-      'PUBLISH_CONFIG_INVALID',
-      'Use publish [--patch DIR] [--withdraw [--through SEQ]] [--yes], or '
-      'publish --production --request FILE [--yes]');
-  require(args['request'] == null || args['withdraw'] != true,
-      'PUBLISH_CONFIG_INVALID',
-      'A request file sets its own action; drop --withdraw.');
+    args.rest.isEmpty &&
+        (args['request'] == null) == (args['production'] != true),
+    'PUBLISH_CONFIG_INVALID',
+    'Use publish [--patch DIR] [--withdraw [--through SEQ]] [--yes], or '
+        'publish --production --request FILE [--yes]',
+  );
+  require(
+    args['request'] == null || args['withdraw'] != true,
+    'PUBLISH_CONFIG_INVALID',
+    'A request file sets its own action; drop --withdraw.',
+  );
   final project = args['request'] == null
       ? p.absolute(args['project'] as String? ?? Directory.current.path)
       : null;
@@ -62,22 +88,26 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
       ? await readObject(args['request'] as String)
       : await resumableRequest(project) ?? await projectRequest(args);
   require(
-      request['kind'] == null ||
-          {'publish', 'cleanup'}.contains(request['kind']),
-      'PUBLISH_CONFIG_INVALID',
-      'Unknown request kind');
+    request['kind'] == null || {'publish', 'cleanup'}.contains(request['kind']),
+    'PUBLISH_CONFIG_INVALID',
+    'Unknown request kind',
+  );
   if (args['receipt'] != null) {
     final path = args['receipt'] as String;
     await rejectLinks(path);
-    require(!await File(path).exists(), 'PUBLISH_CONFIG_INVALID',
-        'Receipt target already exists');
+    require(
+      !await File(path).exists(),
+      'PUBLISH_CONFIG_INVALID',
+      'Receipt target already exists',
+    );
   }
   final application = request['application_id'] as String;
   require(
-      RegExp(r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$')
-          .hasMatch(application),
-      'PUBLISH_CONFIG_INVALID',
-      'Invalid application identity');
+    RegExp(r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$')
+        .hasMatch(application),
+    'PUBLISH_CONFIG_INVALID',
+    'Invalid application identity',
+  );
   final cache = managedCache(request['cache_dir'] as String?);
   await rejectLinks(cache);
   await Directory(cache).create(recursive: true);
@@ -92,23 +122,36 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
     if (request['kind'] == 'cleanup') {
       final retention = PublicationRetention(transaction);
       if (args['yes'] == true) {
-        require(request['approved_plan'] is String, 'PUBLISH_CONFIG_INVALID',
-            'Explicit approved_plan file required for cleanup commit');
+        require(
+          request['approved_plan'] is String,
+          'PUBLISH_CONFIG_INVALID',
+          'Explicit approved_plan file required for cleanup commit',
+        );
         result = await retention.execute(
-            operation, await readObject(request['approved_plan'] as String));
+          operation,
+          await readObject(request['approved_plan'] as String),
+        );
       } else {
         result = retention.plan(
-            await transaction.snapshot(), request['cutoff'] as int);
+          await transaction.snapshot(),
+          request['cutoff'] as int,
+        );
       }
     } else {
       final fields = Map<String, String>.from(request['fields'] as Map);
-      require(fields['application_id'] == application, 'PUBLISH_CONFIG_INVALID',
-          'Application differs from fields');
+      require(
+        fields['application_id'] == application,
+        'PUBLISH_CONFIG_INVALID',
+        'Application differs from fields',
+      );
       final source = request['patch'] as String?;
       if (source != null) {
         await rejectLinks(source);
-        require(await File(source).length() <= 320 * 1024 * 1024,
-            'PUBLISH_PATCH_INVALID', 'Patch too large');
+        require(
+          await File(source).length() <= 320 * 1024 * 1024,
+          'PUBLISH_PATCH_INVALID',
+          'Patch too large',
+        );
       }
       final bytes = source == null ? null : await File(source).readAsBytes();
       if (bytes != null) {
@@ -121,41 +164,50 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
         final a = p.normalize(p.absolute(uri.toFilePath())),
             b = p.normalize(p.absolute(baselineUri.toFilePath()));
         require(
-            a != b && !p.isWithin(a, b) && !p.isWithin(b, a),
-            'PUBLISH_CONFIG_INVALID',
-            'Publication and baseline namespaces must not overlap');
+          a != b && !p.isWithin(a, b) && !p.isWithin(b, a),
+          'PUBLISH_CONFIG_INVALID',
+          'Publication and baseline namespaces must not overlap',
+        );
       }
       final release = await resolvePublication(
-          BaselineStore.open(baselineUri, commands), fields, work);
+        BaselineStore.open(baselineUri, commands),
+        fields,
+        work,
+      );
       for (final key in ['private_key', 'public_key']) {
         await rejectLinks(request[key] as String);
       }
       final seed = await File(request['private_key'] as String).readAsString(),
-          publicKey = await File(request['public_key'] as String).readAsString();
+          publicKey = await File(request['public_key'] as String)
+              .readAsString();
       Future<Map<String, dynamic>> execute(bool commit) =>
           PublicationPipeline(transaction, commands, work).execute(
-              operation: operation,
-              fields: fields,
-              expectedRevision: request['expected_revision'] as int,
-              seed: seed,
-              publicKey: publicKey,
-              createdAt: request['created_at'].toString(),
-              baseline: release.identity,
-              target: release.target,
-              patch: bytes,
-              commit: commit,
-              pin: request['pin'] == true);
+            operation: operation,
+            fields: fields,
+            expectedRevision: request['expected_revision'] as int,
+            seed: seed,
+            publicKey: publicKey,
+            createdAt: request['created_at'].toString(),
+            baseline: release.identity,
+            target: release.target,
+            patch: bytes,
+            commit: commit,
+            pin: request['pin'] == true,
+          );
       result = await execute(false);
       final what = fields['action'] == 'publish'
           ? 'patch ${fields['patch_seq']}'
           : 'withdrawal through ${fields['withdraw_through_seq']}';
       if (await confirmed(
-          args,
-          'Publish $what to ${fields['application_id']} ${fields['channel']} '
-          'versionCode ${fields['version_code']} '
-          '(revision ${fields['revision']})?')) {
+        args,
+        'Publish $what to ${fields['application_id']} ${fields['channel']} '
+        'versionCode ${fields['version_code']} '
+        '(revision ${fields['revision']})?',
+      )) {
         // A commit that stops midway resumes only with this exact request.
-        if (project != null) await writeObject(pendingRequest(project), request);
+        if (project != null) {
+          await writeObject(pendingRequest(project), request);
+        }
         result = await execute(true);
         if (project != null) await File(pendingRequest(project)).delete();
       }
@@ -166,8 +218,11 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
   if (args['receipt'] != null) {
     final path = args['receipt'] as String;
     await rejectLinks(path);
-    require(!await File(path).exists(), 'PUBLISH_CONFIG_INVALID',
-        'Receipt target already exists');
+    require(
+      !await File(path).exists(),
+      'PUBLISH_CONFIG_INVALID',
+      'Receipt target already exists',
+    );
     await writeObject(path, result);
   }
   return result;
@@ -191,16 +246,21 @@ Future<Map<String, dynamic>?> resumableRequest(String project) async {
   Map<String, dynamic> catalog;
   try {
     catalog = await PublicationTransaction(
-            openPublishStore(
-                Uri.parse(saved['store'] as String), Commands(cache), work),
-            saved['application_id'] as String)
-        .snapshot();
+      openPublishStore(
+        Uri.parse(saved['store'] as String),
+        Commands(cache),
+        work,
+      ),
+      saved['application_id'] as String,
+    ).snapshot();
   } finally {
     await RunWork.finish(work);
   }
   if (awaitsRequest(catalog, saved)) {
-    stderr.writeln('Resuming the publication interrupted at operation '
-        '${saved['operation']}; run publish again afterwards for anything else.');
+    stderr.writeln(
+      'Resuming the publication interrupted at operation '
+      '${saved['operation']}; run publish again afterwards for anything else.',
+    );
     return saved;
   }
   await file.delete();
@@ -215,12 +275,14 @@ bool awaitsRequest(Map catalog, Map request) =>
 /// by creation time; one still being written has a `.pending-` suffix.
 Future<String?> latestPatchOutput(String project) async {
   final patches = Directory(
-      p.join(project, '.dart_tool', 'flutter_patcher', 'patches'));
+    p.join(project, '.dart_tool', 'flutter_patcher', 'patches'),
+  );
   if (!await patches.exists()) return null;
   final runs = await patches
       .list()
-      .where((e) =>
-          e is Directory && RegExp(r'^\d+$').hasMatch(p.basename(e.path)))
+      .where(
+        (e) => e is Directory && RegExp(r'^\d+$').hasMatch(p.basename(e.path)),
+      )
       .map((e) => e.path)
       .toList();
   return runs.isEmpty ? null : (runs..sort()).last;
@@ -242,20 +304,29 @@ Future<bool> confirmed(ArgResults args, String question) async {
 /// published one.
 Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   final withdraw = args['withdraw'] == true;
-  require(args['through'] == null || withdraw, 'PUBLISH_CONFIG_INVALID',
-      '--through needs --withdraw.');
-  final project =
-      p.absolute(args['project'] as String? ?? Directory.current.path);
+  require(
+    args['through'] == null || withdraw,
+    'PUBLISH_CONFIG_INVALID',
+    '--through needs --withdraw.',
+  );
+  final project = p.absolute(
+    args['project'] as String? ?? Directory.current.path,
+  );
   final config = await ProjectConfig.load(project);
   final directory =
       args['patch'] as String? ?? await latestPatchOutput(project);
-  require(directory != null, 'PUBLISH_CONFIG_INVALID',
-      'No patch to publish; run patch first or pass --patch.');
+  require(
+    directory != null,
+    'PUBLISH_CONFIG_INVALID',
+    'No patch to publish; run patch first or pass --patch.',
+  );
   final report = await readObject(p.join(directory!, 'patch.json'));
   final scope = report['scope'];
-  require(report['status'] == 'patch_created' && scope is Map,
-      'PUBLISH_CONFIG_INVALID',
-      '$directory is not a patch output of this flutter_patcher.');
+  require(
+    report['status'] == 'patch_created' && scope is Map,
+    'PUBLISH_CONFIG_INVALID',
+    '$directory is not a patch output of this flutter_patcher.',
+  );
   final store = config.store;
   final fields = Map<String, String>.from(scope as Map);
   final cache = managedCache(null);
@@ -264,9 +335,9 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   Map? head;
   try {
     final catalog = await PublicationTransaction(
-            openPublishStore(Uri.parse(store), Commands(cache), work),
-            fields['application_id']!)
-        .snapshot();
+      openPublishStore(Uri.parse(store), Commands(cache), work),
+      fields['application_id']!,
+    ).snapshot();
     final id = (catalog['heads'] as Map)[scopeOf(fields)];
     head = id == null ? null : (catalog['releases'] as Map)[id] as Map;
   } finally {
@@ -283,7 +354,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
     'baseline_store': config.baselineStore,
     'operation': [
       for (var i = 0; i < 16; i++)
-        random.nextInt(256).toRadixString(16).padLeft(2, '0')
+        random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ].join(),
     'expected_revision': revision,
     'created_at': DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
@@ -308,13 +379,17 @@ Map<String, String> withdrawal(Map? head, String? through) {
   final high = head?['high_seq'] as int? ?? 0,
       floor = head?['withdrawn_through'] as int? ?? 0;
   require(
-      high > floor,
-      'PUBLISH_CONFIG_INVALID',
-      floor == 0
-          ? 'Nothing to withdraw: no patch is published for this release.'
-          : 'Nothing to withdraw: this release is withdrawn through $floor.');
+    high > floor,
+    'PUBLISH_CONFIG_INVALID',
+    floor == 0
+        ? 'Nothing to withdraw: no patch is published for this release.'
+        : 'Nothing to withdraw: this release is withdrawn through $floor.',
+  );
   final seq = through == null ? high : int.tryParse(through);
-  require(seq != null && seq > floor && seq <= high, 'PUBLISH_CONFIG_INVALID',
-      'Withdraw through a sequence above $floor, up to the latest published $high.');
+  require(
+    seq != null && seq > floor && seq <= high,
+    'PUBLISH_CONFIG_INVALID',
+    'Withdraw through a sequence above $floor, up to the latest published $high.',
+  );
   return {'action': 'withdraw', 'withdraw_through_seq': '$seq'};
 }

@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
 import '../baseline/store.dart' show serialized;
 import '../core.dart';
 
@@ -14,8 +16,11 @@ class StoredObject {
 
 /// The publication store at [uri]: a directory (`file://`) or S3.
 PublishStore openPublishStore(Uri uri, Commands commands, String work) {
-  require(uri.userInfo.isEmpty && uri.query.isEmpty && uri.fragment.isEmpty,
-      'PUBLISH_CONFIG_INVALID', 'Store URI must not contain credentials');
+  require(
+    uri.userInfo.isEmpty && uri.query.isEmpty && uri.fragment.isEmpty,
+    'PUBLISH_CONFIG_INVALID',
+    'Store URI must not contain credentials',
+  );
   return uri.scheme == 'file'
       ? FilePublishStore(uri.toFilePath())
       : S3PublishStore(uri, commands, p.join(work, 's3'));
@@ -30,19 +35,20 @@ abstract class PublishStore {
 }
 
 void publicationName(String name) => require(
-    name == 'catalog.json' ||
-        name == 'trust.json' ||
-        RegExp(r'^manifests/[a-f0-9]{64}\.json$').hasMatch(name) ||
-        RegExp(r'^objects/[a-f0-9]{32}/[a-f0-9]{64}\.fptc$').hasMatch(name),
-    'PUBLISH_STORE_INVALID',
-    'Invalid publication object name');
+  name == 'catalog.json' ||
+      name == 'trust.json' ||
+      RegExp(r'^manifests/[a-f0-9]{64}\.json$').hasMatch(name) ||
+      RegExp(r'^objects/[a-f0-9]{32}/[a-f0-9]{64}\.fptc$').hasMatch(name),
+  'PUBLISH_STORE_INVALID',
+  'Invalid publication object name',
+);
 
 /// The largest object [name] may be: signed documents are small.
 int publicationLimit(String name) => name == 'catalog.json'
     ? 8 * 1024 * 1024
     : name.endsWith('.fptc')
-        ? 320 * 1024 * 1024
-        : 24000;
+    ? 320 * 1024 * 1024
+    : 24000;
 
 class FilePublishStore implements PublishStore {
   FilePublishStore(String root) : root = p.normalize(p.absolute(root));
@@ -68,8 +74,11 @@ class FilePublishStore implements PublishStore {
     await rejectLinks(path);
     final file = File(path);
     if (!await file.exists()) return null;
-    require(await file.length() <= publicationLimit(name),
-        'PUBLISH_STORE_INVALID', 'Object exceeds limit');
+    require(
+      await file.length() <= publicationLimit(name),
+      'PUBLISH_STORE_INVALID',
+      'Object exceeds limit',
+    );
     final bytes = await file.readAsBytes();
     return StoredObject(bytes, sha256.convert(bytes).toString());
   }
@@ -90,21 +99,28 @@ class FilePublishStore implements PublishStore {
       });
   @override
   Future<void> delete(String name) => _locked(() async {
-        require(name != 'catalog.json' && name != 'trust.json',
-            'PUBLISH_STORE_INVALID', 'Cannot delete catalog');
-        if (await _read(name) != null) {
-          await File(p.join(root, name)).deleteRetry();
-        }
-      });
+    require(
+      name != 'catalog.json' && name != 'trust.json',
+      'PUBLISH_STORE_INVALID',
+      'Cannot delete catalog',
+    );
+    if (await _read(name) != null) {
+      await File(p.join(root, name)).deleteRetry();
+    }
+  });
   @override
   Future<List<String>> list() async {
     await rejectLinks(root);
     if (!await Directory(root).exists()) return [];
     final result = <String>[];
-    await for (final entry
-        in Directory(root).list(recursive: true, followLinks: false)) {
+    await for (final entry in Directory(
+      root,
+    ).list(recursive: true, followLinks: false)) {
       require(
-          entry is! Link, 'PUBLISH_STORE_INVALID', 'Store contains symlink');
+        entry is! Link,
+        'PUBLISH_STORE_INVALID',
+        'Store contains symlink',
+      );
       final name = p.relative(entry.path, from: root).replaceAll('\\', '/');
       if (entry is File && name != '.publish.lock') {
         publicationName(name);
@@ -119,18 +135,22 @@ class FilePublishStore implements PublishStore {
 class S3PublishStore implements PublishStore {
   S3PublishStore(this.uri, this.commands, this.work) {
     require(
-        uri.scheme == 's3' &&
-            uri.host.isNotEmpty &&
-            uri.userInfo.isEmpty &&
-            uri.query.isEmpty &&
-            uri.fragment.isEmpty &&
-            uri.pathSegments
-                .where((s) => s.isNotEmpty)
-                .every((s) => RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(s)),
-        'PUBLISH_STORE_INVALID',
-        'Use a dedicated S3 prefix without credentials');
-    require(uri.pathSegments.where((s) => s.isNotEmpty).isNotEmpty,
-        'PUBLISH_STORE_INVALID', 'Bucket root is not a publication namespace');
+      uri.scheme == 's3' &&
+          uri.host.isNotEmpty &&
+          uri.userInfo.isEmpty &&
+          uri.query.isEmpty &&
+          uri.fragment.isEmpty &&
+          uri.pathSegments
+              .where((s) => s.isNotEmpty)
+              .every((s) => RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(s)),
+      'PUBLISH_STORE_INVALID',
+      'Use a dedicated S3 prefix without credentials',
+    );
+    require(
+      uri.pathSegments.where((s) => s.isNotEmpty).isNotEmpty,
+      'PUBLISH_STORE_INVALID',
+      'Bucket root is not a publication namespace',
+    );
   }
   final Uri uri;
   final Commands commands;
@@ -141,36 +161,46 @@ class S3PublishStore implements PublishStore {
     final endpoint = commands.environment['FLUTTER_PATCHER_S3_ENDPOINT'];
     if (endpoint != null) Downloads.validateUri(Uri.parse(endpoint));
     try {
-      return await commands.runResult('aws', [
-        if (endpoint != null) ...['--endpoint-url', endpoint],
-        's3api',
-        op,
-        '--bucket',
-        uri.host,
-        ...args,
-        '--output',
-        'json',
-      ], extraEnvironment: {
-        'AWS_PAGER': ''
-      });
+      return await commands.runResult(
+        'aws',
+        [
+          if (endpoint != null) ...['--endpoint-url', endpoint],
+          's3api',
+          op,
+          '--bucket',
+          uri.host,
+          ...args,
+          '--output',
+          'json',
+        ],
+        extraEnvironment: {'AWS_PAGER': ''},
+      );
     } catch (_) {
       throw Failure(
-          'PUBLISH_STORE_UNAVAILABLE', 'AWS CLI operation unavailable');
+        'PUBLISH_STORE_UNAVAILABLE',
+        'AWS CLI operation unavailable',
+      );
     }
   }
 
   void _success(CommandResult r) => require(
-      r.exitCode == 0,
-      'PUBLISH_STORE_UNAVAILABLE',
-      'S3 operation failed; conditional operations must be supported');
+    r.exitCode == 0,
+    'PUBLISH_STORE_UNAVAILABLE',
+    'S3 operation failed; conditional operations must be supported',
+  );
   @override
   Future<StoredObject?> read(String name) async {
     publicationName(name);
     await Directory(work).create(recursive: true);
     final destination = temporaryName(p.join(work, 'read'));
     final max = publicationLimit(name);
-    final result = await _call('get-object',
-        ['--key', '$prefix$name', '--range', 'bytes=0-$max', destination]);
+    final result = await _call('get-object', [
+      '--key',
+      '$prefix$name',
+      '--range',
+      'bytes=0-$max',
+      destination,
+    ]);
     if (result.exitCode != 0 &&
         RegExp(r'\((NoSuchKey|404)\)').hasMatch(result.stderr)) {
       return null;
@@ -178,11 +208,17 @@ class S3PublishStore implements PublishStore {
     _success(result);
     final file = File(destination);
     try {
-      require(await file.length() <= max, 'PUBLISH_STORE_INVALID',
-          'Object exceeds limit');
+      require(
+        await file.length() <= max,
+        'PUBLISH_STORE_INVALID',
+        'Object exceeds limit',
+      );
       final token = (jsonDecode(result.stdout) as Map)['ETag'];
-      require(token is String && token.isNotEmpty, 'PUBLISH_STORE_INVALID',
-          'Missing ETag');
+      require(
+        token is String && token.isNotEmpty,
+        'PUBLISH_STORE_INVALID',
+        'Missing ETag',
+      );
       return StoredObject(await file.readAsBytes(), token as String);
     } finally {
       if (await file.exists()) await file.deleteRetry();
@@ -203,11 +239,11 @@ class S3PublishStore implements PublishStore {
         file.path,
         if (expected == null) ...[
           '--if-none-match',
-          '*'
+          '*',
         ] else ...[
           '--if-match',
-          expected
-        ]
+          expected,
+        ],
       ]);
       if (result.exitCode != 0 &&
           RegExp(r'\((PreconditionFailed|ConditionalRequestConflict)\)')
@@ -224,8 +260,11 @@ class S3PublishStore implements PublishStore {
   @override
   Future<void> delete(String name) async {
     publicationName(name);
-    require(name != 'catalog.json' && name != 'trust.json',
-        'PUBLISH_STORE_INVALID', 'Cannot delete catalog');
+    require(
+      name != 'catalog.json' && name != 'trust.json',
+      'PUBLISH_STORE_INVALID',
+      'Cannot delete catalog',
+    );
     _success(await _call('delete-object', ['--key', '$prefix$name']));
   }
 
@@ -239,14 +278,17 @@ class S3PublishStore implements PublishStore {
         '--prefix',
         prefix,
         '--no-paginate',
-        if (cursor != null) ...['--continuation-token', cursor]
+        if (cursor != null) ...['--continuation-token', cursor],
       ]);
       _success(result);
       final page = jsonDecode(result.stdout) as Map;
       for (final row in (page['Contents'] as List? ?? [])) {
         final key = row['Key'] as String;
-        require(key.startsWith(prefix), 'PUBLISH_STORE_INVALID',
-            'Wrong listing prefix');
+        require(
+          key.startsWith(prefix),
+          'PUBLISH_STORE_INVALID',
+          'Wrong listing prefix',
+        );
         final name = key.substring(prefix.length);
         publicationName(name);
         names.add(name);
@@ -255,9 +297,10 @@ class S3PublishStore implements PublishStore {
           ? page['NextContinuationToken'] as String?
           : null;
       require(
-          page['IsTruncated'] != true || (cursor != null && seen.add(cursor)),
-          'PUBLISH_STORE_INVALID',
-          'Invalid pagination token');
+        page['IsTruncated'] != true || (cursor != null && seen.add(cursor)),
+        'PUBLISH_STORE_INVALID',
+        'Invalid pagination token',
+      );
     } while (cursor != null);
     return names;
   }

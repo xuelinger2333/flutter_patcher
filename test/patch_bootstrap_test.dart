@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -90,27 +91,24 @@ void main() {
       ),
     );
   });
-  test(
-    'authenticated snapshot still rejects matching but incorrect ZIP CRC fields',
-    () {
-      final bytes = envelope();
-      final view = ByteData.sublistView(bytes);
-      final central = 146 + view.getUint32(bytes.length - 6, Endian.little);
-      final wrong = view.getUint32(146 + 14, Endian.little) ^ 1;
-      view.setUint32(146 + 14, wrong, Endian.little);
-      view.setUint32(central + 16, wrong, Endian.little);
-      expect(
-        () => parseAuthenticatedPatchBytes(bytes, fp),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'reason',
-            'ZIP CRC mismatch',
-          ),
+  test('authenticated snapshot still rejects matching but incorrect ZIP CRC fields', () {
+    final bytes = envelope();
+    final view = ByteData.sublistView(bytes);
+    final central = 146 + view.getUint32(bytes.length - 6, Endian.little);
+    final wrong = view.getUint32(146 + 14, Endian.little) ^ 1;
+    view.setUint32(146 + 14, wrong, Endian.little);
+    view.setUint32(central + 16, wrong, Endian.little);
+    expect(
+      () => parseAuthenticatedPatchBytes(bytes, fp),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'reason',
+          'ZIP CRC mismatch',
         ),
-      );
-    },
-  );
+      ),
+    );
+  });
   group('ranges native checked', () {
     /// Envelope offset and length of each entry, as native reports them.
     Map<String, List<int>> ranges(Uint8List bytes) => {
@@ -460,54 +458,45 @@ void main() {
     test('a starting entry point boots first, then runs the patch', () async {
       final events = <String>[];
       Map<String, Function>? entries;
-      final start =
-          entry(
-                () => events.add('original'),
-                start: true,
-                entries: null,
-                boot: () async => events.add('boot'),
-              )
-              as dynamic;
+      final start = entry(
+        () => events.add('original'),
+        start: true,
+        entries: null,
+        boot: () async => events.add('boot'),
+      ) as dynamic;
       // The engine calls it as it does a main: with the arguments, if any.
       expect(start, isA<Object? Function(List<String>)>());
       await start(['a']);
       expect(events, ['boot', 'original']);
-      final patched =
-          patchEntry(
-                key,
-                () => events.add('original'),
-                start: true,
-                entries: () => entries,
-                boot: () async => entries = {
-                  key: (List<String> args) => events.add('patched:$args'),
-                },
-                log: (_) {},
-              )
-              as dynamic;
+      final patched = patchEntry(
+        key,
+        () => events.add('original'),
+        start: true,
+        entries: () => entries,
+        boot: () async =>
+            entries = {key: (List<String> args) => events.add('patched:$args')},
+        log: (_) {},
+      ) as dynamic;
       await patched(['b']);
       expect(events.last, 'patched:[b]');
-      final nullary =
-          patchEntry(
-                key,
-                null,
-                start: true,
-                entries: () => {key: () => events.add('nullary')},
-                boot: () async {},
-                log: (_) {},
-              )
-              as dynamic;
+      final nullary = patchEntry(
+        key,
+        null,
+        start: true,
+        entries: () => {key: () => events.add('nullary')},
+        boot: () async {},
+        log: (_) {},
+      ) as dynamic;
       await nullary(<String>[]);
       expect(events.last, 'nullary');
     });
     test('a failed boot runs the entry point as built', () async {
       final events = <String>[];
-      final start =
-          entry(
-                () => events.add('original'),
-                start: true,
-                boot: () async => throw StateError('boot'),
-              )
-              as dynamic;
+      final start = entry(
+        () => events.add('original'),
+        start: true,
+        boot: () async => throw StateError('boot'),
+      ) as dynamic;
       await start(<String>[]);
       expect(events, ['original']);
       expect(log.last, contains('Background boot failed for $key'));
@@ -657,9 +646,10 @@ void main() {
           final timing = logs.singleWhere(
             (line) => line.startsWith('BYTECODE_BOOT_TIMING:'),
           );
-          final values = RegExp(
-            r'\w+_us=(\d+)',
-          ).allMatches(timing).map((m) => int.parse(m.group(1)!)).toList();
+          final values = RegExp(r'\w+_us=(\d+)')
+              .allMatches(timing)
+              .map((m) => int.parse(m.group(1)!))
+              .toList();
           expect(values.length, 5);
           expect(
             values.take(4).fold<int>(0, (sum, value) => sum + value),

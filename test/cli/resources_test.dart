@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+
 import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 import 'package:crypto/crypto.dart';
@@ -14,108 +15,143 @@ void main() {
     final module = File(p.join(dir.path, 'module.bc'));
     await module.writeAsBytes([1]);
     await expectLater(
-        packPatch(
-            kind: 'bytecode',
-            code: module.path,
-            work: dir.path,
-            metadata: {},
-            key: [],
-            commands: Commands(dir.path),
-            extraEntries: {
-              'assets/a': [1]
-            },
-            assets: [
-              {'key': '../a', 'path': 'assets/a', 'length': 1, 'sha256': 'bad'}
-            ]),
-        throwsA(isA<Failure>()));
+      packPatch(
+        kind: 'bytecode',
+        code: module.path,
+        work: dir.path,
+        metadata: {},
+        key: [],
+        commands: Commands(dir.path),
+        extraEntries: {
+          'assets/a': [1],
+        },
+        assets: [
+          {'key': '../a', 'path': 'assets/a', 'length': 1, 'sha256': 'bad'},
+        ],
+      ),
+      throwsA(isA<Failure>()),
+    );
     await expectLater(
-        packPatch(
-            kind: 'bytecode',
-            code: module.path,
-            work: dir.path,
-            metadata: {},
-            key: [],
-            commands: Commands(dir.path),
-            extraEntries: {
-              'assets/a': [1]
-            },
-            assets: [
-              {'key': 'a', 'path': 'assets/a', 'length': 1, 'sha256': 'bad'}
-            ]),
-        throwsA(isA<Failure>()));
+      packPatch(
+        kind: 'bytecode',
+        code: module.path,
+        work: dir.path,
+        metadata: {},
+        key: [],
+        commands: Commands(dir.path),
+        extraEntries: {
+          'assets/a': [1],
+        },
+        assets: [
+          {'key': 'a', 'path': 'assets/a', 'length': 1, 'sha256': 'bad'},
+        ],
+      ),
+      throwsA(isA<Failure>()),
+    );
   });
-  test('manifest codec roundtrip with image variants and rejects bad input',
-      () {
-    final data = {
-      'a': [
-        {'asset': 'a'},
-        {'asset': '2.0x/a', 'dpr': 2.0}
-      ]
-    };
-    expect(AssetCodec.decode(AssetCodec.encode(data)), data);
-    expect(() => AssetCodec.decode([13, 1, 7]), throwsA(isA<Failure>()));
-    expect(() => AssetCodec.decode([...AssetCodec.encode(data), 0]),
-        throwsA(isA<Failure>()));
-    for (final key in ['../a', '/a', 'a\\b', 'a//b', 'C:x', 'a/./b']) {
-      expect(() => assetKey(key), throwsA(isA<Failure>()));
-    }
-  });
-  test('changed image brings variants and merges only selected metadata',
-      () async {
-    final dir = await Directory.systemTemp.createTemp('resources-');
-    addTearDown(() => dir.delete(recursive: true));
-    final manifest = {
-      'a': [
-        {'asset': 'a'},
-        {'asset': '2.0x/a', 'dpr': 2.0}
-      ],
-      'b': [
-        {'asset': 'b'}
-      ]
-    };
-    for (final key in ['a', '2.0x/a', 'b']) {
-      final file = File(p.join(dir.path, key));
-      await file.parent.create(recursive: true);
-      await file.writeAsString(key);
-    }
-    await File(p.join(dir.path, 'AssetManifest.bin'))
-        .writeAsBytes(AssetCodec.encode(manifest));
-    final baseline = {
-      'schema': 1,
-      'manifest': manifest,
-      'files': {
-        for (final key in ['a', '2.0x/a', 'b'])
-          key: {'sha256': sha256.convert(utf8.encode(key)).toString()}
+  test(
+    'manifest codec roundtrip with image variants and rejects bad input',
+    () {
+      final data = {
+        'a': [
+          {'asset': 'a'},
+          {'asset': '2.0x/a', 'dpr': 2.0},
+        ],
+      };
+      expect(AssetCodec.decode(AssetCodec.encode(data)), data);
+      expect(() => AssetCodec.decode([13, 1, 7]), throwsA(isA<Failure>()));
+      expect(
+        () => AssetCodec.decode([...AssetCodec.encode(data), 0]),
+        throwsA(isA<Failure>()),
+      );
+      for (final key in ['../a', '/a', 'a\\b', 'a//b', 'C:x', 'a/./b']) {
+        expect(() => assetKey(key), throwsA(isA<Failure>()));
       }
-    };
-    final unchanged =
-        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
-    await unchanged.collect(baseline, []);
-    expect(unchanged.assets, isEmpty);
-    await File(p.join(dir.path, 'a')).writeAsString('new');
-    final patch =
-        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
-    await patch.collectFonts([
-      {'fontFamily': null, 'codePoint': 128842}
-    ]);
-    expect(
-        patch.fonts, isEmpty); // System fallback, not a missing bundled font.
-    await patch.collect(baseline, []);
-    expect(patch.assets.map((a) => a['key']).toSet(),
-        {'a', '2.0x/a', 'AssetManifest.bin'});
-    expect(AssetCodec.decode(patch.entries['assets/AssetManifest.bin']!),
-        manifest);
-    final bad =
-        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
-    await expectLater(
-        bad.collect(baseline, ['a', 'a']), throwsA(isA<Failure>()));
-    await File(p.join(dir.path, 'AssetManifest.bin'))
-        .writeAsBytes(AssetCodec.encode({'b': manifest['b']}));
-    final gone =
-        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
-    await gone.collect(baseline, []);
-    expect(gone.deleted, ['a']);
-  });
+    },
+  );
+  test(
+    'changed image brings variants and merges only selected metadata',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('resources-');
+      addTearDown(() => dir.delete(recursive: true));
+      final manifest = {
+        'a': [
+          {'asset': 'a'},
+          {'asset': '2.0x/a', 'dpr': 2.0},
+        ],
+        'b': [
+          {'asset': 'b'},
+        ],
+      };
+      for (final key in ['a', '2.0x/a', 'b']) {
+        final file = File(p.join(dir.path, key));
+        await file.parent.create(recursive: true);
+        await file.writeAsString(key);
+      }
+      await File(p.join(dir.path, 'AssetManifest.bin'))
+          .writeAsBytes(AssetCodec.encode(manifest));
+      final baseline = {
+        'schema': 1,
+        'manifest': manifest,
+        'files': {
+          for (final key in ['a', '2.0x/a', 'b'])
+            key: {'sha256': sha256.convert(utf8.encode(key)).toString()},
+        },
+      };
+      final unchanged = PatchResources(
+        dir.path,
+        dir.path,
+        Commands(dir.path),
+        dir.path,
+      );
+      await unchanged.collect(baseline, []);
+      expect(unchanged.assets, isEmpty);
+      await File(p.join(dir.path, 'a')).writeAsString('new');
+      final patch = PatchResources(
+        dir.path,
+        dir.path,
+        Commands(dir.path),
+        dir.path,
+      );
+      await patch.collectFonts([
+        {'fontFamily': null, 'codePoint': 128842},
+      ]);
+      expect(
+        patch.fonts,
+        isEmpty,
+      ); // System fallback, not a missing bundled font.
+      await patch.collect(baseline, []);
+      expect(patch.assets.map((a) => a['key']).toSet(), {
+        'a',
+        '2.0x/a',
+        'AssetManifest.bin',
+      });
+      expect(
+        AssetCodec.decode(patch.entries['assets/AssetManifest.bin']!),
+        manifest,
+      );
+      final bad = PatchResources(
+        dir.path,
+        dir.path,
+        Commands(dir.path),
+        dir.path,
+      );
+      await expectLater(
+        bad.collect(baseline, ['a', 'a']),
+        throwsA(isA<Failure>()),
+      );
+      await File(p.join(dir.path, 'AssetManifest.bin'))
+          .writeAsBytes(AssetCodec.encode({'b': manifest['b']}));
+      final gone = PatchResources(
+        dir.path,
+        dir.path,
+        Commands(dir.path),
+        dir.path,
+      );
+      await gone.collect(baseline, []);
+      expect(gone.deleted, ['a']);
+    },
+  );
   test('fonts the host already has are not carried', () async {
     final dir = await Directory.systemTemp.createTemp('resources-host-fonts-');
     addTearDown(() => dir.delete(recursive: true));
@@ -127,44 +163,59 @@ void main() {
       await File(p.join(dir.path, e.key)).create(recursive: true);
       await File(p.join(dir.path, e.key)).writeAsString(e.value);
     }
-    await File(p.join(dir.path, 'FontManifest.json')).writeAsString(jsonEncode([
-      {
-        'family': 'NotoSansSC',
-        'fonts': [
-          {'asset': 'fonts/NotoSansSC.otf'}
-        ]
+    await File(p.join(dir.path, 'FontManifest.json')).writeAsString(
+      jsonEncode([
+        {
+          'family': 'NotoSansSC',
+          'fonts': [
+            {'asset': 'fonts/NotoSansSC.otf'},
+          ],
+        },
+        {
+          'family': 'MaterialIcons',
+          'fonts': [
+            {'asset': 'fonts/MaterialIcons-Regular.otf'},
+          ],
+        },
+      ]),
+    );
+    final patch = PatchResources(
+      dir.path,
+      dir.path,
+      Commands(dir.path),
+      dir.path,
+    );
+    await patch.collectFonts(
+      [
+        {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000},
+      ],
+      hostIcons: [
+        {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000},
+        {'fontFamily': 'MaterialIcons', 'codePoint': 0xe001},
+      ],
+      hostFiles: {
+        'fonts/NotoSansSC.otf': {
+          'sha256': sha256.convert(utf8.encode('text font')).toString(),
+        },
       },
-      {
-        'family': 'MaterialIcons',
-        'fonts': [
-          {'asset': 'fonts/MaterialIcons-Regular.otf'}
-        ]
-      },
-    ]));
-    final patch =
-        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
-    await patch.collectFonts([
-      {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000}
-    ], hostIcons: [
-      {'fontFamily': 'MaterialIcons', 'codePoint': 0xe000},
-      {'fontFamily': 'MaterialIcons', 'codePoint': 0xe001},
-    ], hostFiles: {
-      'fonts/NotoSansSC.otf': {
-        'sha256': sha256.convert(utf8.encode('text font')).toString()
-      }
-    });
+    );
     expect(patch.fonts, isEmpty);
   });
   test('missing icon fonts cannot silently disappear', () async {
     final dir = await Directory.systemTemp.createTemp('resources-fonts-');
     addTearDown(() => dir.delete(recursive: true));
-    final patch =
-        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
+    final patch = PatchResources(
+      dir.path,
+      dir.path,
+      Commands(dir.path),
+      dir.path,
+    );
     await expectLater(
-        patch.collectFonts([
-          {'fontFamily': 'Absent', 'codePoint': 65}
-        ]),
-        throwsA(isA<Failure>()));
+      patch.collectFonts([
+        {'fontFamily': 'Absent', 'codePoint': 65},
+      ]),
+      throwsA(isA<Failure>()),
+    );
   });
   test('an SO bundle ships every changed font file whole', () async {
     final dir = await Directory.systemTemp.createTemp('resources-so-fonts-');
@@ -177,22 +228,34 @@ void main() {
       await File(p.join(dir.path, e.key)).create(recursive: true);
       await File(p.join(dir.path, e.key)).writeAsString(e.value);
     }
-    await File(p.join(dir.path, 'FontManifest.json')).writeAsString(jsonEncode([
-      for (final family in ['Text', 'MaterialIcons'])
-        {
-          'family': family,
-          'fonts': [
-            {'asset': files.keys.firstWhere((k) => k.contains(family))}
-          ]
-        }
-    ]));
-    final patch =
-        PatchResources(dir.path, dir.path, Commands(dir.path), dir.path);
-    await patch.collectFonts(const [], wholeFamilies: true, hostFiles: {
-      'fonts/Text.otf': {'sha256': sha256.convert(utf8.encode('text')).toString()}
-    });
+    await File(p.join(dir.path, 'FontManifest.json')).writeAsString(
+      jsonEncode([
+        for (final family in ['Text', 'MaterialIcons'])
+          {
+            'family': family,
+            'fonts': [
+              {'asset': files.keys.firstWhere((k) => k.contains(family))},
+            ],
+          },
+      ]),
+    );
+    final patch = PatchResources(
+      dir.path,
+      dir.path,
+      Commands(dir.path),
+      dir.path,
+    );
+    await patch.collectFonts(
+      const [],
+      wholeFamilies: true,
+      hostFiles: {
+        'fonts/Text.otf': {
+          'sha256': sha256.convert(utf8.encode('text')).toString(),
+        },
+      },
+    );
     expect(patch.fonts.map((f) => [f['family'], f['subset']]), [
-      ['MaterialIcons', false]
+      ['MaterialIcons', false],
     ]);
   });
 }

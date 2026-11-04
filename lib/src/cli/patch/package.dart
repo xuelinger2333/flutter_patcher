@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart' hide ZLibEncoder;
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import 'resources.dart';
 import '../crypto/ed25519.dart';
@@ -27,8 +29,9 @@ Uint8List plainZip(Map<String, List<int>> entries, {String? deflated}) {
   for (final entry in entries.entries) {
     final name = utf8.encode(entry.key);
     final method = entry.key == deflated ? 8 : 0;
-    final data =
-        method == 8 ? ZLibEncoder(raw: true).convert(entry.value) : entry.value;
+    final data = method == 8
+        ? ZLibEncoder(raw: true).convert(entry.value)
+        : entry.value;
     final fields = ByteData(26)
       ..setUint16(0, 20, Endian.little) // version needed
       ..setUint16(2, 0x800, Endian.little) // UTF-8 names
@@ -70,61 +73,79 @@ Uint8List plainZip(Map<String, List<int>> entries, {String? deflated}) {
 }
 
 /// Packs [code] of [kind] with the patch's resources into a signed envelope.
-Future<Map<String, Object?>> packPatch(
-    {required String kind,
-    required String code,
-    required String work,
-    required Map<String, dynamic> metadata,
-    required List<int> key,
-    required Commands commands,
-    Map<String, List<int>> extraEntries = const {},
-    List<Map<String, dynamic>> fonts = const [],
-    List<Map<String, dynamic>> assets = const []}) async {
+Future<Map<String, Object?>> packPatch({
+  required String kind,
+  required String code,
+  required String work,
+  required Map<String, dynamic> metadata,
+  required List<int> key,
+  required Commands commands,
+  Map<String, List<int>> extraEntries = const {},
+  List<Map<String, dynamic>> fonts = const [],
+  List<Map<String, dynamic>> assets = const [],
+}) async {
   final codePath = codePaths[kind];
-  require(codePath != null, 'PATCH_PACKAGE_INVALID', 'Unknown code kind: $kind');
+  require(
+    codePath != null,
+    'PATCH_PACKAGE_INVALID',
+    'Unknown code kind: $kind',
+  );
   final bytes = await File(code).readAsBytes();
   require(
-      extraEntries.length <= 4094 &&
-          extraEntries.values.every((v) => v.length <= 64 * 1024 * 1024) &&
-          bytes.length +
-                  extraEntries.values.fold<int>(0, (n, v) => n + v.length) <=
-              256 * 1024 * 1024,
-      'PATCH_PACKAGE_INVALID',
-      'Patch payload exceeds resource limits');
+    extraEntries.length <= 4094 &&
+        extraEntries.values.every((v) => v.length <= 64 * 1024 * 1024) &&
+        bytes.length +
+                extraEntries.values.fold<int>(0, (n, v) => n + v.length) <=
+            256 * 1024 * 1024,
+    'PATCH_PACKAGE_INVALID',
+    'Patch payload exceeds resource limits',
+  );
   for (final row in assets) {
     assetKey(row['key'] as String);
-    require(row['path'] == 'assets/${row['key']}', 'PATCH_PACKAGE_INVALID',
-        'Asset key/path mismatch');
+    require(
+      row['path'] == 'assets/${row['key']}',
+      'PATCH_PACKAGE_INVALID',
+      'Asset key/path mismatch',
+    );
   }
   for (final row in fonts) {
     require(
-        row['family'] is String &&
-            (row['family'] as String).isNotEmpty &&
-            (row['path'] as String).startsWith('fonts/'),
-        'PATCH_PACKAGE_INVALID',
-        'Invalid font metadata');
+      row['family'] is String &&
+          (row['family'] as String).isNotEmpty &&
+          (row['path'] as String).startsWith('fonts/'),
+      'PATCH_PACKAGE_INVALID',
+      'Invalid font metadata',
+    );
   }
   final listed = <String>{};
   for (final row in [...fonts, ...assets]) {
     final path = row['path'] as String;
     assetKey(path);
     require(
-        (path.startsWith('fonts/') || path.startsWith('assets/')) &&
-            listed.add(path) &&
-            extraEntries.containsKey(path),
-        'PATCH_PACKAGE_INVALID',
-        'Invalid resource entry');
+      (path.startsWith('fonts/') || path.startsWith('assets/')) &&
+          listed.add(path) &&
+          extraEntries.containsKey(path),
+      'PATCH_PACKAGE_INVALID',
+      'Invalid resource entry',
+    );
     final data = extraEntries[path]!;
     require(
-        data.length == row['length'] &&
-            sha256.convert(data).toString() == row['sha256'],
-        'PATCH_PACKAGE_INVALID',
-        'Resource metadata does not match bytes');
+      data.length == row['length'] &&
+          sha256.convert(data).toString() == row['sha256'],
+      'PATCH_PACKAGE_INVALID',
+      'Resource metadata does not match bytes',
+    );
   }
-  require(listed.length == extraEntries.length, 'PATCH_PACKAGE_INVALID',
-      'Unlisted resource entry');
-  require(bytes.isNotEmpty && bytes.length <= 64 * 1024 * 1024,
-      'PATCH_PACKAGE_INVALID', 'Invalid code size');
+  require(
+    listed.length == extraEntries.length,
+    'PATCH_PACKAGE_INVALID',
+    'Unlisted resource entry',
+  );
+  require(
+    bytes.isNotEmpty && bytes.length <= 64 * 1024 * 1024,
+    'PATCH_PACKAGE_INVALID',
+    'Invalid code size',
+  );
   final manifest = {
     ...metadata,
     'format_version': patchFormatVersion,
@@ -132,10 +153,10 @@ Future<Map<String, Object?>> packPatch(
       'kind': kind,
       'path': codePath,
       'length': bytes.length,
-      'sha256': sha256.convert(bytes).toString()
+      'sha256': sha256.convert(bytes).toString(),
     },
     'fonts': fonts,
-    'assets': assets
+    'assets': assets,
   };
   // The Dart bootstrap reads a bytecode archive in place, so every entry is
   // STORED. Native code unpacks a libapp.so once at install: it is deflated,
@@ -144,38 +165,43 @@ Future<Map<String, Object?>> packPatch(
   final payload = plainZip({
     codePath!: bytes,
     'patch_manifest.json': utf8.encode(jsonEncode(manifest)),
-    ...extraEntries
+    ...extraEntries,
   }, deflated: deflated);
   final zip = ZipDecoder().decodeBytes(payload);
   require(
-      zip.length == 2 + extraEntries.length &&
-          zip.length <= 4096 &&
-          zip.every((f) => f.size <= 64 * 1024 * 1024) &&
-          zip.every((f) =>
+    zip.length == 2 + extraEntries.length &&
+        zip.length <= 4096 &&
+        zip.every((f) => f.size <= 64 * 1024 * 1024) &&
+        zip.every(
+          (f) =>
               f.compression ==
               (f.name == deflated
                   ? CompressionType.deflate
-                  : CompressionType.none)),
-      'PATCH_PACKAGE_INVALID',
-      'Only the libapp.so of an SO patch may be compressed');
+                  : CompressionType.none),
+        ),
+    'PATCH_PACKAGE_INVALID',
+    'Only the libapp.so of an SO patch may be compressed',
+  );
   return {
     ...await sealPatch(
-        payload: payload,
-        fingerprint: metadata['fingerprint'] as String,
-        seq: metadata['patch_seq'] as int,
-        key: key,
-        work: work),
-    'manifest': manifest
+      payload: payload,
+      fingerprint: metadata['fingerprint'] as String,
+      seq: metadata['patch_seq'] as int,
+      key: key,
+      work: work,
+    ),
+    'manifest': manifest,
   };
 }
 
 /// Wraps [payload] in a signed FPTC v1 envelope at `<work>/patch.fptc`.
-Future<Map<String, Object?>> sealPatch(
-    {required List<int> payload,
-    required String fingerprint,
-    required int seq,
-    required List<int> key,
-    required String work}) async {
+Future<Map<String, Object?>> sealPatch({
+  required List<int> payload,
+  required String fingerprint,
+  required int seq,
+  required List<int> key,
+  required String work,
+}) async {
   final header = ByteData(82)
     ..setUint32(0, 0x46505443)
     ..setUint16(4, 1);
@@ -192,8 +218,11 @@ Future<Map<String, Object?>> sealPatch(
       .writeAsBytes([...hexBytes('302a300506032b6570032100'), ...publicKey]);
   final signature = ed25519Sign(key, signedBytes);
   await File(p.join(work, 'signature.bin')).writeAsBytes(signature);
-  require(ed25519Verify(publicKey, signature, signedBytes), 'PATCH_SIGN_FAILED',
-      'Signature self-check failed');
+  require(
+    ed25519Verify(publicKey, signature, signedBytes),
+    'PATCH_SIGN_FAILED',
+    'Signature self-check failed',
+  );
   final output = p.join(work, 'patch.fptc');
   await File(output)
       .writeAsBytes([...header.buffer.asUint8List(), ...signature, ...payload]);

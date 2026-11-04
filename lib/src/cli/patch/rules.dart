@@ -22,7 +22,7 @@ enum PatchStage {
   resources,
 
   /// The whole patch.
-  result
+  result,
 }
 
 /// What the pipeline has learned about a patch; rules read it.
@@ -65,15 +65,17 @@ class PatchFacts {
 
   /// Changed asset keys, without the merged manifest.
   List<String> get changedAssets => [
-        for (final key in assets)
-          if (key != 'AssetManifest.bin') key
-      ];
+    for (final key in assets)
+      if (key != 'AssetManifest.bin') key,
+  ];
 
   /// Whether the patch changes Dart code, its own or a dependency's.
-  bool get codeChanged => changed.any((c) =>
-      c.startsWith('package:') ||
-      c.startsWith('dependency:') ||
-      c == 'libapp.so');
+  bool get codeChanged => changed.any(
+    (c) =>
+        c.startsWith('package:') ||
+        c.startsWith('dependency:') ||
+        c == 'libapp.so',
+  );
 
   /// Packages whose native code opens Flutter assets itself.
   Map<String, SourceSite> nativeAssetReaders = const {};
@@ -102,8 +104,13 @@ String _library(SourceSite site) =>
     'package:${site.package}/${site.file.replaceFirst(RegExp('^lib/'), '')}';
 
 class PatchRule {
-  const PatchRule(this.code, this.stage, this.findings,
-      {this.strategies = const {'bytecode', 'so'}, this.reject = true});
+  const PatchRule(
+    this.code,
+    this.stage,
+    this.findings, {
+    this.strategies = const {'bytecode', 'so'},
+    this.reject = true,
+  });
 
   /// The failure code a rejection carries, or the code of a warning.
   final String code;
@@ -121,31 +128,33 @@ class PatchRule {
 /// condition is decided; producers only gather facts.
 final patchRules = <PatchRule>[
   PatchRule(
-      'PATCH_NATIVE_CHANGE',
-      PatchStage.inputs,
-      (f) => [
-            if (f.appNativeChanged)
-              'Application native sources changed; rebuild host',
-            for (final name in f.nativeDependencies)
-              'Native plugin/build hook changed: $name',
-            for (final name in f.changedPlugins)
-              'Native plugin changes require a new host release: $name',
-            if (f.newlyPinned.isNotEmpty)
-              'Packages with native capability, or reached from one, are new '
-                  'since the release and need a new host release: '
-                  '${f.newlyPinned.join(', ')}',
-          ]),
+    'PATCH_NATIVE_CHANGE',
+    PatchStage.inputs,
+    (f) => [
+      if (f.appNativeChanged)
+        'Application native sources changed; rebuild host',
+      for (final name in f.nativeDependencies)
+        'Native plugin/build hook changed: $name',
+      for (final name in f.changedPlugins)
+        'Native plugin changes require a new host release: $name',
+      if (f.newlyPinned.isNotEmpty)
+        'Packages with native capability, or reached from one, are new '
+            'since the release and need a new host release: '
+            '${f.newlyPinned.join(', ')}',
+    ],
+  ),
   PatchRule(
-      'PATCH_PINNED_PACKAGE_CHANGED',
-      PatchStage.inputs,
-      (f) => [
-            for (final e in f.changedPinned.entries)
-              '${e.key} stays in the host (${e.value.why}), so a patch cannot '
-                  'change it; a new host release can. To keep the release\'s copy'
-                  '${e.value.version == null ? '' : ', add to pubspec.yaml:\n'
+    'PATCH_PINNED_PACKAGE_CHANGED',
+    PatchStage.inputs,
+    (f) => [
+      for (final e in f.changedPinned.entries)
+        '${e.key} stays in the host (${e.value.why}), so a patch cannot '
+            'change it; a new host release can. To keep the release\'s copy'
+            '${e.value.version == null ? '' : ', add to pubspec.yaml:\n'
                       'dependency_overrides:\n  ${e.key}: ${e.value.version}'}',
-          ],
-      strategies: const {'bytecode'}),
+    ],
+    strategies: const {'bytecode'},
+  ),
   // The interpreter cannot make FFI calls in an AOT runtime: a module with
   // one would abort the app, whichever tier carried it.
   PatchRule('PATCH_FFI_UNSUPPORTED', PatchStage.compile, (f) {
@@ -155,47 +164,50 @@ final patchRules = <PatchRule>[
     return [
       'Patched code would run FFI in the interpreter (${first['message']} at '
           '${first['file']}:${first['line']}). Keep FFI in unchanged host code, '
-          'which a patch may call, or ship a new host release.'
+          'which a patch may call, or ship a new host release.',
     ];
   }, strategies: const {'bytecode'}),
   PatchRule(
-      'PATCH_UNSAFE',
-      PatchStage.code,
-      (f) => [
-            if (f.report?['status'] != 'compiled')
-              '${f.tier == 'lean' ? 'Lean' : 'Whole'}-tier checks failed: '
-                  '${checkSummary(f.report ?? const {})}; evidence: ${f.evidence}',
-          ],
-      strategies: const {'bytecode'}),
+    'PATCH_UNSAFE',
+    PatchStage.code,
+    (f) => [
+      if (f.report?['status'] != 'compiled')
+        '${f.tier == 'lean' ? 'Lean' : 'Whole'}-tier checks failed: '
+            '${checkSummary(f.report ?? const {})}; evidence: ${f.evidence}',
+    ],
+    strategies: const {'bytecode'},
+  ),
   // A patch's icon font is subset to the constant IconData it uses.
   PatchRule(
-      'PATCH_DYNAMIC_ICON',
-      PatchStage.code,
-      (f) => [
-            if ((f.report?['dynamic_fonts'] as List? ?? const []).isNotEmpty)
-              'Non-constant IconData cannot be subset safely',
-          ],
-      strategies: const {'bytecode'}),
+    'PATCH_DYNAMIC_ICON',
+    PatchStage.code,
+    (f) => [
+      if ((f.report?['dynamic_fonts'] as List? ?? const []).isNotEmpty)
+        'Non-constant IconData cannot be subset safely',
+    ],
+    strategies: const {'bytecode'},
+  ),
   // Patch assets lie in front of the host's; they cannot remove one.
   PatchRule(
-      'PATCH_ASSET_DELETE_UNSUPPORTED',
-      PatchStage.resources,
-      (f) => [
-            for (final key in f.deletedAssets)
-              'Resource deletion requires a new host: $key',
-          ]),
+    'PATCH_ASSET_DELETE_UNSUPPORTED',
+    PatchStage.resources,
+    (f) => [
+      for (final key in f.deletedAssets)
+        'Resource deletion requires a new host: $key',
+    ],
+  ),
   // The engine installs patch assets in front of the app bundle; under an
   // engine without that capability every boot of this patch would fail.
   PatchRule(
-      'PATCH_ENGINE_UNSUPPORTED',
-      PatchStage.resources,
-      (f) => [
-            if (f.assets.isNotEmpty &&
-                !f.engineCapabilities.contains(assetOverlay))
-              'Asset changes need a host whose engine installs patch assets '
-                  '($assetOverlay); rebuild the host with the current '
-                  'engine, or ship the assets in a host release',
-          ]),
+    'PATCH_ENGINE_UNSUPPORTED',
+    PatchStage.resources,
+    (f) => [
+      if (f.assets.isNotEmpty && !f.engineCapabilities.contains(assetOverlay))
+        'Asset changes need a host whose engine installs patch assets '
+            '($assetOverlay); rebuild the host with the current '
+            'engine, or ship the assets in a host release',
+    ],
+  ),
   // Warnings: the patch ships, but part of it may not take effect.
   // A native reader asks the platform's asset manager, which knows only the
   // installed app's assets; patch assets live in the engine.
@@ -217,19 +229,21 @@ final patchRules = <PatchRule>[
   PatchRule('PATCH_BACKGROUND_ENTRY', PatchStage.resources, (f) {
     if (f.engineCapabilities.contains(isolateEntry)) {
       if (f.strategy == 'so' || !f.codeChanged) return const [];
-      final carried =
-          (f.report?['entries'] as List? ?? const []).cast<String>();
+      final carried = (f.report?['entries'] as List? ?? const [])
+          .cast<String>();
       final missed = [
         for (final (name, site) in f.backgroundEntries)
-          if (!carried.any((key) =>
-              key.startsWith('${_library(site)}#') &&
-              (key.endsWith('#$name') || key.endsWith('.$name'))))
+          if (!carried.any(
+            (key) =>
+                key.startsWith('${_library(site)}#') &&
+                (key.endsWith('#$name') || key.endsWith('.$name')),
+          ))
             '$name (${siteText(site)})',
       ];
       if (missed.isEmpty) return const [];
       return [
         'Entry points this patch does not carry run the release\'s code in a '
-            'separate engine: ${_list(missed)}'
+            'separate engine: ${_list(missed)}',
       ];
     }
     final sites = [
@@ -242,32 +256,33 @@ final patchRules = <PatchRule>[
       if (f.changedAssets.isEmpty) return const [];
       return [
         'Entry points started in a separate engine run this patch\'s code but '
-            'the release\'s assets: ${_list(sites)}'
+            'the release\'s assets: ${_list(sites)}',
       ];
     }
     if (!f.codeChanged && f.changedAssets.isEmpty) return const [];
     return [
       'Entry points started in a separate engine run the release\'s code and '
-          'assets, not this patch: ${_list(sites)}'
+          'assets, not this patch: ${_list(sites)}',
     ];
   }, reject: false),
   PatchRule(
-      'PATCH_RESOURCE_SIZE',
-      PatchStage.resources,
-      (f) => [
-            if (f.resourceBytes > resourceWarnBytes)
-              'This patch carries ${(f.resourceBytes / 1048576).toStringAsFixed(1)} MB '
-                  'of resources, held in memory for the life of the process; largest: '
-                  '${_list(f.largestResources.map((r) => '${r.$1} (${(r.$2 / 1048576).toStringAsFixed(1)} MB)'), limit: 3)}',
-          ],
-      reject: false),
+    'PATCH_RESOURCE_SIZE',
+    PatchStage.resources,
+    (f) => [
+      if (f.resourceBytes > resourceWarnBytes)
+        'This patch carries ${(f.resourceBytes / 1048576).toStringAsFixed(1)} MB '
+            'of resources, held in memory for the life of the process; largest: '
+            '${_list(f.largestResources.map((r) => '${r.$1} (${(r.$2 / 1048576).toStringAsFixed(1)} MB)'), limit: 3)}',
+    ],
+    reject: false,
+  ),
   PatchRule(
-      'PATCH_NO_CHANGES',
-      PatchStage.result,
-      (f) => [
-            if (f.changed.isEmpty)
-              'No Dart, dependency or resource changes detected',
-          ]),
+    'PATCH_NO_CHANGES',
+    PatchStage.result,
+    (f) => [
+      if (f.changed.isEmpty) 'No Dart, dependency or resource changes detected',
+    ],
+  ),
 ];
 
 /// Applies [rules] stage by stage: the first rejection throws, warnings
@@ -291,14 +306,14 @@ class PatchRules {
 
   /// The rule table, for documentation and the report.
   static List<Map<String, Object>> describe() => [
-        for (final r in patchRules)
-          {
-            'code': r.code,
-            'stage': r.stage.name,
-            'strategies': r.strategies.toList()..sort(),
-            'severity': r.reject ? 'reject' : 'warn'
-          }
-      ];
+    for (final r in patchRules)
+      {
+        'code': r.code,
+        'stage': r.stage.name,
+        'strategies': r.strategies.toList()..sort(),
+        'severity': r.reject ? 'reject' : 'warn',
+      },
+  ];
 }
 
 /// The first few rejection reasons of a tools report, one line each.
@@ -312,7 +327,8 @@ String checkSummary(Map<String, dynamic> report, {int limit = 3}) {
         if (row is! Map) continue;
         final message = '${row['message'] ?? row['code']}'.split('\n').first;
         lines.add(
-            '${entry.key}: ${message.replaceFirst(RegExp(r'^org-dartlang-root:///'), '')}');
+          '${entry.key}: ${message.replaceFirst(RegExp(r'^org-dartlang-root:///'), '')}',
+        );
       }
     }
   }

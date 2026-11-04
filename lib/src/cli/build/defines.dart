@@ -4,10 +4,11 @@
 /// `appFlavor` and other `fromEnvironment` constants in patched code differ
 /// from the host's (without them a patch saw kReleaseMode == false).
 Map<String, String> releaseDefines(String? flavor) => {
-      'dart.vm.profile': 'false',
-      'dart.vm.product': 'true',
-      if (flavor != null && flavor != 'default') 'FLUTTER_APP_FLAVOR': flavor,
-    };
+  'dart.vm.profile': 'false',
+  'dart.vm.product': 'true',
+  if (flavor != null && flavor != 'default') 'FLUTTER_APP_FLAVOR': flavor,
+};
 
-List<String> defineArgs(Map<String, String> defines) =>
-    [for (final e in defines.entries) '-D${e.key}=${e.value}'];
+List<String> defineArgs(Map<String, String> defines) => [
+  for (final e in defines.entries) '-D${e.key}=${e.value}',
+];

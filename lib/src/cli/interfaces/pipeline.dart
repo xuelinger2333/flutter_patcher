@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/environment.dart';
@@ -11,42 +13,49 @@ const wholeSelectors = [
   '*',
   'get:index',
   'relativeError',
-  'absoluteError'
+  'absoluteError',
 ];
 
 class InterfaceRequest {
   final String dill, module, packages, output, mode;
   final List<String> own;
   final int maxRounds;
-  InterfaceRequest(
-      {required this.dill,
-      required this.module,
-      required this.packages,
-      required this.output,
-      required this.own,
-      this.mode = 'lean',
-      this.maxRounds = 5});
+  InterfaceRequest({
+    required this.dill,
+    required this.module,
+    required this.packages,
+    required this.output,
+    required this.own,
+    this.mode = 'lean',
+    this.maxRounds = 5,
+  });
 
   Future<void> validate() async {
     require(
-        ['lean', 'whole'].contains(mode) && maxRounds >= 1 && maxRounds <= 5,
-        'CONFIG_INVALID',
-        'Interface mode must be lean/whole and rounds must be 1..5.');
+      ['lean', 'whole'].contains(mode) && maxRounds >= 1 && maxRounds <= 5,
+      'CONFIG_INVALID',
+      'Interface mode must be lean/whole and rounds must be 1..5.',
+    );
     require(
-        own.isNotEmpty &&
-            own.every((s) => RegExp(r'^[a-zA-Z_][a-zA-Z_0-9]*$').hasMatch(s)),
-        'CONFIG_INVALID',
-        'Explicit valid --own packages are required.');
+      own.isNotEmpty &&
+          own.every((s) => RegExp(r'^[a-zA-Z_][a-zA-Z_0-9]*$').hasMatch(s)),
+      'CONFIG_INVALID',
+      'Explicit valid --own packages are required.',
+    );
     for (final file in [dill, module, packages]) {
-      require(await File(file).exists(), 'INTERFACE_INPUT_MISSING',
-          'Missing input: $file');
+      require(
+        await File(file).exists(),
+        'INTERFACE_INPUT_MISSING',
+        'Missing input: $file',
+      );
     }
     await rejectLinks(output);
     require(
-        !await FileSystemEntity.isDirectory(output) &&
-            !await File(output).exists(),
-        'CONFIG_INVALID',
-        'Use a new interface output directory: $output');
+      !await FileSystemEntity.isDirectory(output) &&
+          !await File(output).exists(),
+      'CONFIG_INVALID',
+      'Use a new interface output directory: $output',
+    );
   }
 }
 
@@ -56,62 +65,76 @@ class InterfacePipeline {
   final SdkIdentity sdk;
   final String tool, managed, yamlCache;
   final EnvironmentBuilder environment;
-  InterfacePipeline(this.commands, this.sdk, this.tool, this.managed,
-      this.yamlCache, this.environment);
+  InterfacePipeline(
+    this.commands,
+    this.sdk,
+    this.tool,
+    this.managed,
+    this.yamlCache,
+    this.environment,
+  );
 
   Future<Map<String, dynamic>> generate(InterfaceRequest request) async {
     await request.validate();
     require(
-        !p.equals(p.absolute(request.output), p.absolute(sdk.root)) &&
-            !p.isWithin(p.absolute(sdk.root), p.absolute(request.output)),
-        'CONFIG_INVALID',
-        'Interface output must not modify the selected Flutter SDK.');
+      !p.equals(p.absolute(request.output), p.absolute(sdk.root)) &&
+          !p.isWithin(p.absolute(sdk.root), p.absolute(request.output)),
+      'CONFIG_INVALID',
+      'Interface output must not modify the selected Flutter SDK.',
+    );
     final usage = await commands.run(sdk.dart, [tool, '--help']);
     require(
-        [
-          'extract-surface',
-          'merge-interface',
-          'resolve-interface-hints',
-          'trim-interface',
-          '--out-details'
-        ].every(usage.contains),
-        'TOOLS_VERSION_UNSUPPORTED',
-        'The tools release lacks required interface/detail subcommands; it predates this flutter_patcher.');
+      [
+        'extract-surface',
+        'merge-interface',
+        'resolve-interface-hints',
+        'trim-interface',
+        '--out-details',
+      ].every(usage.contains),
+      'TOOLS_VERSION_UNSUPPORTED',
+      'The tools release lacks required interface/detail subcommands; it predates this flutter_patcher.',
+    );
     final staging = temporaryName(p.absolute(request.output));
     await Directory(staging).create(recursive: true);
     Future<void> call(List<String> args) async {
-      await commands.run(sdk.dart, [tool, ...args],
-          code: 'INTERFACE_GENERATION_FAILED');
+      await commands.run(sdk.dart, [
+        tool,
+        ...args,
+      ], code: 'INTERFACE_GENERATION_FAILED');
     }
 
     String file(String name) => p.join(staging, name);
-    final platform = environment.sdkInput(sdk, managed,
-        'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill');
+    final platform = environment.sdkInput(
+      sdk,
+      managed,
+      'bin/cache/artifacts/engine/common/flutter_patched_sdk_product/platform_strong.dill',
+    );
     final frontend = environment.sdkInput(
-        sdk, managed, sdk.host.toolchain('frontend_server_aot.dart.snapshot'));
+      sdk,
+      managed,
+      sdk.host.toolchain('frontend_server_aot.dart.snapshot'),
+    );
     final index = file('module-index.dill');
     final indexEntry = file('index-entry.dart');
     await File(indexEntry).writeAsString(
-        'import ${jsonEncode(Uri.file(p.absolute(request.module)).toString())};\nvoid main() {}\n');
+      'import ${jsonEncode(Uri.file(p.absolute(request.module)).toString())};\nvoid main() {}\n',
+    );
     // Source compilation is only for inspecting module imports. The tool dill is from CI.
-    await commands.run(
-        sdk.dartAotRuntime,
-        [
-          frontend,
-          '--sdk-root',
-          '${p.dirname(platform)}/',
-          '--target',
-          'flutter',
-          '--no-aot',
-          '--no-tfa',
-          '--link-platform',
-          '--packages',
-          p.absolute(request.packages),
-          '--output-dill',
-          index,
-          indexEntry
-        ],
-        code: 'INTERFACE_INDEX_FAILED');
+    await commands.run(sdk.dartAotRuntime, [
+      frontend,
+      '--sdk-root',
+      '${p.dirname(platform)}/',
+      '--target',
+      'flutter',
+      '--no-aot',
+      '--no-tfa',
+      '--link-platform',
+      '--packages',
+      p.absolute(request.packages),
+      '--output-dill',
+      index,
+      indexEntry,
+    ], code: 'INTERFACE_INDEX_FAILED');
     await call([
       'extract-surface',
       '--dill',
@@ -121,7 +144,7 @@ class InterfacePipeline {
       '--out-iface',
       file('referenced.yaml'),
       '--out-trim-iface',
-      file('referenced-trim.yaml')
+      file('referenced-trim.yaml'),
     ]);
     final history = <Map<String, dynamic>>[];
     String? additions, detailsInput;
@@ -145,7 +168,7 @@ class InterfacePipeline {
         request.mode,
         if (request.mode == 'whole') ...[
           '--platform-privates',
-          p.join(yamlCache, 'platform_privates-${sdk.version}.yaml')
+          p.join(yamlCache, 'platform_privates-${sdk.version}.yaml'),
         ],
         if (additions != null) ...['--additions', additions],
         if (detailsInput != null) ...['--details-in', detailsInput],
@@ -154,11 +177,14 @@ class InterfacePipeline {
         '--out-iface',
         iface,
         '--out-trim-iface',
-        trim
+        trim,
       ]);
       final digest = await hashFile(iface);
-      require(digest != previousHash, 'INTERFACE_NO_PROGRESS',
-          'Compiler hints made no progress in round $round. Evidence: $staging');
+      require(
+        digest != previousHash,
+        'INTERFACE_NO_PROGRESS',
+        'Compiler hints made no progress in round $round. Evidence: $staging',
+      );
       previousHash = digest;
       final bytecode = file('round-$round.bytecode');
       var validationPlatform = platform;
@@ -177,7 +203,7 @@ class InterfacePipeline {
           '--out',
           imported,
           '--out-platform',
-          validationPlatform
+          validationPlatform,
         ]);
       }
       final compilerArgs = [
@@ -196,27 +222,30 @@ class InterfacePipeline {
         'interface_validation',
         if (request.mode == 'whole') ...[
           '--allow-dynamic-calls-in-dynamic-modules',
-          '--extra-selectors-allowed-in-dynamic-calls=${wholeSelectors.join(',')}'
+          '--extra-selectors-allowed-in-dynamic-calls=${wholeSelectors.join(',')}',
         ],
         '-o',
         bytecode,
-        p.absolute(request.module)
+        p.absolute(request.module),
       ];
-      final result = await commands.runResult(sdk.dart, [tool, ...compilerArgs],
-          code: 'INTERFACE_VALIDATION_FAILED');
+      final result = await commands.runResult(sdk.dart, [
+        tool,
+        ...compilerArgs,
+      ], code: 'INTERFACE_VALIDATION_FAILED');
       final log = file('round-$round.log');
       await File(log).writeAsString('${result.stderr}\n${result.stdout}');
       history.add({
         'round': round,
         'interface_sha256': digest,
         'exit_code': result.exitCode,
-        'diagnostic': p.basename(log)
+        'diagnostic': p.basename(log),
       });
       if (result.exitCode == 0) {
         require(
-            await File(bytecode).exists() && await File(bytecode).length() > 0,
-            'INTERFACE_VALIDATION_FAILED',
-            'Validator succeeded without bytecode output.');
+          await File(bytecode).exists() && await File(bytecode).length() > 0,
+          'INTERFACE_VALIDATION_FAILED',
+          'Validator succeeded without bytecode output.',
+        );
         await File(iface).copy(file('dynamic_interface.yaml'));
         await File(trim).copy(file('trim_interface.yaml'));
         await File(file('round-$round-details.json'))
@@ -232,20 +261,25 @@ class InterfacePipeline {
           'own': request.own,
           'dynamic_interface_sha256': digest,
           'trim_interface_sha256': await hashFile(trim),
-          'interface_detailed_sha256':
-              await hashFile(file('interface_detailed.json')),
-          'dynamic_selectors':
-              request.mode == 'whole' ? wholeSelectors : <String>[],
+          'interface_detailed_sha256': await hashFile(
+            file('interface_detailed.json'),
+          ),
+          'dynamic_selectors': request.mode == 'whole'
+              ? wholeSelectors
+              : <String>[],
           'host_build_verified': false,
-          'device_verified': false
+          'device_verified': false,
         };
         await writeObject(file('interface.manifest.json'), report);
         await Directory(staging).renameRetry(p.absolute(request.output));
         return {...report, 'output': p.absolute(request.output)};
       }
       await writeObject(file('validation-history.json'), {'rounds': history});
-      require(round < request.maxRounds, 'INTERFACE_NOT_CONVERGED',
-          'Validation did not converge after $round rounds. Evidence: $staging');
+      require(
+        round < request.maxRounds,
+        'INTERFACE_NOT_CONVERGED',
+        'Validation did not converge after $round rounds. Evidence: $staging',
+      );
       additions = file('round-$round-additions.yaml');
       await call([
         'resolve-interface-hints',
@@ -256,13 +290,15 @@ class InterfacePipeline {
         '--log',
         log,
         '--out',
-        additions
+        additions,
       ]);
       input = iface;
       detailsInput = file('round-$round-details.json');
       trimInput = trim;
     }
     throw Failure(
-        'INTERFACE_NOT_CONVERGED', 'No validated interface was produced.');
+      'INTERFACE_NOT_CONVERGED',
+      'No validated interface was produced.',
+    );
   }
 }

@@ -9,7 +9,7 @@ const platformOfAbi = {'arm64-v8a': 'android', 'ios-arm64': 'ios'};
 /// This is a signing codec, not proof that a publisher is trusted.
 class PublishManifest {
   PublishManifest(Map<String, String> fields)
-      : fields = Map.unmodifiable(fields) {
+    : fields = Map.unmodifiable(fields) {
     _validate();
   }
 
@@ -27,7 +27,7 @@ class PublishManifest {
     'strategy',
     'revision',
     'minPluginVersion',
-    'action'
+    'action',
   };
 
   factory PublishManifest.parse(List<int> bytes) {
@@ -75,40 +75,58 @@ class PublishManifest {
     final publish = fields['action'] == 'publish';
     final expected = {
       ...common,
-      if (publish) ...{'patch_seq', 'sha256', 'size', 'path'} else
-        'withdraw_through_seq'
+      if (publish) ...{
+        'patch_seq',
+        'sha256',
+        'size',
+        'path',
+      } else
+        'withdraw_through_seq',
     };
     check(
-        fields.length == expected.length &&
-            fields.keys.every(expected.contains),
-        'Unexpected fields');
+      fields.length == expected.length && fields.keys.every(expected.contains),
+      'Unexpected fields',
+    );
     check(fields['schema'] == '1', 'Schema');
     check(publish || fields['action'] == 'withdraw', 'Action');
     check(
-        fields.values.every((v) =>
+      fields.values.every(
+        (v) =>
             v.length <= 2048 &&
-            v.codeUnits
-                .every((c) => c >= 0x21 && c <= 0x7e && c != 34 && c != 92)),
-        'ASCII unescaped values required');
+            v.codeUnits.every(
+              (c) => c >= 0x21 && c <= 0x7e && c != 34 && c != 92,
+            ),
+      ),
+      'ASCII unescaped values required',
+    );
     for (final key in ['key_id', 'channel', 'flavor']) {
       check(matches(key, r'[A-Za-z0-9_-]{1,64}'), key);
     }
     check(
-        matches('application_id',
-            r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+'),
-        'Application');
+      matches(
+        'application_id',
+        r'[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+',
+      ),
+      'Application',
+    );
     check(platformOfAbi.containsKey(fields['abi']), 'ABI');
     check({'bytecode', 'so'}.contains(fields['strategy']), 'Strategy');
-    check(platformOfAbi[fields['abi']] != 'ios' || fields['strategy'] == 'bytecode',
-        'iOS hosts load bytecode only');
     check(
-        matches('fingerprint', r'[0-9a-f]{64}') ||
-            (fields['strategy'] == 'so' && fields['fingerprint'] == '-'),
-        'Fingerprint');
+      platformOfAbi[fields['abi']] != 'ios' || fields['strategy'] == 'bytecode',
+      'iOS hosts load bytecode only',
+    );
     check(
-        matches('minPluginVersion',
-            r'(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})'),
-        'Plugin version');
+      matches('fingerprint', r'[0-9a-f]{64}') ||
+          (fields['strategy'] == 'so' && fields['fingerprint'] == '-'),
+      'Fingerprint',
+    );
+    check(
+      matches(
+        'minPluginVersion',
+        r'(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})',
+      ),
+      'Plugin version',
+    );
     number('version_code', 2100000000);
     number('revision', 9007199254740991);
     number(publish ? 'patch_seq' : 'withdraw_through_seq', 4294967295);
@@ -117,9 +135,10 @@ class PublishManifest {
       check(matches('sha256', r'[0-9a-f]{64}'), 'SHA256');
       // Relative to the manifest, so the store can move between hosts.
       check(
-          matches('path', r'objects/[0-9a-f]{32}/[0-9a-f]{64}\.fptc') &&
-              fields['path']!.endsWith('/${fields['sha256']}.fptc'),
-          'Payload path');
+        matches('path', r'objects/[0-9a-f]{32}/[0-9a-f]{64}\.fptc') &&
+            fields['path']!.endsWith('/${fields['sha256']}.fptc'),
+        'Payload path',
+      );
     }
   }
 }

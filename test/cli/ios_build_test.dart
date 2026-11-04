@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_patcher/src/cli/build/host_policy.dart';
 import 'package:flutter_patcher/src/cli/build/ios.dart';
 import 'package:flutter_patcher/src/cli/build/pipeline.dart';
 import 'package:flutter_patcher/src/cli/patch/resources.dart';
+
 import 'baseline_test.dart' as base;
 
 void main() {
@@ -18,34 +20,39 @@ void main() {
 
   final key = base64Encode(List.filled(32, 1));
   HostPolicy policy(String abi) => HostPolicy({
-        'schema': '1',
-        'application_id': 'com.example.app',
-        'version_code': '42',
-        'channel': 'stable',
-        'flavor': 'default',
-        'abi': abi,
-        'strategy': 'bytecode',
-        'fptc_key': base.testPublicKey,
-        'root_key': key,
-        'keys': 'one:$key',
-      });
+    'schema': '1',
+    'application_id': 'com.example.app',
+    'version_code': '42',
+    'channel': 'stable',
+    'flavor': 'default',
+    'abi': abi,
+    'strategy': 'bytecode',
+    'fptc_key': base.testPublicKey,
+    'root_key': key,
+    'keys': 'one:$key',
+  });
 
-  test('the policy ABI selects the platform; export method is iOS only',
-      () async {
-    await File(p.join(temp.path, 'lib/main.dart')).create(recursive: true);
-    BuildRequest request(String abi, String? method) => BuildRequest(
+  test(
+    'the policy ABI selects the platform; export method is iOS only',
+    () async {
+      await File(p.join(temp.path, 'lib/main.dart')).create(recursive: true);
+      BuildRequest request(String abi, String? method) => BuildRequest(
         project: temp.path,
         output: p.join(temp.path, 'out-$abi'),
         publicKey: base.testPublicKey,
         hostPolicy: policy(abi),
-        exportMethod: method);
-    expect(request('ios-arm64', null).platform, 'ios');
-    await request('ios-arm64', 'development').validate();
-    await expectLater(
+        exportMethod: method,
+      );
+      expect(request('ios-arm64', null).platform, 'ios');
+      await request('ios-arm64', 'development').validate();
+      await expectLater(
         request('arm64-v8a', 'development').validate(),
-        throwsA(isA<Failure>()
-            .having((f) => f.code, 'code', 'BUILD_CONFIG_INVALID')));
-  });
+        throwsA(
+          isA<Failure>().having((f) => f.code, 'code', 'BUILD_CONFIG_INVALID'),
+        ),
+      );
+    },
+  );
 
   test('LC_UUID identifies a re-signed engine', () {
     final header = ByteData(32 + 16 + 24);
@@ -69,16 +76,20 @@ void main() {
       ..setUint32(8, 0x0100000c)
       ..setUint32(16, 32)
       ..setUint32(20, bytes.length);
-    expect(machoUuid([...fat.buffer.asUint8List(), ...bytes]),
-        List.generate(16, (i) => i + 1));
+    expect(
+      machoUuid([...fat.buffer.asUint8List(), ...bytes]),
+      List.generate(16, (i) => i + 1),
+    );
   });
 
   test('NOTICES.Z is identified by its text, not the gzip OS byte', () {
     Map receipt(int os) {
       final bytes = gzip.encode(utf8.encode('licenses'))..[9] = os;
-      return resourceReceipt(Archive()
-        ..addFile(ArchiveFile(
-            'assets/flutter_assets/NOTICES.Z', bytes.length, bytes)));
+      return resourceReceipt(
+        Archive()..addFile(
+          ArchiveFile('assets/flutter_assets/NOTICES.Z', bytes.length, bytes),
+        ),
+      );
     }
 
     expect(receipt(0x0a)['files'], receipt(0x03)['files']);

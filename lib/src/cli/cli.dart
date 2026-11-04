@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
+
 import 'core.dart';
 import 'sdk/artifacts.dart';
 import 'sdk/host.dart';
@@ -28,80 +30,122 @@ const releaseIndex =
 
 ArgParser environmentOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
-  ..addFlag('json',
-      negatable: false, help: 'Print a structured diagnostic report.')
-  ..addFlag('offline',
-      negatable: false, help: 'Use verified local caches only.')
-
-  ..addOption('flutter-sdk',
-      help: 'Select the Flutter SDK; defaults to Flutter on PATH.')
-  ..addOption('cache-dir',
-      help:
-          'Managed directory under ~/.flutter_patcher or .dart_tool/flutter_patcher.')
-  ..addOption('artifacts-url',
-      defaultsTo: releaseBase,
-      help: 'Maintainer/test override for the release download base.')
-  ..addOption('index-url',
-      defaultsTo: releaseIndex,
-      help: 'Maintainer/test override for the artifact release index.')
+  ..addFlag(
+    'json',
+    negatable: false,
+    help: 'Print a structured diagnostic report.',
+  )
+  ..addFlag(
+    'offline',
+    negatable: false,
+    help: 'Use verified local caches only.',
+  )
+  ..addOption(
+    'flutter-sdk',
+    help: 'Select the Flutter SDK; defaults to Flutter on PATH.',
+  )
+  ..addOption(
+    'cache-dir',
+    help: 'Managed directory under ~/.flutter_patcher or .dart_tool/flutter_patcher.',
+  )
+  ..addOption(
+    'artifacts-url',
+    defaultsTo: releaseBase,
+    help: 'Maintainer/test override for the release download base.',
+  )
+  ..addOption(
+    'index-url',
+    defaultsTo: releaseIndex,
+    help: 'Maintainer/test override for the artifact release index.',
+  )
   ..addOption('public-key', help: 'Optional signing public key file to check.')
-  ..addOption('private-key',
-      help: 'Optional signing private key file to check.')
-  ..addOption('baseline-store',
-      help: 'Optional file://, s3:// or HTTPS baseline store to probe.')
-  ..addOption('baseline',
-      help:
-          'Optional extracted baseline (legacy, compile or release object) for full integrity checks.')
-  ..addOption('version-code',
-      help: 'Optional versionCode for a release baseline binding check.')
-  ..addOption('flavor',
-      help:
-          'Release flavor; patch uses "default" when omitted, doctor needs it for the release check.')
-  ..addOption('apk',
-      help: 'Optional existing APK whose engine should be checked.');
+  ..addOption(
+    'private-key',
+    help: 'Optional signing private key file to check.',
+  )
+  ..addOption(
+    'baseline-store',
+    help: 'Optional file://, s3:// or HTTPS baseline store to probe.',
+  )
+  ..addOption(
+    'baseline',
+    help: 'Optional extracted baseline (legacy, compile or release object) for full integrity checks.',
+  )
+  ..addOption(
+    'version-code',
+    help: 'Optional versionCode for a release baseline binding check.',
+  )
+  ..addOption(
+    'flavor',
+    help: 'Release flavor; patch uses "default" when omitted, doctor needs it for the release check.',
+  )
+  ..addOption(
+    'apk',
+    help: 'Optional existing APK whose engine should be checked.',
+  );
 
 ArgParser parser() {
   final patch = environmentOptions()
     ..addOption('project')
     ..addOption('target', defaultsTo: 'lib/main.dart')
     ..addOption('out')
-    ..addOption('fingerprint',
-        help:
-            'Optional; must match the release. Required only for a legacy baseline without a release binding.')
+    ..addOption(
+      'fingerprint',
+      help: 'Optional; must match the release. Required only for a legacy baseline without a release binding.',
+    )
     ..addOption('seq')
     ..addOption('previous-seq')
-    ..addMultiOption('assets',
-        help: 'Asset keys to override; omitted selects changed assets.');
+    ..addMultiOption(
+      'assets',
+      help: 'Asset keys to override; omitted selects changed assets.',
+    );
   final build = environmentOptions()
-    ..addOption('host-policy',
-        help: 'Advanced: a host policy file instead of the one built from the '
-            'project, its keys and the options below.')
-    ..addOption('strategy',
-        allowed: ['bytecode', 'so'],
-        help: 'Android host kind; default bytecode. iOS hosts are bytecode.')
+    ..addOption(
+      'host-policy',
+      help:
+          'Advanced: a host policy file instead of the one built from the '
+          'project, its keys and the options below.',
+    )
+    ..addOption(
+      'strategy',
+      allowed: ['bytecode', 'so'],
+      help: 'Android host kind; default bytecode. iOS hosts are bytecode.',
+    )
     ..addOption('channel', help: 'Publication channel; default production.')
-    ..addOption('application-id',
-        help: 'When the Gradle or Xcode project does not name exactly one.')
-    ..addOption('project',
-        help: 'Application source directory; builds use an isolated copy.')
+    ..addOption(
+      'application-id',
+      help: 'When the Gradle or Xcode project does not name exactly one.',
+    )
+    ..addOption(
+      'project',
+      help: 'Application source directory; builds use an isolated copy.',
+    )
     ..addOption('target', defaultsTo: 'lib/main.dart')
     ..addOption('out', help: 'New APK/IPA and report output directory.')
-    ..addOption('export-method',
-        allowed: iosExportMethods,
-        help: 'iOS only: passed to flutter build ipa (default app-store).');
+    ..addOption(
+      'export-method',
+      allowed: iosExportMethods,
+      help: 'iOS only: passed to flutter build ipa (default app-store).',
+    );
   final doctor = environmentOptions()
-    ..addOption('project',
-        help: 'Optional application directory whose Dart line endings are '
-            'checked.');
+    ..addOption(
+      'project',
+      help:
+          'Optional application directory whose Dart line endings are '
+          'checked.',
+    );
   final interfaces = environmentOptions()
     ..addOption('dill', help: 'Unannotated baseline app.dill.')
-    ..addOption('module',
-        help: 'Dart module source to validate the new host interface against.')
+    ..addOption(
+      'module',
+      help: 'Dart module source to validate the new host interface against.',
+    )
     ..addOption('packages', help: 'Module package_config.json.')
     ..addOption('own', help: 'Comma-separated application package names.')
-    ..addOption('out',
-        help:
-            'New output directory; defaults under .dart_tool/flutter_patcher.')
+    ..addOption(
+      'out',
+      help: 'New output directory; defaults under .dart_tool/flutter_patcher.',
+    )
     ..addOption('mode', defaultsTo: 'lean', allowed: ['lean', 'whole'])
     ..addOption('max-rounds', defaultsTo: '5');
   return ArgParser()
@@ -124,14 +168,18 @@ Future<int> runCli(List<String> arguments) async {
   try {
     parsed = args.parse(arguments);
     require(
-        parsed.rest.isEmpty, 'USAGE_ERROR', 'Unexpected positional arguments.');
+      parsed.rest.isEmpty,
+      'USAGE_ERROR',
+      'Unexpected positional arguments.',
+    );
     if (parsed['version'] == true) {
       stdout.writeln('flutter_patcher $packageVersion');
       return 0;
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw [--through <seq>]] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}');
+        'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw [--through <seq>]] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
+      );
       return 0;
     }
     if (parsed.command!['help'] == true) {
@@ -147,16 +195,20 @@ Future<int> runCli(List<String> arguments) async {
       } on Failure {
         rethrow;
       } catch (_) {
-        throw Failure('TRUST_FAILED',
-            'Trust operation failed; check public inputs and local key files.');
+        throw Failure(
+          'TRUST_FAILED',
+          'Trust operation failed; check public inputs and local key files.',
+        );
       }
     }
     if (parsed.command!.name == 'keys') {
       try {
         return await keysCommand(parsed.command!);
       } on IOException {
-        throw Failure('KEYS_IO_ERROR',
-            'Key initialization failed; check output permissions and required local tools.');
+        throw Failure(
+          'KEYS_IO_ERROR',
+          'Key initialization failed; check output permissions and required local tools.',
+        );
       }
     }
     if (parsed.command!.name == 'patch') {
@@ -171,17 +223,24 @@ Future<int> runCli(List<String> arguments) async {
       } on Failure {
         rethrow;
       } catch (_) {
-        throw Failure('PUBLISH_FAILED',
-            'Publication failed; check configuration and operation receipt');
+        throw Failure(
+          'PUBLISH_FAILED',
+          'Publication failed; check configuration and operation receipt',
+        );
       }
     }
-    require(parsed.rest.isEmpty && parsed.command!.rest.isEmpty, 'USAGE_ERROR',
-        'Unexpected positional arguments.');
+    require(
+      parsed.rest.isEmpty && parsed.command!.rest.isEmpty,
+      'USAGE_ERROR',
+      'Unexpected positional arguments.',
+    );
     if (parsed.command!.name == 'baseline') {
       return await baselineCommand(parsed.command!);
     }
-    return await doctor(parsed.command!,
-        generateInterface: parsed.command!.name == 'interface');
+    return await doctor(
+      parsed.command!,
+      generateInterface: parsed.command!.name == 'interface',
+    );
   } on FormatException catch (error) {
     stderr.writeln('USAGE_ERROR: ${error.message}');
     return 2;
@@ -198,13 +257,16 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
   final report = <String, dynamic>{
     'command': generateInterface ? 'interface' : 'doctor',
     'scope': generateInterface ? 'interface preparation' : 'toolchain',
-    'checks': checks
+    'checks': checks,
   };
   RandomAccessFile? lock;
   var current = 'configuration';
   var success = false;
   Future<void> check(
-      String id, Future<void> Function() action, String message) async {
+    String id,
+    Future<void> Function() action,
+    String message,
+  ) async {
     current = id;
     await action();
     checks.add({'id': id, 'status': 'passed', 'message': message});
@@ -217,21 +279,29 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     if (generateInterface) {
       String input(String name) {
         final value = args[name] as String?;
-        require(value != null && value.isNotEmpty, 'CONFIG_INVALID',
-            'Missing --$name');
+        require(
+          value != null && value.isNotEmpty,
+          'CONFIG_INVALID',
+          'Missing --$name',
+        );
         return value!;
       }
 
       interfaceRequest = InterfaceRequest(
-          dill: p.absolute(input('dill')),
-          module: p.absolute(input('module')),
-          packages: p.absolute(input('packages')),
-          own: input('own').split(','),
-          mode: args['mode'] as String,
-          maxRounds: int.tryParse(args['max-rounds'] as String) ?? 0,
-          output: p.absolute(args['out'] as String? ??
-              p.join('.dart_tool/flutter_patcher/interfaces',
-                  DateTime.now().microsecondsSinceEpoch.toString())));
+        dill: p.absolute(input('dill')),
+        module: p.absolute(input('module')),
+        packages: p.absolute(input('packages')),
+        own: input('own').split(','),
+        mode: args['mode'] as String,
+        maxRounds: int.tryParse(args['max-rounds'] as String) ?? 0,
+        output: p.absolute(
+          args['out'] as String? ??
+              p.join(
+                '.dart_tool/flutter_patcher/interfaces',
+                DateTime.now().microsecondsSinceEpoch.toString(),
+              ),
+        ),
+      );
       await interfaceRequest.validate();
     }
     final host = requireSupportedHost();
@@ -241,31 +311,43 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     await check('host', () async {
       report['host'] = {'os': host.os, 'arch': host.arch};
     }, 'Build host ${host.key}');
-    final project =
-        args.options.contains('project') ? args['project'] as String? : null;
+    final project = args.options.contains('project')
+        ? args['project'] as String?
+        : null;
     if (project == null) {
-      pending('line_endings',
-          'No project supplied; Dart source line endings are not checked.');
+      pending(
+        'line_endings',
+        'No project supplied; Dart source line endings are not checked.',
+      );
     } else {
       current = 'line_endings';
-      require(await Directory(project).exists(), 'CONFIG_INVALID',
-          'Project directory does not exist: $project');
+      require(
+        await Directory(project).exists(),
+        'CONFIG_INVALID',
+        'Project directory does not exist: $project',
+      );
       final crlf = await crlfDartSources(p.absolute(project));
       checks.add({
         'id': 'line_endings',
         'status': crlf.isEmpty ? 'passed' : 'warning',
         'message': crlf.isEmpty
             ? 'Project Dart sources use LF line endings'
-            : crlfWarning(crlf)
+            : crlfWarning(crlf),
       });
     }
     await check('cache_path', () async {
       // Build passes cache paths inside comma-separated compiler options, and
       // deep Gradle trees under a long cache root overrun MAX_PATH on Windows.
-      require(!cache.contains(',') && !cache.contains('\n'), 'CONFIG_INVALID',
-          'Cache path cannot contain commas or newlines; select --cache-dir.');
-      require(!host.isWindows || cache.length <= 80, 'CONFIG_INVALID',
-          'Cache path is ${cache.length} characters, above the 80 Windows path limits allow; select a shorter --cache-dir under the project\'s .dart_tool/flutter_patcher.');
+      require(
+        !cache.contains(',') && !cache.contains('\n'),
+        'CONFIG_INVALID',
+        'Cache path cannot contain commas or newlines; select --cache-dir.',
+      );
+      require(
+        !host.isWindows || cache.length <= 80,
+        'CONFIG_INVALID',
+        'Cache path is ${cache.length} characters, above the 80 Windows path limits allow; select a shorter --cache-dir under the project\'s .dart_tool/flutter_patcher.',
+      );
     }, 'Cache path usable');
 
     await Directory(cache).create(recursive: true);
@@ -279,18 +361,22 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     final store = ArtifactStore(cache, base, index, downloads);
     late SdkIdentity sdk;
     await check('flutter_sdk', () async {
-      final selected =
-          await Directory(findFlutter(args['flutter-sdk'] as String?))
-              .resolveSymbolicLinks();
+      final selected = await Directory(
+        findFlutter(args['flutter-sdk'] as String?),
+      ).resolveSymbolicLinks();
       sdk = await identify(selected, commands);
       require(
-          selected != p.join(cache, 'flutter', sdk.version),
-          'CONFIG_INVALID',
-          'Select your stock SDK, not the managed SDK that doctor modifies.');
+        selected != p.join(cache, 'flutter', sdk.version),
+        'CONFIG_INVALID',
+        'Select your stock SDK, not the managed SDK that doctor modifies.',
+      );
       report['sdk'] = {...sdk.toJson(), 'path': selected};
     }, 'Selected SDK identity verified');
-    await check('supported_version', () => store.selectCurrent(sdk.version),
-        'Flutter version is supported');
+    await check(
+      'supported_version',
+      () => store.selectCurrent(sdk.version),
+      'Flutter version is supported',
+    );
     late Map<String, dynamic> engine, toolsManifest;
     await check('engine_artifacts', () async {
       engine = await store.obtain('engine', sdk);
@@ -300,35 +386,56 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     }, 'Unified dill size/hash/format and Dart version verified');
     report['engine_build_id'] = engine['build_id'];
     report['tools_builder_commit'] = toolsManifest['builder_repo_commit'];
-    final environment =
-        EnvironmentBuilder(cache, commands, offline: downloads.offline);
+    final environment = EnvironmentBuilder(
+      cache,
+      commands,
+      offline: downloads.offline,
+    );
     late String managed;
     await check('parallel_sdk', () async {
       managed = await environment.prepare(sdk, store, android: engine);
     }, 'Managed SDK and local Maven mirror prepared');
     report['managed_sdk'] = managed;
-    report['maven_mirror'] =
-        p.join(cache, 'mirrors', sdk.version, engine['build_id'] as String);
-    final tool =
-        store.file(sdk, 'tools', 'flutter_patcher_tools-${sdk.version}.dill');
+    report['maven_mirror'] = p.join(
+      cache,
+      'mirrors',
+      sdk.version,
+      engine['build_id'] as String,
+    );
+    final tool = store.file(
+      sdk,
+      'tools',
+      'flutter_patcher_tools-${sdk.version}.dill',
+    );
     await check('tool_smoke', () async {
       final usage = await commands.run(sdk.dart, [tool, '--help']);
-      final bytecode =
-          await commands.run(sdk.dart, [tool, 'bytecode', '--help']);
+      final bytecode = await commands.run(sdk.dart, [
+        tool,
+        'bytecode',
+        '--help',
+      ]);
       require(
-          usage.contains('gen-protocol-interface') &&
-              usage.contains('gen-platform-privates') &&
-              bytecode.contains('--[no-]tfa') &&
-              bytecode.contains('--[no-]aot-only'),
-          'TOOLS_ARTIFACT_MISSING',
-          'Required tool subcommands/compiler flags are missing.');
+        usage.contains('gen-protocol-interface') &&
+            usage.contains('gen-platform-privates') &&
+            bytecode.contains('--[no-]tfa') &&
+            bytecode.contains('--[no-]aot-only'),
+        'TOOLS_ARTIFACT_MISSING',
+        'Required tool subcommands/compiler flags are missing.',
+      );
     }, 'Downloaded tool and bytecode help run without source packages');
     await check('yaml_cache', () async {
-      report['yaml_cache'] = await environment.yamlCache(sdk, managed, tool,
-          requireIndex: generateInterface);
+      report['yaml_cache'] = await environment.yamlCache(
+        sdk,
+        managed,
+        tool,
+        requireIndex: generateInterface,
+      );
     }, 'SDK-specific protocol and platform YAML generated or validated');
-    await check('engine_pair', () => environment.pairSmoke(sdk, managed),
-        'Downloaded gen_snapshot compiled a minimal arm64 AOT ELF');
+    await check(
+      'engine_pair',
+      () => environment.pairSmoke(sdk, managed),
+      'Downloaded gen_snapshot compiled a minimal arm64 AOT ELF',
+    );
     // build ios needs these; patch ios runs on every host without them.
     if (host.os == 'macos') {
       late Map<String, dynamic> iosEngine;
@@ -337,25 +444,40 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
       }, 'iOS framework and gen_snapshot size/hash/format verified');
       report['ios_engine_build_id'] = iosEngine['build_id'];
       await check(
-          'ios_sdk',
-          () => environment.prepare(sdk, store, ios: iosEngine),
-          'Managed SDK carries the patched iOS engine');
+        'ios_sdk',
+        () => environment.prepare(sdk, store, ios: iosEngine),
+        'Managed SDK carries the patched iOS engine',
+      );
       await check('xcode', () async {
-        final version = await commands.runResult('xcodebuild', ['-version'],
-            code: 'XCODE_MISSING');
-        require(version.exitCode == 0, 'XCODE_MISSING',
-            'Install Xcode and select it with xcode-select or DEVELOPER_DIR.');
-        final iphoneos = await commands.runResult(
-            'xcrun', ['--sdk', 'iphoneos', '--show-sdk-path'],
-            code: 'XCODE_MISSING');
-        require(iphoneos.exitCode == 0, 'XCODE_MISSING',
-            'Xcode has no iOS platform; install it under Xcode > Settings > Components.');
+        final version = await commands.runResult('xcodebuild', [
+          '-version',
+        ], code: 'XCODE_MISSING');
+        require(
+          version.exitCode == 0,
+          'XCODE_MISSING',
+          'Install Xcode and select it with xcode-select or DEVELOPER_DIR.',
+        );
+        final iphoneos = await commands.runResult('xcrun', [
+          '--sdk',
+          'iphoneos',
+          '--show-sdk-path',
+        ], code: 'XCODE_MISSING');
+        require(
+          iphoneos.exitCode == 0,
+          'XCODE_MISSING',
+          'Xcode has no iOS platform; install it under Xcode > Settings > Components.',
+        );
         report['xcode'] = version.stdout.trim().split('\n').first;
       }, 'Xcode with the iOS SDK selected');
       // Missing optional tools are warnings: SwiftPM can replace CocoaPods,
       // and signing may come from a CI keychain unlocked at build time.
-      Future<void> advise(String id, String executable, List<String> arguments,
-          String? Function(String out) passed, String warning) async {
+      Future<void> advise(
+        String id,
+        String executable,
+        List<String> arguments,
+        String? Function(String out) passed,
+        String warning,
+      ) async {
         String? message;
         try {
           final result = await commands.runResult(executable, arguments);
@@ -366,59 +488,83 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
         checks.add({
           'id': id,
           'status': message == null ? 'warning' : 'passed',
-          'message': message ?? warning
+          'message': message ?? warning,
         });
       }
 
-      await advise('cocoapods', 'pod', ['--version'], (out) => 'CocoaPods $out',
-          'CocoaPods not found; Flutter needs it unless Swift Package Manager is enabled.');
       await advise(
-          'signing_identity',
-          'security',
-          ['find-identity', '-v', '-p', 'codesigning'],
-          (out) => out.contains(' 0 valid identities found')
-              ? null
-              : 'Code signing identity available',
-          'No code signing identity in the keychain; build ios needs one for its export method.');
+        'cocoapods',
+        'pod',
+        ['--version'],
+        (out) => 'CocoaPods $out',
+        'CocoaPods not found; Flutter needs it unless Swift Package Manager is enabled.',
+      );
+      await advise(
+        'signing_identity',
+        'security',
+        ['find-identity', '-v', '-p', 'codesigning'],
+        (out) => out.contains(' 0 valid identities found')
+            ? null
+            : 'Code signing identity available',
+        'No code signing identity in the keychain; build ios needs one for its export method.',
+      );
       if (project != null) {
         await check('bundle_version', () async {
           final plist = p.join(project, 'ios/Runner/Info.plist');
-          final value = await commands.runResult('plutil',
-              ['-extract', 'CFBundleVersion', 'raw', '-o', '-', plist],
-              code: 'BUILD_CONFIG_INVALID');
+          final value = await commands.runResult('plutil', [
+            '-extract',
+            'CFBundleVersion',
+            'raw',
+            '-o',
+            '-',
+            plist,
+          ], code: 'BUILD_CONFIG_INVALID');
           final version = value.stdout.trim();
           require(
-              value.exitCode == 0 &&
-                  (version == r'$(FLUTTER_BUILD_NUMBER)' ||
-                      RegExp(r'^[1-9][0-9]*$').hasMatch(version)),
-              'BUILD_CONFIG_INVALID',
-              'ios/Runner/Info.plist CFBundleVersion must be \$(FLUTTER_BUILD_NUMBER) or a positive integer; it is the host policy version_code.');
+            value.exitCode == 0 &&
+                (version == r'$(FLUTTER_BUILD_NUMBER)' ||
+                    RegExp(r'^[1-9][0-9]*$').hasMatch(version)),
+            'BUILD_CONFIG_INVALID',
+            'ios/Runner/Info.plist CFBundleVersion must be \$(FLUTTER_BUILD_NUMBER) or a positive integer; it is the host policy version_code.',
+          );
         }, 'CFBundleVersion is the integer build number');
       }
     }
     if (interfaceRequest != null) {
-      await check('interface', () async {
-        report['interface'] = await InterfacePipeline(commands, sdk, tool,
-                managed, report['yaml_cache'] as String, environment)
-            .generate(interfaceRequest!);
-      }, 'New host interface converged under bytecode validation; host/device execution not verified');
+      await check(
+        'interface',
+        () async {
+          report['interface'] = await InterfacePipeline(
+            commands,
+            sdk,
+            tool,
+            managed,
+            report['yaml_cache'] as String,
+            environment,
+          ).generate(interfaceRequest!);
+        },
+        'New host interface converged under bytecode validation; host/device execution not verified',
+      );
     }
     final pub = args['public-key'] as String?,
         secret = args['private-key'] as String?;
     if (pub == null && secret == null) {
-      pending('signing_key_files',
-          'No key files supplied; signing/key generation is not verified.');
+      pending(
+        'signing_key_files',
+        'No key files supplied; signing/key generation is not verified.',
+      );
     } else {
       await check('signing_key_files', () async {
         require(
-            pub != null &&
-                secret != null &&
-                await File(pub).exists() &&
-                await File(secret).exists() &&
-                await File(pub).length() > 0 &&
-                await File(secret).length() > 0,
-            'KEYS_MISSING',
-            'Both readable, nonempty public/private key files are required.');
+          pub != null &&
+              secret != null &&
+              await File(pub).exists() &&
+              await File(secret).exists() &&
+              await File(pub).length() > 0 &&
+              await File(secret).length() > 0,
+          'KEYS_MISSING',
+          'Both readable, nonempty public/private key files are required.',
+        );
       }, 'Key files exist; cryptographic format/signing is not verified');
     }
     final uri = args['baseline-store'] as String?;
@@ -426,74 +572,107 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
       pending('baseline_store', 'No baseline store supplied.');
     } else {
       await check(
-          'baseline_store',
-          () => BaselineStore.open(Uri.parse(uri), commands,
-                  offline: downloads.offline)
-              .probe(),
-          'Configured baseline store is reachable; write authorization is checked during save');
+        'baseline_store',
+        () => BaselineStore.open(
+          Uri.parse(uri),
+          commands,
+          offline: downloads.offline,
+        ).probe(),
+        'Configured baseline store is reachable; write authorization is checked during save',
+      );
     }
     final baseline = args['baseline'] as String?;
     if (baseline == null) {
       pending('baseline_files', 'No extracted baseline supplied.');
     } else {
-      await check('baseline_files', () async {
-        final m = await verifyBaselineDir(baseline, sdkRoot: sdk.root);
-        // A release object names its compile identity; a compile object has
-        // no build_id, which belongs to the release.
-        final identity = m['kind'] == 'release' ? m['compile'] as Map : m;
-        require(identity['runtime_bootstrap'] != false, 'BASELINE_NOT_RELEASE',
-            'Pipeline validation baseline is not a runtime-enabled release.');
-        require(
+      await check(
+        'baseline_files',
+        () async {
+          final m = await verifyBaselineDir(baseline, sdkRoot: sdk.root);
+          // A release object names its compile identity; a compile object has
+          // no build_id, which belongs to the release.
+          final identity = m['kind'] == 'release' ? m['compile'] as Map : m;
+          require(
+            identity['runtime_bootstrap'] != false,
+            'BASELINE_NOT_RELEASE',
+            'Pipeline validation baseline is not a runtime-enabled release.',
+          );
+          require(
             identity['flutter_version'] == sdk.version &&
                 identity['engine_commit'] == sdk.engine &&
                 (m['kind'] == 'compile' || m['build_id'] == engine['build_id']),
             'BASELINE_FINGERPRINT_MISMATCH',
-            'Baseline differs from selected Flutter/engine build.');
-      }, 'Baseline manifest, files, interface detail, fingerprint and SDK/engine binding verified');
+            'Baseline differs from selected Flutter/engine build.',
+          );
+        },
+        'Baseline manifest, files, interface detail, fingerprint and SDK/engine binding verified',
+      );
     }
     final versionCode = args['version-code'] as String?,
         flavor = args['flavor'] as String?;
     if (versionCode == null || flavor == null || uri == null) {
-      pending('release_baseline',
-          'Supply baseline store, --version-code and --flavor to verify release binding.');
+      pending(
+        'release_baseline',
+        'Supply baseline store, --version-code and --flavor to verify release binding.',
+      );
     } else {
-      await check('release_baseline', () async {
-        require(
+      await check(
+        'release_baseline',
+        () async {
+          require(
             RegExp(r'^\d+$').hasMatch(versionCode) &&
                 RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(flavor),
             'CONFIG_INVALID',
-            'Invalid versionCode/flavor.');
-        final repository = BaselineRepository(
+            'Invalid versionCode/flavor.',
+          );
+          final repository = BaselineRepository(
             p.join(cache, 'baselines'),
-            BaselineStore.open(Uri.parse(uri), commands,
-                offline: downloads.offline));
-        final data = await repository.verifyRelease(flavor, versionCode,
-            sdkRoot: sdk.root);
-        require(
+            BaselineStore.open(
+              Uri.parse(uri),
+              commands,
+              offline: downloads.offline,
+            ),
+          );
+          final data = await repository.verifyRelease(
+            flavor,
+            versionCode,
+            sdkRoot: sdk.root,
+          );
+          require(
             data['flutter_version'] == sdk.version &&
                 data['engine_commit'] == sdk.engine &&
                 data['build_id'] == engine['build_id'],
             'BASELINE_FINGERPRINT_MISMATCH',
-            'Release baseline differs from selected engine build.');
-      }, 'Release baseline (schema 5 release object or legacy sidecar) is bound to a verified baseline and selected engine build');
+            'Release baseline differs from selected engine build.',
+          );
+        },
+        'Release baseline (schema 5 release object or legacy sidecar) is bound to a verified baseline and selected engine build',
+      );
     }
     final apk = args['apk'] as String?;
     if (apk == null) {
-      pending('apk_engine',
-          'No APK supplied; pass --apk to check the engine inside a build.');
+      pending(
+        'apk_engine',
+        'No APK supplied; pass --apk to check the engine inside a build.',
+      );
     } else {
-      await check('apk_engine', () => verifyApk(apk, engine),
-          'APK arm64 engine hash matches the selected engine manifest');
+      await check(
+        'apk_engine',
+        () => verifyApk(apk, engine),
+        'APK arm64 engine hash matches the selected engine manifest',
+      );
     }
-    pending('device',
-        'Device execution and the update flow are not checked by doctor.');
+    pending(
+      'device',
+      'Device execution and the update flow are not checked by doctor.',
+    );
     success = true;
   } on Failure catch (error) {
     checks.add({
       'id': current,
       'status': 'failed',
       'code': error.code,
-      'message': error.message
+      'message': error.message,
     });
     stderr.writeln(error);
   } catch (error) {
@@ -501,7 +680,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
       'id': current,
       'status': 'failed',
       'code': 'DOCTOR_FAILED',
-      'message': '$error'
+      'message': '$error',
     });
     stderr.writeln('DOCTOR_FAILED: $error');
   } finally {
@@ -513,7 +692,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
         : 'failed',
     'all_checks_complete': false,
     'network_requests': downloads.requests,
-    'elapsed_ms': watch.elapsedMilliseconds
+    'elapsed_ms': watch.elapsedMilliseconds,
   });
   if (args['json'] == true) {
     stdout.writeln(jsonEncode(report));
@@ -521,24 +700,32 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     for (final item in checks) {
       stdout.writeln('[${item['status']}] ${item['id']}: ${item['message']}');
     }
-    stdout.writeln(success
-        ? (generateInterface
-            ? 'Interface validated. Host build/device execution remain unverified.'
-            : 'Toolchain ready. Project/device checks above may remain unverified.')
-        : 'Doctor failed.');
+    stdout.writeln(
+      success
+          ? (generateInterface
+                ? 'Interface validated. Host build/device execution remain unverified.'
+                : 'Toolchain ready. Project/device checks above may remain unverified.')
+          : 'Doctor failed.',
+    );
   }
   return success ? 0 : 1;
 }
 
 Future<void> probeStore(Uri uri, bool offline) async {
   if (uri.scheme == 'file') {
-    require(await Directory.fromUri(uri).exists(), 'BASELINE_STORE_UNREACHABLE',
-        'Baseline directory does not exist.');
+    require(
+      await Directory.fromUri(uri).exists(),
+      'BASELINE_STORE_UNREACHABLE',
+      'Baseline directory does not exist.',
+    );
     await Directory.fromUri(uri).list().take(1).toList();
     return;
   }
-  require(!offline, 'BASELINE_STORE_UNREACHABLE',
-      'Remote store reachability cannot be verified offline.');
+  require(
+    !offline,
+    'BASELINE_STORE_UNREACHABLE',
+    'Remote store reachability cannot be verified offline.',
+  );
   Downloads.validateUri(uri);
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
   try {
@@ -546,9 +733,10 @@ Future<void> probeStore(Uri uri, bool offline) async {
     request.followRedirects = false;
     final response = await request.close().timeout(const Duration(seconds: 30));
     require(
-        response.statusCode >= 200 && response.statusCode < 300,
-        'BASELINE_STORE_UNREACHABLE',
-        'Store returned HTTP ${response.statusCode}.');
+      response.statusCode >= 200 && response.statusCode < 300,
+      'BASELINE_STORE_UNREACHABLE',
+      'Store returned HTTP ${response.statusCode}.',
+    );
   } finally {
     client.close(force: true);
   }

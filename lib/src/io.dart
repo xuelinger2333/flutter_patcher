@@ -20,21 +20,25 @@ class PayloadDownloadException implements Exception {
 /// so a response cannot forward a signed download elsewhere.
 Uri updateUri(String url) {
   final uri = Uri.parse(url);
-  final local = uri.scheme == 'http' &&
+  final local =
+      uri.scheme == 'http' &&
       const {'127.0.0.1', '::1', 'localhost'}.contains(uri.host);
   if (!(uri.scheme == 'https' || local) ||
       uri.host.isEmpty ||
       uri.userInfo.isNotEmpty ||
       uri.hasFragment) {
     throw const FormatException(
-        'Signed updates require HTTPS without URL credentials');
+      'Signed updates require HTTPS without URL credentials',
+    );
   }
   return uri;
 }
 
 /// Retain signed wire bytes, or null when nothing is published there yet.
-Future<String?> getSignedWire(String url,
-    {Duration timeout = const Duration(seconds: 30)}) async {
+Future<String?> getSignedWire(
+  String url, {
+  Duration timeout = const Duration(seconds: 30),
+}) async {
   final uri = updateUri(url);
   final client = HttpClient()..connectionTimeout = timeout;
   Future<String?> read() async {
@@ -68,14 +72,19 @@ Future<String?> getSignedWire(String url,
   }
 }
 
-File _payloadFile() => File('${Directory.systemTemp.path}/flutter_patcher-'
-    '${DateTime.now().microsecondsSinceEpoch}.fptc');
+File _payloadFile() => File(
+  '${Directory.systemTemp.path}/flutter_patcher-'
+  '${DateTime.now().microsecondsSinceEpoch}.fptc',
+);
 
 /// Downloads a signed payload of [size] bytes to a new temporary file for
 /// native verification, which deletes it. Never more than [size] bytes, and
 /// within two minutes.
 Future<String> downloadPayload(
-    String url, int size, void Function(int received) progress) async {
+  String url,
+  int size,
+  void Function(int received) progress,
+) async {
   final uri = updateUri(url);
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
   final file = _payloadFile();
@@ -89,9 +98,9 @@ Future<String> downloadPayload(
       // native digest check the decoded bytes.
       final identity =
           (response.headers.value(HttpHeaders.contentEncodingHeader) ??
-                      'identity')
-                  .toLowerCase() ==
-              'identity';
+                  'identity')
+              .toLowerCase() ==
+          'identity';
       if (response.statusCode != 200 ||
           (identity &&
               response.contentLength != -1 &&
@@ -99,8 +108,7 @@ Future<String> downloadPayload(
         throw const PayloadDownloadException();
       }
       var received = 0;
-      await for (final chunk
-          in response.timeout(const Duration(seconds: 15))) {
+      await for (final chunk in response.timeout(const Duration(seconds: 15))) {
         received += chunk.length;
         if (received > size) throw const PayloadDownloadException();
         sink.add(chunk);
@@ -108,8 +116,7 @@ Future<String> downloadPayload(
       }
       if (received != size) throw const PayloadDownloadException();
       await sink.flush();
-    }()
-        .timeout(const Duration(seconds: 120));
+    }().timeout(const Duration(seconds: 120));
     await sink.close();
     return file.path;
   } catch (_) {

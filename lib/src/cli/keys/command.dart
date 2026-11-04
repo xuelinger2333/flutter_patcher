@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../crypto/ed25519.dart';
 import '../project.dart';
@@ -10,27 +12,37 @@ import '../sdk/host.dart';
 
 ArgParser keysOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
-  ..addOption('out',
-      help: 'New key directory; default ${ProjectConfig.defaultKeys} in the '
-          'current project, which then also gets ${ProjectConfig.file}.');
+  ..addOption(
+    'out',
+    help:
+        'New key directory; default ${ProjectConfig.defaultKeys} in the '
+        'current project, which then also gets ${ProjectConfig.file}.',
+  );
 
 /// The key pairs of a host: `root` signs trust updates, `publisher` signs
 /// publications and `patch` signs patch envelopes.
 const keyRoles = ['root', 'publisher', 'patch'];
 
 Future<int> keysCommand(ArgResults args) async {
-  require(args.rest.length == 1 && args.rest.single == 'init', 'USAGE_ERROR',
-      'Use keys init [--out <new-directory>].');
+  require(
+    args.rest.length == 1 && args.rest.single == 'init',
+    'USAGE_ERROR',
+    'Use keys init [--out <new-directory>].',
+  );
   final host = requireSupportedHost();
   final project = Directory.current.path;
-  final out = p.normalize(p.absolute(
-      args['out'] as String? ?? p.join(project, ProjectConfig.defaultKeys)));
+  final out = p.normalize(
+    p.absolute(
+      args['out'] as String? ?? p.join(project, ProjectConfig.defaultKeys),
+    ),
+  );
   await rejectLinks(out);
   require(
-      await FileSystemEntity.type(out, followLinks: false) ==
-          FileSystemEntityType.notFound,
-      'KEYS_OUTPUT_EXISTS',
-      'Refusing to overwrite an existing key directory: $out');
+    await FileSystemEntity.type(out, followLinks: false) ==
+        FileSystemEntityType.notFound,
+    'KEYS_OUTPUT_EXISTS',
+    'Refusing to overwrite an existing key directory: $out',
+  );
   await Directory(p.dirname(out)).create(recursive: true);
   await rejectLinks(out);
   // mkdir is exclusive, unlike Directory.create: competing initializers cannot
@@ -42,16 +54,26 @@ Future<int> keysCommand(ArgResults args) async {
   final claim = host.isWindows
       ? await Process.run('cmd', ['/c', 'mkdir', out])
       : await Process.run('/bin/mkdir', ['-m', '700', '--', out]);
-  require(claim.exitCode == 0, 'KEYS_OUTPUT_UNAVAILABLE',
-      'Cannot exclusively create key directory (already exists or is not writable): $out');
+  require(
+    claim.exitCode == 0,
+    'KEYS_OUTPUT_UNAVAILABLE',
+    'Cannot exclusively create key directory (already exists or is not writable): $out',
+  );
   if (host.isWindows) {
     final user = Platform.environment['USERNAME'];
     final acl = user == null
         ? null
-        : await Process.run(
-            'icacls', [out, '/inheritance:r', '/grant:r', '$user:(OI)(CI)F']);
-    require(acl != null && acl.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
-        'Cannot restrict key directory permissions: $out');
+        : await Process.run('icacls', [
+            out,
+            '/inheritance:r',
+            '/grant:r',
+            '$user:(OI)(CI)F',
+          ]);
+    require(
+      acl != null && acl.exitCode == 0,
+      'KEYS_PERMISSIONS_FAILED',
+      'Cannot restrict key directory permissions: $out',
+    );
   }
   final ignoreFile = File(p.join(out, '.gitignore'));
   final written = <File>[ignoreFile];
@@ -65,43 +87,54 @@ Future<int> keysCommand(ArgResults args) async {
       // A seed never leaves this process except as a base64 private-key file.
       final seed = ed25519GenerateSeed();
       final public = ed25519PublicKey(seed);
-      require(ed25519Verify(public, ed25519Sign(seed, const [0]), const [0]),
-          'KEYS_CRYPTO_FAILED', 'Generated key pair failed its self-check.');
+      require(
+        ed25519Verify(public, ed25519Sign(seed, const [0]), const [0]),
+        'KEYS_CRYPTO_FAILED',
+        'Generated key pair failed its self-check.',
+      );
       final privateFile = File(p.join(directory.path, 'private-key.base64'));
       final publicFile = File(p.join(directory.path, 'public-key.base64'));
       written.addAll([privateFile, publicFile]);
       await privateFile.create();
       if (host.isPosix) {
         // macOS chmod has no `--`; an absolute path cannot read as an option.
-        final mode = await Process.run(
-            '/bin/chmod', ['600', p.absolute(privateFile.path)]);
-        require(mode.exitCode == 0, 'KEYS_PERMISSIONS_FAILED',
-            'Cannot protect private-key permissions.');
+        final mode = await Process.run('/bin/chmod', [
+          '600',
+          p.absolute(privateFile.path),
+        ]);
+        require(
+          mode.exitCode == 0,
+          'KEYS_PERMISSIONS_FAILED',
+          'Cannot protect private-key permissions.',
+        );
       }
       await privateFile.writeAsString('${base64Encode(seed)}\n', flush: true);
       await publicFile.writeAsString('${base64Encode(public)}\n', flush: true);
       roles[role] = {
         'private_key': privateFile.path,
         'public_key': publicFile.path,
-        'public_key_sha256': sha256.convert(public).toString()
+        'public_key_sha256': sha256.convert(public).toString(),
       };
     }
     // The project's settings start from a commented template.
     final config = File(p.join(project, ProjectConfig.file));
     final configured = args['out'] == null && !await config.exists();
     if (configured) await config.writeAsString(ProjectConfig.template);
-    stdout.writeln(jsonEncode({
-      'command': 'keys init',
-      'status': 'keys_created',
-      'algorithm': 'Ed25519',
-      'private_key_format': 'base64-raw32-seed',
-      'public_key_format': 'base64-raw32',
-      'directory': out,
-      'keys': roles,
-      if (configured) 'config': config.path,
-      'notice': 'Back up the private keys; a lost root key cannot be replaced '
-          'for hosts already shipped.'
-    }));
+    stdout.writeln(
+      jsonEncode({
+        'command': 'keys init',
+        'status': 'keys_created',
+        'algorithm': 'Ed25519',
+        'private_key_format': 'base64-raw32-seed',
+        'public_key_format': 'base64-raw32',
+        'directory': out,
+        'keys': roles,
+        if (configured) 'config': config.path,
+        'notice':
+            'Back up the private keys; a lost root key cannot be replaced '
+            'for hosts already shipped.',
+      }),
+    );
     return 0;
   } catch (_) {
     // Only our known files; never recursively delete an output directory.
@@ -111,11 +144,15 @@ Future<int> keysCommand(ArgResults args) async {
     for (final role in keyRoles) {
       try {
         await Directory(p.join(out, role)).deleteRetry();
-      } on FileSystemException {/* Absent, or holds foreign files. */}
+      } on FileSystemException {
+        /* Absent, or holds foreign files. */
+      }
     }
     try {
       await Directory(out).deleteRetry();
-    } on FileSystemException {/* Retain foreign files. */}
+    } on FileSystemException {
+      /* Retain foreign files. */
+    }
     rethrow;
   }
 }

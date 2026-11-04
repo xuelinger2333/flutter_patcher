@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
 import '../core.dart';
 import '../build/host_policy.dart';
 import '../publish/protocol.dart';
@@ -39,10 +41,10 @@ const releaseReceiptKeys = {
 const volatileReceiptKeys = {'apk_sha256', 'build_host', 'crlf_dart_sources'};
 
 List<String> compilePayload(Map<String, dynamic> m) => [
-      ...compileFiles,
-      if (m.containsKey('host_policy_sha256')) 'host_policy.json',
-      'compile_receipt.json',
-    ];
+  ...compileFiles,
+  if (m.containsKey('host_policy_sha256')) 'host_policy.json',
+  'compile_receipt.json',
+];
 const releasePayload = [...releaseFiles, 'release_receipt.json'];
 const soReleasePayload = [...releasePayload, 'host_policy.json'];
 List<String> releaseObjectPayload(Map<String, dynamic> m) =>
@@ -59,7 +61,7 @@ final archiveEntries = <String, List<String>>{
     ...compileFiles,
     'host_policy.json',
     'compile_receipt.json',
-    'compile.manifest.json'
+    'compile.manifest.json',
   ]..sort(),
   'release': [...soReleasePayload, 'release.manifest.json']..sort(),
 };
@@ -72,11 +74,12 @@ final requiredEntries = <String, List<String>>{
 /// legacy sidecars and the release cache directory.
 String releaseSlot(String flavor, String versionCode, String abi) {
   require(
-      RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(flavor) &&
-          RegExp(r'^[0-9]+$').hasMatch(versionCode) &&
-          platformOfAbi.containsKey(abi),
-      'CONFIG_INVALID',
-      'Explicit flavor (use default if absent), numeric versionCode and a release ABI (${platformOfAbi.keys.join(', ')}) required.');
+    RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(flavor) &&
+        RegExp(r'^[0-9]+$').hasMatch(versionCode) &&
+        platformOfAbi.containsKey(abi),
+    'CONFIG_INVALID',
+    'Explicit flavor (use default if absent), numeric versionCode and a release ABI (${platformOfAbi.keys.join(', ')}) required.',
+  );
   return '$flavor-$versionCode-$abi';
 }
 
@@ -88,48 +91,58 @@ List<int> encodeObject(Map<String, dynamic> value) =>
     utf8.encode('${const JsonEncoder.withIndent('  ').convert(value)}\n');
 
 Map<String, dynamic> releaseTarget(Map<String, dynamic> release) => {
-      'flavor': release['flavor'],
-      'version_code': release['version_code'],
-      'abi': release['abi'],
-      'release_manifest_sha256': manifestDigest(release),
-    };
+  'flavor': release['flavor'],
+  'version_code': release['version_code'],
+  'abi': release['abi'],
+  'release_manifest_sha256': manifestDigest(release),
+};
 
 class SplitBaseline {
   final Map<String, dynamic> compile, release, compileReceipt, releaseReceipt;
   SplitBaseline(
-      this.compile, this.release, this.compileReceipt, this.releaseReceipt);
+    this.compile,
+    this.release,
+    this.compileReceipt,
+    this.releaseReceipt,
+  );
   String get compileSha => manifestDigest(compile);
   String get releaseSha => manifestDigest(release);
 }
 
-Map<String, dynamic> _entry(List<int> bytes) =>
-    {'sha256': sha256.convert(bytes).toString(), 'size': bytes.length};
+Map<String, dynamic> _entry(List<int> bytes) => {
+  'sha256': sha256.convert(bytes).toString(),
+  'size': bytes.length,
+};
 
 Map<String, dynamic> compileReference(Map<String, dynamic> compile) => {
-      'fingerprint': compile['fingerprint'],
-      'manifest_sha256': manifestDigest(compile),
-      'flutter_version': compile['flutter_version'],
-      'engine_commit': compile['engine_commit'],
-      'runtime_bootstrap': compile['runtime_bootstrap'],
-    };
+  'fingerprint': compile['fingerprint'],
+  'manifest_sha256': manifestDigest(compile),
+  'flutter_version': compile['flutter_version'],
+  'engine_commit': compile['engine_commit'],
+  'runtime_bootstrap': compile['runtime_bootstrap'],
+};
 
 /// Projects a verified schema 2–3 baseline manifest and its build receipt onto
 /// the two schema 5 objects. Used both to archive a build and to compare a
 /// legacy release with a new build of the same slot.
 SplitBaseline splitBaseline(
-    Map<String, dynamic> legacy, Map<String, dynamic> receipt,
-    {required String flavor,
-    required String versionCode,
-    required String abi}) {
-  valid([2, 3].contains(legacy['schema']),
-      'Only baselines with a build receipt (schema 2–3) can be split.');
+  Map<String, dynamic> legacy,
+  Map<String, dynamic> receipt, {
+  required String flavor,
+  required String versionCode,
+  required String abi,
+}) {
+  valid(
+    [2, 3].contains(legacy['schema']),
+    'Only baselines with a build receipt (schema 2–3) can be split.',
+  );
   releaseSlot(flavor, versionCode, abi);
   final files = legacy['files'] as Map;
   final compileReceipt = <String, dynamic>{
     for (final e in receipt.entries)
       if (!releaseReceiptKeys.contains(e.key) &&
           !volatileReceiptKeys.contains(e.key))
-        e.key: e.value
+        e.key: e.value,
   };
   final compile = <String, dynamic>{
     'schema': 5,
@@ -146,7 +159,7 @@ SplitBaseline splitBaseline(
     for (final name in compilePayload(compile))
       name: name == 'compile_receipt.json'
           ? _entry(encodeObject(compileReceipt))
-          : files[name]
+          : files[name],
   };
   final releaseReceipt = <String, dynamic>{
     'schema': 1,
@@ -181,14 +194,18 @@ SplitBaseline splitBaseline(
 }
 
 /// Materializes [split] from the flat build output [flat].
-Future<void> writeSplit(String flat, SplitBaseline split, String compileDir,
-    String releaseDir) async {
+Future<void> writeSplit(
+  String flat,
+  SplitBaseline split,
+  String compileDir,
+  String releaseDir,
+) async {
   for (final (dir, names, receipt, manifest) in [
     (
       compileDir,
       compilePayload(split.compile),
       split.compileReceipt,
-      'compile'
+      'compile',
     ),
     (releaseDir, releasePayload, split.releaseReceipt, 'release'),
   ]) {
@@ -200,8 +217,10 @@ Future<void> writeSplit(String flat, SplitBaseline split, String compileDir,
         await File(p.join(flat, name)).copy(p.join(dir, name));
       }
     }
-    await writeObject(p.join(dir, '$manifest.manifest.json'),
-        manifest == 'compile' ? split.compile : split.release);
+    await writeObject(
+      p.join(dir, '$manifest.manifest.json'),
+      manifest == 'compile' ? split.compile : split.release,
+    );
   }
 }
 
@@ -213,18 +232,24 @@ final _verifiedCompile = <String, Map<String, dynamic>>{};
 
 Future<String> _signature(String root) async {
   final rows = <String>[];
-  await for (final entity
-      in Directory(root).list(recursive: true, followLinks: false)) {
+  await for (final entity in Directory(
+    root,
+  ).list(recursive: true, followLinks: false)) {
     final stat = await entity.stat();
-    rows.add('${p.relative(entity.path, from: root)}\t${stat.type}\t'
-        '${stat.size}\t${stat.modified.microsecondsSinceEpoch}');
+    rows.add(
+      '${p.relative(entity.path, from: root)}\t${stat.type}\t'
+      '${stat.size}\t${stat.modified.microsecondsSinceEpoch}',
+    );
   }
   rows.sort();
   return '${p.canonicalize(root)}\n${rows.join('\n')}';
 }
 
-Future<Map<String, dynamic>> verifyCompile(String root,
-    {String? expected, String? sdkRoot}) async {
+Future<Map<String, dynamic>> verifyCompile(
+  String root, {
+  String? expected,
+  String? sdkRoot,
+}) async {
   await rejectLinks(root);
   final signature = await _signature(root);
   var computed = _verifiedCompile[signature];
@@ -233,9 +258,10 @@ Future<Map<String, dynamic>> verifyCompile(String root,
     _verifiedCompile[signature] = computed;
   }
   require(
-      expected == null || computed['fingerprint'] == expected,
-      'BASELINE_FINGERPRINT_MISMATCH',
-      'Requested fingerprint differs from baseline.');
+    expected == null || computed['fingerprint'] == expected,
+    'BASELINE_FINGERPRINT_MISMATCH',
+    'Requested fingerprint differs from baseline.',
+  );
   if (sdkRoot != null) await verifyPlatform(computed, sdkRoot);
   return computed;
 }
@@ -245,41 +271,47 @@ Future<Map<String, dynamic>> _verifyCompile(String root) async {
   valid(m['schema'] == 5 && m['kind'] == 'compile', 'Not a compile object.');
   validateSdkIdentity(m);
   require(
-      !m.containsKey('framework_partition_sha256'),
-      'BASELINE_SCHEMA_UNSUPPORTED',
-      'Framework reuse compile objects are no longer supported; rebuild the host.');
+    !m.containsKey('framework_partition_sha256'),
+    'BASELINE_SCHEMA_UNSUPPORTED',
+    'Framework reuse compile objects are no longer supported; rebuild the host.',
+  );
   final policyHash = m['host_policy_sha256'] as String?;
   valid(
-      m['runtime_bootstrap'] is bool &&
-          (policyHash == null || baselineHash.hasMatch(policyHash)) &&
-          (policyHash == null || m['runtime_bootstrap'] == true),
-      'Invalid compile object identity.');
+    m['runtime_bootstrap'] is bool &&
+        (policyHash == null || baselineHash.hasMatch(policyHash)) &&
+        (policyHash == null || m['runtime_bootstrap'] == true),
+    'Invalid compile object identity.',
+  );
   final files = await hashPayload(root, compilePayload(m));
   final interfaceHash = files['dynamic_interface.yaml']['sha256'] as String;
   await validateCompileFiles(root, interfaceHash: interfaceHash);
   if (policyHash != null) {
     final policy = HostPolicy.parse(
-        await File(p.join(root, 'host_policy.json')).readAsString());
+      await File(p.join(root, 'host_policy.json')).readAsString(),
+    );
     valid(policy.digest == policyHash, 'Host policy identity differs.');
   }
   final id = fingerprint(
-      files['app.dill']['sha256'] as String,
-      m['engine_commit'] as String,
-      interfaceHash,
-      m['flutter_version'] as String,
-      hostPolicyHash: policyHash);
+    files['app.dill']['sha256'] as String,
+    m['engine_commit'] as String,
+    interfaceHash,
+    m['flutter_version'] as String,
+    hostPolicyHash: policyHash,
+  );
   final receipt = await baselineObject(p.join(root, 'compile_receipt.json'));
   valid(
-      receipt['fingerprint'] == id &&
-          receipt['interface_sha256'] == interfaceHash &&
-          receipt['runtime_bootstrap'] == m['runtime_bootstrap'] &&
-          receipt['app_only'] == true &&
-          receipt['host_policy_sha256'] == policyHash &&
-          !receipt.containsKey('framework_partition_sha256') &&
-          !receipt.keys.any((k) =>
-              releaseReceiptKeys.contains(k) ||
-              volatileReceiptKeys.contains(k)),
-      'Compile receipt binding differs.');
+    receipt['fingerprint'] == id &&
+        receipt['interface_sha256'] == interfaceHash &&
+        receipt['runtime_bootstrap'] == m['runtime_bootstrap'] &&
+        receipt['app_only'] == true &&
+        receipt['host_policy_sha256'] == policyHash &&
+        !receipt.containsKey('framework_partition_sha256') &&
+        !receipt.keys.any(
+          (k) =>
+              releaseReceiptKeys.contains(k) || volatileReceiptKeys.contains(k),
+        ),
+    'Compile receipt binding differs.',
+  );
   final computed = {
     'schema': 5,
     'kind': 'compile',
@@ -291,16 +323,21 @@ Future<Map<String, dynamic>> _verifyCompile(String root) async {
     'host_policy_sha256': ?policyHash,
     'files': files,
   };
-  valid(canonical(m) == canonical(computed),
-      'Compile manifest/files do not agree.');
+  valid(
+    canonical(m) == canonical(computed),
+    'Compile manifest/files do not agree.',
+  );
   return computed;
 }
 
 /// Verifies a release object on its own; with [compile] also its reference to
 /// that compile object, and with [compileRoot] the host policy binding. An SO
 /// release carries its own policy and always verifies that binding.
-Future<Map<String, dynamic>> verifyReleaseObject(String root,
-    {Map<String, dynamic>? compile, String? compileRoot}) async {
+Future<Map<String, dynamic>> verifyReleaseObject(
+  String root, {
+  Map<String, dynamic>? compile,
+  String? compileRoot,
+}) async {
   await rejectLinks(root);
   final m = await baselineObject(p.join(root, 'release.manifest.json'));
   valid(m['schema'] == 5 && m['kind'] == 'release', 'Not a release object.');
@@ -309,33 +346,40 @@ Future<Map<String, dynamic>> verifyReleaseObject(String root,
   valid(!m.containsKey('strategy') || so, 'Unknown release strategy.');
   final ref = m[so ? 'identity' : 'compile'];
   valid(
-      m['application_id'] is String &&
-          buildIdPattern.hasMatch('${m['build_id']}') &&
-          ref is Map &&
-          baselineHash.hasMatch('${ref['fingerprint']}') &&
-          (so
-              ? ref.length == 4 &&
+    m['application_id'] is String &&
+        buildIdPattern.hasMatch('${m['build_id']}') &&
+        ref is Map &&
+        baselineHash.hasMatch('${ref['fingerprint']}') &&
+        (so
+            ? ref.length == 4 &&
                   baselineHash.hasMatch('${ref['host_policy_sha256']}')
-              : baselineHash.hasMatch('${ref['manifest_sha256']}') &&
+            : baselineHash.hasMatch('${ref['manifest_sha256']}') &&
                   ref['runtime_bootstrap'] is bool),
-      'Invalid release object identity.');
+    'Invalid release object identity.',
+  );
   validateSdkRelease(Map<String, dynamic>.from(ref as Map));
   final files = await hashPayload(root, releaseObjectPayload(m));
   await validatePackages(root);
   final receipt = await baselineObject(p.join(root, 'release_receipt.json'));
   valid(
-      receipt.length == releaseReceiptKeys.length + 4 &&
-          receipt.keys.toSet().containsAll(
-              {...releaseReceiptKeys, 'schema', 'flavor', 'abi', 'build_id'}) &&
-          receipt['schema'] == 1 &&
-          [
-            for (final k in ['flavor', 'version_code', 'abi', 'application_id'])
-              receipt[k] == m[k]
-          ].every((v) => v) &&
-          receipt['build_id'] == m['build_id'] &&
-          receipt['libapp_sha256'] == files['libapp.so']['sha256'] &&
-          (receipt['public_key'] == null || receipt['public_key'] is String),
-      'Release receipt binding differs.');
+    receipt.length == releaseReceiptKeys.length + 4 &&
+        receipt.keys.toSet().containsAll({
+          ...releaseReceiptKeys,
+          'schema',
+          'flavor',
+          'abi',
+          'build_id',
+        }) &&
+        receipt['schema'] == 1 &&
+        [
+          for (final k in ['flavor', 'version_code', 'abi', 'application_id'])
+            receipt[k] == m[k],
+        ].every((v) => v) &&
+        receipt['build_id'] == m['build_id'] &&
+        receipt['libapp_sha256'] == files['libapp.so']['sha256'] &&
+        (receipt['public_key'] == null || receipt['public_key'] is String),
+    'Release receipt binding differs.',
+  );
   final computed = {
     for (final k in [
       'schema',
@@ -346,51 +390,66 @@ Future<Map<String, dynamic>> verifyReleaseObject(String root,
       'abi',
       'application_id',
       'build_id',
-      so ? 'identity' : 'compile'
+      so ? 'identity' : 'compile',
     ])
       k: m[k],
     'files': files,
   };
-  valid(canonical(m) == canonical(computed),
-      'Release manifest/files do not agree.');
+  valid(
+    canonical(m) == canonical(computed),
+    'Release manifest/files do not agree.',
+  );
   if (compile != null) {
-    valid(canonical(ref) == canonical(compileReference(compile)),
-        'Release references a different compile object.');
+    valid(
+      canonical(ref) == canonical(compileReference(compile)),
+      'Release references a different compile object.',
+    );
   }
   final policyRoot = so
       ? root
-      : (compile != null && compileRoot != null && compile.containsKey('host_policy_sha256'))
-          ? compileRoot
-          : null;
+      : (compile != null &&
+            compileRoot != null &&
+            compile.containsKey('host_policy_sha256'))
+      ? compileRoot
+      : null;
   if (policyRoot != null) {
     final policy = HostPolicy.parse(
-        await File(p.join(policyRoot, 'host_policy.json')).readAsString());
+      await File(p.join(policyRoot, 'host_policy.json')).readAsString(),
+    );
     final fields = policy.fields;
     valid(
-        fields['application_id'] == m['application_id'] &&
-            fields['version_code'] == m['version_code'] &&
-            fields['flavor'] == m['flavor'] &&
-            fields['abi'] == m['abi'] &&
-            fields['fptc_key'] == receipt['public_key'] &&
-            (!so ||
-                (fields['strategy'] == 'so' &&
-                    policy.digest == ref['host_policy_sha256'] &&
-                    ref['fingerprint'] ==
-                        soFingerprint('${ref['flutter_version']}',
-                            '${ref['engine_commit']}', '${m['build_id']}', policy.digest))),
-        'Host policy differs from the release.');
+      fields['application_id'] == m['application_id'] &&
+          fields['version_code'] == m['version_code'] &&
+          fields['flavor'] == m['flavor'] &&
+          fields['abi'] == m['abi'] &&
+          fields['fptc_key'] == receipt['public_key'] &&
+          (!so ||
+              (fields['strategy'] == 'so' &&
+                  policy.digest == ref['host_policy_sha256'] &&
+                  ref['fingerprint'] ==
+                      soFingerprint(
+                        '${ref['flutter_version']}',
+                        '${ref['engine_commit']}',
+                        '${m['build_id']}',
+                        policy.digest,
+                      ))),
+      'Host policy differs from the release.',
+    );
   }
   return computed;
 }
 
 /// Verifies an extracted baseline directory of any kind; `kind` is null for a
 /// legacy (schema 1–4) baseline.
-Future<Map<String, dynamic>> verifyBaselineDir(String root,
-    {String? expected, String? sdkRoot}) async {
+Future<Map<String, dynamic>> verifyBaselineDir(
+  String root, {
+  String? expected,
+  String? sdkRoot,
+}) async {
   await rejectLinks(root);
   final kinds = [
     for (final kind in ['baseline', 'compile', 'release'])
-      if (await File(p.join(root, '$kind.manifest.json')).exists()) kind
+      if (await File(p.join(root, '$kind.manifest.json')).exists()) kind,
   ];
   valid(kinds.length == 1, 'Expected exactly one baseline manifest.');
   switch (kinds.single) {
@@ -399,9 +458,10 @@ Future<Map<String, dynamic>> verifyBaselineDir(String root,
     case 'release':
       final m = await verifyReleaseObject(root);
       require(
-          expected == null || releaseFingerprint(m) == expected,
-          'BASELINE_FINGERPRINT_MISMATCH',
-          'Requested fingerprint differs from baseline.');
+        expected == null || releaseFingerprint(m) == expected,
+        'BASELINE_FINGERPRINT_MISMATCH',
+        'Requested fingerprint differs from baseline.',
+      );
       return m;
     default:
       return verifyBaseline(root, expected: expected, sdkRoot: sdkRoot);
@@ -415,6 +475,5 @@ Future<List<String>> verifiedEntries(String root) async {
     'compile' => [...compilePayload(m), 'compile.manifest.json'],
     'release' => [...releaseObjectPayload(m), 'release.manifest.json'],
     _ => [...payloadFiles(m), 'baseline.manifest.json'],
-  }
-    ..sort();
+  }..sort();
 }
