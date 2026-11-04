@@ -113,11 +113,6 @@ class _DemoState extends State<Demo> {
                 letterSpacing: -0.5,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Signed hot updates for Flutter',
-              style: text.bodyLarge?.copyWith(color: secondary),
-            ),
             const SizedBox(height: 24),
             Panel(
               child: Column(
@@ -132,7 +127,7 @@ class _DemoState extends State<Demo> {
               ),
             ),
             const SizedBox(height: 16),
-            StatusCard(key: ValueKey(_checks)),
+            StatusCard(refresh: _checks),
             const SizedBox(height: 16),
             Panel(
               child: Column(

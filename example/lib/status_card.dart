@@ -28,11 +28,14 @@ class Panel extends StatelessWidget {
   }
 }
 
-/// What the last cold start ran. Native code records a cold start at its first
-/// frame, so the card reads again shortly after; applying or rolling back
-/// shows here after the app restarts.
+/// What this cold start runs. A patched start is recorded at its first frame,
+/// so the card shows a loading state until then. Applying or rolling back
+/// changes the installed patch at once and what runs after a restart.
 class StatusCard extends StatefulWidget {
-  const StatusCard({super.key});
+  const StatusCard({required this.refresh, super.key});
+
+  /// Changes after each update or rollback, to read the installed patch again.
+  final int refresh;
 
   @override
   State<StatusCard> createState() => _StatusCardState();
@@ -40,13 +43,18 @@ class StatusCard extends StatefulWidget {
 
 class _StatusCardState extends State<StatusCard> {
   PatchBootDiagnostic? _boot;
-  List<(String, String)> _rows = const [];
+  List<(String, String)>? _rows;
 
   @override
   void initState() {
     super.initState();
     _load();
-    Future.delayed(const Duration(seconds: 2), _load);
+  }
+
+  @override
+  void didUpdateWidget(StatusCard old) {
+    super.didUpdateWidget(old);
+    if (old.refresh != widget.refresh) _load();
   }
 
   Future<void> _load() async {
@@ -93,38 +101,60 @@ class _StatusCardState extends State<StatusCard> {
     };
     final text = Theme.of(context).textTheme;
     final secondary = Theme.of(context).colorScheme.onSurfaceVariant;
+    final rows = _rows;
     return Panel(
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
-        child: Column(
-          key: ValueKey(title),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: color.withValues(alpha: 0.15),
-                  child: Icon(icon, color: color, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Text(title, style: text.titleMedium)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            for (final (label, value) in _rows)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    Text(label, style: text.bodyMedium),
-                    const Spacer(),
-                    Text(value, style: text.bodyMedium?.copyWith(color: secondary)),
-                  ],
-                ),
+        child: rows == null
+            ? Row(
+                key: const ValueKey('loading'),
+                children: [
+                  const SizedBox.square(
+                    dimension: 36,
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Checking this start…',
+                    style: text.titleMedium?.copyWith(color: secondary),
+                  ),
+                ],
+              )
+            : Column(
+                key: const ValueKey('status'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: color.withValues(alpha: 0.15),
+                        child: Icon(icon, color: color, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(title, style: text.titleMedium)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  for (final (label, value) in rows)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        children: [
+                          Text(label, style: text.bodyMedium),
+                          const Spacer(),
+                          Text(
+                            value,
+                            style: text.bodyMedium?.copyWith(color: secondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
       ),
     );
   }
