@@ -42,7 +42,7 @@
 
 ### 需要自己开发和部署后端服务吗？
 
-**不需要。** 发布的补丁与清单全部是静态文件，任何支持 HTTPS 的静态文件托管服务（如 AWS S3、阿里云 OSS、Cloudflare R2 配合 CDN）均可直接使用。详见[生产部署：配置存储](production-playbook-zh.md#配置存储)。
+**不需要。** 发布的补丁与清单全部是静态文件，任何支持 HTTPS 的静态文件托管服务（如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN）均可直接使用。详见[生产部署：配置存储](production-playbook-zh.md#配置存储)。
 
 ### 支持 x86 模拟器或 32 位 Android 设备吗？
 

@@ -2,7 +2,7 @@
 
 **English** | [简体中文](api-reference-zh.md)
 
-This document lists the Dart API your app uses, all static members of `FlutterPatcher`.
+This document lists the Dart API your app uses: the static members of `FlutterPatcher` and the types they take and return.
 
 - The plugin works on Android and iOS only. On other platforms calls do nothing and print a warning the first time: getters return empty values, `checkUpdate` reports no update and `applyPatch` returns `unknown`. `fetchSignedManifest`, `applySignedManifest` and `updatePublicationTrust` are not guarded and fail there.
 - Only hosts built with `flutter_patcher build` accept patches; see [How It Works](architecture.md#the-host-an-app-that-accepts-patches).
@@ -22,7 +22,7 @@ static Future<void> init({
 })
 ```
 
-Call it in `main()` before `runApp()`; calling it again has no effect. It turns on crash protection: it marks the start successful after the first frame and keeps watching for Dart errors for `verifyAfter`.
+Call it in `main()` before `runApp()`; calling it again has no effect. It configures crash protection and keeps counting uncaught Dart errors as a failed start for `verifyAfter` after the first frame. The start itself is confirmed natively at its first frame.
 
 | Parameter | Description |
 |---|---|
@@ -88,7 +88,7 @@ It does not throw; every outcome is in the result.
 | `ioError` | A disk or file system error, such as no space | Retry later with the same `PatchInfo` |
 | `signatureInvalid` | The patch signature did not verify; on iOS also when the app did not start through flutter_patcher's generated entry point | Do not retry; check your publishing, storage and build |
 | `blacklisted` | This patch made a start fail and is blacklisted on this device | Publish a fixed patch |
-| `invalidArgs` | Not a result from `checkUpdate`, or the patch's sequence is not above the one the device accepted | Check how you call it and how you publish |
+| `invalidArgs` | Not a result from `checkUpdate`; a patch whose sequence or hash differs from its manifest; or a sequence this device already installed, for example after `rollback` | Check how you call it and how you publish |
 | `unknown` | Anything else, including a manifest that fails verification, a patch whose size or hash differs from its manifest, and a plugin older than the manifest requires | Report `message` |
 
 
@@ -120,7 +120,6 @@ It does not throw; every outcome is in the result.
 |---|---|
 | `rollback()` | Removes the installed patch; the next cold start runs the app's built-in version. Does not blacklist the patch, but the device has accepted its sequence, so it cannot install that patch again; publish one with a higher sequence |
 | `clearBlacklist()` | Empties this device's blacklist, for tests or after you have ruled out the problem |
-| `reportBootSuccess()` | Marks this start successful by hand. `init` calls it after the first frame, so you rarely need it |
 
 ## Delivering manifests yourself
 

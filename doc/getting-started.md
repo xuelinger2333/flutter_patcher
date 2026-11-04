@@ -8,19 +8,11 @@ For full command flags, see the [CLI Reference](cli.md); for under-the-hood mech
 
 ## Prerequisites
 
-- **Build Host**: Linux x64 or Windows x64
+- **Build Host**: Linux x64, Windows x64 or Apple Silicon Mac
 - **Flutter**: 3.47.0 – 3.47.9 (available in `PATH`)
 - **Git**: Installed and available in `PATH`
-- **Test Device**: An `arm64-v8a` Android device (Android 7.0+) with USB debugging enabled and visible via `adb devices`
+- **Test Device**: An `arm64-v8a` Android device (Android 9+) with USB debugging enabled and visible via `adb devices`
 - **Network**: Internet access is required on the first run to download the matching custom Flutter engine and toolchain from GitHub (cached locally for subsequent runs)
-
-Verify your environment from the project root:
-
-```bash
-dart run flutter_patcher doctor
-```
-
-If the last line starts with `Toolchain ready.`, you are good to go. If it fails, look up the reported error code in [Troubleshooting](troubleshooting.md).
 
 ## 1. Integrate the SDK
 
@@ -29,6 +21,14 @@ Add the dependency:
 ```bash
 flutter pub add flutter_patcher
 ```
+
+Then verify your environment from the project root:
+
+```bash
+dart run flutter_patcher doctor
+```
+
+If the last line starts with `Toolchain ready.`, you are good to go. If it fails, look up the reported error code in [Troubleshooting](troubleshooting.md).
 
 Initialize `FlutterPatcher` in `main()`, and trigger an update check at an appropriate point in your app (e.g., on a button tap or screen load):
 
@@ -51,6 +51,7 @@ Future<void> checkForPatch() async {
 ```
 
 - `http://127.0.0.1:8686` points to the local dev server started by `serve` in Step 5. For production, replace this with your own HTTPS endpoint (see [Production Playbook](production-playbook.md)).
+- Release builds need the internet permission to check for updates. `flutter create` declares it only for debug and profile builds, so add `<uses-permission android:name="android.permission.INTERNET"/>` to `android/app/src/main/AndroidManifest.xml`.
 - Make sure `version` in `pubspec.yaml` includes a build number (e.g., `version: 1.0.0+1`). The build number maps to Android's `versionCode`, which `flutter_patcher` uses to match patches against the exact baseline release.
 
 ## 2. Generate Signing Keys

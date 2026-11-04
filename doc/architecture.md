@@ -28,6 +28,8 @@ Patches install only on apps built with `flutter_patcher build`, called **hosts*
 2. **A generated entry point** that runs before your `main` and installs the patch at a cold start. Your source is not modified.
 3. **The host policy**: identity and public keys built into the app, namely its application id, version, flavor, channel, ABI, patch strategy and three public keys. Once the app is signed, the policy cannot change, and the device judges every patch by it.
 
+On Android a host applies patches on Android 9 (API 28) and later, in the app's main process; on older devices it runs the app as built.
+
 ## Two patch strategies
 
 A Flutter release app compiles your Dart code to machine code. flutter_patcher can update it in two ways:

@@ -91,7 +91,7 @@ Raise `rolloutPercent` step by step (for example 1% → 5% → 20% → 100%), ch
 dart run flutter_patcher publish --withdraw
 ```
 
-This withdraws every published patch of the release your latest `patch` output belongs to. Devices remove the withdrawn patches at their next update check and run the bundled version after the next cold start.
+This withdraws every published patch of the release your latest `patch` output belongs to. Devices remove the withdrawn patches when the app next applies updates, and run the bundled version after the next cold start.
 
 - To withdraw only up to a given sequence: pass `--through <seq>`.
 - To withdraw another release's patches: pass `--patch <dir>` with one of that release's `patch` outputs.

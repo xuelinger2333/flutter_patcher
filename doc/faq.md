@@ -42,7 +42,7 @@ Upgrading the Flutter SDK requires running `build` and shipping a new store rele
 
 ### Do I need to build and run a custom backend server?
 
-**No.** Both patches and manifests are static files. Any static file hosting service served over HTTPS—such as AWS S3, Cloudflare R2, or Google Cloud Storage behind a CDN—works out of the box. See [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage).
+**No.** Both patches and manifests are static files. Any static file hosting service served over HTTPS—such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN—works out of the box. See [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage).
 
 ### Are x86 emulators or 32-bit Android devices supported?
 

@@ -4,7 +4,7 @@
 
 一个补丁可能通过了所有构建期检查，却在某些设备上启动即崩溃。本文说明插件如何发现这种情况、如何自动恢复，以及你如何观察它。
 
-前提：在 `main()` 中调用了 [`FlutterPatcher.init()`](api-reference-zh.md#init)。
+无需额外配置即可生效；在 `main()` 中调用 [`FlutterPatcher.init()`](api-reference-zh.md#init) 可以设置 `maxCrashCount`，并在首帧之后继续统计 Dart 异常。
 
 ## 一次带补丁的启动
 

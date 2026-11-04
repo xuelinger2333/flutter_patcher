@@ -4,7 +4,7 @@
 
 A patch can pass every build-time check and still crash at startup on some devices. This document explains how the plugin notices, how it recovers on its own, and how you can watch it.
 
-It requires a call to [`FlutterPatcher.init()`](api-reference.md#init) in `main()`.
+It works without setup; call [`FlutterPatcher.init()`](api-reference.md#init) in `main()` to set `maxCrashCount` and keep counting Dart errors after the first frame.
 
 ## A start with a patch
 

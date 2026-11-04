@@ -51,7 +51,7 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 
 ### `HOST_UNSUPPORTED`: Unsupported host OS or architecture
 
-- **Building Android baselines (`build android`)**: Requires Linux x64 or Windows x64.
+- **Building Android baselines (`build android`)**: Requires Linux x64, Windows x64 or an Apple Silicon Mac.
 - **Building iOS baselines (`build ios`)**: Requires an Apple Silicon Mac.
 - **Generating patches (`patch android` / `patch ios`)**: Supported on all three host platforms above.
 

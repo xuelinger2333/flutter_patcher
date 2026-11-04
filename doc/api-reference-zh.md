@@ -22,7 +22,7 @@ static Future<void> init({
 })
 ```
 
-在 `main()` 中、`runApp()` 之前调用，重复调用没有影响。它启用崩溃保护：在首帧绘制后把本次启动标记为成功，并在 `verifyAfter` 时间内继续监听 Dart 异常。
+在 `main()` 中、`runApp()` 之前调用，重复调用没有影响。它配置崩溃保护，并在首帧之后的 `verifyAfter` 时间内继续把 Dart 未捕获异常计为启动失败。本次启动是否成功由原生代码在首帧时确认。
 
 | 参数 | 说明 |
 |---|---|
@@ -88,7 +88,7 @@ static Future<PatchApplyResult> applyPatch(
 | `ioError` | 磁盘或文件系统错误，例如空间不足 | 稍后用同一个 `PatchInfo` 重试 |
 | `signatureInvalid` | 补丁签名校验失败；iOS 上 App 没有通过 flutter_patcher 生成的入口启动时也会返回 | 不要重试，检查发布流程、存储内容和构建方式 |
 | `blacklisted` | 这个补丁曾导致启动失败，已在本机被拉黑 | 发布修复后的新补丁 |
-| `invalidArgs` | 传入的不是 `checkUpdate` 返回的结果，或补丁序号不大于设备已接受的序号 | 检查调用方式和发布流程 |
+| `invalidArgs` | 传入的不是 `checkUpdate` 返回的结果；补丁的序号或哈希与清单不一致；或本机已经安装过该序号（例如 `rollback` 之后） | 检查调用方式和发布流程 |
 | `unknown` | 其他错误，包括清单校验失败、补丁的大小或哈希与清单不一致、插件版本低于清单要求 | 上报 `message` |
 
 
@@ -120,7 +120,6 @@ static Future<PatchApplyResult> applyPatch(
 |---|---|
 | `rollback()` | 删除已安装的补丁，下次冷启动运行安装包自带的版本。不会拉黑该补丁，但设备已经接受过它的序号，无法再次安装它；请发布一个序号更大的补丁 |
 | `clearBlacklist()` | 清空本机黑名单，用于测试或确认问题已排除之后 |
-| `reportBootSuccess()` | 手动把本次启动标记为成功。`init` 会在首帧后自动调用，一般不需要 |
 
 ## 自行分发清单
 

@@ -29,9 +29,9 @@
 
 | 环节 | 环境要求 |
 |---|---|
-| Android 设备 | Android 7.0（API 24）及以上，`arm64-v8a` |
+| Android 设备 | Android 9（API 28）及以上，`arm64-v8a`；Android 7–8 上 App 按原包运行，不加载补丁 |
 | iOS 设备 | iOS 13 及以上 |
-| 构建 Android 基线包 | Linux x64 或 Windows x64 |
+| 构建 Android 基线包 | Linux x64、Windows x64 或 Apple Silicon Mac |
 | 构建 iOS 基线包 | Apple Silicon Mac（需 Xcode） |
 | 生成补丁（Patch） | 以上任一主机均可生成 Android 与 iOS 补丁 |
 

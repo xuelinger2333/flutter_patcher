@@ -91,7 +91,7 @@ if (userBucket(userId) < rolloutPercent) {
 dart run flutter_patcher publish --withdraw
 ```
 
-撤回最近一次 `patch` 所属版本的全部已发布补丁。设备在下次检查更新时移除被撤回的补丁，下次冷启动后恢复为安装包自带的版本。
+撤回最近一次 `patch` 所属版本的全部已发布补丁。设备在 App 下次应用更新时移除被撤回的补丁，下次冷启动后恢复为安装包自带的版本。
 
 - 只撤回到某个序号：使用 `--through <序号>`。
 - 撤回其他版本的补丁：使用 `--patch <目录>` 指向该版本的一次 `patch` 输出。

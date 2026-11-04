@@ -64,7 +64,7 @@ await FlutterPatcher.updatePublicationTrust(doc);
 
 ### How Rotation Takes Effect
 
-Once a device applies the new trust document, patches signed with the old `publisher` key are no longer accepted, and an installed patch signed with it stops loading at the next cold start. Publish a patch with the new key right after rotating so devices stay on your latest patch.
+Once a device applies the new trust document, manifests signed with the old `publisher` key are no longer accepted, and a patch installed through one is removed at once. Publish a patch with the new key right after rotating so devices stay on your latest patch.
 
 ## Cleaning Up Old Patches
 

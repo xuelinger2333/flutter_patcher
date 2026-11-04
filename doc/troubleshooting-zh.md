@@ -50,7 +50,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 ### `HOST_UNSUPPORTED`：当前主机不支持该操作
 
-- **构建 Android 基线包（`build android`）**：需 Linux x64 或 Windows x64。
+- **构建 Android 基线包（`build android`）**：需 Linux x64、Windows x64 或 Apple Silicon Mac。
 - **构建 iOS 基线包（`build ios`）**：需 Apple Silicon Mac。
 - **生成补丁（`patch android` / `patch ios`）**：以上三种主机均可运行。
 
@@ -59,7 +59,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 - 检查传入的 URL 是否为发布存储的**根地址**（切勿直接传入 `manifests/` 下的具体文件路径）。
 - 检查该 HTTPS 地址是否直接返回响应（客户端不支持 `3xx` 重定向）。
 - 确认补丁是否确实针对当前设备安装的构建号（`versionCode`）生成；若用户已升级新版本 App，需为新版本单独生成并发布补丁。
-- 确认该补丁是否已在当前设备上安装过（已安装的补丁不会重复触发更新，可通过 `currentVersion` 查看当前生效版本）。
+- 确认该补丁是否已在当前设备上安装过（已安装的补丁不会重复触发更新，可通过 `currentVersion` 查看已安装的补丁版本）。
 
 ---
 

@@ -3,10 +3,8 @@
 Build a host app, change it, and watch the signed patch load on the next cold
 start. No server and no cloud account are needed.
 
-You need the Flutter version flutter_patcher publishes engine artifacts for
-(3.47.2 today; `dart run flutter_patcher doctor` checks yours) and an Android
-phone connected over USB with debugging on. The example itself runs with
-`flutter run` on any Flutter from 3.44.
+You need Flutter 3.47.0–3.47.9 (`dart run flutter_patcher doctor` checks
+yours) and an Android 9 or later phone connected over USB with debugging on.
 
 ## Android over USB
 
@@ -33,7 +31,7 @@ Leave `serve` running; after the next change, run `patch android` again.
 
 ## iOS
 
-`dart run flutter_patcher build ios` runs on a Mac with signing set up in
+`dart run flutter_patcher build ios` runs on an Apple Silicon Mac with signing set up in
 Xcode. An iPhone cannot reach the Mac's 127.0.0.1, so expose `serve` over
 HTTPS, for example with `cloudflared tunnel --url http://127.0.0.1:8686`, and
 enter that URL in the app.

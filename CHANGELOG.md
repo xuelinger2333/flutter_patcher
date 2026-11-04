@@ -27,7 +27,9 @@ Started](doc/getting-started.md).
     picks the next sequence number, and rejects changes a patch cannot carry
     (native code, FFI, removed assets…) with the reason;
   - `publish` signs the patch and writes it to the publication store after a
-    preview; `publish --withdraw` withdraws the release's published patches;
+    preview; `publish --withdraw [--through <seq>]` withdraws the release's
+    published patches; a publish interrupted while committing resumes on the
+    next run;
   - `serve` publishes each new patch and serves it to a USB-connected Android
     device while developing;
   - `doctor` checks the toolchain.
@@ -36,8 +38,11 @@ Started](doc/getting-started.md).
   above any they accepted; withdrawals are signed too. Storage and CDNs need
   not be trusted. The root key can replace the publisher key without a new
   release (`trust sign`, `trust publish`, `updatePublicationTrust`).
-- `applySignedManifest` and `fetchSignedManifest`, for apps that deliver
-  manifests and patches themselves.
+- `applySignedManifest` and `fetchSignedManifest`, with `SignedManifest` and
+  `SignedUpdateResult`, for apps that deliver manifests and patches
+  themselves.
+- `PatchBootStatus.bytecodeBootFailed` and `soBootFailed`: a start that failed
+  before the crash threshold.
 - Engines and tools come from immutable artifact releases recorded in each
   baseline, so a released app can always be patched with what it was built
   with.
@@ -52,6 +57,14 @@ Started](doc/getting-started.md).
 - The Android plugin no longer applies the Kotlin Gradle plugin itself: on
   AGP 9 it compiles with AGP's built-in Kotlin, on AGP 8 with the app's
   Kotlin plugin. Kotlin targets JVM 17 either way.
+- Patches apply on Android 9 (API 28) and later, in the app's main process;
+  on Android 7–8 the app runs as built.
+- Updates are fetched over HTTPS only, or plain HTTP from the device's own
+  loopback address while developing; redirects are not followed.
+- `lastBootDiagnostic` reports the current start: asked before a patched
+  start's first frame, it waits for it, up to 10 seconds.
+- `BlacklistEntry.version` identifies the patch as
+  `<host fingerprint>:<sequence>:<patch SHA-256>`.
 
 ### Removed
 
@@ -64,9 +77,10 @@ Started](doc/getting-started.md).
   `checkUpdate` throws `PatcherException` there.
 - Values no 1.0.0 host reports: `PatchApplyError.md5Mismatch`,
   `unsupportedAbi` and `assetPackageInvalid`; `PatchBootStatus
-  .droppedSignatureInvalid`, `droppedMd5Mismatch`, `droppedMetaCorrupted` and
-  `bytecodeUnsupported`; `BlacklistEntry.md5`. A blacklist entry's `reason`
-  is always `BOOT_CRASH`.
+  .droppedSignatureInvalid`, `droppedMd5Mismatch` and `droppedMetaCorrupted`;
+  `BlacklistEntry.md5`. A blacklist entry's `reason` is always `BOOT_CRASH`.
+- `FlutterPatcher.reportBootSuccess()`: the plugin confirms a start natively
+  at its first frame.
 
 ### Migrating from 0.1.x
 

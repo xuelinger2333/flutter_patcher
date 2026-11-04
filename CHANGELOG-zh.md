@@ -21,14 +21,17 @@
   - `build android|ios` 构建宿主并归档基线，宿主策略（包名、版本号、密钥等）自动生成；
   - `patch android|ios` 与线上版本的基线对比，自动选择下一个序号，并拒绝补丁无法
     携带的改动（原生代码、FFI、删除资源等），给出原因；
-  - `publish` 预览后签名并把补丁写入发布存储；`publish --withdraw` 撤回该版本已发布的补丁；
+  - `publish` 预览后签名并把补丁写入发布存储；`publish --withdraw [--through <序号>]` 撤回该版本
+    已发布的补丁；提交过程中被中断的发布会在下次运行时自动续上；
   - `serve` 在开发时自动发布新补丁，并提供给 USB 连接的 Android 设备；
   - `doctor` 检查工具链。
 - **签名更新。** 设备只安装用你的密钥签名、正好对应其包名、版本号、flavor、渠道和
   ABI、且序号大于已接受序号的补丁；撤回同样需要签名。存储和 CDN 不需要被信任。
   root 密钥可以在不发新版的情况下更换 publisher 密钥（`trust sign`、`trust publish`、
   `updatePublicationTrust`）。
-- `applySignedManifest` 和 `fetchSignedManifest`，供自行分发清单和补丁的 App 使用。
+- `applySignedManifest` 和 `fetchSignedManifest`（以及 `SignedManifest`、`SignedUpdateResult`），
+  供自行分发清单和补丁的 App 使用。
+- `PatchBootStatus.bytecodeBootFailed` 和 `soBootFailed`：启动失败但尚未达到熔断阈值。
 - 引擎和工具来自不可变的产物 release，并记录在每个基线中，已上线的 App 始终可以用
   构建时的那一套继续打补丁。
 
@@ -39,6 +42,10 @@
   把它返回的 `PatchInfo` 原样传给 `applyPatch`。
 - Android 插件不再自行应用 Kotlin Gradle 插件：在 AGP 9 上由 AGP 内置的 Kotlin 编译，
   在 AGP 8 上使用 App 自己的 Kotlin 插件。两种情况下 Kotlin 都以 JVM 17 为目标。
+- 补丁只在 Android 9（API 28）及以上、App 的主进程中生效；Android 7–8 上 App 按原包运行。
+- 只通过 HTTPS 获取更新，开发时允许设备本机回环地址的 HTTP；不跟随重定向。
+- `lastBootDiagnostic` 返回本次启动的记录：在带补丁的启动首帧之前调用时会等待首帧，最多 10 秒。
+- `BlacklistEntry.version` 以 `<宿主指纹>:<序号>:<补丁 SHA-256>` 标识补丁。
 
 ### Removed
 
@@ -49,8 +56,8 @@
   App 只运行原始代码，在其上调用 `checkUpdate` 会抛出 `PatcherException`。
 - 1.0.0 宿主不会报告的取值：`PatchApplyError.md5Mismatch`、`unsupportedAbi`、
   `assetPackageInvalid`；`PatchBootStatus.droppedSignatureInvalid`、`droppedMd5Mismatch`、
-  `droppedMetaCorrupted`、`bytecodeUnsupported`；`BlacklistEntry.md5`。黑名单条目的
-  `reason` 始终是 `BOOT_CRASH`。
+  `droppedMetaCorrupted`；`BlacklistEntry.md5`。黑名单条目的 `reason` 始终是 `BOOT_CRASH`。
+- `FlutterPatcher.reportBootSuccess()`：插件在首帧时由原生代码确认启动成功。
 
 ### 从 0.1.x 迁移
 

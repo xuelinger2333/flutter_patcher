@@ -25,9 +25,9 @@
 
 | Target / Stage | Requirements |
 |---|---|
-| Android Device | Android 7.0 (API 24) or higher, `arm64-v8a` |
+| Android Device | Android 9 (API 28) or higher, `arm64-v8a`; on Android 7–8 the app runs as built, without patches |
 | iOS Device | iOS 13 or higher |
-| Build Android Release | Linux x64 or Windows x64 |
+| Build Android Release | Linux x64, Windows x64 or Apple Silicon Mac |
 | Build iOS Release | Apple Silicon Mac (Xcode required) |
 | Generate Patches | Any host above can generate both Android and iOS patches |
 

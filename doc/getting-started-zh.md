@@ -12,19 +12,11 @@
 
 ## 环境准备
 
-- **构建主机**：Linux x64 或 Windows x64
+- **构建主机**：Linux x64、Windows x64 或 Apple Silicon Mac
 - **Flutter**：3.47.0 – 3.47.9（已加入系统 `PATH`）
 - **Git**：已安装并在 `PATH` 中可用
-- **测试真机**：一台 `arm64-v8a` 架构的 Android 手机（Android 7.0 及以上），已开启 USB 调试且 `adb devices` 可正常识别
+- **测试真机**：一台 `arm64-v8a` 架构的 Android 手机（Android 9 及以上），已开启 USB 调试且 `adb devices` 可正常识别
 - **网络环境**：首次运行需联网。CLI 会从 GitHub 下载与当前 Flutter 版本匹配的定制引擎和编译工具链，后续运行将直接使用本机缓存
-
-在项目根目录下检查环境：
-
-```bash
-dart run flutter_patcher doctor
-```
-
-输出的最后一行以 `Toolchain ready.` 开头，即表示环境就绪。若检查失败，请根据输出的错误码查阅[错误码与排障](troubleshooting-zh.md)。
 
 ## 1. 接入 SDK
 
@@ -33,6 +25,14 @@ dart run flutter_patcher doctor
 ```bash
 flutter pub add flutter_patcher
 ```
+
+然后在项目根目录下检查环境：
+
+```bash
+dart run flutter_patcher doctor
+```
+
+输出的最后一行以 `Toolchain ready.` 开头，即表示环境就绪。若检查失败，请根据输出的错误码查阅[错误码与排障](troubleshooting-zh.md)。
 
 在 `main()` 中调用初始化，并在业务合适的时机（如点击按钮或首页加载时）检查并应用更新：
 
@@ -55,6 +55,7 @@ Future<void> checkForPatch() async {
 ```
 
 - `http://127.0.0.1:8686` 是第 5 步本地调试服务 `serve` 提供的地址，正式上线时请替换为你自己的 HTTPS 地址（见[生产部署](production-playbook-zh.md)）。
+- Release 包检查更新需要网络权限。`flutter create` 只为 debug 和 profile 构建声明了该权限，请在 `android/app/src/main/AndroidManifest.xml` 中添加 `<uses-permission android:name="android.permission.INTERNET"/>`。
 - 请确认 `pubspec.yaml` 中的版本号包含构建号（例如 `version: 1.0.0+1`）。`+` 后面的构建号对应 Android 的 `versionCode`，补丁依赖它精准匹配线上的基线版本。
 
 ## 2. 初始化密钥
