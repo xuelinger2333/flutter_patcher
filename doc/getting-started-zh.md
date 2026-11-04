@@ -1,104 +1,134 @@
+<!-- ========================================== -->
+<!-- doc/getting-started-zh.md (简体中文)        -->
+<!-- ========================================== -->
+
 # 快速上手
 
-本文档覆盖 flutter_patcher 的本地开发流程。生产部署相关内容见 [生产环境实践手册](production-playbook-zh.md)。
+[English](getting-started.md) | **简体中文**
 
----
+本文将从零开始走通一次完整的热更新闭环：为 Android App 接入 `flutter_patcher`，修改一行界面文字，并在手机冷启动后看到更新生效。全程在本机完成，无需搭建服务器（iOS 的差异说明见文末）。
 
-## 本地 mock server
+完整的命令参数请参考 [CLI 参考](cli-zh.md)，底层机制请参考[工作原理](architecture-zh.md)。
 
-如果你想在没有后端的情况下体验 HTTP `checkUpdate → applyPatch` 流程，可以直接启动内置 mock server。它只用于本地开发联调，不适合作为生产补丁分发服务。
+## 环境准备
+
+- **构建主机**：Linux x64 或 Windows x64
+- **Flutter**：3.47.0 – 3.47.9（已加入系统 `PATH`）
+- **Git**：已安装并在 `PATH` 中可用
+- **测试真机**：一台 `arm64-v8a` 架构的 Android 手机（Android 7.0 及以上），已开启 USB 调试且 `adb devices` 可正常识别
+- **网络环境**：首次运行需联网。CLI 会从 GitHub 下载与当前 Flutter 版本匹配的定制引擎和编译工具链，后续运行将直接使用本机缓存
+
+在项目根目录下检查环境：
 
 ```bash
-# 修改 Dart 代码后重新构建 release APK
-flutter build apk --release
-
-# 构建补丁包
-dart run flutter_patcher:pack \
-  --apk build/app/outputs/flutter-apk/app-release.apk \
-  --version dev-1 \
-  --target-version-code 100
-
-# 在 0.0.0.0:8080 暴露 dist/patch.zip 和 dist/manifest.json
-dart run flutter_patcher:mock_server --dist dist
+dart run flutter_patcher doctor
 ```
 
-手机和电脑处于同一 Wi-Fi 后，在客户端请求：
+输出的最后一行以 `Toolchain ready.` 开头，即表示环境就绪。若检查失败，请根据输出的错误码查阅[错误码与排障](troubleshooting-zh.md)。
+
+## 1. 接入 SDK
+
+添加依赖：
+
+```bash
+flutter pub add flutter_patcher
+```
+
+在 `main()` 中调用初始化，并在业务合适的时机（如点击按钮或首页加载时）检查并应用更新：
 
 ```dart
-final check = await FlutterPatcher.checkUpdate(
-  'http://<你的电脑局域网IP>:8080/check',
-);
+import 'package:flutter/material.dart';
+import 'package:flutter_patcher/flutter_patcher.dart';
 
-if (check.hasUpdate) {
-  await FlutterPatcher.applyPatch(check.patch!);
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FlutterPatcher.init();
+  runApp(const MyApp());
+}
+
+Future<void> checkForPatch() async {
+  final check = await FlutterPatcher.checkUpdate('http://127.0.0.1:8686');
+  if (!check.hasUpdate) return;
+  final result = await FlutterPatcher.applyPatch(check.patch!);
+  debugPrint('applyPatch: $result'); // 返回 ok 时，补丁将在下次冷启动生效
 }
 ```
 
-插件还提供一个可选的最小 check-update JSON 协议，主要用于快速接入、示例和本地联调。生产环境如果已有自己的更新、灰度或鉴权协议，建议直接解析业务响应并构造 `PatchInfo`。协议格式与 `checkUpdate` 用法见 [API 参考](https://pub.dev/documentation/flutter_patcher/latest/topics/API-reference-topic.html) 和 [架构设计](https://pub.dev/documentation/flutter_patcher/latest/topics/Architecture-topic.html)。
+- `http://127.0.0.1:8686` 是第 5 步本地调试服务 `serve` 提供的地址，正式上线时请替换为你自己的 HTTPS 地址（见[生产部署](production-playbook-zh.md)）。
+- 请确认 `pubspec.yaml` 中的版本号包含构建号（例如 `version: 1.0.0+1`）。`+` 后面的构建号对应 Android 的 `versionCode`，补丁依赖它精准匹配线上的基线版本。
 
----
-
-## 省略 MD5 校验
-
-`PatchInfo.md5` 是可选字段。若服务端协议不下发 md5（或你只想靠 HTTPS 防篡改），可省略：
-
-```dart
-PatchInfo(version: 'fix-1', patchUrl: '...', targetVersionCode: 100); // md5 默认空串
-```
-
-此时下载完整性校验会被跳过。**注意签名校验也会一并跳过**（Ed25519 签名输入即 md5 hex，没有 md5 就没有签名输入）。要启用签名校验必须同时下发 md5。
-
----
-
-## 多 ABI 配置
-
-服务端需按 ABI 分发不同的 `patch.zip`（每个补丁内部只携带一份 `lib/<abi>/libapp.so`）。客户端可通过 `FlutterPatcher.deviceAbi` 获取当前设备 ABI，并将其带入你自己的更新请求。
-
----
-
-## 多 Flavor 配置
-
-建议服务端按 `flavor × ABI × versionCode` 维度管理补丁。不同 flavor 的配置、包名、资源和业务逻辑可能不同，不建议混用补丁。
-
----
-
-## `--assets` 进阶用法
-
-路径较多时，把 `--assets` 指向一个文本文件，前缀 `@` —— 每行一个路径，`#` 开头为注释，内联和 `@file` 可以混用：
+## 2. 初始化密钥
 
 ```bash
-# patch-assets.txt
-assets/hero.png
-assets/strings/zh.json
-assets/illustrations/onboarding-1.png
+dart run flutter_patcher keys init
 ```
+
+执行后项目根目录会生成以下文件：
+
+| 路径 | 说明 |
+|---|---|
+| `flutter_patcher_keys/` | 包含三对签名密钥。私钥已由目录内的 `.gitignore` 自动排除，**请立即将其备份到安全位置** |
+| `flutter_patcher.yaml` | 项目配置文件模板（默认全为注释）。本地试用无需修改 |
+
+## 3. 构建基线安装包
 
 ```bash
-dart run flutter_patcher:pack \
-  --apk build/app/outputs/flutter-apk/app-release.apk \
-  --version 1.0.1 \
-  --target-version-code 100 \
-  --assets @patch-assets.txt,assets/last-minute.png
+dart run flutter_patcher build android
 ```
 
----
+`build` 会使用 `flutter_patcher` 的定制引擎构建 Release 安装包，并自动保存当前版本的基线快照（Baseline）。首次运行需下载引擎产物并初始化工具链，耗时较长。
 
-## 崩溃保护调参
+构建完成后，终端末尾会输出一行 JSON，其中 `output` 字段指向产物目录（默认位于 `.dart_tool/flutter_patcher/releases/` 下）。该目录下的 `app-release.apk` 即为可上架的基线安装包。将其安装到手机：
 
-如果需要调整崩溃保护参数，可以显式传入 `init`：
-
-```dart
-await FlutterPatcher.init(
-  maxCrashCount: 1,
-  verifyAfter: const Duration(seconds: 5),
-);
+```bash
+adb install <output>/app-release.apk
 ```
 
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `maxCrashCount` | `1` | 连续失败多少次后熔断补丁 |
-| `verifyAfter` | `5 seconds` | 首帧后 Dart 错误钩子继续监听的窗口 |
+打开 App，确认初始版本运行正常。
 
-Android 11+ 可以通过 `ApplicationExitInfo` 更准确地区分崩溃、ANR、用户主动关闭和系统回收。Android 10 及以下识别能力有限，建议结合线上崩溃监控和服务端下架策略。
+> **提示**：终端输出的 `WARNING: BASELINE_STORE_LOCAL` 表示基线目前仅保存在本地项目目录中。本地试用可直接忽略；正式上线前请参考[生产部署](production-playbook-zh.md)将其配置到持久化存储。
 
-完整设计见 [崩溃保护文档](https://pub.dev/documentation/flutter_patcher/latest/topics/Crash-protection-topic.html)。
+## 4. 修改代码，生成补丁
+
+随意修改一处界面文字，**注意不要修改 `pubspec.yaml` 中的版本号**，然后运行：
+
+```bash
+dart run flutter_patcher patch android
+```
+
+`patch` 命令会自动读取第 3 步保存的基线，对比代码差异并生成补丁包。生成成功时，输出 JSON 的 `status` 为 `patch_created`，`changed` 字段会列出具体的变更内容。
+
+如果包含了不支持热更的改动（例如修改了原生代码），命令会直接报错拦截并输出对应的错误码与原因，详见[错误码与排障](troubleshooting-zh.md)。
+
+## 5. 下发补丁到手机
+
+保持手机通过 USB 连接电脑，运行本地调试服务：
+
+```bash
+dart run flutter_patcher serve
+```
+
+`serve` 启动后会自动完成三件事：
+1. 将最新生成的补丁发布到本地存储目录（`.flutter_patcher/updates/`）；
+2. 在本机 `127.0.0.1:8686` 启动 HTTP 下载服务；
+3. 对已连接的 Android 设备执行 `adb reverse`，将手机端对 `127.0.0.1:8686` 的请求转发至电脑。
+
+保持 `serve` 进程运行，在手机 App 上触发 `checkForPatch()`。此时 `serve` 终端会依次打印 `A device checked for updates` 和 `A device downloaded the patch`，App 日志打印 `applyPatch: PatchApplyResult(ok)`。
+
+## 6. 冷启动验证
+
+彻底杀掉 App 进程（从系统最近任务列表中划掉），重新打开 App，即可看到修改后的界面文字。
+
+如果在保持 `serve` 运行的状态下再次修改代码并执行 `patch android`，`serve` 会自动挂载新补丁且补丁序号自动递增。App 端只需再次触发检查更新并冷启动即可生效，无需手动管理版本号。
+
+## iOS 的不同之处
+
+- **构建基线包**：需在 Apple Silicon Mac 上运行 `build ios`，证书与签名直接沿用 Xcode 工程配置；构建产物为输出目录下的 `app-release.ipa`。
+- **跨平台生成补丁**：`patch ios` 可在 Mac、Linux 或 Windows 任一主机上运行，只需确保当前机器能读取到 `build ios` 保存的基线即可（跨机器共享基线见[生产部署](production-playbook-zh.md)）。
+- **本地真机联调**：iOS 设备无法像 Android 一样通过 `adb reverse` 直接访问电脑的 `127.0.0.1`。运行 `serve` 时终端会给出提示：请使用内网穿透工具（如 `cloudflared tunnel --url http://127.0.0.1:8686`）将其暴露为公网 HTTPS 地址，再将该地址传入 `checkUpdate`。
+
+## 下一步
+
+- 了解补丁生效机制与热更边界：[工作原理](architecture-zh.md)
+- 配置云存储、CDN 与灰度发布：[生产部署](production-playbook-zh.md)
+- 了解坏包隔离与自动回滚机制：[崩溃保护](crash-protection-zh.md)

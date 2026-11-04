@@ -2,74 +2,80 @@
 
 ## 1.0.0
 
+1.0.0 rebuilds flutter_patcher around signed updates and a four-command
+workflow. Apps on 0.1.x must be rebuilt and released once; 0.1.x patches and
+the `pack` tool do not work with 1.0.0 hosts. See [Getting
+Started](doc/getting-started.md).
+
 ### Added
 
-- The command-line tool ships in this package: after adding
-  `flutter_patcher` to an app, run `dart run flutter_patcher <command>`
-  (`keys init`, `build`, `patch`, `publish`, `doctor`, ...). Its version is
-  always the plugin version the app resolved. The tool adds the pure-Dart
-  dependencies `args`, `archive`, `path` and `yaml`; app code does not import
-  them.
-- Authenticated `.so` hosts: a host policy with `"strategy":"so"` makes
-  `build android` produce an SO host whose patches (`libapp.so` plus changed
-  assets) install only from signed publish manifests, with the same replay,
-  withdrawal and key-rotation protection as bytecode hosts. On any host built
-  with a policy, `checkUpdate` fetches a signed manifest and `applyPatch`
-  applies it.
+- **iOS support.** `build ios` (on an Apple Silicon Mac) builds an iOS host;
+  `patch ios` runs on Linux, Windows or macOS.
+- **Bytecode patches**, the default strategy on Android and the only one on
+  iOS: a patch carries only the changed code, which an interpreter in the
+  engine runs while unchanged code stays machine code. Pure-Dart dependencies
+  and assets can change too. `build android --strategy so` keeps the
+  `libapp.so` replacement of 0.1.x, now with the same signed updates.
+- **The command-line tool ships in this package**: `dart run flutter_patcher
+  <command>`, always the version of the plugin the app resolved. In a project
+  the usual workflow needs no flags:
+  - `keys init` creates the root, publisher and patch key pairs and a
+    `flutter_patcher.yaml` template;
+  - `build android|ios` builds the host app and archives its baseline, and
+    writes the host policy (application id, version, keys…) itself;
+  - `patch android|ios` compares the source with the released baseline,
+    picks the next sequence number, and rejects changes a patch cannot carry
+    (native code, FFI, removed assets…) with the reason;
+  - `publish` signs the patch and writes it to the publication store after a
+    preview; `publish --withdraw` withdraws the release's published patches;
+  - `serve` publishes each new patch and serves it to a USB-connected Android
+    device while developing;
+  - `doctor` checks the toolchain.
+- **Signed updates.** Devices install only patches signed with your keys,
+  for exactly their app, version, flavor, channel and ABI, with a sequence
+  above any they accepted; withdrawals are signed too. Storage and CDNs need
+  not be trusted. The root key can replace the publisher key without a new
+  release (`trust sign`, `trust publish`, `updatePublicationTrust`).
+- `applySignedManifest` and `fetchSignedManifest`, for apps that deliver
+  manifests and patches themselves.
+- Engines and tools come from immutable artifact releases recorded in each
+  baseline, so a released app can always be patched with what it was built
+  with.
 
 ### Changed
 
-- The minimum supported Flutter version is now 3.44.0 (Dart 3.12.0), and
-  the `.so` and bytecode workflows share this floor. `pub get` now rejects
-  older Flutter SDKs instead of failing later in the Android build.
-- The Android plugin no longer applies the Kotlin Gradle plugin itself. On
-  AGP 9 it compiles with AGP's built-in Kotlin, so apps no longer see the
-  "applies KGP" deprecation warning; on AGP 8 it uses the app's Kotlin
-  plugin as before. Kotlin targets JVM 17 either way.
-- Baseline archives are gzip (`.tar.gz`) from `dart:io`, so the CLI no
-  longer needs `zstd` on PATH. Baselines archived as `.tar.zst` are not read;
-  rebuild the host to archive a new baseline.
-- macOS hosts are verified for iOS builds and patches, so `build ios` and
-  `patch ios` no longer require `FLUTTER_PATCHER_UNVERIFIED_HOST` there.
-  Android commands on macOS still do.
+- Requires Flutter 3.47.0 (Dart 3.13.0) or later; Flutter 3.47.0 – 3.47.9
+  are supported.
+- `checkUpdate(url)` takes the address where the publication store is served
+  and verifies the signed manifest there. Pass the `PatchInfo` it returns to
+  `applyPatch` unchanged.
+- The Android plugin no longer applies the Kotlin Gradle plugin itself: on
+  AGP 9 it compiles with AGP's built-in Kotlin, on AGP 8 with the app's
+  Kotlin plugin. Kotlin targets JVM 17 either way.
 
 ### Removed
 
-- **The v1 flow for hosts without a host policy.** Patches now install only
-  on hosts built with `flutter_patcher build android --host-policy`, from
-  signed publish manifests; SO and bytecode hosts share this flow. Removed:
-  `dart run flutter_patcher:pack` and the mock server (and their CLI
-  successors `pack` and `mock-server`); `applyPatchBytes`; the
-  `publicKeyBase64`, `strictSignature` and `headers` parameters of `init` and
-  `checkUpdate`; `PatchInfo.patchUrl`, `md5`, `signature`,
-  `targetVersionCode`, `fromJson` and `toJson`; `PatchCheckResult.fromJson`
-  and the JSON check-update protocol; and `PatchBootStatus
-  .droppedSignatureInvalid`. A host without a policy runs its original code,
-  and `checkUpdate` throws `PatcherException` there. To migrate: create keys
-  with `flutter_patcher keys init`, build with `build android --host-policy`,
-  make patches with `patch android`, publish them with `publish`, and point
-  `checkUpdate` at the published manifest.
-- The experimental `--framework-reuse` option of `build android` and
-  `patch android`. Its host surface added about 4.5 MiB to `libapp.so`,
-  above the 1.5 MiB budget, so it never became a default. Baselines built
-  with it (schema 4) are now rejected with `BASELINE_SCHEMA_UNSUPPORTED`;
-  rebuild the host. Other baselines and their fingerprints are unchanged.
-- Bytecode patches without a host policy. `build android` now requires
-  `--host-policy`, and a bytecode host installs patches only from a signed
-  manifest. Removed with it: `PatchInfo.strategy`, `sha256`, `fingerprint`
-  and `patchSeq`; the `strategy` parameter of `applyPatchBytes`; and the
-  CLI's local mock publisher (`publish --out`), so `publish` requires
-  `--production`. `patch android` rejects bytecode baselines built without a
-  policy with `BASELINE_NOT_RELEASE`; rebuild the host with a policy.
+- The 0.1.x update flow: `dart run flutter_patcher:pack` and the mock
+  server; `applyPatchBytes`; the `publicKeyBase64`, `strictSignature` and
+  `headers` parameters of `init` and `checkUpdate`; `PatchInfo.patchUrl`,
+  `md5`, `signature`, `targetVersionCode`, `fromJson` and `toJson`;
+  `PatchCheckResult.fromJson` and the JSON check-update protocol. An app not
+  built with `flutter_patcher build` runs its original code, and
+  `checkUpdate` throws `PatcherException` there.
+- Values no 1.0.0 host reports: `PatchApplyError.md5Mismatch`,
+  `unsupportedAbi` and `assetPackageInvalid`; `PatchBootStatus
+  .droppedSignatureInvalid`, `droppedMd5Mismatch`, `droppedMetaCorrupted` and
+  `bytecodeUnsupported`; `BlacklistEntry.md5`. A blacklist entry's `reason`
+  is always `BOOT_CRASH`.
 
-### Fixed
+### Migrating from 0.1.x
 
-- On authenticated hosts, a publication whose download failed (for example a
-  corrupted payload) can be retried with the same manifest. The manifest was
-  previously accepted before the download, so the retry looked like no update
-  until the next publication.
-- On authenticated hosts, `lastBootDiagnostic` reports `noPatch` after a
-  rollback or withdrawal instead of the previous patched start.
+1. Raise Flutter to 3.47 and update the dependency to `flutter_patcher: ^1.0.0`.
+2. Run `dart run flutter_patcher keys init` and back up the keys.
+3. Build the app with `dart run flutter_patcher build android` and release it.
+4. Point `checkUpdate` at the address where your publication store is served
+   (see the [Production Playbook](doc/production-playbook.md)), and make
+   patches with `patch` and `publish`.
 
 ## 0.1.4
 

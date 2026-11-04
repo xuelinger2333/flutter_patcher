@@ -129,7 +129,7 @@ VerifiedPatch verifyPatchBytes(
 /// untrusted-file verifier; callers with file bytes must use verifyPatchBytes.
 /// All ZIP/manifest consistency checks remain mandatory for signed input too;
 /// an entry selected at exactly a range in the offer's [checkedEntries] skips
-/// only the CRC and digest native checked (doc/bootstrap-performance-budget.md).
+/// only the CRC and digest native checked.
 VerifiedPatch parseAuthenticatedPatchBytes(Uint8List bytes, String fingerprint,
         {Object? checkedEntries, Map<String, int>? profile}) =>
     _parsePatch(bytes, fingerprint, null,

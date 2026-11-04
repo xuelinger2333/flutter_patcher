@@ -1,214 +1,223 @@
-# flutter_patcher_cli
+# CLI 参考
 
-`publish` 默认是本地 mock；`publish --production` 是显式生产发布入口，
-预览/条件提交、S3/R2、签名撤回与保留清理见
-[生产发布说明](docs/production-publish.md)。
-宿主信任策略、`trust` 命令和设备端签名清单见[认证更新说明](docs/authenticated-updates.md)。
+[English](cli.md) | **简体中文**
 
-本包负责为当前 Flutter 版本准备补丁工具链和新宿主的动态接口。运行时插件仍在仓库根目录；CLI 是独立 Dart 包，不依赖 `package:kernel`，不改变插件依赖。当前支持 `doctor`、`interface`、`baseline`、字节码 `build` / `patch`、`publish`、`trust` 和 `keys init`；完整选项以 `--help` 为准。
-
-支持的构建主机为 Linux x64（含 x64 WSL2）和 Windows x64，目标 Android arm64。需要已初始化的 stock Flutter SDK、Git、PATH 中的 zstd 和首次下载所需的网络。Windows 上缓存路径不能超过 80 个字符。macOS 等其他主机会明确报错；不支持的 Flutter 版本不会转入自行编译流程。
+CLI 随插件一起发布。在依赖了 `flutter_patcher` 的项目目录中运行：
 
 ```bash
-cd flutter_patcher_cli
-dart pub get --enforce-lockfile
-dart run bin/flutter_patcher.dart doctor --json
-# 多 SDK 环境可显式选择：
-dart run bin/flutter_patcher.dart doctor --flutter-sdk /path/to/flutter --json
-# 首次成功后可离线检查：
-dart run bin/flutter_patcher.dart doctor --offline --json
+dart run flutter_patcher <命令> [选项]
 ```
 
-也可用 `dart pub global activate --source path .` 安装本地版本，再运行 `flutter_patcher doctor`。入口 Dart 运行 CLI，所选 Flutter SDK 内的 Dart 运行下载的工具 dill。本包暂不发布到 pub.dev。
+本文逐一列出命令和选项。完整的上手流程见[快速上手](getting-started-zh.md)，上线相关的做法见[生产部署](production-playbook-zh.md)。
 
-## 初始化正式签名密钥
+## 通用约定
 
-在支持的构建主机上运行；密钥由内置 Ed25519 实现生成，不需要 OpenSSL 或 Flutter SDK，也不访问网络。
+- **项目目录**：默认是当前目录，可用 `--project` 指定（`keys init` 除外，它总是使用当前目录）。
+- **输出**：成功时向标准输出打印一行 JSON；`serve` 例外（状态信息打印到标准错误），`doctor` 例外（打印检查清单，加 `--json` 时为 JSON）。失败时，`build`、`patch`、`baseline` 向标准错误打印一行包含 `code` 和 `message` 的 JSON，其他命令打印 `CODE: message`。失败的退出码为 `2`；`doctor` 检查不通过时为 `1`。错误码的含义见[错误码与排障](troubleshooting-zh.md)。
+- **警告**：以 `WARNING: <代码>: <说明>` 的形式打印到标准错误，不影响命令成功。
+- **Flutter SDK**（`build`、`patch`、`doctor`）：默认使用 `PATH` 中的 Flutter，可用 `--flutter-sdk <路径>` 指定。
+- **离线**（`build`、`patch`、`doctor`）：`--offline` 只使用本机已校验过的缓存，不访问网络；`patch --offline` 也只从本机缓存读取基线。
+- **缓存**（`build`、`patch`、`doctor`）：`--cache-dir <目录>` 使用另一个缓存目录，它必须位于 `~/.flutter_patcher` 或项目的 `.dart_tool/flutter_patcher` 之下。Windows 上缓存路径最多 80 个字符；`~/.flutter_patcher` 超过这个长度时，请选择项目 `.dart_tool/flutter_patcher` 下的目录。
+- `-h` / `--help` 显示命令自带的帮助，`--version` 显示 CLI 版本。
+
+## 项目配置 `flutter_patcher.yaml`
+
+所有字段都是可选的，不写时使用默认值。`keys init` 会生成一份全部注释掉的模板。
+
+| 字段 | 含义 | 默认值 |
+|---|---|---|
+| `store` | 发布存储，`publish` 把补丁和清单写到这里。支持 `file://` 和 `s3://` | `.flutter_patcher/updates/`（项目内） |
+| `baseline_store` | 基线存储，`build` 写入、`patch` 和 `publish` 读取。支持 `file://`、`s3://` 和 HTTPS | `.flutter_patcher/baselines/`（项目内） |
+| `keys` | 密钥目录，相对于本文件 | `flutter_patcher_keys` |
+
+出现未知字段或非字符串的值会报 `CONFIG_INVALID`。存储的配置方法见[生产部署](production-playbook-zh.md#配置存储)，各类型的要求见[存储要求](#存储要求)。
+
+## 目录一览
+
+| 路径 | 内容 | 是否需要备份 |
+|---|---|---|
+| `flutter_patcher_keys/` | 三对密钥 | **是**，私钥不要提交到 git |
+| `.flutter_patcher/baselines/` | 默认的基线存储 | **是**，或改用持久存储 |
+| `.flutter_patcher/updates/` | 默认的发布存储 | 视情况 |
+| `.dart_tool/flutter_patcher/releases/` | `build` 的输出 | 否 |
+| `.dart_tool/flutter_patcher/patches/` | `patch` 的输出 | 否 |
+| `~/.flutter_patcher/` | 下载的引擎和工具、准备好的 Flutter SDK 副本、基线缓存 | 否，可以重新下载 |
+
+## keys init
+
+生成三对 Ed25519 密钥（`root`、`publisher`、`patch`），用途见[工作原理](architecture-zh.md#安全模型)。
 
 ```bash
-flutter_patcher keys init
-# 或为另一个应用选择全新的目录：
-flutter_patcher keys init --out "$HOME/.flutter_patcher/keys/my-app"
+dart run flutter_patcher keys init
 ```
 
-不指定 `--out` 时，默认目录为 `~/.flutter_patcher/keys`。生成
-`private-key.base64`（32 字节 Ed25519 seed 的 Base64）和
-`public-key.base64`（32 字节公钥的 Base64）。POSIX 上目录权限为 700，私钥为 600；
-Windows 上目录 ACL 只授予当前用户。私钥不打印到终端，也不写入临时 DER 文件。
-输出的一行 JSON 只有文件路径、格式和公钥 SHA256 指纹。目录内 `.gitignore` 排除私钥文件。
-
-已有文件、目录或符号链接一律拒绝覆盖；重复运行不会轮换或覆盖旧密钥。
-私钥文件不加密，请妥善备份并限制访问，不要把它随 APK 或源码分发。
-同一宿主的后续补丁必须继续使用匹配的私钥；另生成一对密钥不会给旧宿主换钥。
-
-将输出路径直接传给现有流程：宿主构建使用 `--public-key`，补丁使用
-`--private-key`。以下目录和序号需替换为实际项目值：
-
-```bash
-flutter_patcher build android --project /path/to/app \
-  --public-key "$HOME/.flutter_patcher/keys/public-key.base64" \
-  --baseline-store file:///path/to/baselines --version-code 1 --out /path/to/new-release
-
-flutter_patcher patch android --project /path/to/app \
-  --private-key "$HOME/.flutter_patcher/keys/private-key.base64" \
-  --baseline-store file:///path/to/baselines \
-  --seq 1 --version-code 1 --out /path/to/new-patch
-```
-
-补丁按 `--flavor`（省略时为 `default`）和 `--version-code` 找到已归档的发布，
-指纹由该发布决定。`--fingerprint` 可选：给出时必须与发布一致，否则报
-`BASELINE_FINGERPRINT_MISMATCH`；只有没有发布绑定的旧基线才需要用它按指纹查找。
-以前只传 `--fingerprint` 的脚本：若该 flavor/versionCode 已有发布，指纹必须与之一致；
-旧基线按指纹找到的补丁不绑定发布（无签名 `target`）。
-
-测试使用的公开 RFC 8032 测试密钥不能用于正式宿主。
-
-## 基线存储
-
-`build android` 把基线拆成两个对象写入 `--baseline-store`，只创建、不覆盖：
-
-```text
-compile-<fingerprint>.tar.zst                 编译对象：app.dill、接口、compiler_interface、
-                                              allocate_finalized、source_hashes、
-                                              host_policy?、compile_receipt
-release-<flavor>-<versionCode>-arm64-v8a.tar.zst
-                                              发布对象：libapp.so、package_config.json、
-                                              release_receipt（application_id、public_key、
-                                              resources、package_inputs、build_id）
-apk-<apk_sha256>.json                         APK 证明：apk_sha256、build_host、CRLF 列表
-```
-
-编译对象由指纹决定，同一 Dart 源码构建的多个发布共享它；发布对象按 manifest 摘要引用
-编译对象。`apk_sha256`、`build_host`、`crlf_dart_sources` 每次重建都可能不同，
-不参与任何身份比较，只写入 `build.json` 和 APK 证明对象。
-
-重建规则：
-
-- 同一 flavor/versionCode 重建，除上述易变证据外全部一致：成功，`release_status` 为
-  `existing`，不重写对象，只为新 APK 写一份证明。
-- 同一 flavor/versionCode 但内容不同（libapp.so、公钥、资源、依赖等）：
-  `BASELINE_RELEASE_CONFLICT`，提示不同字段；请提升 versionCode。
-- 仅原生改动的新 versionCode：复用同一编译对象，新增一个发布对象。
-- 同一指纹但编译类文件不同：`BASELINE_CONTENT_CONFLICT`，不写发布对象。
-- 该槽位已有旧格式侧车 `release-<flavor>-<versionCode>-arm64-v8a.json`：按旧基线的拆分视图比较，
-  等价则 `existing_legacy` 且不写入，否则 `BASELINE_RELEASE_CONFLICT`。旧侧车与新发布对象
-  并存且不一致时，读取报 `BASELINE_RELEASE_AMBIGUOUS`。
-
-保存时还检查 build receipt 的 versionCode 与归档的发布一致；有宿主策略时，策略中的
-application_id、version_code、flavor、abi、fptc_key 必须与发布一致。
-
-旧格式（`baseline-<fingerprint>.tar.zst` + 侧车，schema 1–4）仍可被 patch、publish、doctor
-和 `baseline` 读取；只写新格式。旧版 CLI 读不到新对象，CI 与开发机需同步升级；自建 HTTPS
-store 若有对象名白名单，需放行 `compile-*`、`release-*.tar.zst` 和 `apk-*.json`。
-同一指纹的旧 `baseline-<fingerprint>.tar.zst` 与新 `compile-<fingerprint>.tar.zst` 可以并存。
-旧侧车无法读取（指向缺失或损坏的旧基线）时，不阻止解析同槽位的新发布对象，结果中给出
-`warnings`；旧侧车与新发布对象等价时按旧格式解析，生产发布保持旧的身份结构。
-
-store 必须把不存在的对象报告为 HTTP 404 或 S3 `NoSuchKey`：保存与解析靠"对象不存在"
-决定读写什么。把缺失对象报告为 403/AccessDenied 的 store（如没有 `s3:ListBucket` 的 S3
-角色、部分 CDN）会以 `BASELINE_STORE_UNREACHABLE` 失败，错误信息给出对象名。
-
-缓存目录 `~/.flutter_patcher/baselines` 被所有项目和 store 共用。联网时发布对象总以
-store 为准：缓存只在与 store 中对象一致时使用，否则隔离为 `.invalid-*` 后重新下载；
-身份（flavor/versionCode/ABI，大小写敏感）不符的缓存同样隔离。离线时直接信任上次校验过的缓存。
-APK 证明对象只是证据：已存在但内容不同（如同一 APK 在另一主机上重建）时报告
-`existing_differs`，写入失败报告 `failed`，都不会使构建失败。
-
-补丁绑定到一个发布：`patch_manifest.json` 的签名 `target` 记录 flavor、versionCode、ABI
-和发布 manifest 摘要，`publish --production` 拒绝发往其他发布（`PUBLISH_TARGET_MISMATCH`）；
-没有 `target` 的补丁只能发布到旧格式发布。设备按指纹记录补丁序号，因此共享指纹的发布
-共用一个序号空间：生产发布要求新序号大于同指纹其他发布已发布的最大序号
-（`PUBLISH_SEQUENCE_CONFLICT`）。
-
-`baseline` 子命令：`--action save` 只写新格式，schema 1 输入报 `BASELINE_SCHEMA_UNSUPPORTED`；
-`fetch --fingerprint` 优先取编译对象，没有时回退旧基线；`release` 解析两种格式；
-`verify --baseline DIR` 按目录中的 manifest（`baseline`/`compile`/`release.manifest.json`）分派。
-
-## 自动准备的内容
-
-1. 读取 `flutter --version --machine`，核对 SDK 的缓存状态、Flutter/Dart/engine 身份和 artifacts 仓库唯一支持表。
-2. 从 `flutter_patcher_artifacts` 的 `flutter-<version>` Release 获取两份 manifest、引擎 jar、当前构建主机的 gen_snapshot、embedding jar 和单个工具 dill。检查 schema、版本、角色、大小、SHA-256、二进制架构及 jar 内部 SO。两条独立流水线允许不同 builder commit。
-3. clone 精确匹配的 Flutter framework commit 到平行 SDK，先执行 stock `precache --android`，再替换该副本的 gen_snapshot，并准备含 jar/POM 的本地 Maven 镜像；`build` 通过 `FLUTTER_STORAGE_BASE_URL` 让 APK 构建使用该镜像。
-4. 调用 CI 编好的 dill，检查工具入口和 `bytecode` 子命令；用所选 SDK 的 Flutter 源码编译一个隔离的探针 kernel，生成协议和平台私有 YAML。这里编译的是探针，工具 dill 始终直接下载。
-5. 用匹配的 frontend 和下载的 gen_snapshot 实际编译最小 arm64 AOT ELF，验证编译器链可调用。
-
-默认缓存：
-
-```text
-~/.flutter_patcher/
-  support/                           支持表（按来源隔离）
-  artifacts/<version>/engine/<os>-<arch>/ 已校验的引擎附件（按构建主机分目录）
-  artifacts/<version>/tools/         已校验的工具附件
-  flutter/<version>/                 平行 SDK
-  mirrors/<version>/<build_id>/      本地 Maven 文件布局
-  baselines/compile/<fingerprint>/   已校验的编译对象
-  baselines/release/<flavor>-<versionCode>-arm64-v8a/ 已校验的发布对象
-  baselines/<fingerprint>/           旧格式基线
-  yaml/<version>/<input-hash>/       YAML、输入/输出哈希及隔离探针
-  pub-cache/                         隔离 Dart 包缓存
-  verification/                      最小 AOT 冒烟结果
-  doctor.lock                        进程间互斥锁
-```
-
-`--cache-dir` 只允许位于 `~/.flutter_patcher/` 或当前目录的 `.dart_tool/flutter_patcher/` 下。下载先写临时路径，全部验证后才进入可复用缓存；损坏缓存保留为 `.invalid-*` 后重新获取。未完成的 `.pending-*` 不会被当作成功产物。正常复用不下载；缓存支持表不含新版本时，在线刷新一次。离线缺失或损坏产物会失败。
-
-YAML 缓存键包含版本、engine/framework commit、所用 Flutter 源文件、pubspec、平台 dill、frontend 和工具 dill 的哈希。输入变化换缓存；缺失或损坏 YAML 自动重生成，离线生成还要求探针依赖已缓存。不会编辑所选 Flutter SDK 或用户项目源码。过期 SDK 在启动 Flutter 前被拒绝，以避免触发 Flutter 自身更新。
-
-## doctor 的边界
-
-退出码：`0` 工具链及显式提供的检查通过；`1` 诊断失败；`2` 参数错误。JSON 中 `status: toolchain_ready` 仅表示工具链就绪。缺少项目上下文会显示 `not_run`；设备执行和更新流程不由 doctor 检查（`device` 项始终为 `not_run`），因此 `all_checks_complete` 始终为 `false`。
-
-| 可选参数 | 实际检查 |
+| 选项 | 说明 |
 |---|---|
-| `--public-key`、`--private-key` | 两文件存在且非空，不验证密码学格式或签名 |
-| `--baseline-store` | `file://` 目录存在、`s3://` bucket 可访问或 HTTPS HEAD 成功；写权限在保存时检查 |
-| `--baseline` | 按目录中的 manifest 校验旧基线、编译对象或发布对象：文件一致、是 release 基线，且绑定所选 SDK/engine（编译对象不含 build_id） |
-| `--version-code`、`--flavor` 与 `--baseline-store` | 解析该发布（新发布对象或旧侧车）并完整校验其基线，且匹配所选 engine 构建 |
-| `--apk` | ZIP 内 `lib/arm64-v8a/libflutter.so` 大小/哈希匹配 manifest；不安装或运行 APK |
-| `--project` | 项目 Dart 源码是否含 CRLF 换行；含有时给出 `warning`（`build` 也会警告并把文件列表写入 receipt） |
+| `--out <目录>` | 写到另一个新目录，而不是项目的 `flutter_patcher_keys/` |
 
-源码身份按字节比较、不做换行归一化：Windows 上 Git 默认 `core.autocrlf=true`，同一提交的 CRLF 与 LF 检出会得到不同指纹，补丁也必须从换行一致的检出构建，否则所有文件都视为改动、原生文件报 `PATCH_NATIVE_CHANGE`。跨主机协作时在 `.gitattributes` 加 `* text=auto eol=lf`。项目内与排除目录（`build`、`.dart_tool` 等）仅大小写不同的目录会被拒绝（`BUILD_PROJECT_INVALID`），因为不区分大小写的文件系统会把构建产物写进去。
+- 输出一行 JSON，包含密钥文件路径和公钥指纹，不含私钥。
+- 目标已存在时拒绝执行，不会覆盖或轮换已有密钥。
+- 在 POSIX 系统上，密钥目录权限为 700、私钥文件为 600；在 Windows 上，目录只授权给当前用户。
+- 使用默认目录、且项目中还没有 `flutter_patcher.yaml` 时，会顺带生成配置模板。
 
-`--artifacts-url`、`--supported-versions-url` 是维护/测试用覆盖项，普通用户只需选择 Flutter SDK。下载允许 HTTPS，HTTP 仅允许 loopback 测试服务。错误报告不会提供自行编译引擎的路径。
+## build
 
-## 接口准备
-
-`interface` 是为新宿主准备动态接口的维护入口，不修改已发布基线。
-需要含接口准备子命令的 CI 工具 dill；缓存的工具缺少这些命令时报 `TOOLS_VERSION_UNSUPPORTED`。
-源码实现不会自动覆盖现有 Release，审核后的新工具发布仍使用同一 Flutter 版本的单 dill。
-工具发布更新后，执行 `flutter_patcher doctor --refresh-tools` 在线校验并替换工具缓存；
-刷新失败保留原缓存，不刷新引擎。工具哈希变化会使 SDK YAML 缓存失效。
+构建宿主安装包，并把这个版本的基线保存到基线存储。
 
 ```bash
-flutter_patcher interface \
-  --dill /path/to/unannotated-app.dill \
-  --module /path/to/module.dart \
-  --packages /path/to/module/.dart_tool/package_config.json \
-  --own my_app --mode lean --out /path/to/new-interface-output --json
+dart run flutter_patcher build android
+dart run flutter_patcher build ios        # 仅限 Apple Silicon Mac
 ```
 
-`--out` 必须是新目录；省略时使用项目 `.dart_tool/flutter_patcher/interfaces/` 下的新子目录。
-SDK、工具和协议缓存沿用 doctor 的自动版本选择。只读输入文件，所有轮次在临时目录完成，
-验证成功后才提交输出。失败保留诊断，不把半成品当作可用接口。
+| 选项 | 说明 | 默认值 |
+|---|---|---|
+| `--strategy bytecode\|so` | 补丁策略，仅 Android 可选，见[工作原理](architecture-zh.md#两种补丁策略) | `bytecode` |
+| `--flavor <名称>` | Flutter flavor | 不使用 flavor（记为 `default`） |
+| `--channel <名称>` | 发布渠道，写入宿主策略，补丁只能发往同一渠道 | `production` |
+| `--version-code <数字>` | 版本号 | `pubspec.yaml` 中 `version` 的构建号 |
+| `--application-id <包名>` | 工程中没有声明、或声明了多个包名，无法自动识别时指定 | 从 Gradle 或 Xcode 工程读取 |
+| `--target <文件>` | 入口文件 | `lib/main.dart` |
+| `--out <目录>` | 输出目录，必须是新目录 | `.dart_tool/flutter_patcher/releases/<时间戳>/` |
+| `--export-method <方式>` | 仅 iOS，传给 `flutter build ipa` | `app-store` |
+| `--baseline-store <URI>` | 把基线保存到这里，而不是 `flutter_patcher.yaml` 中的 `baseline_store` | 取自 `flutter_patcher.yaml` |
+| `--host-policy <文件>` | 高级：使用自己编写的宿主策略，而不是根据项目自动生成 | |
 
-- `dynamic_interface.yaml`：已引用面、协议、常用控件和 dart:core 的确定性并集。
-- `trim_interface.yaml`：同源派生，额外保留自有库导入的 barrel；仅用于裁剪。
-- `interface.manifest.json`：输入/输出与工具哈希、模式、轮次及校验结果。
-- 每轮 YAML、编译日志、验证字节码及精简档的裁剪 kernel：用于诊断，不是可发布补丁。
+- 构建在项目的一份隔离副本中进行，不会修改你的源码和 Flutter SDK。
+- 输出目录中有 `app-release.apk` 或 `app-release.ipa`，这就是要上架的安装包。
+- 同一 flavor 和版本号重复构建：内容相同则沿用已有基线；内容不同则报 `BASELINE_RELEASE_CONFLICT`，请提升版本号。
+- 基线存储为项目内的默认位置、且没有指定 `--baseline-store` 时，会打印 `WARNING: BASELINE_STORE_LOCAL`。
+- Dart 源码含 CRLF 换行时会打印 `WARNING: CRLF_DART_SOURCES`，原因见[错误码与排障](troubleshooting-zh.md)。
 
-精简档调用 CI 工具中的 SDK trimmer，然后通过 `--import-dill` 验证模块；整程序档编译框架副本，
-使用完整平台接口、平台私有条目和限定的动态调用选择子。两档都只补全编译器明确要求的声明，
-不全局模糊匹配同名类，无法解析/仍有歧义、无进展或超过 `--max-rounds`（上限 5）时失败。
+## patch
 
-没有 main 的模块通过临时入口生成索引，实际字节码编译仍针对原模块。
-成功状态为 `interface_validated`，`host_build_verified` 和 `device_verified` 均为 false：
-这不代表宿主 APK 已按该接口构建，也不代表补丁已经在设备上运行。
-
-## 验证
+将当前源码与一个已构建版本的基线对比，生成补丁。
 
 ```bash
-dart analyze
-dart test
+dart run flutter_patcher patch android
+dart run flutter_patcher patch ios
 ```
 
-测试使用本地 HTTP 和合成二进制，覆盖 manifest 错配、校验失败、下载中断、缓存恢复、支持表刷新、YAML 输入变化和命令错误。
+| 选项 | 说明 | 默认值 |
+|---|---|---|
+| `--version-code <数字>` | 为哪个版本生成补丁 | `pubspec.yaml` 中 `version` 的构建号 |
+| `--flavor <名称>` | 该版本的 flavor | `default` |
+| `--seq <数字>` | 补丁序号，必须大于该版本已发布过的序号 | 发布存储中已有的最大序号 + 1 |
+| `--assets <资源键>` | 只覆盖指定的资源（可重复） | 自动选出有变化的资源 |
+| `--target <文件>` | 入口文件 | `lib/main.dart` |
+| `--out <目录>` | 输出目录，必须是新目录 | `.dart_tool/flutter_patcher/patches/<时间戳>/` |
+| `--baseline-store <URI>` | 从这里读取基线，而不是 `flutter_patcher.yaml` 中的 `baseline_store` | 取自 `flutter_patcher.yaml` |
+
+- 策略、渠道等都从基线读取，不需要再次指定。
+- 输出目录中有 `patch.fptc`（补丁）和 `patch.json`（报告）。报告中的 `changed` 列出改动的内容，`warnings` 列出需要注意的问题。
+- 不能热更的改动会导致命令失败，规则见[工作原理](architecture-zh.md#能更新什么)。
+- 修好 bug 后再生成补丁，**不要修改 `pubspec.yaml` 的构建号**，否则 `patch` 会去找一个不存在的版本；或者用 `--version-code` 明确指定。
+
+## publish
+
+签名并把补丁发布到发布存储。
+
+```bash
+dart run flutter_patcher publish
+```
+
+| 选项 | 说明 | 默认值 |
+|---|---|---|
+| `--patch <目录>` | 要发布的 `patch` 输出目录 | 最近一次 `patch` 的输出 |
+| `--withdraw` | 改为撤回该补丁所属版本已发布的补丁，见[生产部署](production-playbook-zh.md#撤回补丁) | |
+| `--through <序号>` | 与 `--withdraw` 一起使用：撤回到这个序号为止 | 已发布的最大序号 |
+| `--yes`, `-y` | 不询问，直接发布 | 先预览再询问；非交互环境下只预览 |
+| `--receipt <文件>` | 把发布结果另存为 JSON 文件（必须是新文件） | |
+| `--production --request <文件>` | 高级：执行手写的发布或清理请求文件，见[进阶操作](advanced-zh.md#清理历史补丁) | |
+
+- 没有 `--yes`、又没有终端可以询问时，只预览：不会发布任何内容，退出码仍为 `0`。
+- 发布前会再次校验：补丁确实是为该版本生成的，序号没有冲突，存储中的内容自上次读取后没有被别人改动。
+- 提交期间，本次发布的请求保存在 `.dart_tool/flutter_patcher/publish-pending.json`。如果提交中途停止，存储在这次发布完成之前不接受其他操作，因此项目中下一次运行 `publish`（或 `serve`）时会先自动续上它。
+- 发布存储为 S3 时需要已配置好的 AWS CLI。
+
+## serve
+
+开发用的补丁服务。
+
+```bash
+dart run flutter_patcher serve
+```
+
+| 选项 | 说明 | 默认值 |
+|---|---|---|
+| `--port <端口>` | 本机端口，也是 `adb reverse` 映射到手机上的端口 | `8686` |
+
+- 每当出现新的 `patch` 输出，自动发布到项目的发布存储，不需要手动运行 `publish`。
+- 只监听 `127.0.0.1`，只提供清单和补丁文件。
+- 每 2 秒检查一次已连接的 Android 设备，并对新设备执行 `adb reverse`。
+- 只支持 `file://` 发布存储；如果 `flutter_patcher.yaml` 配置了 `s3://`，开发时请先注释掉。
+- 按 Ctrl+C 停止。
+
+## doctor
+
+检查工具链是否就绪；首次运行时下载并准备所需的产物。
+
+```bash
+dart run flutter_patcher doctor
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--json` | 以 JSON 输出详细报告 |
+| `--project <目录>` | 同时检查项目 Dart 源码的换行符 |
+| `--baseline-store <URI>` | 检查基线存储是否可以访问（写权限在构建时才检查） |
+| `--version-code <数字>` `--flavor <名称>` | 与 `--baseline-store` 一起使用，检查该版本的基线是否完整 |
+| `--apk <文件>` | 检查一个 APK 中的引擎是否与当前 Flutter 版本匹配 |
+
+退出码：`0` 通过，`1` 检查失败，`2` 参数错误。`doctor` 不检查设备，也不检查更新流程。
+
+## 存储要求
+
+### 基线存储
+
+| 类型 | 要求 |
+|---|---|
+| `s3://` | 需要安装并配置 AWS CLI。查询不存在的对象时必须返回 `NoSuchKey`（404），因此除读写权限外还需要 `s3:ListBucket`，否则报 `BASELINE_STORE_UNREACHABLE`。S3 兼容服务（如 Cloudflare R2）需设置 `FLUTTER_PATCHER_S3_ENDPOINT` |
+| HTTPS | 根地址对 `HEAD` 返回 `200`；支持 `GET`；支持带 `If-None-Match: *` 的 `PUT`（创建成功返回 `201`，已存在返回 `412`），不存在的对象返回 `404`。访问令牌通过 `FLUTTER_PATCHER_BASELINE_TOKEN` 传入 |
+| `file://` | 本地目录或网络挂载盘 |
+
+基线只追加、不覆盖，多台构建机可以共享同一个基线存储。
+
+### 发布存储
+
+| 类型 | 要求 |
+|---|---|
+| `s3://` | 需要支持条件写入（`--if-match`、`--if-none-match`）的 AWS CLI；除读写和 `s3:ListBucket` 外，清理历史补丁还需要 `s3:DeleteObject`。路径必须是存储桶下的专用前缀，每段只含字母、数字、`_` 和 `-`，例如 `s3://my-bucket/my-app` |
+| `file://` | 本地目录或网络挂载盘 |
+
+`patch` 需要读取发布存储来确定补丁序号，因此执行 `patch` 的机器也需要发布存储的读取权限。
+
+发布存储的内容：
+
+| 路径 | 内容 | 是否需要对外访问 |
+|---|---|:---:|
+| `manifests/<哈希>.json` | 各版本当前生效的签名清单 | 是 |
+| `objects/<操作 ID>/<哈希>.fptc` | 补丁文件，写入后不再改变 | 是 |
+| `catalog.json` | CLI 使用的发布记录 | 否，建议在 CDN 上屏蔽 |
+
+对外提供访问的 HTTPS 服务或 CDN：
+
+- 直接返回内容，不使用 `3xx` 重定向，客户端不跟随重定向；
+- `manifests/` 使用很短的缓存时间（如 `max-age=60`）或 `no-cache`，`objects/` 可以长期缓存（如 `max-age=31536000, immutable`）；
+- 可以开启 gzip，客户端支持 `Content-Encoding: gzip`；
+- 清单文件最大 24,000 字节，补丁文件需要在 2 分钟内下载完成。
+## 高级命令
+
+一般不需要使用以下命令。
+
+| 命令 | 用途 |
+|---|---|
+| `trust sign` / `trust publish` | 用 root 密钥签名并发布新的 publisher 公钥集合，用于轮换或吊销 publisher 密钥，见[进阶操作](advanced-zh.md#轮换发布密钥) |
+| `baseline --action fetch\|verify\|release` | 下载、校验或查询基线存储中的基线，用于排查问题 |
+
+## 环境变量
+
+| 变量 | 用途 |
+|---|---|
+| `FLUTTER_PATCHER_S3_ENDPOINT` | S3 兼容服务的 HTTPS 地址，例如 Cloudflare R2。AWS S3 不需要设置 |
+| `FLUTTER_PATCHER_BASELINE_TOKEN` | HTTPS 基线存储的访问令牌，以 `Authorization: Bearer` 头发送 |
+| AWS CLI 的标准变量和配置 | S3 的凭据和区域，例如 `AWS_PROFILE`、`AWS_REGION` |

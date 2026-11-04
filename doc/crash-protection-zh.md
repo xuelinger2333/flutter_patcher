@@ -2,316 +2,99 @@
 
 [English](crash-protection.md) | **简体中文**
 
-本文介绍 `flutter_patcher` 如何在补丁出问题时自动回滚，并避免同一个问题补丁被反复加载。
+一个补丁可能通过了所有构建期检查，却在某些设备上启动即崩溃。本文说明插件如何发现这种情况、如何自动恢复，以及你如何观察它。
 
-当补丁导致启动失败，或首屏阶段出现严重 Dart 异常时，插件会在下次冷启动回到 APK 内置版本，并将问题补丁加入本地黑名单。
+前提：在 `main()` 中调用了 [`FlutterPatcher.init()`](api-reference-zh.md#init)。
 
-整个判定流程在客户端完成，不依赖服务端。  
-生产环境仍建议配合灰度发布、崩溃监控和服务端紧急下架。
+## 一次带补丁的启动
 
----
-
-## 默认行为
-
-默认采用 fail-fast 策略：
-
-> 补丁加载后只要确认失败 1 次，就会被丢弃并加入本地黑名单。
-
-下次冷启动时，应用会回到 APK 内置版本。  
-插件默认不对同一个补丁进行多次重试，以避免更多用户反复遇到同样的问题。
-
-默认配置：
-
-```dart
-await FlutterPatcher.init(
-  maxCrashCount: 1,
-  verifyAfter: const Duration(seconds: 5),
-);
+```text
+冷启动，有已安装的补丁
+  → 记录"正在尝试启动补丁"
+  → 加载补丁，运行 App
+  → 首帧绘制完成 → 本次启动成功，清零失败计数
 ```
 
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `maxCrashCount` | `1` | 连续失败多少次后熔断补丁 |
-| `verifyAfter` | `5 seconds` | 首帧后 Dart 错误钩子的守护窗口 |
+如果在首帧之前进程就结束了，或者 Dart 代码抛出了未捕获的异常，这次启动就记为**失败**。
 
-`maxCrashCount` 可以调高，但通常不建议在生产环境中这样做。  
-如果一个补丁已经确认会导致启动失败，重复尝试通常只会扩大影响面。
+## 什么算启动失败
 
----
+| 情况 | 判定 |
+|---|---|
+| 首帧之前抛出 Dart 未捕获异常 | 失败 |
+| 首帧之后 `verifyAfter`（默认 5 秒，只计 App 在前台的时间）内抛出 Dart 未捕获异常 | 失败 |
+| 首帧之前进程崩溃、ANR 或初始化失败 | 失败，下次启动时判定 |
+| 首帧之前用户主动划掉 App、系统回收内存 | Android 11 及以上不算失败；更低版本无法区分，会算作失败 |
+| iOS 上首帧之前 App 被切到后台 | 不算失败 |
+| 首帧之后、补丁进程仍在运行时发生崩溃或 ANR | Android 11 及以上：失败，下次启动时判定。Android 10 及以下和 iOS：检测不到，请依靠你的崩溃监控 |
 
-## 什么算作失败
+Android 11 及以上通过系统的 `ApplicationExitInfo` 获取补丁进程的结束原因，只有崩溃、原生崩溃、ANR 和初始化失败才计数，不论它们发生在这个进程的什么时候。
 
-插件会尽量区分“补丁导致的失败”和“用户或系统导致的正常退出”。
+## 失败之后
 
-### 计入熔断
+每个补丁有自己的失败计数。达到 `maxCrashCount`（默认 1）时**熔断**：
 
-以下情况会被视为补丁失败，并计入熔断：
+1. 补丁被停用，下次冷启动运行安装包自带的版本；
+2. 补丁被加入本机**黑名单**，之后 `applyPatch` 再遇到同一个补丁会返回 `blacklisted`；
+3. 记录启动诊断 `droppedCircuitBreaker`。
 
-- App crash
-- native crash
-- ANR
-- 启动或首屏阶段的严重 Dart 异常
-- Dart 层异常被 framework 接住，但导致首屏白屏或不可用
+未达到阈值时，下次启动仍会尝试这个补丁，诊断为 `bytecodeBootFailed`（SO 宿主为 `soBootFailed`）。
 
-### 不计入熔断
+一个补丁的代码无法加载（例如文件损坏、授权已被撤回）时，同样会被计为一次失败。SO 宿主上，如果补丁的 `libapp.so` 已经加载、其余部分却加载失败，补丁会被立即拉黑，不受 `maxCrashCount` 影响。
 
-以下情况不应被视为补丁失败：
+把 `maxCrashCount` 调大可以容忍偶发的失败，但有问题的补丁也会让用户多经历几次失败的启动。一般保持默认值。
 
-- 用户从最近任务划掉 App
-- 用户按 Home 切到后台
-- 用户在系统设置里强停 App
-- 系统因内存压力回收进程
-- 正常业务流程中的非首屏异常
+## 其他会让补丁失效的情况
 
-不同 Android 版本的识别能力存在差异，详见 [Android 版本差异](#android-版本差异)。
+| 情况 | 结果 |
+|---|---|
+| 用户把 App 升级到新版本 | 旧版本的补丁自动失效，诊断为 `droppedVersionCodeMismatch` |
+| 你发布了覆盖该补丁序号的撤回 | 设备在下次检查更新并应用撤回后删除补丁，见[生产部署](production-playbook-zh.md#撤回补丁) |
+| App 调用了 `rollback()` | 补丁被删除，但不会被拉黑。设备已经接受过它的序号，所以无法再次安装这个补丁；请发布一个序号更大的补丁 |
+| 用户清除了 App 数据或重装 | 补丁和本机记录一起被清除 |
 
----
+## 启动诊断
 
-## 启动成功窗口
+`FlutterPatcher.lastBootDiagnostic` 返回最近一次冷启动时补丁的加载结果。如果在本次启动的首帧之前查询，它会等到首帧之后（最多 10 秒）再返回本次的结果。
 
-补丁是否稳定，主要通过两个阶段判断。
-
-### 1. 首帧渲染
-
-补丁加载后，如果应用完成首帧渲染，插件会将本次启动视为初步成功，并清除启动中的熔断状态。
-
-这样可以避免以下行为被误判为补丁失败：
-
-- 用户首屏后按 Home
-- 用户首屏后从最近任务划掉 App
-- 系统在后台回收进程
-
-### 2. `verifyAfter` 守护窗口
-
-首帧渲染后，Dart 错误钩子会继续守护 `verifyAfter` 时间窗口，默认 5 秒。
-
-这个窗口用于捕捉首屏阶段的 Dart 层严重异常，例如：
-
-- 首屏点击立即触发异常
-- framework 捕获了异常，但页面白屏
-- 首屏关键逻辑 throw，导致应用不可用
-
-`verifyAfter` 只在前台累计。  
-窗口结束后，后续业务异常不会再归因到补丁熔断。
-
----
-
-## Android 版本差异
-
-Android 不同版本对进程退出原因的识别能力不同。
-
-### Android 11+（API 30+）
-
-Android 11+ 支持 `ActivityManager.getHistoricalProcessExitReasons`，`CrashGuard` 可以更准确地区分：
-
-- 真实 Dart / framework crash（`REASON_CRASH`）
-- native crash（`REASON_CRASH_NATIVE`）
-- ANR（`REASON_ANR`）
-- 初始化失败（`REASON_INITIALIZATION_FAILURE`）—— JNI / loader 等 Dart 代码运行前的错误
-- 用户主动关闭、低内存回收、外部 SIGKILL（不计入熔断）
-
-查询上一次会话的关键是 **`attachBaseContext` 阶段记下的 pid**，`CrashGuard` 即使在启动成功之后也会刻意保留它（`KEY_LAST_BOOTING_PID`）。靠这个 pid，下一次冷启动才能把 *首帧之后* 的 native crash 归因到补丁 —— 否则只能抓首帧前、`patch_loading` 还没清掉的情况。
-
-### Android 10 及以下
-
-Android 10 及以下没有 `ApplicationExitInfo`。  
-`CrashGuard` 退化到 SharedPreferences 里的 `patch_loading` 标志，用来判断"上次是否在补丁加载过程中异常中断"。
-
-这意味着：
-
-- 首帧渲染前死亡的启动失败可以识别（`patch_loading` 仍是 `true`）
-- **已知盲区：** 首帧之后发生的 native crash / ANR 无法归因 —— `patch_loading` 已被 `markBootSuccess` 清掉。Dart 层异常仍由错误钩子兜底。
-- `verifyAfter` 窗口内的 Dart 层异常仍然可以被错误钩子捕获
-
-如果 API < 30 的流量占比较高，建议结合原有崩溃监控系统，在服务端侧及时停止下发问题补丁。
-
----
-
-## 黑名单
-
-被自动回滚的补丁会以 `(version, md5)` 双键写入本地黑名单。
-
-这意味着：
-
-- 同一份补丁再次下发时，会直接拒绝应用
-- 如果你修复 bug 后使用同样的 `version` 重新发布，只要 MD5 不同，仍然允许下载
-- 手动调用 `rollback()` 不会把补丁加入黑名单
-- APK 升级后，黑名单仍然保留，防止服务端误发已知问题补丁
-
-> **md5 缺失场景**：若服务端不下发 `md5`（`PatchInfo.md5 == ''`），下载前的黑名单
-> 命中检查会退化为仅 `version` 维度——只要任意 md5 的同 `version` 条目曾入黑，
-> 该 version 都会被拒绝。原生侧入黑时仍会用下载后实际计算出的 md5 作为黑名单
-> 条目的 md5 字段，便于排查。
-
-黑名单默认使用 FIFO 策略，最多保留 50 条。超过上限后，较早的记录会被淘汰。
-
-### 查询黑名单
+没有补丁的启动会保留之前的 `bytecodeBootFailed`、`soBootFailed`、`droppedCircuitBreaker` 或 `droppedVersionCodeMismatch` 记录，因为它说明了补丁为什么没有运行。所以这条记录会一直保留到下一次带补丁的启动；如果只想上报一次，可以把 `recordedAt` 和上次上报的值比较。
 
 ```dart
-final entries = await FlutterPatcher.blacklist;
-
-for (final e in entries) {
-  print('${e.version} / ${e.md5} / ${e.reason} / ${e.blacklistedAt}');
+final diag = await FlutterPatcher.lastBootDiagnostic;
+if (diag != null && !diag.isHealthy) {
+  // 换成你自己的上报方式
+  report('patch_boot', {
+    'status': diag.status.name,
+    'patch': diag.patchVersion,
+    'crashes': diag.crashCount,
+    'message': diag.message,
+  });
 }
 ```
 
-### 清空黑名单
+**`status` 的取值**
+
+| 值 | 含义 | `isHealthy` |
+|---|---|:---:|
+| `noPatch` | 没有安装补丁 | ✅ |
+| `patched` | 补丁已加载，首帧正常 | ✅ |
+| `bytecodeBootFailed` | 字节码补丁启动失败，还没达到熔断阈值 | ❌ |
+| `soBootFailed` | SO 补丁启动失败，还没达到熔断阈值 | ❌ |
+| `droppedCircuitBreaker` | 补丁达到失败阈值，已停用并拉黑 | ❌ |
+| `droppedVersionCodeMismatch` | App 已升级，旧补丁被丢弃 | ❌ |
+| `hookInstallFailed` | Android SO 宿主上补丁加载机制安装失败，本次运行安装包自带的版本 | ❌ |
+| `unknown` | 其他情况，查看 `message` | ❌ |
+
+
+**其他字段**：`patchVersion`（涉及的补丁序号）、`patchTargetVersionCode`（补丁安装时的 App 版本号）、`appVersionCode`、`crashCount`（该补丁的失败次数）、`attemptedLoaderFields`（出现 `hookInstallFailed` 时）、`recordedAt`、`message`（给开发者看的说明）。
+
+## 黑名单
 
 ```dart
-await FlutterPatcher.clearBlacklist();
+final entries = await FlutterPatcher.blacklist;   // 查看
+await FlutterPatcher.clearBlacklist();            // 清空
 ```
 
-`clearBlacklist()` 主要用于调试，不建议在生产环境中对普通用户调用。
+每个 `BlacklistEntry` 包含 `version`（补丁标识，`<指纹>:<序号>:<sha256>`）、`reason`（始终为 `BOOT_CRASH`）和 `blacklistedAt`。
 
----
-
-## 配置
-
-崩溃保护相关配置在 `FlutterPatcher.init()` 中设置：
-
-```dart
-await FlutterPatcher.init(
-  maxCrashCount: 1,
-  verifyAfter: const Duration(seconds: 5),
-);
-```
-
-### `maxCrashCount`
-
-连续失败达到该次数后，补丁会被熔断并加入黑名单。
-
-默认值是 `1`。  
-这是推荐的生产配置。
-
-### `verifyAfter`
-
-首帧渲染后，Dart 错误钩子继续守护的时间窗口。
-
-默认值是 5 秒。  
-如果你的首屏初始化或首屏交互较慢，可以适当调高；如果你只希望捕捉非常早期的问题，可以调低。
-
----
-
-## 监控建议
-
-客户端崩溃保护是最后一道防线。生产环境建议同时在服务端做监控和下架。
-
-### 1. 上报启动诊断
-
-每次冷启动后，读取 `lastBootDiagnostic` 并把非健康状态上报到你的分析后端即可。API 和字段含义见 [API 参考 → 启动诊断](api-reference-zh.md#启动诊断)。
-
-重点关注以下状态：
-
-| 状态 | 含义 | 建议 |
-|---|---|---|
-| `droppedCircuitBreaker` | 补丁触发熔断 | 强告警，停止下发 |
-| `droppedSignatureInvalid` | 签名校验失败 | 告警，检查补丁来源 |
-| `droppedMd5Mismatch` | 本地文件与记录 MD5 不一致 | 上报并排查 |
-| `droppedMetaCorrupted` | 补丁元数据损坏 | 上报并排查 |
-| `hookInstallFailed` | FlutterLoader hook 失败 | 检查 Flutter 版本兼容性 |
-
-### 2. 服务端自动下架
-
-如果同一补丁在短时间内收到多次 `droppedCircuitBreaker`，服务端应自动停止下发该补丁。
-
-建议将以下维度纳入判断：
-
-- 补丁版本
-- MD5
-- 目标 APK `versionCode`
-- ABI
-- 设备 Android 版本
-- App 版本
-- 触发时间窗口
-
-### 3. 灰度发布
-
-建议按比例逐步放量：
-
-```text
-1% → 5% → 20% → 50% → 100%
-```
-
-每个阶段观察 crash 率、启动失败率和关键业务指标。  
-如发现异常，应立即停止下发该补丁。
-
-### 4. 紧急下架
-
-紧急下架只需要从 check-update 接口中移除该补丁版本。
-
-已经下载并触发崩溃保护的设备，会在本地回滚并拒绝再次应用同一份问题补丁。
-
----
-
-## 调试
-
-### Logcat
-
-崩溃保护相关日志使用以下 tag：
-
-```bash
-adb logcat | grep FlutterPatcher/Guard
-```
-
-### 诊断卡片
-
-仓库中的 `example/lib/diag_card.dart` 将诊断字段做成了可视化卡片。
-
-真机调试时，可以直接在示例应用中查看：
-
-- 当前补丁状态
-- 上次启动诊断
-- 黑名单记录
-- 回滚原因
-
----
-
-<details>
-<summary><strong>内部实现细节</strong>（贡献者 / 好奇者参考）</summary>
-
-## 熔断器时序
-
-状态机位于 [`CrashGuard.kt`](../android/src/main/kotlin/com/flutter_patcher/flutter_patcher/CrashGuard.kt)（不在 `FlutterPatcherApplication` 中）。状态键由 SharedPreferences 持久化：`KEY_PATCH_LOADING`、`KEY_CRASH_COUNT`、`KEY_LAST_BOOTING_PID`。
-
-| 时机 | 行为 |
-|---|---|
-| `Application.attachBaseContext` | `markBooting()`：同步 `commit()` 写入 `patch_loading=true` 和当前 pid |
-| Dart `FlutterPatcher.init()` | 当 native 写入失败时，做一次兜底写 `patch_loading=true` |
-| 首帧渲染 | `markBootSuccess()`：清 `patch_loading` 与 `crash_count`。**保留** `KEY_LAST_BOOTING_PID`，下次冷启动仍能据此查询 ExitInfo。启动 `verifyAfter` 计时 |
-| 前台累计存活 `verifyAfter` | 拆除 Dart 错误钩子的熔断窗口 |
-| 窗口期内 Dart 错误钩子触发 | 计入一次失败，在下次冷启动准备回滚 |
-| 下次冷启动 `shouldLoadPatch` | 在 API 30+ 且 pid 已知时优先查询 `getHistoricalProcessExitReasons`，否则退化到 `patch_loading` |
-| `crash_count >= maxCrashCount` | 删除补丁目录，写入黑名单，回退 APK 内置版本 |
-
-## Android 11+ ApplicationExitInfo 映射
-
-Android 11+ 上，`CrashGuard` 查询上一次会话的退出原因，仅计入下列 4 类崩溃：
-
-| reason | 是否计入崩溃 |
-|---|---|
-| `REASON_CRASH` | 是 |
-| `REASON_CRASH_NATIVE` | 是 |
-| `REASON_ANR` | 是 |
-| `REASON_INITIALIZATION_FAILURE` | 是 |
-| `REASON_USER_REQUESTED` | 否 |
-| `REASON_USER_STOPPED` | 否 |
-| `REASON_LOW_MEMORY` | 否 |
-| `REASON_OTHER` | 否 |
-| `REASON_SIGNALED`，例如 SIGKILL | 否 |
-
-## Dart 层白屏兜底
-
-补丁故障不一定会导致进程退出。Dart 层 `throw` 被 framework 捕获时，进程仍然存活，但页面可能已经白屏或不可用。
-
-为此，`init()` 会在 `verifyAfter` 窗口内安装 **Flutter 层** 错误钩子：
-
-- `PlatformDispatcher.instance.onError`
-- `FlutterError.onError`
-
-窗口期内任一钩子触发都会计为一次补丁失败，并在磁盘上准备回滚。
-
-> 注：插件 **不** 安装 Android 的 `Thread.UncaughtExceptionHandler`。Native（JNI / `.so`）崩溃在 *下次* 冷启动时通过 `ApplicationExitInfo`（API 30+）或 `patch_loading` 兜底（API < 30）来识别。恢复始终是跨进程的 —— 当前进程已经加载了补丁 `.so`，无法在不重启的情况下切回 APK 内置版本。
-
-窗口结束后，两个钩子仍会透明转发到原 handler，但不再向原生侧上报熔断。
-
-</details>
+黑名单只在本机生效，补丁本身仍在你的发布存储中，其他设备照样可以下载。所以一旦在监控中看到 `droppedCircuitBreaker`，应该尽快[撤回](production-playbook-zh.md#撤回补丁)这个补丁，或者发布修复后的新补丁。

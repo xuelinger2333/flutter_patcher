@@ -1,96 +1,104 @@
+<!-- ========================================== -->
+<!-- doc/production-playbook.md (English)       -->
+<!-- ========================================== -->
+
 # Production Playbook
 
-Best practices and field notes for shipping flutter_patcher patches in production.
+**English** | [简体中文](production-playbook-zh.md)
 
----
+Production uses the same commands as local development; only where patches are stored and served changes. This guide covers the configuration needed to go live, plus release management features such as staged rollouts and withdrawing patches. For every command option, see the [CLI Reference](cli.md).
 
-## Stage your rollout
+## Configuring Storage
 
-Don't ship a patch to 100% on day one. A typical ramp:
+Set two storage locations in `flutter_patcher.yaml`:
 
-```text
-1% → 5% → 20% → 50% → 100%
+```yaml
+store: s3://my-bucket/my-app
+baseline_store: s3://my-bucket/baselines
 ```
 
-Watch crash rate, boot failure rate, and key business metrics at each stage.
+| Setting | Purpose | Supported types |
+|---|---|---|
+| `store` | Publication store: holds patches and signed manifests for devices to download | `s3://`, `file://` |
+| `baseline_store` | Baseline store: holds the baseline of every live release, used to create patches | `s3://`, HTTPS, `file://` |
 
----
-
-## Report boot diagnostics
-
-Report `lastBootDiagnostic` to your analytics pipeline:
+Serve the publication store over HTTPS (for example, object storage behind a CDN) and use that address in your app:
 
 ```dart
-final diag = await FlutterPatcher.lastBootDiagnostic;
+await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
+```
 
-if (diag != null && !diag.isHealthy) {
-  // Replace with your analytics SDK: Firebase Analytics / Sentry / your own pipeline.
-  analytics.report('patch_dropped', {
-    'status': diag.status.name,
-    'patch_version': diag.patchVersion,
-    'crash_count': diag.crashCount,
-    'message': diag.message,
-  });
+> The key directory `flutter_patcher_keys/` and the baseline store are required to create patches for live releases. Include both in your regular backups.
+
+Permissions, protocol and CDN caching requirements for each store type are listed in [CLI Reference: Storage requirements](cli.md#storage-requirements).
+
+## Release Workflow
+
+1. Build the app and submit it to the store:
+
+   ```bash
+   dart run flutter_patcher build android
+   ```
+
+   The baseline is archived to the baseline store automatically.
+
+2. After fixing the issue, create a patch:
+
+   ```bash
+   dart run flutter_patcher patch android
+   ```
+
+   `changed` in the output lists what the patch modifies, so you can confirm its scope.
+
+3. Publish the patch:
+
+   ```bash
+   dart run flutter_patcher publish
+   ```
+
+   The command shows a preview and writes to the publication store only after you confirm; pass `--yes` in CI.
+
+Tag each store release in Git, base patches on that tag's source, and keep the version in `pubspec.yaml` unchanged. To patch an earlier live release, check out its tag and pass its build number with `--version-code`.
+
+## Security and Reliability
+
+The following safeguards are always on and need no configuration:
+
+- **Signature verification**: Devices load only signed, intact patches. If content in your storage or CDN is tampered with, devices reject it.
+- **Rollback protection**: Withdrawn patches and patches older than the current one are never installed again.
+- **Boot protection**: If a patch makes startup fail, the app runs its bundled version on the next cold start and disables the patch on that device. See [Crash Protection](crash-protection.md).
+- **Concurrency safety**: Several build machines can share the same stores; concurrent publishes never overwrite each other.
+- **Interruption recovery**: If a publish is interrupted, running `publish` again completes it.
+
+## Staged Rollouts
+
+Once a patch is published, every device on that release can see it. To roll out gradually, decide in your app, for example from remote config, whether to call `checkUpdate`:
+
+```dart
+if (userBucket(userId) < rolloutPercent) {
+  final check = await FlutterPatcher.checkUpdate(url);
+  if (check.hasUpdate) {
+    await FlutterPatcher.applyPatch(check.patch!);
+  }
 }
 ```
 
-If the same patch triggers `droppedCircuitBreaker` repeatedly in a short window, the server should automatically stop delivering it.
+Raise `rolloutPercent` step by step (for example 1% → 5% → 20% → 100%), checking crash rates and [boot diagnostics](crash-protection.md#boot-diagnostics) before each step.
 
----
+## Withdrawing a Patch
 
-## Keep release records
+```bash
+dart run flutter_patcher publish --withdraw
+```
 
-Track each patch with at least:
+This withdraws every published patch of the release your latest `patch` output belongs to. Devices remove the withdrawn patches at their next update check and run the bundled version after the next cold start.
 
-| Field | Example |
-|---|---|
-| Patch version | `1.0.0-h1` |
-| Target APK `versionCode` | `100` |
-| ABI | `arm64-v8a` |
-| Flavor | `production` |
-| MD5 | `0123456789abcdef...` |
-| Signature | (if shipped) |
-| Release time | `2025-07-15T10:00:00Z` |
-| Rollout percentage | `20%` |
-| State | ramping / full / rolled back |
+- To withdraw only up to a given sequence: pass `--through <seq>`.
+- To withdraw another release's patches: pass `--patch <dir>` with one of that release's `patch` outputs.
 
----
+A withdrawal is delivered as a regular update: it takes effect when your app calls `applyPatch` for a result whose `hasUpdate` is `true`, as in the example above. Later patches automatically use a higher sequence number.
 
-## Compress patch downloads
+## Advanced Operations
 
-The entries of a bytecode patch (`.fptc`) are stored uncompressed, so the
-device can check and load them without unpacking. On the wire they compress
-well: a 2.27 MB lean patch is 0.83 MB with gzip. Turn on gzip (or let your CDN
-do it) for `.fptc` responses.
-
-The client asks for gzip and decodes it before any check: the size and SHA-256
-in the signed manifest apply to the decoded file, exactly as without
-compression. Keep publishing the original file; do not upload a pre-compressed
-copy under the same name unless your server marks it with
-`Content-Encoding: gzip`, or the digest check will reject it.
-
----
-
-## Plan for emergency rollback
-
-An emergency rollback only requires the update endpoint to stop returning the offending patch version. Devices that already tripped crash protection have rolled back locally and will refuse to apply the same problematic patch again.
-
----
-
-## Multi-ABI distribution
-
-The server must distribute a different `patch.zip` per ABI. Each patch embeds one `lib/<abi>/libapp.so`. The client reports its ABI via `FlutterPatcher.deviceAbi`.
-
-Recommended server key: `ABI × flavor × versionCode`.
-
----
-
-## Multi-flavor distribution
-
-Different flavors typically have different configs, package names, resources, and business logic. Never share a patch across flavors. The server should shard by `flavor × ABI × versionCode`.
-
----
-
-## Field notes
-
-_This section collects real-world tips from production users. If you have experience to share, [open an issue](https://github.com/xuelinger2333/flutter_patcher/issues) — we'll add it here._
+- [Rotating the publisher key](advanced.md#rotating-the-publisher-key): replace a lost or leaked publisher key without shipping a new app release.
+- [Cleaning up old patches](advanced.md#cleaning-up-old-patches): free space in the publication store.

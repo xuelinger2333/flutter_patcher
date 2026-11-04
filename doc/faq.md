@@ -1,52 +1,57 @@
-# FAQ
+<!-- ========================================== -->
+<!-- doc/faq.md (English)                       -->
+<!-- ========================================== -->
 
-## Must the patch and base APK use the same Flutter version?
+# Frequently Asked Questions (FAQ)
 
-Yes. `libapp.so` is tightly coupled to the Flutter Engine and Dart runtime. Different Flutter versions cannot safely load each other's `libapp.so`. After upgrading the Flutter SDK or Engine, you must ship a new release.
+**English** | [简体中文](faq-zh.md)
 
-## A user skipped intermediate patch versions and just got the latest one — what happens?
+### Why do patches require a cold start to take effect?
 
-Each patch is a complete `libapp.so` and does not depend on previous patches. Users can jump straight from "no patch" or an old patch to the latest one.
+To guarantee runtime state consistency. Active code and in-memory objects cannot be safely swapped out mid-execution. Once a patch is downloaded and verified, the app continues running the existing code until the next process launch, ensuring old and new code paths are never mixed within a single session. See [How It Works: Life on the device](architecture.md#life-on-the-device).
 
-## How do I iterate quickly during development without uploading to a CDN?
+### Can an app built with standard `flutter build` receive patches?
 
-For the offline flow, run the sample app from the [5-minute walkthrough](../README.md#try-it-in-5-minutes). For HTTP testing, use the bundled mock server from [Getting Started](getting-started.md#local-mock-server):
+**No.** Patches can only be applied to baseline releases built with `flutter_patcher build`, which bundles the custom runtime engine and your embedded verification public keys (see [How It Works: The host](architecture.md#the-host-an-app-that-accepts-patches)). If you already have a standard build live in the store, you must rebuild and ship a new store release using `flutter_patcher build` first.
 
-```bash
-dart run flutter_patcher:pack \
-  --apk path/to/app-release.apk \
-  --version dev-1 \
-  --target-version-code 1
+### Does the bytecode strategy slow down the app?
 
-dart run flutter_patcher:mock_server --dist dist --port 8080
-```
+**Unpatched apps run at full native AOT speed, identical to a standard Flutter release build. When patched, only the modified functions are executed by the bytecode interpreter—all unchanged code continues to run as compiled native machine code.**
 
-Then set the client `patchUrl` to:
+For typical UI and business logic changes, the performance difference is imperceptible. However, if a patch modifies compute-heavy hot loops, those specific functions will run slower than native code. On Android, if raw compute performance inside a patch is critical, you can switch to the `so` strategy at the cost of a larger patch bundle size. See [How It Works: Two patch strategies](architecture.md#two-patch-strategies).
 
-```text
-http://<your-machine-ip>:8080/patch.zip
-```
+### What happens when I upgrade my Flutter SDK version?
 
-## How do I handle multiple ABIs?
+Upgrading the Flutter SDK requires running `build` and shipping a new store release. **Patches cannot cross Flutter SDK versions**—to continue patching an older live release, you must generate those patches using the exact Flutter version that built that baseline release (keep the older SDK cached in CI or pass `--flutter-sdk`).
 
-The server must distribute a `patch.zip` per ABI (each patch embeds one `lib/<abi>/libapp.so`). The client can read the current device ABI via `FlutterPatcher.deviceAbi` and include it in your update request.
+### What happens to installed patches when a user updates the app from the store?
 
-## How do I handle multiple flavors?
+**They are automatically invalidated and cleaned up.** Every patch is strictly bound to the baseline `versionCode` it was built against. Once a user upgrades to a newer store release, old patches are ignored. If the new release also needs a hotfix, publish a new patch targeting the new version.
 
-The server should track patches by `flavor × ABI × versionCode`. Different flavors typically have different configs, package names, resources, and business logic — never share a patch across flavors.
+### Can I maintain and patch multiple live app versions simultaneously?
 
-## Do I need to tweak ProGuard / R8 rules?
+**Yes.** Each store release has its own isolated baseline snapshot and patch sequence. To patch an older release, check out its source tag, apply the fix, and run `patch --version-code <target_build_number>`. See [Production Playbook: Release Workflow](production-playbook.md#release-workflow).
 
-Usually no. The plugin's reflection targets non-obfuscated Flutter Engine classes and is unaffected by your business obfuscation.
+### Can patches be tampered with or forged if my CDN is compromised?
 
-## Can a patch be revoked?
+**No.** The on-device runtime only accepts patches that are cryptographically signed by your private key and match the exact baseline fingerprint (`scope`) of the installed app. Even if your storage bucket or CDN is compromised, an attacker cannot forge a valid patch without your private key or replay a patch meant for a different version. See [How It Works: Security model](architecture.md#security-model). The private keys exist only in your key directory; include it in your backups (see [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage)).
 
-Yes. On the client, `FlutterPatcher.rollback()` deletes the current patch. On the server, simply stop returning that version from your update endpoint and new users will not download it.
+### What if a buggy patch causes the app to crash on startup?
 
-## Why doesn't a patch take effect immediately?
+**The SDK automatically rolls back to the bundled baseline build upon detecting a startup failure and blacklists the faulty patch locally**, preventing crash loops. You should immediately [withdraw the patch](production-playbook.md#withdrawing-a-patch) or publish a fixed patch so other devices do not install it. See [Crash Protection](crash-protection.md).
 
-Once the current process has loaded `libapp.so`, it can't be safely swapped at runtime. To stay safe, the patch is written to disk and loaded on the next cold start.
+### Do I need to build and run a custom backend server?
 
-## Why does each patch need a `targetVersionCode`?
+**No.** Both patches and manifests are static files. Any static file hosting service served over HTTPS—such as AWS S3, Cloudflare R2, or Google Cloud Storage behind a CDN—works out of the box. See [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage).
 
-A patch is only valid against the base APK it was built for. Binding `targetVersionCode` prevents loading old patches after an APK upgrade and prevents the server from accidentally shipping a patch to incompatible builds.
+### Are x86 emulators or 32-bit Android devices supported?
+
+**No.** On Android, only `arm64-v8a` is supported (which covers virtually all modern Android phones in active use and aligns with Google Play's 64-bit requirement).
+
+### Do app stores allow over-the-air hotfixing?
+
+Policies vary across distribution channels and regulated industries (such as finance, healthcare, or kids' apps), some of which restrict downloading executable code. `flutter_patcher` provides the technical mechanism; you are responsible for ensuring compliance with your target store guidelines and industry regulations before deploying.
+
+### Why does running `patch` on Windows report that every single file changed?
+
+This happens when Git converts line endings to `CRLF` on Windows, causing byte-level diffs against a baseline built with `LF` line endings. See the fix in [Troubleshooting: Common Issues](troubleshooting.md#changed-a-single-line-of-dart-but-every-file-shows-as-modified-or-fails-with-patch_native_change).

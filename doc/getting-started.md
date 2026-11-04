@@ -1,104 +1,130 @@
 # Getting Started
 
-This guide covers local development workflows for flutter_patcher. For production deployment, see the [Production Playbook](production-playbook.md).
+**English** | [简体中文](getting-started-zh.md)
 
----
+This guide walks you through a complete hotfix cycle from scratch: integrating `flutter_patcher` into an Android app, modifying a line of UI text, and seeing the change take effect after a cold start. Everything runs locally without setting up a remote server (iOS differences are covered at the end).
 
-## Local mock server
+For full command flags, see the [CLI Reference](cli.md); for under-the-hood mechanics, see [Architecture](architecture.md).
 
-If you want to try the HTTP `checkUpdate → applyPatch` flow without building a backend, run the bundled mock server. It is for local development only, not production patch distribution.
+## Prerequisites
+
+- **Build Host**: Linux x64 or Windows x64
+- **Flutter**: 3.47.0 – 3.47.9 (available in `PATH`)
+- **Git**: Installed and available in `PATH`
+- **Test Device**: An `arm64-v8a` Android device (Android 7.0+) with USB debugging enabled and visible via `adb devices`
+- **Network**: Internet access is required on the first run to download the matching custom Flutter engine and toolchain from GitHub (cached locally for subsequent runs)
+
+Verify your environment from the project root:
 
 ```bash
-# Rebuild the release APK after editing Dart code
-flutter build apk --release
-
-# Build the patch package
-dart run flutter_patcher:pack \
-  --apk build/app/outputs/flutter-apk/app-release.apk \
-  --version dev-1 \
-  --target-version-code 100
-
-# Serve dist/patch.zip and dist/manifest.json on 0.0.0.0:8080
-dart run flutter_patcher:mock_server --dist dist
+dart run flutter_patcher doctor
 ```
 
-Then call it from a phone on the same Wi-Fi network:
+If the last line starts with `Toolchain ready.`, you are good to go. If it fails, look up the reported error code in [Troubleshooting](troubleshooting.md).
+
+## 1. Integrate the SDK
+
+Add the dependency:
+
+```bash
+flutter pub add flutter_patcher
+```
+
+Initialize `FlutterPatcher` in `main()`, and trigger an update check at an appropriate point in your app (e.g., on a button tap or screen load):
 
 ```dart
-final check = await FlutterPatcher.checkUpdate(
-  'http://<your-computer-ip>:8080/check',
-);
+import 'package:flutter/material.dart';
+import 'package:flutter_patcher/flutter_patcher.dart';
 
-if (check.hasUpdate) {
-  await FlutterPatcher.applyPatch(check.patch!);
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FlutterPatcher.init();
+  runApp(const MyApp());
+}
+
+Future<void> checkForPatch() async {
+  final check = await FlutterPatcher.checkUpdate('http://127.0.0.1:8686');
+  if (!check.hasUpdate) return;
+  final result = await FlutterPatcher.applyPatch(check.patch!);
+  debugPrint('applyPatch: $result'); // When 'ok', takes effect on next cold start
 }
 ```
 
-The plugin also ships with an optional minimal check-update JSON protocol, intended for quick onboarding, the example, and local testing. In production, if you already have your own update / staging / auth protocol, parse the response yourself and construct `PatchInfo` directly. The protocol format and `checkUpdate` usage live in the [API Reference](https://pub.dev/documentation/flutter_patcher/latest/topics/API-reference-topic.html) and [Architecture](https://pub.dev/documentation/flutter_patcher/latest/topics/Architecture-topic.html).
+- `http://127.0.0.1:8686` points to the local dev server started by `serve` in Step 5. For production, replace this with your own HTTPS endpoint (see [Production Playbook](production-playbook.md)).
+- Make sure `version` in `pubspec.yaml` includes a build number (e.g., `version: 1.0.0+1`). The build number maps to Android's `versionCode`, which `flutter_patcher` uses to match patches against the exact baseline release.
 
----
-
-## Skipping MD5
-
-`PatchInfo.md5` is optional. If your server doesn't ship md5 (or you only want HTTPS-level integrity), leave it out:
-
-```dart
-PatchInfo(version: 'fix-1', patchUrl: '...', targetVersionCode: 100); // md5 defaults to ''
-```
-
-Download integrity checks are skipped. **Note that signature verification is also skipped** in this case (the Ed25519 input is the md5 hex string — without md5 there is no message to sign over). To keep signature verification you must also ship md5.
-
----
-
-## Multi-ABI setup
-
-The server must distribute a different `patch.zip` per ABI (each patch embeds one `lib/<abi>/libapp.so`). The client can read the current device ABI via `FlutterPatcher.deviceAbi` and include it in your update request.
-
----
-
-## Multi-flavor setup
-
-The server should track patches by `flavor × ABI × versionCode`. Different flavors typically have different configs, package names, resources, and business logic — never share a patch across flavors.
-
----
-
-## Advanced `--assets` syntax
-
-For long asset lists, point `--assets` at a text file prefixed with `@` — one path per line, `#` starts a comment, inline and `@file` can be mixed:
+## 2. Generate Signing Keys
 
 ```bash
-# patch-assets.txt
-assets/hero.png
-assets/strings/zh.json
-assets/illustrations/onboarding-1.png
+dart run flutter_patcher keys init
 ```
+
+This creates two items in your project root:
+
+| Path | Description |
+|---|---|
+| `flutter_patcher_keys/` | Three cryptographic keypairs. Private keys are automatically ignored by a bundled `.gitignore`—**back them up to a secure location immediately**. |
+| `flutter_patcher.yaml` | Configuration template (all options commented out by default). No changes needed for local testing. |
+
+## 3. Build the Baseline Release
 
 ```bash
-dart run flutter_patcher:pack \
-  --apk build/app/outputs/flutter-apk/app-release.apk \
-  --version 1.0.1 \
-  --target-version-code 100 \
-  --assets @patch-assets.txt,assets/last-minute.png
+dart run flutter_patcher build android
 ```
 
----
+`build` compiles a release APK using the `flutter_patcher` engine and saves a baseline snapshot of this release. The first run will take longer while it downloads engine artifacts and prepares the toolchain.
 
-## Crash protection tuning
+When finished, the CLI outputs a single-line JSON object. The `output` field points to the release directory (defaults to `.dart_tool/flutter_patcher/releases/`), which contains the store-ready `app-release.apk`. Install it on your device:
 
-If you need to tune crash protection, pass parameters explicitly to `init`:
-
-```dart
-await FlutterPatcher.init(
-  maxCrashCount: 1,
-  verifyAfter: const Duration(seconds: 5),
-);
+```bash
+adb install <output>/app-release.apk
 ```
 
-| Parameter | Default | Description |
-|---|---|---|
-| `maxCrashCount` | `1` | Number of consecutive failures before the patch is tripped |
-| `verifyAfter` | `5 seconds` | Window during which post-first-frame Dart error hooks keep watching |
+Launch the app and verify it runs normally.
 
-Android 11+ uses `ApplicationExitInfo` to distinguish crashes, ANRs, user dismissal, and system reclaim more accurately. Android 10 and below have weaker signals; pair the SDK with your own crash monitoring and a server-side kill switch.
+> **Note**: The `WARNING: BASELINE_STORE_LOCAL` message indicates that the baseline snapshot is currently stored only in your local project directory. You can ignore this for local testing; before going to production, configure persistent baseline storage as described in the [Production Playbook](production-playbook.md).
 
-Full design: [Crash protection docs](https://pub.dev/documentation/flutter_patcher/latest/topics/Crash-protection-topic.html).
+## 4. Modify Code & Generate a Patch
+
+Change any text string in your UI—**do not change the `version` in `pubspec.yaml`**—and run:
+
+```bash
+dart run flutter_patcher patch android
+```
+
+`patch` locates the baseline saved in Step 3, diffs your changes, and generates a patch bundle. On success, the JSON output shows `"status": "patch_created"` and lists modified items under `changed`.
+
+If your changes include unsupported modifications (such as native code edits), the command fails immediately with an error code and reason. See [Troubleshooting](troubleshooting.md) for details.
+
+## 5. Serve the Patch to Your Device
+
+With your phone connected via USB, start the local patch server:
+
+```bash
+dart run flutter_patcher serve
+```
+
+`serve` automatically performs three actions:
+1. Publishes the latest patch to local storage (`.flutter_patcher/updates/`);
+2. Starts an HTTP server listening on `127.0.0.1:8686`;
+3. Runs `adb reverse` on connected Android devices so `127.0.0.1:8686` on the phone routes directly to your computer.
+
+Leave `serve` running and trigger `checkForPatch()` in your app. The `serve` terminal will log `A device checked for updates` followed by `A device downloaded the patch`, and the app logs `applyPatch: PatchApplyResult(ok)`.
+
+## 6. Cold Start to Verify
+
+Force-close the app completely (swipe it away from the recent apps screen) and relaunch it. You will see the updated UI text.
+
+If you edit the code again and re-run `patch android` while `serve` is running, `serve` automatically publishes the new patch with an auto-incremented sequence number. Simply trigger an update check in the app and cold-start again.
+
+## Differences on iOS
+
+- **Building the baseline**: Run `build ios` on an Apple Silicon Mac. Code signing uses your existing Xcode project settings, producing `app-release.ipa` in the output directory.
+- **Cross-platform patching**: `patch ios` can run on macOS, Linux, or Windows, provided the machine has access to the baseline snapshot saved by `build ios` (see baseline storage in the [Production Playbook](production-playbook.md)).
+- **Local device testing**: iOS devices cannot route `127.0.0.1` to your host machine via `adb reverse`. As prompted when starting `serve`, expose the local port via an HTTPS tunnel (e.g., `cloudflared tunnel --url http://127.0.0.1:8686`) and pass the tunnel URL to `checkUpdate`.
+
+## Next Steps
+
+- Understand how patches work and what cannot be patched: [Architecture](architecture.md)
+- Prepare for production (storage, CDN, staged rollouts): [Production Playbook](production-playbook.md)
+- Learn what happens if a bad patch crashes on startup: [Crash Protection](crash-protection.md)
