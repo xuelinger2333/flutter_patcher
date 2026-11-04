@@ -7,9 +7,6 @@ import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../project.dart';
 import '../publish/command.dart';
-import '../publish/pipeline.dart';
-import '../publish/store.dart';
-import '../publish/transaction.dart';
 
 ArgParser serveOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
@@ -68,7 +65,7 @@ Future<int> serveCommand(ArgResults args) async {
   final reversed = <String>{}, offered = <String>{};
   while (!stop.isCompleted) {
     await _reverse(port, reversed);
-    await _offerLatest(project, root, offered);
+    await _offerLatest(project, offered);
     await Future.any([
       stop.future,
       Future<void>.delayed(const Duration(seconds: 2)),
@@ -112,27 +109,10 @@ Future<void> _respond(HttpRequest request, String root) async {
 
 /// Publishes the newest finished patch output once, unless it is already
 /// its scope's head: republishing would only make devices fetch it again.
-Future<void> _offerLatest(
-  String project,
-  String root,
-  Set<String> offered,
-) async {
+Future<void> _offerLatest(String project, Set<String> offered) async {
   final latest = await latestPatchOutput(project);
   if (latest == null || !offered.add(latest)) return;
   try {
-    final report = await readObject(p.join(latest, 'patch.json'));
-    final fields = Map<String, String>.from(report['scope'] as Map);
-    final catalog = await PublicationTransaction(
-      FilePublishStore(root),
-      fields['application_id']!,
-    ).snapshot();
-    final head = (catalog['heads'] as Map)[scopeOf(fields)];
-    if (head != null &&
-        ((catalog['releases'] as Map)[head] as Map)['sha256'] ==
-            report['sha256']) {
-      stderr.writeln('Offering patch ${report['patch_seq']}');
-      return;
-    }
     final result = await publication(
       publishOptions().parse([
         '--project',
@@ -143,8 +123,11 @@ Future<void> _offerLatest(
       ]),
     );
     stderr.writeln(
-      'Offering patch ${report['patch_seq']} '
-      '(revision ${result['revision']}); restart the app after it applies',
+      result['status'] == 'already_published'
+          ? 'Offering patch ${result['patch_seq']}'
+          : 'Offering patch ${result['patch_seq']} '
+                '(revision ${result['revision']}); restart the app after it '
+                'applies',
     );
   } on Failure catch (error) {
     stderr.writeln('Not offered: ${error.code}: ${error.message}');

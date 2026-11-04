@@ -222,24 +222,23 @@ Future<KeyBundle?> loadKeyStore(TrustAnchors anchors, {String? root}) async {
   return bundle;
 }
 
-/// Stores [bundle] under its root key and returns the file. A stored bundle
-/// is only ever completed (a role added) or, with [replace], given a new
-/// publisher key; any other difference is KEYS_MISMATCH.
+/// Stores [bundle], whose keys must be [anchors]', under the project's root
+/// key and returns the file. A bundle without the root key (as CI exports
+/// it) is stored too. A stored bundle is only ever completed (a role added)
+/// or, with [replace], given a new publisher key; any other difference is
+/// KEYS_MISMATCH.
 Future<String> saveKeyStore(
-  KeyBundle bundle, {
+  KeyBundle bundle,
+  TrustAnchors anchors, {
   String? root,
   bool replace = false,
 }) async {
   require(
-    bundle.seeds[KeyRole.root] != null,
-    'KEYS_BUNDLE_INVALID',
-    'Only a bundle with its root key can be stored; its root key names it.',
+    bundle.matches(anchors),
+    'KEYS_MISMATCH',
+    'These keys are not the ones this project\'s hosts trust.',
   );
-  final id = sha256
-      .convert(base64Decode(bundle.publicKey(KeyRole.root)))
-      .toString()
-      .substring(0, 16);
-  final directory = p.join(root ?? keyStoreRoot(), id);
+  final directory = p.join(root ?? keyStoreRoot(), anchors.id);
   final path = p.join(directory, 'keys.json');
   await rejectLinks(path);
   if (await File(path).exists()) {
@@ -298,23 +297,38 @@ Future<void> claimPrivateDirectory(String path) async {
   }
 }
 
+/// Writes a key bundle to the new file [path], mode 600 on POSIX before any
+/// byte of it is written. Refuses to replace an existing file.
+Future<void> writeNewKeyFile(String path, String text) async {
+  await rejectLinks(path);
+  final file = File(path);
+  await file.parent.create(recursive: true);
+  try {
+    await file.create(exclusive: true);
+  } on FileSystemException {
+    throw Failure('KEYS_OUTPUT_EXISTS', 'Use a new file: $path');
+  }
+  await _protect(file);
+  await file.writeAsString('$text\n', flush: true);
+}
+
+Future<void> _protect(File file) async {
+  if (Platform.isWindows) return;
+  // macOS chmod has no `--`; an absolute path cannot read as an option.
+  final mode = await Process.run('/bin/chmod', ['600', p.absolute(file.path)]);
+  require(
+    mode.exitCode == 0,
+    'KEYS_PERMISSIONS_FAILED',
+    'Cannot protect private-key permissions.',
+  );
+}
+
 /// Writes a secret file atomically, mode 600 on POSIX before any byte of it
 /// is written.
 Future<void> _writePrivate(String path, String text) async {
   final staging = File(temporaryName(path));
   await staging.create(exclusive: true);
-  if (!Platform.isWindows) {
-    // macOS chmod has no `--`; an absolute path cannot read as an option.
-    final mode = await Process.run('/bin/chmod', [
-      '600',
-      p.absolute(staging.path),
-    ]);
-    require(
-      mode.exitCode == 0,
-      'KEYS_PERMISSIONS_FAILED',
-      'Cannot protect private-key permissions.',
-    );
-  }
+  await _protect(staging);
   await staging.writeAsString('$text\n', flush: true);
   await staging.renameRetry(path);
 }

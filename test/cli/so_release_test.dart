@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -12,9 +11,12 @@ import 'package:flutter_patcher/src/cli/baseline/split.dart';
 import 'package:flutter_patcher/src/cli/build/host_policy.dart';
 import 'package:flutter_patcher/src/cli/patch/package.dart';
 import 'package:flutter_patcher/src/cli/publish/pipeline.dart';
+import 'package:flutter_patcher/src/cli/publish/seal.dart';
+import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 
 import 'baseline_test.dart' as base;
 import 'release_fixture.dart';
+import 'signers.dart';
 
 void main() {
   final f = ReleaseFixture();
@@ -127,16 +129,17 @@ void main() {
       );
       final work = (await f.temp.createTemp('seal-')).path;
       final libapp = File(p.join(work, 'libapp.so'))..writeAsBytesSync([1]);
-      final sealed = await packPatch(
-        kind: 'libapp',
-        code: libapp.path,
-        work: work,
-        metadata: {'fingerprint': fp, 'patch_seq': 1, 'target': release.target},
-        key: signingKey(base.testSeed),
-        commands: Commands(work),
-      );
-      final patch = Uint8List.fromList(
-        await File(sealed['file'] as String).readAsBytes(),
+      final patch = await sealPatch(
+        await packPatch(
+          kind: 'libapp',
+          code: libapp.path,
+          metadata: {
+            'fingerprint': fp,
+            'patch_seq': 1,
+            'target': release.target,
+          },
+        ),
+        signer: testSigner(base.testSeed, KeyRole.patch),
       );
       checkPatchTarget(patch, 'so', release.identity, release.target);
       expect(

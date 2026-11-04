@@ -18,6 +18,8 @@ import 'build/ios.dart' show iosExportMethods;
 import 'build/line_endings.dart';
 import 'patch/command.dart';
 import 'keys/command.dart';
+import 'keys/keyring.dart';
+import 'project.dart';
 import 'publish/command.dart';
 import 'publish/trust_command.dart';
 import 'serve/command.dart';
@@ -60,10 +62,6 @@ ArgParser environmentOptions() => ArgParser()
   )
   ..addOption('public-key', help: 'Optional signing public key file to check.')
   ..addOption(
-    'private-key',
-    help: 'Optional signing private key file to check.',
-  )
-  ..addOption(
     'baseline-store',
     help: 'Optional file://, s3:// or HTTPS baseline store to probe.',
   )
@@ -93,8 +91,6 @@ ArgParser parser() {
       'fingerprint',
       help: 'Optional; must match the release. Required only for a legacy baseline without a release binding.',
     )
-    ..addOption('seq')
-    ..addOption('previous-seq')
     ..addMultiOption(
       'assets',
       help: 'Asset keys to override; omitted selects changed assets.',
@@ -178,7 +174,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-        'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw [--through <seq>]] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
+        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw [--through <seq>]] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
       );
       return 0;
     }
@@ -546,26 +542,24 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
         'New host interface converged under bytecode validation; host/device execution not verified',
       );
     }
-    final pub = args['public-key'] as String?,
-        secret = args['private-key'] as String?;
-    if (pub == null && secret == null) {
+    final anchors = project == null
+        ? null
+        : (await ProjectConfig.load(p.absolute(project))).anchors;
+    if (anchors == null) {
       pending(
-        'signing_key_files',
-        'No key files supplied; signing/key generation is not verified.',
+        'project_keys',
+        project == null
+            ? 'No project supplied; its keys are not checked.'
+            : 'The project has no trust keys; run keys init or keys import.',
       );
     } else {
-      await check('signing_key_files', () async {
-        require(
-          pub != null &&
-              secret != null &&
-              await File(pub).exists() &&
-              await File(secret).exists() &&
-              await File(pub).length() > 0 &&
-              await File(secret).length() > 0,
-          'KEYS_MISSING',
-          'Both readable, nonempty public/private key files are required.',
-        );
-      }, 'Key files exist; cryptographic format/signing is not verified');
+      await check('project_keys', () async {
+        final config = await ProjectConfig.load(p.absolute(project!));
+        report['keys'] = {
+          for (final e in (await Keyring.forProject(config).describe()).entries)
+            e.key.name: e.value,
+        };
+      }, 'Trust keys configured; keys says where each private key comes from');
     }
     final uri = args['baseline-store'] as String?;
     if (uri == null) {

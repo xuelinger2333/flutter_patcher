@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/publish/trust_command.dart';
 import 'package:flutter_patcher/src/cli/publish/store.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
+import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 
 void main() {
   test(
@@ -48,7 +49,19 @@ void main() {
       };
       final payload = File(p.join(work.path, 'fields.json'));
       final store = FilePublishStore(p.join(work.path, 'store'));
-      final common = ['--root-public', pub.path, '--cache-dir', work.path];
+      // The project names the root key; its seed comes from a key bundle, as
+      // from a CI secret.
+      final project = Directory(p.join(work.path, 'project'))..createSync();
+      final rootKey = await pub.readAsString();
+      File(p.join(project.path, 'flutter_patcher.yaml')).writeAsStringSync(
+        'trust:\n  root: $rootKey\n  publisher: $rootKey\n  patch: $rootKey\n',
+      );
+      final bundle = File(p.join(work.path, 'keys.json'))
+        ..writeAsStringSync(
+          KeyBundle({KeyRole.root: base64Decode(await secret.readAsString())})
+              .encode(),
+        );
+      final common = ['--project', project.path, '--cache-dir', work.path];
       Future<String> sign(String name, Map<String, String> value) async {
         await payload.writeAsString(jsonEncode(value));
         final wire = p.join(work.path, name);
@@ -56,8 +69,8 @@ void main() {
           trustOptions().parse([
             'sign',
             ...common,
-            '--root-private',
-            secret.path,
+            '--key-file',
+            bundle.path,
             '--fields',
             payload.path,
             '--out',

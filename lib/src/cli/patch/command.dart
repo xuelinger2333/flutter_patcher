@@ -12,9 +12,7 @@ import '../baseline/repository.dart';
 import '../baseline/store.dart';
 import '../build/host_policy.dart';
 import '../project.dart';
-import '../publish/pipeline.dart' show nextSequence;
-import '../publish/store.dart';
-import '../publish/transaction.dart';
+import 'package.dart' show patchSequence;
 import 'pipeline.dart';
 
 Future<int> patchCommand(ArgResults args) async {
@@ -30,15 +28,6 @@ Future<int> patchCommand(ArgResults args) async {
     final platform = args.rest.single;
 
     requireSupportedHost(target: platform);
-    String value(String name) {
-      final v = args[name] as String?;
-      require(
-        v != null && v.isNotEmpty,
-        'PATCH_CONFIG_INVALID',
-        'Missing --$name',
-      );
-      return v!;
-    }
 
     final cache = managedCache(args['cache-dir'] as String?);
     await rejectLinks(cache);
@@ -90,9 +79,7 @@ Future<int> patchCommand(ArgResults args) async {
       project: project,
       fingerprint: args['fingerprint'] as String?,
       flavor: flavor,
-      privateKey: await File(
-        args['private-key'] as String? ?? config.key('patch', private: true),
-      ).readAsString(),
+
       output: p.absolute(
         args['out'] as String? ??
             p.join(
@@ -101,13 +88,12 @@ Future<int> patchCommand(ArgResults args) async {
               DateTime.now().microsecondsSinceEpoch.toString(),
             ),
       ),
-      seq: args['seq'] == null
-          ? await _nextSequence(config, resolved, commands, cache)
-          : int.tryParse(value('seq')) ?? -1,
+
+      // Bytecode compiles the sequence in; the time orders patches made on
+      // any machine without asking the publication store.
+      seq: patchSequence(DateTime.now()),
       minBuild: int.tryParse(versionCode) ?? -1,
-      previousSeq: args['previous-seq'] == null
-          ? null
-          : int.tryParse(value('previous-seq')) ?? -1,
+
       target: args['target'] as String,
       assets: (args['assets'] as List).cast<String>(),
       platform: platform,
@@ -166,26 +152,5 @@ Future<int> patchCommand(ArgResults args) async {
       await lock.unlock();
       await lock.close();
     }
-  }
-}
-
-/// The next sequence the project's publication store accepts for
-/// [resolved]'s fingerprint.
-Future<int> _nextSequence(
-  ProjectConfig config,
-  ResolvedRelease resolved,
-  Commands commands,
-  String cache,
-) async {
-  final store = config.store;
-  final work = await Directory(cache).createTemp('patch-seq-');
-  try {
-    final catalog = await PublicationTransaction(
-      openPublishStore(Uri.parse(store), commands, work.path),
-      resolved.receipt['application_id'] as String,
-    ).snapshot();
-    return nextSequence(catalog, resolved.fingerprint);
-  } finally {
-    await work.delete(recursive: true);
   }
 }

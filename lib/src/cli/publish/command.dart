@@ -1,18 +1,23 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 
 import '../baseline/store.dart';
 import '../core.dart';
+import '../keys/bundle.dart';
+import '../keys/keyring.dart';
+import '../patch/package.dart';
 import '../sdk/host.dart';
 import '../project.dart';
 import '../run_work.dart';
 import '../version.dart';
 import 'pipeline.dart';
 import 'retention.dart';
+import 'seal.dart';
 import 'store.dart';
 import 'transaction.dart';
 
@@ -51,6 +56,12 @@ ArgParser publishOptions() => ArgParser()
     'production',
     negatable: false,
     help: 'With --request: publish that request instead.',
+  )
+  ..addOption(
+    'key-file',
+    help:
+        'A key bundle to sign with before ${Keyring.environmentVariable}, '
+        'signing.command and the key store.',
   )
   ..addOption('request', help: 'Advanced: a production request JSON file.')
   ..addOption('receipt', help: 'New output JSON file for the result.');
@@ -115,8 +126,11 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
   Map<String, dynamic> result;
   try {
     final commands = Commands(cache);
-    final uri = Uri.parse(request['store'] as String);
-    final store = openPublishStore(uri, commands, work);
+    final store = openPublishStore(
+      Uri.parse(request['store'] as String),
+      commands,
+      work,
+    );
     final transaction = PublicationTransaction(store, application);
     final operation = request['operation'] as String;
     if (request['kind'] == 'cleanup') {
@@ -144,73 +158,15 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
         'PUBLISH_CONFIG_INVALID',
         'Application differs from fields',
       );
-      final source = request['patch'] as String?;
-      if (source != null) {
-        await rejectLinks(source);
-        require(
-          await File(source).length() <= 320 * 1024 * 1024,
-          'PUBLISH_PATCH_INVALID',
-          'Patch too large',
-        );
-      }
-      final bytes = source == null ? null : await File(source).readAsBytes();
-      if (bytes != null) {
-        fields['sha256'] = digest(bytes);
-        fields['size'] = bytes.length.toString();
-        fields['path'] = 'objects/$operation/${digest(bytes)}.fptc';
-      }
-      final baselineUri = Uri.parse(request['baseline_store'] as String);
-      if (uri.scheme == 'file' && baselineUri.scheme == 'file') {
-        final a = p.normalize(p.absolute(uri.toFilePath())),
-            b = p.normalize(p.absolute(baselineUri.toFilePath()));
-        require(
-          a != b && !p.isWithin(a, b) && !p.isWithin(b, a),
-          'PUBLISH_CONFIG_INVALID',
-          'Publication and baseline namespaces must not overlap',
-        );
-      }
-      final release = await resolvePublication(
-        BaselineStore.open(baselineUri, commands),
+      result = await _publish(
+        args,
+        project,
+        request,
         fields,
+        transaction,
+        commands,
         work,
       );
-      for (final key in ['private_key', 'public_key']) {
-        await rejectLinks(request[key] as String);
-      }
-      final seed = await File(request['private_key'] as String).readAsString(),
-          publicKey = await File(request['public_key'] as String)
-              .readAsString();
-      Future<Map<String, dynamic>> execute(bool commit) =>
-          PublicationPipeline(transaction, commands, work).execute(
-            operation: operation,
-            fields: fields,
-            expectedRevision: request['expected_revision'] as int,
-            seed: seed,
-            publicKey: publicKey,
-            createdAt: request['created_at'].toString(),
-            baseline: release.identity,
-            target: release.target,
-            patch: bytes,
-            commit: commit,
-            pin: request['pin'] == true,
-          );
-      result = await execute(false);
-      final what = fields['action'] == 'publish'
-          ? 'patch ${fields['patch_seq']}'
-          : 'withdrawal through ${fields['withdraw_through_seq']}';
-      if (await confirmed(
-        args,
-        'Publish $what to ${fields['application_id']} ${fields['channel']} '
-        'versionCode ${fields['version_code']} '
-        '(revision ${fields['revision']})?',
-      )) {
-        // A commit that stops midway resumes only with this exact request.
-        if (project != null) {
-          await writeObject(pendingRequest(project), request);
-        }
-        result = await execute(true);
-        if (project != null) await File(pendingRequest(project)).delete();
-      }
     }
   } finally {
     await RunWork.finish(work);
@@ -226,6 +182,136 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
     await writeObject(path, result);
   }
   return result;
+}
+
+/// Seals the request's patch draft for its release, unless that draft is
+/// already the release's latest patch, and publishes it or the request's
+/// withdrawal with the project's keys.
+Future<Map<String, dynamic>> _publish(
+  ArgResults args,
+  String? project,
+  Map<String, dynamic> request,
+  Map<String, String> fields,
+  PublicationTransaction transaction,
+  Commands commands,
+  String work,
+) async {
+  final operation = request['operation'] as String;
+  final baselineUri = Uri.parse(request['baseline_store'] as String);
+  final uri = Uri.parse(request['store'] as String);
+  if (uri.scheme == 'file' && baselineUri.scheme == 'file') {
+    final a = p.normalize(p.absolute(uri.toFilePath())),
+        b = p.normalize(p.absolute(baselineUri.toFilePath()));
+    require(
+      a != b && !p.isWithin(a, b) && !p.isWithin(b, a),
+      'PUBLISH_CONFIG_INVALID',
+      'Publication and baseline namespaces must not overlap',
+    );
+  }
+  final release = await resolvePublication(
+    BaselineStore.open(baselineUri, commands),
+    fields,
+    work,
+  );
+  final keyring = Keyring.forProject(
+    await ProjectConfig.load(
+      p.absolute(args['project'] as String? ?? Directory.current.path),
+    ),
+    keyFile: args['key-file'] as String?,
+  );
+  PatchDraft? draft;
+  Uint8List? patch;
+  if (fields['action'] == 'publish') {
+    final source = request['patch'] as String?;
+    require(source != null, 'PUBLISH_CONFIG_INVALID', 'Patch required');
+    draft = await PatchDraft.read(source!);
+    final catalog = await transaction.snapshot();
+    final scope = scopeOf(fields);
+    final id = (catalog['heads'] as Map)[scope];
+    final head = id == null ? null : (catalog['releases'] as Map)[id] as Map;
+    if (head != null &&
+        head['draft_sha256'] == draft.digest &&
+        !awaitsRequest(catalog, request)) {
+      return {
+        'status': 'already_published',
+        'operation': id,
+        'scope': scope,
+        'patch_seq': draft.seq,
+        'revision': head['revision'],
+        'manifest': 'manifests/$scope.json',
+      };
+    }
+    checkSequence(draft.seq, nextSequence(catalog, draft.fingerprint));
+    fields['patch_seq'] = '${draft.seq}';
+    final signer = await keyring.signer(KeyRole.patch);
+    require(
+      signer.publicKey == (release.identity['receipt'] as Map)['public_key'],
+      'KEYS_MISMATCH',
+      'This release was built with another patch key than the project\'s.',
+    );
+    patch = await sealPatch(draft, signer: signer);
+    fields['sha256'] = digest(patch);
+    fields['size'] = patch.length.toString();
+    fields['path'] = 'objects/$operation/${digest(patch)}.fptc';
+  }
+  final publisher = await keyring.signer(KeyRole.publisher);
+  Future<Map<String, dynamic>> execute(bool commit) async => {
+    ...await PublicationPipeline(transaction, commands, work).execute(
+      operation: operation,
+      fields: fields,
+      expectedRevision: request['expected_revision'] as int,
+      signer: publisher,
+      createdAt: request['created_at'].toString(),
+      baseline: release.identity,
+      target: release.target,
+      patch: patch,
+      draft: draft?.digest,
+      commit: commit,
+      pin: request['pin'] == true,
+    ),
+    if (fields['patch_seq'] != null)
+      'patch_seq': int.parse(fields['patch_seq']!),
+  };
+  final preview = await execute(false);
+  final what = fields['action'] == 'publish'
+      ? 'patch ${fields['patch_seq']}'
+      : 'withdrawal through ${fields['withdraw_through_seq']}';
+  if (!await confirmed(
+    args,
+    'Publish $what to ${fields['application_id']} ${fields['channel']} '
+    'versionCode ${fields['version_code']} '
+    '(revision ${fields['revision']})?',
+  )) {
+    return preview;
+  }
+  // A commit that stops midway resumes only with this exact request: sealing
+  // and signing its draft again give the same bytes.
+  if (project != null) await writeObject(pendingRequest(project), request);
+  final result = await execute(true);
+  if (project != null) await File(pendingRequest(project)).delete();
+  return result;
+}
+
+/// A draft's sequence orders it by when it was made. It must be above every
+/// sequence already published for its fingerprint ([next] is the lowest
+/// free one), and not from a clock ahead of this one: such a sequence would
+/// shut out every later patch until that time.
+void checkSequence(int seq, int next, {DateTime? now}) {
+  require(
+    seq >= next,
+    'PUBLISH_SEQUENCE_CONFLICT',
+    'This patch (made ${sequenceTime(seq).toIso8601String()}) is older than '
+        'patch ${next - 1}, already published for this release; patch again '
+        'to publish the current source.',
+  );
+  final limit = (now ?? DateTime.now()).toUtc().add(const Duration(days: 1));
+  require(
+    !sequenceTime(seq).isAfter(limit),
+    'PUBLISH_SEQUENCE_CONFLICT',
+    'This patch claims to be made ${sequenceTime(seq).toIso8601String()}, '
+        'after the time on this machine; fix the clock of the machine that '
+        'made it and patch again.',
+  );
 }
 
 /// Where a project's publication waits while it commits.
@@ -297,11 +383,10 @@ Future<bool> confirmed(ArgResults args, String question) async {
   return (stdin.readLineSync() ?? '').trim().toLowerCase() == 'y';
 }
 
-/// The request publishing a project's patch: its scope and sequence from
-/// the patch output, the store and keys from the project, and the revision
-/// that follows the store's current one. With --withdraw, the request
-/// withdraws that scope's patches through --through, or through the latest
-/// published one.
+/// The request publishing a project's patch draft: its scope from the patch
+/// output, the store from the project, and the revision that follows the
+/// store's current one. With --withdraw, the request withdraws that scope's
+/// patches through --through, or through the latest published one.
 Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   final withdraw = args['withdraw'] == true;
   require(
@@ -323,7 +408,9 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   final report = await readObject(p.join(directory!, 'patch.json'));
   final scope = report['scope'];
   require(
-    report['status'] == 'patch_created' && scope is Map,
+    report['status'] == 'patch_created' &&
+        scope is Map &&
+        report['draft_sha256'] is String,
     'PUBLISH_CONFIG_INVALID',
     '$directory is not a patch output of this flutter_patcher.',
   );
@@ -346,7 +433,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   final revision = head?['revision'] as int? ?? 0;
   final action = withdraw
       ? withdrawal(head, args['through'] as String?)
-      : {'action': 'publish', 'patch_seq': '${report['patch_seq']}'};
+      : {'action': 'publish'};
   final random = Random.secure();
   return {
     'application_id': fields['application_id'],
@@ -358,9 +445,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
     ].join(),
     'expected_revision': revision,
     'created_at': DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
-    'private_key': config.key('publisher', private: true),
-    'public_key': config.key('publisher'),
-    if (!withdraw) 'patch': p.join(directory, 'patch.fptc'),
+    if (!withdraw) 'patch': directory,
     'fields': {
       ...fields,
       'schema': '1',

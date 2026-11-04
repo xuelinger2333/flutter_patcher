@@ -8,9 +8,7 @@ import 'package:path/path.dart' as p;
 
 import '../core.dart';
 import 'resources.dart';
-import '../crypto/ed25519.dart';
-import '../crypto/signing.dart';
-export '../crypto/signing.dart' show signingKey, hexBytes;
+export '../crypto/signing.dart' show hexBytes;
 
 /// Patch archive manifest version; must match the plugin's reader.
 const patchFormatVersion = 2;
@@ -72,14 +70,84 @@ Uint8List plainZip(Map<String, List<int>> entries, {String? deflated}) {
   return out.takeBytes();
 }
 
-/// Packs [code] of [kind] with the patch's resources into a signed envelope.
-Future<Map<String, Object?>> packPatch({
+/// The patch sequence of a patch made at [time]: seconds since 2025, so
+/// patches made on any machine order by when they were made, with no store
+/// to ask. Bytecode compiles it into the module, so patch picks it.
+int patchSequence(DateTime time) =>
+    time.toUtc().difference(DateTime.utc(2025)).inSeconds;
+
+/// When a patch of sequence [seq] was made.
+DateTime sequenceTime(int seq) =>
+    DateTime.utc(2025).add(Duration(seconds: seq));
+
+/// What patch produces: the archive devices read, complete but for its
+/// signature. publish seals it in a signed envelope.
+final class PatchDraft {
+  PatchDraft._(this.payload, this.manifest);
+
+  static const file = 'patch.draft';
+
+  /// The patch archive exactly as devices read it.
+  final Uint8List payload;
+
+  /// Its patch_manifest.json.
+  final Map<String, Object?> manifest;
+
+  int get seq => manifest['patch_seq'] as int;
+  String get fingerprint => manifest['fingerprint'] as String;
+
+  /// Identifies the draft: publish does not publish one twice.
+  String get digest => sha256.convert(payload).toString();
+
+  Future<void> write(String directory) =>
+      File(p.join(directory, file)).writeAsBytes(payload, flush: true);
+
+  static Future<PatchDraft> read(String directory) async {
+    final path = p.join(directory, file);
+    await rejectLinks(path);
+    require(
+      await File(path).exists(),
+      'PATCH_DRAFT_INVALID',
+      'No $file in $directory; create it with patch android|ios.',
+    );
+    require(
+      await File(path).length() <= 320 * 1024 * 1024,
+      'PATCH_DRAFT_INVALID',
+      'Patch draft too large',
+    );
+    final payload = await File(path).readAsBytes();
+    try {
+      final entry = ZipDecoder()
+          .decodeBytes(payload)
+          .findFile('patch_manifest.json');
+      final manifest = Map<String, Object?>.from(
+        jsonDecode(utf8.decode(entry!.content as List<int>)) as Map,
+      );
+      final seq = manifest['patch_seq'];
+      final fingerprint = manifest['fingerprint'];
+      if (manifest['format_version'] != patchFormatVersion ||
+          seq is! int ||
+          seq <= 0 ||
+          seq > 0xffffffff ||
+          fingerprint is! String ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint)) {
+        throw const FormatException();
+      }
+      return PatchDraft._(payload, manifest);
+    } catch (_) {
+      throw Failure(
+        'PATCH_DRAFT_INVALID',
+        '$path is not a patch draft of this flutter_patcher.',
+      );
+    }
+  }
+}
+
+/// Packs [code] of [kind] with the patch's resources into a draft.
+Future<PatchDraft> packPatch({
   required String kind,
   required String code,
-  required String work,
   required Map<String, dynamic> metadata,
-  required List<int> key,
-  required Commands commands,
   Map<String, List<int>> extraEntries = const {},
   List<Map<String, dynamic>> fonts = const [],
   List<Map<String, dynamic>> assets = const [],
@@ -182,53 +250,5 @@ Future<Map<String, Object?>> packPatch({
     'PATCH_PACKAGE_INVALID',
     'Only the libapp.so of an SO patch may be compressed',
   );
-  return {
-    ...await sealPatch(
-      payload: payload,
-      fingerprint: metadata['fingerprint'] as String,
-      seq: metadata['patch_seq'] as int,
-      key: key,
-      work: work,
-    ),
-    'manifest': manifest,
-  };
-}
-
-/// Wraps [payload] in a signed FPTC v1 envelope at `<work>/patch.fptc`.
-Future<Map<String, Object?>> sealPatch({
-  required List<int> payload,
-  required String fingerprint,
-  required int seq,
-  required List<int> key,
-  required String work,
-}) async {
-  final header = ByteData(82)
-    ..setUint32(0, 0x46505443)
-    ..setUint16(4, 1);
-  header.buffer.asUint8List().setRange(6, 38, hexBytes(fingerprint));
-  header.setUint32(38, seq);
-  header.setUint64(42, payload.length);
-  header.buffer.asUint8List().setRange(50, 82, sha256.convert(payload).bytes);
-  // The signed bytes, signature and DER public key stay in the work directory
-  // as evidence; independent tools (e.g. openssl pkeyutl) can re-verify them.
-  final signedBytes = [...header.buffer.asUint8List(), ...payload];
-  final publicKey = ed25519PublicKey(key);
-  await File(p.join(work, 'signed.bin')).writeAsBytes(signedBytes);
-  await File(p.join(work, 'signing-public.der'))
-      .writeAsBytes([...hexBytes('302a300506032b6570032100'), ...publicKey]);
-  final signature = ed25519Sign(key, signedBytes);
-  await File(p.join(work, 'signature.bin')).writeAsBytes(signature);
-  require(
-    ed25519Verify(publicKey, signature, signedBytes),
-    'PATCH_SIGN_FAILED',
-    'Signature self-check failed',
-  );
-  final output = p.join(work, 'patch.fptc');
-  await File(output)
-      .writeAsBytes([...header.buffer.asUint8List(), ...signature, ...payload]);
-  return {
-    'file': output,
-    'sha256': await hashFile(output),
-    'bytes': await File(output).length(),
-  };
+  return PatchDraft._(payload, manifest);
 }

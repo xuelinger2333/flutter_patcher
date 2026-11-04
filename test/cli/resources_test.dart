@@ -18,10 +18,7 @@ void main() {
       packPatch(
         kind: 'bytecode',
         code: module.path,
-        work: dir.path,
         metadata: {},
-        key: [],
-        commands: Commands(dir.path),
         extraEntries: {
           'assets/a': [1],
         },
@@ -35,10 +32,7 @@ void main() {
       packPatch(
         kind: 'bytecode',
         code: module.path,
-        work: dir.path,
         metadata: {},
-        key: [],
-        commands: Commands(dir.path),
         extraEntries: {
           'assets/a': [1],
         },

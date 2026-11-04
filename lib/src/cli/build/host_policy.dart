@@ -94,18 +94,21 @@ class HostPolicy {
       'BUILD_CONFIG_INVALID',
       'An iOS host is a bytecode host.',
     );
+    // The project's own mistakes first; keys come last.
+    applicationId ??= await _applicationId(project, platform);
+    versionCode ??= await buildNumber(project);
+    final anchors = config.requireAnchors();
     return HostPolicy({
       'schema': '1',
       'strategy': strategy,
       'abi': platform == 'ios' ? 'ios-arm64' : 'arm64-v8a',
-      'application_id':
-          applicationId ?? await _applicationId(project, platform),
-      'version_code': versionCode ?? await buildNumber(project),
+      'application_id': applicationId,
+      'version_code': versionCode,
       'flavor': flavor ?? 'default',
       'channel': channel ?? 'production',
-      'root_key': await config.read('root'),
-      'fptc_key': await config.read('patch'),
-      'keys': 'release:${await config.read('publisher')}',
+      'root_key': anchors.root,
+      'fptc_key': anchors.patch,
+      'keys': 'release:${anchors.publisher}',
     });
   }
 }

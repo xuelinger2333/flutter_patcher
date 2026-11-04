@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../core.dart';
 import '../crypto/ed25519.dart';
+import '../project.dart';
 import 'bundle.dart';
 import 'signer.dart';
 
@@ -31,6 +32,14 @@ final class Keyring {
   final Map<String, String> _environment;
 
   static const environmentVariable = 'FLUTTER_PATCHER_KEYS';
+
+  /// The keyring of a project: its trust keys and signing command from
+  /// flutter_patcher.yaml.
+  static Keyring forProject(ProjectConfig config, {String? keyFile}) => Keyring(
+    config.requireAnchors(),
+    keyFile: keyFile,
+    command: config.signingCommand,
+  );
 
   /// The signer of [role], checked against [anchors]: every signature it
   /// returns has been verified.

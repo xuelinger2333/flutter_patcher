@@ -4,13 +4,13 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
-import 'package:flutter_patcher/src/cli/crypto/signing.dart';
 import 'package:flutter_patcher/src/cli/publish/pipeline.dart';
 import 'package:flutter_patcher/src/cli/publish/protocol.dart';
 import 'package:flutter_patcher/src/cli/publish/store.dart';
 import 'package:flutter_patcher/src/cli/publish/transaction.dart';
 
 import 'baseline_test.dart' as base;
+import 'signers.dart';
 import 'publication_baseline_test.dart' show testPatch;
 import 'release_fixture.dart';
 
@@ -83,8 +83,7 @@ void main() {
     operation: operation,
     fields: fields(target, patch, vc, seq, operation),
     expectedRevision: 0,
-    seed: base.testSeed,
-    publicKey: base.testPublicKey,
+    signer: testSigner(base.testSeed),
     createdAt: '1',
     baseline: target.identity,
     target: target.target,

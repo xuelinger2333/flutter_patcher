@@ -1,3 +1,7 @@
+// Runs the CLI in subprocesses, each compiling it first: slow under load.
+@Timeout(Duration(minutes: 3))
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

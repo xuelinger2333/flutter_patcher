@@ -9,6 +9,8 @@ import 'host_tools.dart';
 import 'package:flutter_patcher/src/cli/crypto/ed25519.dart';
 import 'package:flutter_patcher/src/cli/crypto/signing.dart';
 
+import 'signers.dart';
+
 /// RFC 8032 §7.1 test vectors 1–3.
 const rfcVectors = [
   (

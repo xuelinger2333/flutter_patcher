@@ -150,13 +150,13 @@ void main() {
   group('key store', () {
     test('saves privately, loads, and is idempotent', () async {
       final bundle = KeyBundle.generate();
-      final path = await saveKeyStore(bundle, root: store);
+      final path = await saveKeyStore(bundle, bundle.anchors, root: store);
       expect(p.basename(p.dirname(path)), bundle.anchors.id);
       expect(
         (await loadKeyStore(bundle.anchors, root: store))!.encode(),
         bundle.encode(),
       );
-      expect(await saveKeyStore(bundle, root: store), path);
+      expect(await saveKeyStore(bundle, bundle.anchors, root: store), path);
       if (Platform.isWindows) {
         final acl =
             Process.runSync('icacls', [p.dirname(path)]).stdout as String;
@@ -173,14 +173,14 @@ void main() {
     test('is completed, never overwritten with other keys', () async {
       final bundle = KeyBundle.generate();
       final partial = bundle.without(KeyRole.patch);
-      await saveKeyStore(partial, root: store);
-      await saveKeyStore(bundle, root: store);
+      await saveKeyStore(partial, bundle.anchors, root: store);
+      await saveKeyStore(bundle, bundle.anchors, root: store);
       expect(
         (await loadKeyStore(bundle.anchors, root: store))!.encode(),
         bundle.encode(),
       );
       // A partial import keeps what the store already has.
-      await saveKeyStore(partial, root: store);
+      await saveKeyStore(partial, bundle.anchors, root: store);
       expect(
         (await loadKeyStore(bundle.anchors, root: store))!.encode(),
         bundle.encode(),
@@ -191,27 +191,27 @@ void main() {
         KeyRole.patch: KeyBundle.generate().seeds[KeyRole.patch]!,
       });
       await expectLater(
-        saveKeyStore(other, root: store),
+        saveKeyStore(other, bundle.anchors, root: store),
         fails('KEYS_MISMATCH'),
       );
       await expectLater(
-        saveKeyStore(other, root: store, replace: true),
+        saveKeyStore(other, bundle.anchors, root: store, replace: true),
         fails('KEYS_MISMATCH'),
       );
     });
 
     test('replace gives it a new publisher key only', () async {
       final bundle = KeyBundle.generate();
-      await saveKeyStore(bundle, root: store);
+      await saveKeyStore(bundle, bundle.anchors, root: store);
       final rotated = KeyBundle({
         ...bundle.seeds,
         KeyRole.publisher: KeyBundle.generate().seeds[KeyRole.publisher]!,
       });
       await expectLater(
-        saveKeyStore(rotated, root: store),
+        saveKeyStore(rotated, rotated.anchors, root: store),
         fails('KEYS_MISMATCH'),
       );
-      await saveKeyStore(rotated, root: store, replace: true);
+      await saveKeyStore(rotated, rotated.anchors, root: store, replace: true);
       expect(
         (await loadKeyStore(rotated.anchors, root: store))!.encode(),
         rotated.encode(),
@@ -223,10 +223,17 @@ void main() {
       );
     });
 
-    test('needs the root key, which names the project', () async {
+    test('stores a bundle without its root key under the project', () async {
+      final bundle = KeyBundle.generate();
+      final partial = bundle.without(KeyRole.root);
+      await saveKeyStore(partial, bundle.anchors, root: store);
+      expect(
+        (await loadKeyStore(bundle.anchors, root: store))!.encode(),
+        partial.encode(),
+      );
       await expectLater(
-        saveKeyStore(KeyBundle.generate().without(KeyRole.root), root: store),
-        fails('KEYS_BUNDLE_INVALID'),
+        saveKeyStore(partial, KeyBundle.generate().anchors, root: store),
+        fails('KEYS_MISMATCH'),
       );
     });
   });
@@ -261,7 +268,7 @@ void main() {
     });
 
     test('signs from the key store', () async {
-      await saveKeyStore(bundle, root: store);
+      await saveKeyStore(bundle, bundle.anchors, root: store);
       for (final role in KeyRole.values) {
         final signer = await keyring().signer(role);
         expect(signer.source, 'key store');
@@ -273,7 +280,7 @@ void main() {
     });
 
     test('prefers --key-file, then the environment, then the store', () async {
-      await saveKeyStore(bundle, root: store);
+      await saveKeyStore(bundle, bundle.anchors, root: store);
       final file = File(p.join(temp.path, 'keys.json'))
         ..writeAsStringSync(bundle.without(KeyRole.root).encode());
       final env = {
@@ -302,7 +309,7 @@ void main() {
     test(
       'a source with another key fails instead of falling through',
       () async {
-        await saveKeyStore(bundle, root: store);
+        await saveKeyStore(bundle, bundle.anchors, root: store);
         final stranger = KeyBundle.generate();
         final env = {Keyring.environmentVariable: stranger.encode()};
         await expectLater(

@@ -11,6 +11,7 @@ import '../baseline/split.dart';
 import '../baseline/store.dart';
 import '../core.dart';
 import '../crypto/signing.dart';
+import '../keys/signer.dart';
 import 'protocol.dart';
 import 'transaction.dart';
 import '../../publication_scope.dart';
@@ -283,12 +284,14 @@ class PublicationPipeline {
     required String operation,
     required Map<String, String> fields,
     required int expectedRevision,
-    required String seed,
-    required String publicKey,
+    required Signer signer,
     required String createdAt,
     required Map<String, dynamic> baseline,
     Map<String, dynamic>? target,
     Uint8List? patch,
+
+    /// The digest of the draft [patch] was sealed from.
+    String? draft,
     bool commit = false,
     bool pin = false,
   }) async {
@@ -343,7 +346,8 @@ class PublicationPipeline {
       );
     }
     final manifest = PublishManifest(f), scope = scopeOf(f);
-    final signature = signMessage(manifest.signingBytes, seed, publicKey);
+    final signature = await signer.sign(manifest.signingBytes);
+    verifyMessage(manifest.signingBytes, signature, signer.publicKey);
     final wire = manifest.envelope(signature);
     final intent = {
       'kind': 'publish',
@@ -442,7 +446,7 @@ class PublicationPipeline {
         'public_download_verified': false,
         'publisher_source': 'not_recorded',
         'patch_source': 'not_provided',
-        'publication_key_sha256': digest(base64Decode(publicKey.trim())),
+        'publication_key_sha256': digest(base64Decode(signer.publicKey)),
       };
       (current['releases'] as Map)[operation] = {
         ...receipt,
@@ -452,6 +456,7 @@ class PublicationPipeline {
         'high_seq': seq > high ? seq : high,
         'withdrawn_through': newFloor,
         'patch_hash': f['sha256'] ?? old?['patch_hash'] ?? '',
+        'draft_sha256': ?draft,
       };
       (current['heads'] as Map)[scope] = operation;
       return receipt;

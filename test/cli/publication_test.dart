@@ -13,6 +13,8 @@ import 'package:flutter_patcher/src/cli/publish/retention.dart';
 import 'package:flutter_patcher/src/cli/publish/pipeline.dart';
 import 'package:flutter_patcher/src/cli/publish/protocol.dart';
 
+import 'signers.dart';
+
 class DisruptedStore implements PublishStore {
   DisruptedStore(this.inner);
   final PublishStore inner;
@@ -277,8 +279,7 @@ void main() {
       operation: 'a' * 32,
       fields: fields,
       expectedRevision: 0,
-      seed: seed,
-      publicKey: public,
+      signer: testSigner(seed),
       createdAt: '1',
       baseline: identity,
       patch: patch,
@@ -300,8 +301,7 @@ void main() {
         operation: 'a' * 32,
         fields: fields,
         expectedRevision: 0,
-        seed: seed,
-        publicKey: public,
+        signer: testSigner(seed),
         createdAt: '1',
         baseline: identity,
         patch: patch,
@@ -321,8 +321,7 @@ void main() {
         operation: 'b' * 32,
         fields: withdraw,
         expectedRevision: 1,
-        seed: seed,
-        publicKey: public,
+        signer: testSigner(seed),
         createdAt: '2',
         baseline: identity,
         commit: true,
@@ -338,8 +337,7 @@ void main() {
           'path': fields['path']!.replaceAll('a' * 32, 'c' * 32),
         },
         expectedRevision: 2,
-        seed: seed,
-        publicKey: public,
+        signer: testSigner(seed),
         createdAt: '3',
         baseline: identity,
         patch: patch,

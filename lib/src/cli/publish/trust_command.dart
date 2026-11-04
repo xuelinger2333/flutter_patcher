@@ -8,14 +8,29 @@ import '../core.dart';
 import '../run_work.dart';
 import '../sdk/host.dart';
 import '../crypto/signing.dart';
+import '../keys/bundle.dart';
+import '../keys/keyring.dart';
+import '../project.dart';
 import 'store.dart';
 import 'trust.dart';
 
 ArgParser trustOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
   ..addOption('fields', help: 'Trust payload JSON, public fields only.')
-  ..addOption('root-public', help: 'Immutable host root public key file.')
-  ..addOption('root-private', help: 'Root seed file; sign only.')
+  ..addOption(
+    'project',
+    help: 'Application directory whose keys to use; default the current one.',
+  )
+  ..addOption(
+    'root-public',
+    help: 'Host root public key file; default the project\'s.',
+  )
+  ..addOption(
+    'key-file',
+    help:
+        'sign: a key bundle holding the root key, before '
+        '${Keyring.environmentVariable}, signing.command and the key store.',
+  )
   ..addOption('out', help: 'New signed document path.')
   ..addOption('wire', help: 'Exact signed document to publish.')
   ..addOption(
@@ -45,7 +60,12 @@ Future<int> trustCommand(ArgResults args) async {
   final work = await RunWork.create(p.join(cache, 'trust'));
   try {
     final commands = Commands(cache);
-    final root = (await File(input('root-public')).readAsString()).trim();
+    final config = await ProjectConfig.load(
+      p.absolute(args['project'] as String? ?? Directory.current.path),
+    );
+    final root = args['root-public'] == null
+        ? config.requireAnchors().root
+        : (await File(args['root-public'] as String).readAsString()).trim();
     Future<TrustUpdate> verify(String wire, String stage) async {
       require(wire.length <= 24000, 'TRUST_INVALID', 'Trust envelope size');
       final envelope = jsonDecode(wire) as Map;
@@ -80,8 +100,12 @@ Future<int> trustCommand(ArgResults args) async {
         'TRUST_OUTPUT_EXISTS',
         'Use a new output file.',
       );
-      final seed = (await File(input('root-private')).readAsString()).trim();
-      final signature = signMessage(update.signingBytes, seed, root);
+      final signer = await Keyring.forProject(
+        config,
+        keyFile: args['key-file'] as String?,
+      ).signer(KeyRole.root);
+      final signature = await signer.sign(update.signingBytes);
+      verifyMessage(update.signingBytes, signature, root);
       await out.parent.create(recursive: true);
       await out.writeAsString(update.envelope(signature), flush: true);
       stdout.writeln(
@@ -93,9 +117,7 @@ Future<int> trustCommand(ArgResults args) async {
       return 0;
     }
     require(
-      args['root-private'] == null &&
-          args['fields'] == null &&
-          args['out'] == null,
+      args['key-file'] == null && args['fields'] == null && args['out'] == null,
       'USAGE_ERROR',
       'Publish does not accept private key or signing options.',
     );

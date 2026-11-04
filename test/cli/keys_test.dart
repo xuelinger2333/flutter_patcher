@@ -1,3 +1,7 @@
+// Runs the CLI in subprocesses, each compiling it first: slow under load.
+@Timeout(Duration(minutes: 3))
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,204 +10,287 @@ import 'package:test/test.dart';
 
 import 'host_tools.dart';
 
-import 'package:flutter_patcher/src/cli/core.dart';
+import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 import 'package:flutter_patcher/src/cli/sdk/host.dart';
-import 'package:flutter_patcher/src/cli/build/bootstrap.dart';
-import 'package:flutter_patcher/src/cli/patch/package.dart';
 
 void main() {
+  late Directory root;
+  setUp(() => root = Directory.systemTemp.createTempSync('keys-'));
+  tearDown(() => root.deleteSync(recursive: true));
+
+  /// A machine: its own home, so its own key store.
+  Map<String, String> machine(String name) {
+    final home = p.join(root.path, name);
+    Directory(home).createSync(recursive: true);
+    return {'HOME': home, 'USERPROFILE': home};
+  }
+
   Future<ProcessResult> cli(
     List<String> args, {
-    Map<String, String>? environment,
-    String? workingDirectory,
-  }) => Process.run(
-    dartVm,
-    [p.absolute('bin/flutter_patcher.dart'), 'keys', ...args],
-    environment: environment,
-    workingDirectory: workingDirectory,
-  );
-  Map role(ProcessResult result, String name) =>
-      ((jsonDecode(result.stdout as String) as Map)['keys'] as Map)[name]
-          as Map;
-  test(
-    'keys help and invalid usage require no SDK or output directory',
-    () async {
-      expect((await cli(['init', '--help'])).exitCode, 0);
-      for (final args in [
-        <String>[],
-        ['rotate'],
-        ['init', 'extra'],
-        ['init', '--force'],
-      ]) {
-        final result = await cli(args);
-        expect(result.exitCode, 2);
-        expect(result.stderr, contains('USAGE_ERROR'));
-      }
-    },
-  );
+    required Map<String, String> environment,
+    String? project,
+  }) => Process.run(dartVm, [
+    p.absolute('bin/flutter_patcher.dart'),
+    'keys',
+    ...args,
+    if (project != null) ...['--project', project],
+  ], environment: environment);
+
+  Map report(ProcessResult result) {
+    expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+    return jsonDecode(result.stdout as String) as Map;
+  }
+
+  String project(String name) =>
+      (Directory(p.join(root.path, name))..createSync()).path;
+
+  String yaml(String project) =>
+      File(p.join(project, 'flutter_patcher.yaml')).readAsStringSync();
+
+  test('help and invalid usage', () async {
+    final env = machine('a');
+    expect((await cli(['init', '--help'], environment: env)).exitCode, 0);
+    for (final args in [
+      <String>[],
+      ['rotate'],
+      ['init', 'extra'],
+      ['init', '--force'],
+      ['import'],
+      ['export'],
+      ['export', '--base64', '--out', 'x'],
+      ['init', '--role', 'patch'],
+    ]) {
+      final result = await cli(args, environment: env);
+      expect(result.exitCode, 2, reason: '$args');
+      expect(result.stderr, contains('USAGE_ERROR'), reason: '$args');
+    }
+  });
+
   if (!HostIdentity.verified.contains(HostIdentity.current().key)) {
     test('unsupported host fails without creating keys', () async {
-      final root = Directory.systemTemp.createTempSync('keys-host-');
-      addTearDown(() => root.deleteSync(recursive: true));
-      final out = p.join(root.path, 'keys');
-      final result = await cli(['init', '--out', out]);
+      final app = project('app');
+      final result = await cli(
+        ['init'],
+        environment: machine('a'),
+        project: app,
+      );
       expect(result.exitCode, 2);
       expect(result.stderr, contains('HOST_UNSUPPORTED'));
-      expect(Directory(out).existsSync(), false);
+      expect(File(p.join(app, 'flutter_patcher.yaml')).existsSync(), false);
     });
     return;
   }
-  group('key initialization on a verified host', () {
-    late Directory root;
-    setUp(() {
-      root = Directory.systemTemp.createTempSync('keys-init-');
-    });
-    tearDown(() => root.deleteSync(recursive: true));
-    test(
-      'generates protected, distinct pairs compatible with build and patch',
-      () async {
-        final publicKeys = <String>[];
-        for (var i = 0; i < 2; i++) {
-          final out = p.join(root.path, 'keys-$i');
-          final result = await cli(['init', '--out', out]);
-          expect(result.exitCode, 0, reason: '${result.stderr}');
-          final report = jsonDecode(result.stdout as String) as Map;
-          expect(report['status'], 'keys_created');
-          expect((report['keys'] as Map).keys, ['root', 'publisher', 'patch']);
-          for (final name in ['root', 'publisher', 'patch']) {
-            final privateFile = File(
-              role(result, name)['private_key'] as String,
-            );
-            final secret = privateFile.readAsStringSync().trim();
-            final public = File(role(result, name)['public_key'] as String)
-                .readAsStringSync()
-                .trim();
-            expect(base64Decode(secret).length, 32);
-            expect(base64Decode(public).length, 32);
-            expect(result.stdout, isNot(contains(secret)));
-            expect(result.stderr, isNot(contains(secret)));
-            if (!Platform.isWindows) {
-              expect(privateFile.statSync().mode & 0x1ff, 0x180); // 0600
-            }
-            expect(
-              bootstrapSource('app', 'main.dart', 'ab' * 32, public),
-              contains(public),
-            );
-            publicKeys.add(public);
-          }
-          if (Platform.isWindows) {
-            // Inheritance removed and only the current user granted.
-            final acl = Process.runSync('icacls', [out]).stdout as String;
-            expect(acl, contains(Platform.environment['USERNAME']!));
-            expect(acl, isNot(contains('BUILTIN\\Users')));
-            expect(acl, isNot(contains('Everyone')));
-          } else {
-            expect(Directory(out).statSync().mode & 0x1ff, 0x1c0); // 0700
-          }
-          expect(
-            File(p.join(out, '.gitignore')).readAsStringSync(),
-            contains('*/private-key.base64'),
-          );
-        }
-        expect(publicKeys.toSet().length, 6);
-      },
-    );
-    test('generated keys sign and pack a patch', () async {
-      final out = p.join(root.path, 'keys');
-      final result = await cli(['init', '--out', out]);
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      // Use the files exactly as written, trailing newline included.
-      final patch = role(result, 'patch');
-      final secret = File(patch['private_key'] as String).readAsStringSync();
-      final public = File(patch['public_key'] as String).readAsStringSync();
-      final work = Directory(p.join(root.path, 'work'))..createSync();
-      final commands = Commands(root.path);
-      final key = signingKey(secret, expectedPublic: public);
-      final module = File(p.join(work.path, 'module.bc'))
-        ..writeAsStringSync('synthetic signing contract only');
-      final packed = await packPatch(
-        kind: 'bytecode',
-        code: module.path,
-        work: work.path,
-        metadata: {'fingerprint': 'ab' * 32, 'patch_seq': 1, 'tier': 'lean'},
-        key: key,
-        commands: commands,
+
+  test(
+    'init keeps private keys in the key store, public keys in the project',
+    () async {
+      final env = machine('a');
+      final app = project('app');
+      final created = report(
+        await cli(['init'], environment: env, project: app),
       );
-      expect(File(packed['file'] as String).lengthSync(), greaterThan(146));
-    });
-    test('existing keys remain byte-for-byte unchanged on retry', () async {
-      final out = p.join(root.path, 'keys');
-      expect((await cli(['init', '--out', out])).exitCode, 0);
-      final before = File(p.join(out, 'root', 'private-key.base64'))
-          .readAsBytesSync();
-      final retry = await cli(['init', '--out', out]);
-      expect(retry.exitCode, 2);
-      expect(retry.stderr, contains('KEYS_OUTPUT_EXISTS'));
+      expect(created['status'], 'keys_created');
+      final stored = File(created['key_store'] as String);
       expect(
-        File(p.join(out, 'root', 'private-key.base64')).readAsBytesSync(),
-        before,
-      );
-    });
-    test('concurrent initializers have exactly one winner', () async {
-      final out = p.join(root.path, 'keys');
-      final results = await Future.wait([
-        cli(['init', '--out', out]),
-        cli(['init', '--out', out]),
-      ]);
-      expect(results.where((r) => r.exitCode == 0).length, 1);
-      expect(results.where((r) => r.exitCode == 2).length, 1);
-      expect(
-        base64Decode(
-          File(p.join(out, 'root', 'private-key.base64'))
-              .readAsStringSync()
-              .trim(),
-        ).length,
-        32,
-      );
-    });
-    test(
-      'rejects symlink ancestors without writing into their target',
-      () async {
-        final actual = Directory(p.join(root.path, 'actual'))..createSync();
-        final link = Link(p.join(root.path, 'link'))..createSync(actual.path);
-        expect(
-          (await cli(['init', '--out', p.join(link.path, 'keys')])).exitCode,
-          2,
-        );
-        expect(actual.listSync(), isEmpty);
-      },
-      tags: 'symlink',
-    );
-    test('key generation needs no external tool', () async {
-      final out = p.join(root.path, 'keys');
-      final result = await cli(
-        ['init', '--out', out],
-        environment: {'PATH': ''},
-      );
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(
-        File(p.join(out, 'patch', 'public-key.base64')).existsSync(),
+        p.isWithin(
+          p.join(env['HOME']!, '.flutter_patcher', 'keys'),
+          stored.path,
+        ),
         true,
       );
-    });
-    test(
-      'by default the project gets its keys and a settings template',
-      () async {
-        final result = await cli(['init'], workingDirectory: root.path);
-        expect(result.exitCode, 0, reason: '${result.stderr}');
-        final file = File(
-          p.join(
-            root.path,
-            'flutter_patcher_keys/publisher/private-key.base64',
-          ),
-        );
-        expect(file.existsSync(), true);
-        expect(result.stdout, isNot(contains(file.readAsStringSync().trim())));
-        expect(
-          File(p.join(root.path, 'flutter_patcher.yaml')).readAsStringSync(),
-          contains('baseline_store'),
-        );
-      },
+      final bundle = KeyBundle.decode(stored.readAsStringSync());
+      final publicKeys = created['public_keys'] as Map;
+      for (final role in KeyRole.values) {
+        expect(publicKeys[role.name], bundle.publicKey(role));
+        expect(yaml(app), contains('${role.name}: ${bundle.publicKey(role)}'));
+        final secret = base64Encode(bundle.seeds[role]!);
+        expect(created.toString(), isNot(contains(secret)));
+        expect(yaml(app), isNot(contains(secret)));
+      }
+      expect(yaml(app), contains('# store:'));
+      expect(
+        Directory(p.join(app, 'flutter_patcher_keys')).existsSync(),
+        false,
+      );
+      if (Platform.isWindows) {
+        final acl =
+            Process.runSync('icacls', [stored.parent.path]).stdout as String;
+        expect(acl, contains(Platform.environment['USERNAME']!));
+        expect(acl, isNot(contains('BUILTIN\\Users')));
+        expect(acl, isNot(contains('Everyone')));
+      } else {
+        expect(stored.statSync().mode & 0x1ff, 0x180); // 0600
+        expect(stored.parent.statSync().mode & 0x1ff, 0x1c0); // 0700
+      }
+
+      // New keys for a project that has keys would split its hosts.
+      final again = await cli(['init'], environment: env, project: app);
+      expect(again.exitCode, 2);
+      expect(again.stderr, contains('KEYS_ALREADY_CONFIGURED'));
+      expect(
+        KeyBundle.decode(stored.readAsStringSync()).encode(),
+        bundle.encode(),
+      );
+
+      final status = report(
+        await cli(['status'], environment: env, project: app),
+      );
+      for (final role in KeyRole.values) {
+        expect(status['keys'][role.name], {
+          'public_key': bundle.publicKey(role),
+          'private_key': 'key store',
+        });
+      }
+    },
+  );
+
+  test('keys move to another machine by file, and to CI by one line', () async {
+    final first = machine('first'), second = machine('second');
+    final app = project('app');
+    report(await cli(['init'], environment: first, project: app));
+    final backup = p.join(root.path, 'backup.json');
+    report(
+      await cli(['export', '--out', backup], environment: first, project: app),
     );
+    if (!Platform.isWindows) {
+      expect(File(backup).statSync().mode & 0x1ff, 0x180);
+    }
+    final refused = await cli(
+      ['export', '--out', backup],
+      environment: first,
+      project: app,
+    );
+    expect(refused.stderr, contains('KEYS_OUTPUT_EXISTS'));
+
+    // A clone on another machine has the public keys but no private ones.
+    final clone = project('clone');
+    File(p.join(clone, 'flutter_patcher.yaml')).writeAsStringSync(yaml(app));
+    final before = report(
+      await cli(['status'], environment: second, project: clone),
+    );
+    expect(before['keys']['patch']['private_key'], 'none');
+    final imported = report(
+      await cli(['import', backup], environment: second, project: clone),
+    );
+    expect(imported['status'], 'keys_imported');
+    final after = report(
+      await cli(['status'], environment: second, project: clone),
+    );
+    expect(after['keys']['root']['private_key'], 'key store');
+
+    final line = await cli(
+      ['export', '--base64', '--without-root'],
+      environment: first,
+      project: app,
+    );
+    expect(line.exitCode, 0);
+    final ci = {
+      ...machine('ci'),
+      'FLUTTER_PATCHER_KEYS': (line.stdout as String).trim(),
+    };
+    final status = report(
+      await cli(['status'], environment: ci, project: clone),
+    );
+    expect(status['keys']['root']['private_key'], 'none');
+    expect(status['keys']['publisher']['private_key'], 'FLUTTER_PATCHER_KEYS');
+    expect(status['keys']['patch']['private_key'], 'FLUTTER_PATCHER_KEYS');
+  });
+
+  test(
+    'import refuses another project\'s keys and configures a new one',
+    () async {
+      final env = machine('a');
+      final app = project('app');
+      report(await cli(['init'], environment: env, project: app));
+      final stranger = p.join(root.path, 'stranger.json');
+      report(await cli(['init', '--out', stranger], environment: env));
+      final refused = await cli(
+        ['import', stranger],
+        environment: env,
+        project: app,
+      );
+      expect(refused.exitCode, 2);
+      expect(refused.stderr, contains('KEYS_MISMATCH'));
+
+      final fresh = project('fresh');
+      final imported = report(
+        await cli(['import', stranger], environment: env, project: fresh),
+      );
+      expect(imported['config'], isNotNull);
+      final bundle = KeyBundle.decode(File(stranger).readAsStringSync());
+      expect(
+        yaml(fresh),
+        contains('patch: ${bundle.publicKey(KeyRole.patch)}'),
+      );
+    },
+  );
+
+  test('a pre-1.0 key directory is imported, not replaced', () async {
+    final env = machine('a');
+    final app = project('app');
+    final bundle = KeyBundle.generate();
+    for (final role in KeyRole.values) {
+      File(p.join(app, 'flutter_patcher_keys', role.name, 'private-key.base64'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('${base64Encode(bundle.seeds[role]!)}\n');
+    }
+    final init = await cli(['init'], environment: env, project: app);
+    expect(init.exitCode, 2);
+    expect(init.stderr, contains('keys import flutter_patcher_keys'));
+    report(
+      await cli(
+        ['import', p.join(app, 'flutter_patcher_keys')],
+        environment: env,
+        project: app,
+      ),
+    );
+    expect(yaml(app), contains('root: ${bundle.publicKey(KeyRole.root)}'));
+  });
+
+  test('the publisher key rotates to a new one', () async {
+    final env = machine('a');
+    final app = project('app');
+    report(await cli(['init'], environment: env, project: app));
+    final next = p.join(root.path, 'publisher.json');
+    final created = report(
+      await cli([
+        'init',
+        '--out',
+        next,
+        '--role',
+        'publisher',
+      ], environment: env),
+    );
+    final publisher = (created['public_keys'] as Map)['publisher'] as String;
+    expect((created['public_keys'] as Map).keys, ['publisher']);
+    final rotated = report(
+      await cli(['import', next, '--rotate'], environment: env, project: app),
+    );
+    expect(rotated['status'], 'keys_rotated');
+    expect(yaml(app), contains('publisher: $publisher'));
+    final status = report(
+      await cli(['status'], environment: env, project: app),
+    );
+    expect(status['keys']['publisher'], {
+      'public_key': publisher,
+      'private_key': 'key store',
+    });
+    expect(status['keys']['root']['private_key'], 'key store');
+    final again = await cli(
+      ['import', next, '--rotate'],
+      environment: env,
+      project: app,
+    );
+    expect(again.stderr, contains('KEYS_ALREADY_CONFIGURED'));
+  });
+
+  test('key generation needs no external tool', () async {
+    final app = project('app');
+    final result = await cli(
+      ['init'],
+      environment: {...machine('a'), 'PATH': ''},
+      project: app,
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
   });
 }

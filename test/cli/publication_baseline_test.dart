@@ -8,6 +8,8 @@ import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/baseline/repository.dart';
 import 'package:flutter_patcher/src/cli/baseline/store.dart';
 import 'package:flutter_patcher/src/cli/publish/pipeline.dart';
+import 'package:flutter_patcher/src/cli/publish/seal.dart';
+import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 import 'package:flutter_patcher/src/cli/patch/package.dart';
 import 'package:flutter_patcher/src/cli/cli.dart';
 import 'package:flutter_patcher/src/cli/publish/command.dart';
@@ -15,6 +17,7 @@ import 'package:flutter_patcher/src/cli/publish/store.dart';
 import 'package:flutter_patcher/src/cli/publish/transaction.dart';
 
 import 'baseline_test.dart' as base;
+import 'signers.dart';
 
 /// Takes the operation gate, then stops before committing, as a publisher
 /// that loses its connection or process does.
@@ -32,9 +35,9 @@ class _Interrupted extends PublicationTransaction {
   );
 }
 
-/// A signed patch package, as patch android writes it; [target] pins it to
-/// one release.
-Future<Uint8List> testPatch(
+/// A patch draft, as patch android writes it; [target] pins it to one
+/// release.
+Future<PatchDraft> testDraft(
   String dir,
   String fingerprint,
   int seq, {
@@ -43,22 +46,28 @@ Future<Uint8List> testPatch(
   final work = await Directory(dir).createTemp('patch-');
   final module = p.join(work.path, 'module.bc');
   await File(module).writeAsBytes(List.filled(128, 1));
-  final packed = await packPatch(
+  return packPatch(
     kind: 'bytecode',
     code: module,
-    work: work.path,
     metadata: {
       'patch_seq': seq,
       'fingerprint': fingerprint,
       'tier': 'lean',
       'target': ?target,
     },
-    key: signingKey(base.testSeed),
-    commands: Commands(work.path),
   );
-  return File(packed['file'] as String).readAsBytes();
 }
 
+/// The draft sealed with the test patch key, as publish seals it.
+Future<Uint8List> testPatch(
+  String dir,
+  String fingerprint,
+  int seq, {
+  Map<String, dynamic>? target,
+}) async => sealPatch(
+  await testDraft(dir, fingerprint, seq, target: target),
+  signer: testSigner(base.testSeed, KeyRole.patch),
+);
 void main() {
   test(
     'publication verifies actual archive identity; cache cannot mask deletion',
@@ -123,32 +132,33 @@ void main() {
         }, p.join(temp.path, 'wrong')),
         throwsA(isA<Failure>()),
       );
-      final patch = File(p.join(temp.path, 'patch.fptc'));
-      await patch.writeAsBytes(
-        await testPatch(
-          temp.path,
-          fp,
-          1,
-          target: {
-            'flavor': 'default',
-            'version_code': '1',
-            'abi': 'arm64-v8a',
-            'release_manifest_sha256': saved['release']['manifest_sha256'],
-          },
-        ),
+      final patch = Directory(p.join(temp.path, 'draft'))..createSync();
+      await (await testDraft(
+        temp.path,
+        fp,
+        1,
+        target: {
+          'flavor': 'default',
+          'version_code': '1',
+          'abi': 'arm64-v8a',
+          'release_manifest_sha256': saved['release']['manifest_sha256'],
+        },
+      )).write(patch.path);
+      // The project names the keys; a key bundle holds them, as a CI secret
+      // would.
+      final project = p.join(temp.path, 'project');
+      final keys = await writeTestKeys(
+        project,
+        seed,
+        store: Directory(p.join(temp.path, 'publication')).uri.toString(),
+        baselineStore: Directory(store.root).uri.toString(),
       );
-      final priv = File(p.join(temp.path, 'private'));
-      await priv.writeAsString(seed);
-      final pub = File(p.join(temp.path, 'public'));
-      await pub.writeAsString(public);
       final req = File(p.join(temp.path, 'request.json'));
       await writeObject(req.path, {
         'application_id': 'com.example.app',
         'operation': 'a' * 32,
         'store': Directory(p.join(temp.path, 'publication')).uri.toString(),
         'baseline_store': Directory(store.root).uri.toString(),
-        'private_key': priv.path,
-        'public_key': pub.path,
         'patch': patch.path,
         'expected_revision': 0,
         'created_at': 1,
@@ -172,7 +182,16 @@ void main() {
         },
       });
       expect(
-        await runCli(['publish', '--production', '--request', req.path]),
+        await runCli([
+          'publish',
+          '--production',
+          '--request',
+          req.path,
+          '--project',
+          project,
+          '--key-file',
+          keys,
+        ]),
         0,
       );
       expect(
@@ -197,6 +216,10 @@ void main() {
           '--production',
           '--request',
           req.path,
+          '--project',
+          project,
+          '--key-file',
+          keys,
           '--yes',
         ]),
         0,
@@ -207,9 +230,76 @@ void main() {
           '--production',
           '--request',
           req.path,
+          '--project',
+          project,
+          '--key-file',
+          keys,
           '--yes',
         ]),
         0,
+      );
+      // The same draft again is already published: no new sequence.
+      final again = await publication(
+        publishOptions().parse([
+          '--production',
+          '--request',
+          req.path,
+          '--project',
+          project,
+          '--key-file',
+          keys,
+          '--yes',
+        ]),
+      );
+      expect(again['status'], 'already_published');
+      expect(again['patch_seq'], 1);
+      // Another project's keys cannot publish this release's patches.
+      final draft2 = Directory(p.join(temp.path, 'draft2'))..createSync();
+      await (await testDraft(
+        temp.path,
+        fp,
+        2,
+        target: {
+          'flavor': 'default',
+          'version_code': '1',
+          'abi': 'arm64-v8a',
+          'release_manifest_sha256': saved['release']['manifest_sha256'],
+        },
+      )).write(draft2.path);
+      final req2 = File(p.join(temp.path, 'request2.json'));
+      await writeObject(req2.path, {
+        ...await readObject(req.path),
+        'operation': 'b' * 32,
+        'patch': draft2.path,
+        'expected_revision': 1,
+        'fields': {...(await readObject(req.path))['fields'], 'revision': '2'},
+      });
+      final stranger = p.join(temp.path, 'stranger');
+      final strangerKeys = await writeTestKeys(
+        stranger,
+        base64Encode(List.filled(32, 9)),
+      );
+      final before = File(p.join(temp.path, 'publication', 'catalog.json'))
+          .readAsStringSync();
+      await expectLater(
+        publication(
+          publishOptions().parse([
+            '--production',
+            '--request',
+            req2.path,
+            '--project',
+            stranger,
+            '--key-file',
+            strangerKeys,
+            '--yes',
+          ]),
+        ),
+        throwsA(isA<Failure>().having((f) => f.code, 'code', 'KEYS_MISMATCH')),
+      );
+      expect(
+        File(p.join(temp.path, 'publication', 'catalog.json'))
+            .readAsStringSync(),
+        before,
       );
       // Each run removes its work directory, downloaded baselines included.
       final cacheDir = (await readObject(req.path))['cache_dir'] as String;
@@ -233,15 +323,6 @@ void main() {
         (catalog['releases'] as Map)[head]['wire'],
       );
       // A project withdraws its release's latest patch without a request file.
-      final project = p.join(temp.path, 'project');
-      final keys = p.join(project, 'flutter_patcher_keys', 'publisher');
-      await Directory(keys).create(recursive: true);
-      await File(p.join(keys, 'private-key.base64')).writeAsString(seed);
-      await File(p.join(keys, 'public-key.base64')).writeAsString(public);
-      await File(p.join(project, 'flutter_patcher.yaml')).writeAsString(
-        "store: '${Directory(p.join(temp.path, 'publication')).uri}'\n"
-        "baseline_store: '${Directory(store.root).uri}'\n",
-      );
       final output = p.join(
         project,
         '.dart_tool',
@@ -253,6 +334,7 @@ void main() {
       await writeObject(p.join(output, 'patch.json'), {
         'status': 'patch_created',
         'patch_seq': 1,
+        'draft_sha256': 'd' * 64,
         'scope': {...fields, 'channel': 'stable', 'abi': 'arm64-v8a'},
       });
       Future<int> withdraw([List<String> extra = const []]) => runCli([
@@ -261,6 +343,8 @@ void main() {
         project,
         '--withdraw',
         ...extra,
+        '--key-file',
+        keys,
         '--yes',
       ]);
       expect(await withdraw(['--through', '2']), 2);
@@ -293,8 +377,7 @@ void main() {
           operation: interrupted['operation'] as String,
           fields: interruptedFields,
           expectedRevision: interrupted['expected_revision'] as int,
-          seed: seed,
-          publicKey: public,
+          signer: testSigner(seed),
           createdAt: interrupted['created_at'].toString(),
           baseline: release.identity,
           target: release.target,

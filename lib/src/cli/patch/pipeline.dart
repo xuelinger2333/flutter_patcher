@@ -27,7 +27,7 @@ class PatchFailure extends Failure {
 }
 
 class PatchRequest {
-  final String project, privateKey, output, target, flavor;
+  final String project, output, target, flavor;
 
   /// `android` or `ios`; must match the release's host policy.
   final String platform;
@@ -37,18 +37,16 @@ class PatchRequest {
   /// a legacy baseline that has no release binding.
   final String? fingerprint;
   final int seq, minBuild;
-  final int? previousSeq;
+
   final bool offline;
   final List<String> assets;
   PatchRequest({
     required this.project,
     this.fingerprint,
     this.flavor = 'default',
-    required this.privateKey,
     required this.output,
     required this.seq,
     required this.minBuild,
-    this.previousSeq,
     this.assets = const [],
     this.target = 'lib/main.dart',
     this.platform = 'android',
@@ -60,8 +58,7 @@ class PatchRequest {
           RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(flavor) &&
           seq > 0 &&
           seq <= 0xffffffff &&
-          minBuild > 0 &&
-          (previousSeq == null || (previousSeq! >= 0 && seq > previousSeq!)),
+          minBuild > 0,
       'PATCH_CONFIG_INVALID',
       'Invalid fingerprint, flavor, build number or sequence',
     );
@@ -259,15 +256,7 @@ class PatchPipeline {
         'PATCH_BASELINE_INCOMPATIBLE',
         'Minimum build must match the target release',
       );
-      require(
-        receipt['public_key'] is String,
-        'PATCH_KEY_MISMATCH',
-        'Release public key is missing',
-      );
-      final key = signingKey(
-        req.privateKey,
-        expectedPublic: receipt['public_key'] as String,
-      );
+
       final current = run = PatchRun(this, req, resolved, work);
       final producer = resolved.strategy == 'so'
           ? LibappProducer(current)
@@ -370,12 +359,9 @@ class PatchPipeline {
       current.rules.check(PatchStage.result, facts);
 
       current.phase = 'package';
-      final artifact = await packPatch(
+      final draft = await packPatch(
         kind: code.kind,
         code: code.file,
-        work: work,
-        key: key,
-        commands: commands,
         extraEntries: payload.entries,
         fonts: payload.fonts,
         assets: payload.assets,
@@ -401,7 +387,7 @@ class PatchPipeline {
           ),
         ).readAsString(),
       );
-      final output = await writeOutput(req, artifact['file'] as String, {
+      final output = await writeOutput(req, draft, {
         'status': 'patch_created',
         // What publish signs this patch for.
         'scope': {
@@ -420,8 +406,8 @@ class PatchPipeline {
         'changed': facts.changed,
         if (current.rules.warnings.isNotEmpty)
           'warnings': current.rules.warnings,
-        'sha256': artifact['sha256'],
-        'bytes': artifact['bytes'],
+        'draft_sha256': draft.digest,
+        'bytes': draft.payload.length,
         if (!so) 'checks': current.reports,
         'device_verified': false,
         'release_baseline_verified': true,
@@ -485,15 +471,15 @@ class PatchPipeline {
     trace('source scan');
   }
 
-  /// Moves the envelope and report into the request's new output directory.
+  /// Writes the draft and report into the request's new output directory.
   Future<Map<String, Object?>> writeOutput(
     PatchRequest req,
-    String artifact,
+    PatchDraft draft,
     Map<String, Object?> report,
   ) async {
     final pending = temporaryName(p.absolute(req.output));
     await Directory(pending).create(recursive: true);
-    await File(artifact).copy(p.join(pending, 'patch.fptc'));
+    await draft.write(pending);
     await writeObject(p.join(pending, 'patch.json'), report);
     await rejectLinks(req.output);
     require(

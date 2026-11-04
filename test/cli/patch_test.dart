@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:test/test.dart';
 
 import 'host_tools.dart';
+import 'signers.dart';
 
 import 'package:path/path.dart' as p;
 import 'package:archive/archive.dart';
@@ -12,6 +13,8 @@ import 'package:flutter_patcher/src/bootstrap/patch_archive.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/patch/sources.dart';
 import 'package:flutter_patcher/src/cli/patch/package.dart';
+import 'package:flutter_patcher/src/cli/publish/seal.dart';
+import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 import 'package:flutter_patcher/src/cli/sdk/package_inputs.dart';
 
 void main() {
@@ -130,20 +133,20 @@ void main() {
     () async {
       final root = (await Directory.systemTemp.createTemp('patch-sign-')).path;
       final commands = Commands(root);
-      final key = signingKey(base64Encode(List.filled(32, 1)));
+      final signer = testSigner(
+        base64Encode(List.filled(32, 1)),
+        KeyRole.patch,
+      );
       final module = File(p.join(root, 'module.bc'));
       await module.writeAsString(
         'explicit synthetic bytecode for envelope contract only',
       );
-      final result = await packPatch(
+      final draft = await packPatch(
         kind: 'bytecode',
         code: module.path,
-        work: root,
         metadata: {'fingerprint': 'a' * 64, 'patch_seq': 7, 'tier': 'lean'},
-        key: key,
-        commands: commands,
       );
-      final bytes = await File(result['file'] as String).readAsBytes();
+      final bytes = await sealPatch(draft, signer: signer);
       final header = ByteData.sublistView(bytes);
       expect(header.getUint32(0), 0x46505443);
       expect(header.getUint16(4), 1);
@@ -160,11 +163,21 @@ void main() {
         'module.bc',
         'patch_manifest.json',
       ]);
-      expect(await File(p.join(root, 'signing-key.der')).exists(), false);
-      final signed = File(p.join(root, 'signed.bin'));
-      final damaged = await signed.readAsBytes();
-      damaged.last ^= 1;
-      await signed.writeAsBytes(damaged);
+      // The draft is the archive devices read, signature aside, and sealing
+      // is deterministic: a resumed publication signs the same bytes.
+      expect(bytes.sublist(146), draft.payload);
+      expect(await sealPatch(draft, signer: signer), bytes);
+      // An independent verifier rejects a damaged envelope.
+      final signed = File(p.join(root, 'signed.bin'))
+        ..writeAsBytesSync(
+          [...bytes.sublist(0, 82), ...bytes.sublist(146)]..last ^= 1,
+        );
+      File(p.join(root, 'signature.bin'))
+          .writeAsBytesSync(bytes.sublist(82, 146));
+      File(p.join(root, 'signing-public.der')).writeAsBytesSync([
+        ...hexBytes('302a300506032b6570032100'),
+        ...base64Decode(signer.publicKey),
+      ]);
       final check = await commands.runResult('openssl', [
         'pkeyutl',
         '-verify',

@@ -67,7 +67,7 @@ void main() {
       for (final result in [derived, named]) {
         expect(result.exitCode, 2);
         // The policy came from the project; only its keys are missing.
-        expect(result.stderr, contains('KEYS_MISSING'));
+        expect(result.stderr, contains('KEYS_NOT_CONFIGURED'));
       }
       expect(unnumbered.stderr, contains('build number'));
       expect(publish.exitCode, 2);
