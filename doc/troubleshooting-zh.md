@@ -169,6 +169,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 | 错误码 | 含义 | 处理方法 |
 |---|---|---|
+| `SERVE_PORT_BUSY` | `serve` 使用的端口已被其他程序占用 | 关闭该程序，或运行 `serve --port <端口>` 并在 App 中使用这个端口 |
 | `PUBLISH_CONFIG_INVALID` | 参数或请求文件无效（如尚未生成可发布的补丁、无可撤回的补丁，或 `--through` 越界） | 先运行 `patch` 生成补丁，或按提示修正参数 |
 | `PUBLISH_TARGET_MISMATCH` | 待发布的补丁与目标基线版本不匹配 | 重新为目标版本生成补丁 |
 | `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | 补丁序号不大于已发布或已撤回的最新序号，或发布期间存储被并发修改 | 不带 `--seq` 重新运行 `publish`，或用比所有已发布、已撤回序号都大的 `--seq`；不需要重新生成补丁 |

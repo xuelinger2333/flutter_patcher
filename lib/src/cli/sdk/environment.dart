@@ -136,6 +136,26 @@ Future<void> checkSdkReady(String root, Commands commands) async {
   );
 }
 
+/// The file URL of the git repository at [root] when it holds [commit] as
+/// the tag [version], so the managed SDK can be cloned from it; else null.
+Future<String?> _holds(String root, String commit, String version) async {
+  try {
+    final tag = await Process.run('git', [
+      '-C',
+      root,
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      'refs/tags/$version^{commit}',
+    ]);
+    return tag.exitCode == 0 && (tag.stdout as String).trim() == commit
+        ? Uri.directory(root).toString()
+        : null;
+  } on ProcessException {
+    return null;
+  }
+}
+
 class EnvironmentBuilder {
   final String cache;
   final Commands commands;
@@ -182,17 +202,49 @@ class EnvironmentBuilder {
       final lineEndings = sdk.host.isWindows
           ? ['--config', 'core.autocrlf=false', '--config', 'core.eol=lf']
           : <String>[];
-      await commands.run('git', [
-        ...longPaths,
-        'clone',
-        ...lineEndings,
-        '--depth',
-        '1',
-        '--branch',
-        sdk.version,
-        'https://github.com/flutter/flutter.git',
-        staging,
-      ], code: 'SDK_PREPARE_FAILED');
+      // The selected SDK's own repository usually holds this exact commit
+      // and tag: cloning it needs no network and gives the same files as
+      // GitHub, which can be slow to reach. GitHub stays the fallback.
+      const github = 'https://github.com/flutter/flutter.git';
+      final local = await _holds(sdk.root, sdk.framework, sdk.version);
+      try {
+        for (final source in [?local, github]) {
+          final cloned = await commands.runResult('git', [
+            ...longPaths,
+            'clone',
+            ...lineEndings,
+            '--depth',
+            '1',
+            '--branch',
+            sdk.version,
+            source,
+            staging,
+          ], code: 'SDK_PREPARE_FAILED');
+          if (cloned.exitCode == 0) break;
+          if (await Directory(staging).exists()) {
+            await Directory(staging).deleteRetry(recursive: true);
+          }
+          require(
+            source != github,
+            'SDK_PREPARE_FAILED',
+            'Cannot clone Flutter ${sdk.version}: ${cloned.stderr}',
+          );
+        }
+        await commands.run('git', [
+          '-C',
+          staging,
+          'remote',
+          'set-url',
+          'origin',
+          github,
+        ], code: 'SDK_PREPARE_FAILED');
+      } catch (_) {
+        // A failed or timed-out clone leaves nothing behind in the cache.
+        if (await Directory(staging).exists()) {
+          await Directory(staging).deleteRetry(recursive: true);
+        }
+        rethrow;
+      }
       if (sdk.host.isWindows) {
         await commands.run('git', [
           '-C',

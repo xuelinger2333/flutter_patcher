@@ -47,7 +47,15 @@ Future<int> serveCommand(ArgResults args) async {
   final root = store.toFilePath();
   await rejectLinks(root);
   await Directory(root).create(recursive: true);
-  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port!);
+  final HttpServer server;
+  try {
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, port!);
+  } on SocketException {
+    throw Failure(
+      'SERVE_PORT_BUSY',
+      'Port $port is in use on this computer; choose another with --port.',
+    );
+  }
   server.listen((request) => _respond(request, root));
   final url = 'http://127.0.0.1:$port';
   stderr.writeln(

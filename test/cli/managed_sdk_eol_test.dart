@@ -25,6 +25,21 @@ class GitRecorder extends Commands {
     calls.add(args);
     throw Failure('STOP', 'recorded');
   }
+
+  @override
+  Future<CommandResult> runResult(
+    String executable,
+    List<String> args, {
+    String? cwd,
+    List<int>? inputBytes,
+    String code = 'TOOL_FAILED',
+    Duration timeout = const Duration(minutes: 15),
+    Map<String, String>? extraEnvironment,
+    String? logPath,
+  }) async {
+    calls.add(args);
+    throw Failure('STOP', 'recorded');
+  }
 }
 
 void main() {
@@ -63,6 +78,53 @@ void main() {
     );
     return commands.calls.single;
   }
+
+  test(
+    'the managed SDK is cloned from the selected SDK when it can be',
+    () async {
+      // The selected SDK is a git checkout holding the version's tag.
+      Future<String> git(List<String> args) async {
+        final result = await Process.run('git', [
+          '-C',
+          temp.path,
+          '-c',
+          'user.name=t',
+          '-c',
+          'user.email=t@t',
+          ...args,
+        ]);
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return (result.stdout as String).trim();
+      }
+
+      await git(['init', '-q']);
+      File(p.join(temp.path, 'README')).writeAsStringSync('sdk');
+      await git(['add', 'README']);
+      await git(['commit', '-q', '-m', 'sdk']);
+      await git(['tag', '3.47.2']);
+      final head = await git(['rev-parse', 'HEAD']);
+      final commands = GitRecorder(temp.path);
+      await expectLater(
+        EnvironmentBuilder(p.join(temp.path, 'cache'), commands).prepare(
+          SdkIdentity(
+            temp.path,
+            '3.47.2',
+            'e' * 40,
+            '3.13.2',
+            head,
+            host: HostIdentity.linuxX64,
+          ),
+          store(),
+        ),
+        throwsA(isA<Failure>().having((f) => f.code, 'code', 'STOP')),
+      );
+      expect(
+        commands.calls.single,
+        contains(Uri.directory(temp.path).toString()),
+      );
+      expect(commands.calls.single, isNot(contains(contains('github.com'))));
+    },
+  );
 
   test('Windows clones the managed SDK with LF line endings', () async {
     final args = await clone(windows);
