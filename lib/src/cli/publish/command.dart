@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
@@ -17,7 +16,7 @@ import '../run_work.dart';
 import '../version.dart';
 import 'pipeline.dart';
 import 'retention.dart';
-import 'seal.dart';
+import '../keys/signer.dart';
 import 'store.dart';
 import 'transaction.dart';
 
@@ -63,6 +62,11 @@ ArgParser publishOptions() => ArgParser()
         'A key bundle to sign with before ${Keyring.environmentVariable}, '
         'signing.command and the key store.',
   )
+  ..addOption(
+    'seq',
+    help:
+        'Publication sequence; default the published high-water mark plus one.',
+  )
   ..addOption('request', help: 'Advanced: a production request JSON file.')
   ..addOption('receipt', help: 'New output JSON file for the result.');
 
@@ -91,6 +95,12 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
     args['request'] == null || args['withdraw'] != true,
     'PUBLISH_CONFIG_INVALID',
     'A request file sets its own action; drop --withdraw.',
+  );
+  require(
+    args['seq'] == null ||
+        (args['withdraw'] != true && args['request'] == null),
+    'PUBLISH_CONFIG_INVALID',
+    '--seq is for publishing a draft; production requests set fields.patch_seq.',
   );
   final project = args['request'] == null
       ? p.absolute(args['project'] as String? ?? Directory.current.path)
@@ -184,7 +194,7 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
   return result;
 }
 
-/// Seals the request's patch draft for its release, unless that draft is
+/// Numbers and seals the request's patch draft, unless that draft is
 /// already the release's latest patch, and publishes it or the request's
 /// withdrawal with the project's keys.
 Future<Map<String, dynamic>> _publish(
@@ -220,11 +230,25 @@ Future<Map<String, dynamic>> _publish(
     keyFile: args['key-file'] as String?,
   );
   PatchDraft? draft;
-  Uint8List? patch;
+  Signer? patchSigner;
+  final specified = fields.remove('patch_seq');
+  final sequence = specified == null ? null : int.tryParse(specified);
+  require(
+    specified == null ||
+        (sequence != null && sequence > 0 && sequence <= 0xffffffff),
+    'PUBLISH_SEQUENCE_CONFLICT',
+    'Sequence must be between 1 and 4294967295.',
+  );
   if (fields['action'] == 'publish') {
     final source = request['patch'] as String?;
     require(source != null, 'PUBLISH_CONFIG_INVALID', 'Patch required');
     draft = await PatchDraft.read(source!);
+    require(
+      fields['strategy'] != 'bytecode' ||
+          release.identity['receipt']['module_identity'] == 1,
+      'PATCH_BASELINE_INCOMPATIBLE',
+      'Rebuild this bytecode host for publication-time sequences.',
+    );
     final catalog = await transaction.snapshot();
     final scope = scopeOf(fields);
     final id = (catalog['heads'] as Map)[scope];
@@ -232,49 +256,58 @@ Future<Map<String, dynamic>> _publish(
     if (head != null &&
         head['draft_sha256'] == draft.digest &&
         !awaitsRequest(catalog, request)) {
+      require(
+        sequence == null || sequence == head['high_seq'],
+        'PUBLISH_SEQUENCE_CONFLICT',
+        'This draft is already published with another sequence.',
+      );
       return {
         'status': 'already_published',
         'operation': id,
         'scope': scope,
-        'patch_seq': draft.seq,
+        'patch_seq': head['high_seq'],
         'revision': head['revision'],
         'manifest': 'manifests/$scope.json',
       };
     }
-    checkSequence(draft.seq, nextSequence(catalog, draft.fingerprint));
-    fields['patch_seq'] = '${draft.seq}';
-    final signer = await keyring.signer(KeyRole.patch);
+    final signer = patchSigner = await keyring.signer(KeyRole.patch);
     require(
       signer.publicKey == (release.identity['receipt'] as Map)['public_key'],
       'KEYS_MISMATCH',
       'This release was built with another patch key than the project\'s.',
     );
-    patch = await sealPatch(draft, signer: signer);
-    fields['sha256'] = digest(patch);
-    fields['size'] = patch.length.toString();
-    fields['path'] = 'objects/$operation/${digest(patch)}.fptc';
   }
   final publisher = await keyring.signer(KeyRole.publisher);
-  Future<Map<String, dynamic>> execute(bool commit) async => {
-    ...await PublicationPipeline(transaction, commands, work).execute(
-      operation: operation,
-      fields: fields,
-      expectedRevision: request['expected_revision'] as int,
-      signer: publisher,
-      createdAt: request['created_at'].toString(),
-      baseline: release.identity,
-      target: release.target,
-      patch: patch,
-      draft: draft?.digest,
-      commit: commit,
-      pin: request['pin'] == true,
-    ),
-    if (fields['patch_seq'] != null)
-      'patch_seq': int.parse(fields['patch_seq']!),
-  };
+  final pipeline = PublicationPipeline(transaction, commands, work);
+  Future<Map<String, dynamic>> execute(bool commit) => draft != null
+      ? pipeline.publishDraft(
+          operation: operation,
+          fields: fields,
+          expectedRevision: request['expected_revision'] as int,
+          signer: publisher,
+          patchSigner: patchSigner!,
+          createdAt: request['created_at'].toString(),
+          baseline: release.identity,
+          target: release.target,
+          draft: draft,
+          sequence: sequence,
+          commit: commit,
+          pin: request['pin'] == true,
+        )
+      : pipeline.execute(
+          operation: operation,
+          fields: fields,
+          expectedRevision: request['expected_revision'] as int,
+          signer: publisher,
+          createdAt: request['created_at'].toString(),
+          baseline: release.identity,
+          target: release.target,
+          commit: commit,
+          pin: request['pin'] == true,
+        );
   final preview = await execute(false);
   final what = fields['action'] == 'publish'
-      ? 'patch ${fields['patch_seq']}'
+      ? 'patch ${preview['patch_seq']}'
       : 'withdrawal through ${fields['withdraw_through_seq']}';
   if (!await confirmed(
     args,
@@ -290,28 +323,6 @@ Future<Map<String, dynamic>> _publish(
   final result = await execute(true);
   if (project != null) await File(pendingRequest(project)).delete();
   return result;
-}
-
-/// A draft's sequence orders it by when it was made. It must be above every
-/// sequence already published for its fingerprint ([next] is the lowest
-/// free one), and not from a clock ahead of this one: such a sequence would
-/// shut out every later patch until that time.
-void checkSequence(int seq, int next, {DateTime? now}) {
-  require(
-    seq >= next,
-    'PUBLISH_SEQUENCE_CONFLICT',
-    'This patch (made ${sequenceTime(seq).toIso8601String()}) is older than '
-        'patch ${next - 1}, already published for this release; patch again '
-        'to publish the current source.',
-  );
-  final limit = (now ?? DateTime.now()).toUtc().add(const Duration(days: 1));
-  require(
-    !sequenceTime(seq).isAfter(limit),
-    'PUBLISH_SEQUENCE_CONFLICT',
-    'This patch claims to be made ${sequenceTime(seq).toIso8601String()}, '
-        'after the time on this machine; fix the clock of the machine that '
-        'made it and patch again.',
-  );
 }
 
 /// Where a project's publication waits while it commits.
@@ -453,6 +464,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
       'minPluginVersion': packageVersion,
       'revision': '${revision + 1}',
       ...action,
+      if (args['seq'] != null) 'patch_seq': args['seq'] as String,
     },
   };
 }

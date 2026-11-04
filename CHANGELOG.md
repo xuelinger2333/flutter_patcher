@@ -28,7 +28,7 @@ Started](doc/getting-started.md).
   - `patch android|ios` compares the source with the released baseline and
     writes an unsigned patch, rejecting changes a patch cannot carry (native
     code, FFI, removed assets…) with the reason. It needs no private key and
-    no publication store; a patch's sequence number is the time it was made;
+    no publication store. `publish` numbers patches 1, 2, 3… per release, or as `--seq` says;
   - `publish` signs the patch and writes it to the publication store after a
     preview; `publish --withdraw [--through <seq>]` withdraws the release's
     published patches; a publish interrupted while committing resumes on the

@@ -431,6 +431,7 @@ class BuildPipeline {
         'schema': 1,
         'host_policy_sha256': request.hostPolicy.digest,
         'runtime_bootstrap': true,
+        'module_identity': 1,
         'interface_sha256': await hashFile(iface),
         'fingerprint': identity,
         'public_key': request.publicKey,

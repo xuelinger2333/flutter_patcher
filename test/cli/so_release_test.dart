@@ -135,10 +135,11 @@ void main() {
           code: libapp.path,
           metadata: {
             'fingerprint': fp,
-            'patch_seq': 1,
+            'module_id': 123,
             'target': release.target,
           },
         ),
+        seq: 1,
         signer: testSigner(base.testSeed, KeyRole.patch),
       );
       checkPatchTarget(patch, 'so', release.identity, release.target);

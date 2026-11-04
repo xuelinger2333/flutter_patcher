@@ -111,7 +111,7 @@ dart run flutter_patcher publish --withdraw
 - 只撤回到某个序号：使用 `--through <序号>`。
 - 撤回其他版本的补丁：使用 `--patch <目录>` 指向该版本的一次 `patch` 输出。
 
-撤回以普通更新的形式下发，应用对 `hasUpdate` 为 `true` 的结果调用 `applyPatch`（即上面示例中的用法）即可生效。之后生成的补丁序号更大：补丁序号就是它的生成时间。
+撤回以普通更新的形式下发，应用对 `hasUpdate` 为 `true` 的结果调用 `applyPatch`（即上面示例中的用法）即可生效。之后发布的补丁会使用更大的序号。
 
 ## 进阶操作
 

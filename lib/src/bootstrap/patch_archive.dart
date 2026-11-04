@@ -123,11 +123,19 @@ Map<String, Uint8List> readPatchArchive(
 }
 
 class VerifiedPatch {
-  VerifiedPatch(this.module, this.assets, this.fonts, this.seq, this.tier);
+  VerifiedPatch(
+    this.module,
+    this.assets,
+    this.fonts,
+    this.seq,
+    this.tier,
+    this.moduleId,
+  );
   final Uint8List module;
   final Map<String, Uint8List> assets;
   final Map<String, List<Uint8List>> fonts;
   final int seq;
+  final int moduleId;
   final String tier;
 }
 
@@ -227,8 +235,15 @@ VerifiedPatch _parsePatch(
   bootRequire(decoded is Map, 'Manifest object');
   final manifest = decoded as Map;
   final seq = data.getUint32(38), tier = manifest['tier'];
+  // Old published packages used their sequence as module identity.
+  final moduleId = manifest.containsKey('module_id')
+      ? manifest['module_id']
+      : seq;
   bootRequire(
     seq > 0 &&
+        moduleId is int &&
+        moduleId > 0 &&
+        moduleId <= (1 << 52) &&
         manifest['format_version'] is int &&
         manifest['patch_seq'] is int &&
         manifest['format_version'] == patchFormatVersion &&
@@ -320,5 +335,12 @@ VerifiedPatch _parsePatch(
     profile['entry_count'] = entries.length;
     profile['native_checked_entries'] = vouched;
   }
-  return VerifiedPatch(module, assets, fonts, seq, tier as String);
+  return VerifiedPatch(
+    module,
+    assets,
+    fonts,
+    seq,
+    tier as String,
+    moduleId as int,
+  );
 }

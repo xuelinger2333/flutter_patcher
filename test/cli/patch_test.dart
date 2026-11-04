@@ -144,9 +144,9 @@ void main() {
       final draft = await packPatch(
         kind: 'bytecode',
         code: module.path,
-        metadata: {'fingerprint': 'a' * 64, 'patch_seq': 7, 'tier': 'lean'},
+        metadata: {'fingerprint': 'a' * 64, 'module_id': 123, 'tier': 'lean'},
       );
-      final bytes = await sealPatch(draft, signer: signer);
+      final bytes = await sealPatch(draft, signer: signer, seq: 7);
       final header = ByteData.sublistView(bytes);
       expect(header.getUint32(0), 0x46505443);
       expect(header.getUint16(4), 1);
@@ -163,10 +163,18 @@ void main() {
         'module.bc',
         'patch_manifest.json',
       ]);
-      // The draft is the archive devices read, signature aside, and sealing
-      // is deterministic: a resumed publication signs the same bytes.
-      expect(bytes.sublist(146), draft.payload);
-      expect(await sealPatch(draft, signer: signer), bytes);
+      // Numbering leaves the draft unchanged; resumed sealing is deterministic.
+      expect(draft.manifest.containsKey('patch_seq'), false);
+      final manifest = jsonDecode(
+        utf8.decode(
+          readPatchArchive(
+            Uint8List.sublistView(bytes, 146),
+          )['patch_manifest.json']!,
+        ),
+      ) as Map;
+      expect(manifest['module_id'], 123);
+      expect(manifest['patch_seq'], 7);
+      expect(await sealPatch(draft, signer: signer, seq: 7), bytes);
       // An independent verifier rejects a damaged envelope.
       final signed = File(p.join(root, 'signed.bin'))
         ..writeAsBytesSync(

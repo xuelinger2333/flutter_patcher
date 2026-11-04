@@ -152,7 +152,7 @@ dart run flutter_patcher patch ios
 - `patch` needs only the source and the release's baseline: no private key, and no access to the publication store.
 - Strategy, channel and the rest come from the baseline.
 - The output directory holds `patch.draft` (the patch, not yet signed) and `patch.json` (the report). In the report, `changed` lists what changed and `warnings` lists what to look at.
-- The patch's sequence number is the time it was made, in seconds since 2025. Patches made on any machine so order by time; `publish` refuses one older than the release's latest patch.
+- A draft has no sequence number yet: `publish` gives it one.
 - Changes that cannot be patched fail the command; the rules are in [How It Works](architecture.md#what-can-be-patched).
 - When you patch a bug fix, **keep the build number in `pubspec.yaml`**, or `patch` looks for a release that does not exist; or name it with `--version-code`.
 
@@ -170,13 +170,14 @@ dart run flutter_patcher publish
 | `--withdraw` | Withdraw that patch's release's published patches instead; see the [Production Playbook](production-playbook.md#withdrawing-a-patch) | |
 | `--through <seq>` | With `--withdraw`: withdraw up to this sequence | The highest published |
 | `--yes`, `-y` | Publish without asking | Preview, then ask; only preview when not interactive |
+| `--seq <n>` | Publish with this sequence number, from 1 to 4294967295; it must exceed every sequence published or withdrawn for the release | The highest published or withdrawn + 1 |
 | `--key-file <file>` | Sign with this key bundle first | |
 | `--receipt <file>` | Also write the result to a new JSON file | |
 | `--production --request <file>` | Advanced: run a publish or cleanup request file you wrote; see [Advanced Operations](advanced.md#cleaning-up-old-patches) | |
 
 - Without `--yes` and without a terminal to ask in, it only previews: nothing is published, and it still exits with `0`.
-- Before writing, it checks that the patch was built for that release and is newer than its latest patch, that the keys are the ones its host was built with, and that nobody changed the store since it was read.
-- A patch that claims to be made more than a day in the future, on a machine whose clock is ahead, is refused: it would shut out every later patch.
+- Each published patch gets the next sequence number: 1, 2, 3… for a release. `--seq` may skip ahead (after `--seq 10`, the next is 11), never back. A preview reserves no number. A request file sets `fields.patch_seq`, or leaves it out to number automatically.
+- Before writing, it checks that the patch was built for that release, that the keys are the ones its host was built with, and that nobody changed the store since it was read.
 - Publishing a patch that is already the release's latest does nothing and reports `already_published`.
 - While a publication commits, its request is saved in `.dart_tool/flutter_patcher/publish-pending.json`. If the commit stops midway, the store accepts nothing else until that publication finishes, so the next `publish` (or `serve`) in the project resumes it first.
 - An S3 publication store needs a configured AWS CLI.

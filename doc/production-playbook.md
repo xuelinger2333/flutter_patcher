@@ -111,7 +111,7 @@ This withdraws every published patch of the release your latest `patch` output b
 - To withdraw only up to a given sequence: pass `--through <seq>`.
 - To withdraw another release's patches: pass `--patch <dir>` with one of that release's `patch` outputs.
 
-A withdrawal is delivered as a regular update: it takes effect when your app calls `applyPatch` for a result whose `hasUpdate` is `true`, as in the example above. Patches you make later have higher sequence numbers: a sequence number is the time a patch was made.
+A withdrawal is delivered as a regular update: it takes effect when your app calls `applyPatch` for a result whose `hasUpdate` is `true`, as in the example above. Patches published after it get higher sequence numbers.
 
 ## Advanced Operations
 

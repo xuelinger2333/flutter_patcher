@@ -12,7 +12,7 @@ import '../baseline/repository.dart';
 import '../baseline/store.dart';
 import '../build/host_policy.dart';
 import '../project.dart';
-import 'package.dart' show patchSequence;
+import 'package.dart' show newModuleId;
 import 'pipeline.dart';
 
 Future<int> patchCommand(ArgResults args) async {
@@ -89,9 +89,8 @@ Future<int> patchCommand(ArgResults args) async {
             ),
       ),
 
-      // Bytecode compiles the sequence in; the time orders patches made on
-      // any machine without asking the publication store.
-      seq: patchSequence(DateTime.now()),
+      // The compiler needs a module identity, not a publication sequence.
+      moduleId: newModuleId(),
       minBuild: int.tryParse(versionCode) ?? -1,
 
       target: args['target'] as String,

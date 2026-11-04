@@ -171,7 +171,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 |---|---|---|
 | `PUBLISH_CONFIG_INVALID` | 参数或请求文件无效（如尚未生成可发布的补丁、无可撤回的补丁，或 `--through` 越界） | 先运行 `patch` 生成补丁，或按提示修正参数 |
 | `PUBLISH_TARGET_MISMATCH` | 待发布的补丁与目标基线版本不匹配 | 重新为目标版本生成补丁 |
-| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | 补丁比该版本已发布或已撤回的最新补丁更旧，或生成补丁的机器时钟超前；也可能是发布期间存储被并发修改 | 重新运行 `patch`（如果是时钟问题，先校准时钟），再执行 `publish` |
+| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | 补丁序号不大于已发布或已撤回的最新序号，或发布期间存储被并发修改 | 不带 `--seq` 重新运行 `publish`，或用比所有已发布、已撤回序号都大的 `--seq`；不需要重新生成补丁 |
 | `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | 上一次发布或清理操作异常中断 | 在同一个项目中再次运行 `publish`，或再次运行同一个请求文件，即可恢复，参见上文说明 |
 | `PUBLISH_STORE_UNAVAILABLE` | 无法访问发布存储，或存储端不支持条件写入 | 检查 AWS CLI 版本、访问凭据及 `FLUTTER_PATCHER_S3_ENDPOINT` 环境变量 |
 | `PUBLISH_STORE_INVALID` | 存储地址无效（S3 前缀必须位于存储桶根目录之下，且只能包含字母、数字、`_` 和 `-`），或对象超出大小限制 | 按提示修正 `store` 配置 |

@@ -12,6 +12,8 @@ import '../baseline/store.dart';
 import '../core.dart';
 import '../crypto/signing.dart';
 import '../keys/signer.dart';
+import '../patch/package.dart';
+import 'seal.dart';
 import 'protocol.dart';
 import 'transaction.dart';
 import '../../publication_scope.dart';
@@ -253,6 +255,14 @@ int nextSequence(Map<String, dynamic> catalog, String fingerprint) {
   return high + 1;
 }
 
+void checkSequence(int seq, int next) {
+  require(
+    seq >= next && seq > 0 && seq <= 0xffffffff,
+    'PUBLISH_SEQUENCE_CONFLICT',
+    'Patch sequence must be between $next and 4294967295; older or reused sequences cannot be published.',
+  );
+}
+
 /// Matches native policy; integration vectors exercise both implementations.
 void publicationPolicy(Map<String, String> f, Map? prior, int expected) {
   final revision = prior?['revision'] as int? ?? 0;
@@ -280,6 +290,78 @@ class PublicationPipeline {
   final Commands commands;
   final String work;
 
+  /// Assign either kind of draft a sequence under the operation gate. Recovery
+  /// sees the same locked catalog and therefore selects the same sequence.
+  Future<Map<String, dynamic>> publishDraft({
+    required String operation,
+    required Map<String, String> fields,
+    required int expectedRevision,
+    required Signer signer,
+    required Signer patchSigner,
+    required String createdAt,
+    required Map<String, dynamic> baseline,
+    Map<String, dynamic>? target,
+    required PatchDraft draft,
+    int? sequence,
+    bool commit = false,
+    bool pin = false,
+  }) async {
+    final intent = {
+      'kind': 'publish_draft',
+      'fields': fields,
+      'expected_revision': expectedRevision,
+      'created_at': createdAt,
+      'baseline': baseline,
+      'target': target,
+      'draft': draft.digest,
+      'sequence': sequence,
+      'pin': pin,
+      'patch_key': patchSigner.publicKey,
+      'publisher_key': signer.publicKey,
+    };
+    Future<Map<String, dynamic>> prepare(Map<String, dynamic> catalog) async {
+      final seq = sequence ?? nextSequence(catalog, draft.fingerprint);
+      checkSequence(seq, nextSequence(catalog, draft.fingerprint));
+      final bytes = await sealPatch(draft, signer: patchSigner, seq: seq);
+      return execute(
+        operation: operation,
+        fields: {
+          ...fields,
+          'patch_seq': '$seq',
+          'sha256': digest(bytes),
+          'size': '${bytes.length}',
+          'path': 'objects/$operation/${digest(bytes)}.fptc',
+        },
+        expectedRevision: expectedRevision,
+        signer: signer,
+        createdAt: createdAt,
+        baseline: baseline,
+        target: target,
+        patch: bytes,
+        draft: draft.digest,
+        commit: commit,
+        pin: pin,
+        lockedCatalog: catalog,
+      );
+    }
+
+    if (!commit) {
+      final catalog = await transaction.snapshot();
+      final pending = catalog['pending'];
+      require(
+        pending == null ||
+            (pending['operation'] == operation &&
+                pending['intent'] == digest(encode(intent))),
+        'PUBLISH_BUSY',
+        'Another operation is pending or recovery inputs differ',
+      );
+      return prepare(catalog);
+    }
+    final receipt = await transaction.run(operation, intent, prepare);
+    await writeHeadManifest(transaction, scopeOf(fields));
+    return {...receipt, 'manifest': 'manifests/${scopeOf(fields)}.json'};
+  }
+
   Future<Map<String, dynamic>> execute({
     required String operation,
     required Map<String, String> fields,
@@ -294,6 +376,7 @@ class PublicationPipeline {
     String? draft,
     bool commit = false,
     bool pin = false,
+    Map<String, dynamic>? lockedCatalog,
   }) async {
     require(
       RegExp(r'^[a-f0-9]{32}$').hasMatch(operation),
@@ -357,18 +440,19 @@ class PublicationPipeline {
       'pin': pin,
       'baseline': baseline,
     };
-    final catalog = await transaction.snapshot();
+    final catalog = lockedCatalog ?? await transaction.snapshot();
     final previous = (catalog['heads'] as Map)[scope];
     final completed = (catalog['operations'] as Map)[operation];
     final pending = catalog['pending'];
     require(
-      pending == null ||
+      lockedCatalog != null ||
+          pending == null ||
           (pending['operation'] == operation &&
               pending['intent'] == digest(encode(intent))),
       'PUBLISH_BUSY',
       'Another operation is pending or recovery inputs differ',
     );
-    if (completed != null) {
+    if (completed != null && lockedCatalog == null) {
       require(
         completed['intent'] == digest(encode(intent)) &&
             completed['receipt']['status'] != 'rejected',
@@ -390,6 +474,7 @@ class PublicationPipeline {
     if (!commit) {
       return {
         'status': 'preview',
+        if (patch != null) 'patch_seq': int.parse(f['patch_seq']!),
         'operation': operation,
         'scope': scope,
         'manifest_sha256': digest(utf8.encode(manifest.canonical)),
@@ -399,7 +484,7 @@ class PublicationPipeline {
         'revision': f['revision'],
       };
     }
-    final receipt = await transaction.run(operation, intent, (current) async {
+    Future<Map<String, dynamic>> apply(Map<String, dynamic> current) async {
       final oldId = (current['heads'] as Map)[scope];
       final old = oldId == null
           ? null
@@ -433,6 +518,7 @@ class PublicationPipeline {
       final seq = patch == null ? newFloor : int.parse(f['patch_seq']!);
       final receipt = {
         'status': 'published',
+        if (patch != null) 'patch_seq': int.parse(f['patch_seq']!),
         'operation': operation,
         'scope': scope,
         'action': f['action'],
@@ -460,7 +546,10 @@ class PublicationPipeline {
       };
       (current['heads'] as Map)[scope] = operation;
       return receipt;
-    });
+    }
+
+    if (lockedCatalog != null) return apply(lockedCatalog);
+    final receipt = await transaction.run(operation, intent, apply);
     await writeHeadManifest(transaction, scope);
     return {...receipt, 'manifest': 'manifests/$scope.json'};
   }

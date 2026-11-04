@@ -50,7 +50,7 @@ Future<PatchDraft> testDraft(
     kind: 'bytecode',
     code: module,
     metadata: {
-      'patch_seq': seq,
+      'module_id': seq + 100,
       'fingerprint': fingerprint,
       'tier': 'lean',
       'target': ?target,
@@ -67,8 +67,103 @@ Future<Uint8List> testPatch(
 }) async => sealPatch(
   await testDraft(dir, fingerprint, seq, target: target),
   signer: testSigner(base.testSeed, KeyRole.patch),
+  seq: seq,
 );
 void main() {
+  for (final kind in ['bytecode', 'libapp']) {
+    test(
+      '$kind assigns sequences at publication and resumes without renumbering',
+      () async {
+        final temp = await Directory.systemTemp.createTemp('draft-sequence-');
+        addTearDown(() => temp.delete(recursive: true));
+        final code = File(p.join(temp.path, 'code'))
+          ..writeAsBytesSync([1, 2, 3]);
+        final fp = 'ab' * 32;
+        final drafts = [
+          for (var i = 0; i < 3; i++)
+            await packPatch(
+              kind: kind,
+              code: code.path,
+              metadata: {'fingerprint': fp, 'module_id': 123 + i},
+            ),
+        ];
+        final patchSigner = testSigner(base.testSeed, KeyRole.patch);
+        final store = FilePublishStore(p.join(temp.path, 'store'));
+        final tx = PublicationTransaction(store, 'com.example.app');
+        final pipeline = PublicationPipeline(
+          tx,
+          Commands(temp.path),
+          temp.path,
+        );
+        Future<Map<String, dynamic>> publish(
+          int revision, {
+          int? seq,
+          bool commit = true,
+          PublicationPipeline? via,
+        }) => (via ?? pipeline).publishDraft(
+          operation: revision.toRadixString(16).padLeft(32, '0'),
+          fields: {
+            'schema': '1',
+            'key_id': 'release',
+            'application_id': 'com.example.app',
+            'channel': 'stable',
+            'flavor': 'default',
+            'version_code': '1',
+            'abi': 'arm64-v8a',
+            'fingerprint': fp,
+            'strategy': kind == 'libapp' ? 'so' : 'bytecode',
+            'minPluginVersion': '1.0.0',
+            'action': 'publish',
+            'revision': '$revision',
+          },
+          expectedRevision: revision - 1,
+          signer: testSigner(base.testSeed),
+          patchSigner: patchSigner,
+          createdAt: '1',
+          baseline: {
+            'fingerprint': fp,
+            'receipt': {
+              'application_id': 'com.example.app',
+              'version_code': '1',
+              'public_key': patchSigner.publicKey,
+            },
+          },
+          draft: drafts[revision - 1],
+          sequence: seq,
+          commit: commit,
+        );
+        expect((await publish(1, commit: false))['patch_seq'], 1);
+        expect(await store.read('catalog.json'), isNull);
+        expect((await publish(1))['patch_seq'], 1);
+        expect((await publish(2, seq: 10))['patch_seq'], 10);
+        await expectLater(
+          publish(3, seq: 9, commit: false),
+          throwsA(isA<Failure>()),
+        );
+        await expectLater(
+          publish(
+            3,
+            via: PublicationPipeline(
+              _Interrupted(store, 'com.example.app'),
+              Commands(temp.path),
+              temp.path,
+            ),
+          ),
+          throwsA(isA<Failure>()),
+        );
+        expect((await publish(3, commit: false))['patch_seq'], 11);
+        final resumed = await publish(3);
+        expect(resumed['patch_seq'], 11);
+        expect(await publish(3), resumed);
+        final bytes = Uint8List.fromList(
+          (await store.read(resumed['object'] as String))!.bytes,
+        );
+        expect(patchManifest(bytes)!['patch_seq'], 11);
+        expect(patchManifest(bytes)!['module_id'], 125);
+        expect(drafts.last.manifest.containsKey('patch_seq'), false);
+      },
+    );
+  }
   test(
     'publication verifies actual archive identity; cache cannot mask deletion',
     () async {
@@ -93,6 +188,7 @@ void main() {
       });
       await writeObject(p.join(input, 'build_receipt.json'), {
         'runtime_bootstrap': true,
+        'module_identity': 1,
         'app_only': true,
         'apk_sha256': 'd' * 64,
         'interface_sha256': await hashFile(

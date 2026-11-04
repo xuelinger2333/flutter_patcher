@@ -251,7 +251,7 @@ class BootRunner {
           slots[2] is String &&
           slots[3] is String &&
           slots[0] == 1 &&
-          slots[1] == patch.seq &&
+          slots[1] == patch.moduleId &&
           slots[2] == fingerprint &&
           slots[3] == patch.tier &&
           slots[4] is FutureOr<void> Function() &&

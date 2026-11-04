@@ -28,6 +28,7 @@ Uint8List envelope({
   final manifest = {
     'format_version': patchFormatVersion,
     'patch_seq': 7,
+    'module_id': 123,
     'fingerprint': fp,
     'tier': 'lean',
     'code': {
@@ -352,7 +353,7 @@ void main() {
           },
           load: (_) async {
             events.add('load');
-            return [1, 7, fp, 'lean', () {}, table];
+            return [1, 123, fp, 'lean', () {}, table];
           },
           assets: (assets) async =>
               events.add('assets:${assets.keys.join(',')}'),
@@ -531,6 +532,7 @@ void main() {
     'expired',
     'timeout',
     'bad-entry',
+    'wrong-module',
     'bad-types',
     'async-error',
     'loader',
@@ -597,7 +599,7 @@ void main() {
             if (scenario == 'async-error') await failure!(StateError('async'));
             return [
               scenario == 'bad-types' ? 1.0 : 1,
-              7,
+              scenario == 'wrong-module' ? 7 : 123,
               fp,
               'lean',
               () {

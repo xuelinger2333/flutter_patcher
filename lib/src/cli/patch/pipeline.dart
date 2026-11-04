@@ -36,7 +36,7 @@ class PatchRequest {
   /// Optional; when given it must match the resolved release, and it selects
   /// a legacy baseline that has no release binding.
   final String? fingerprint;
-  final int seq, minBuild;
+  final int moduleId, minBuild;
 
   final bool offline;
   final List<String> assets;
@@ -45,7 +45,7 @@ class PatchRequest {
     this.fingerprint,
     this.flavor = 'default',
     required this.output,
-    required this.seq,
+    required this.moduleId,
     required this.minBuild,
     this.assets = const [],
     this.target = 'lib/main.dart',
@@ -56,11 +56,11 @@ class PatchRequest {
     require(
       (fingerprint == null || baselineHash.hasMatch(fingerprint!)) &&
           RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(flavor) &&
-          seq > 0 &&
-          seq <= 0xffffffff &&
+          moduleId > 0 &&
+          moduleId <= (1 << 52) &&
           minBuild > 0,
       'PATCH_CONFIG_INVALID',
-      'Invalid fingerprint, flavor, build number or sequence',
+      'Invalid fingerprint, flavor, build number or module identity',
     );
     require(
       target.startsWith('lib/') &&
@@ -366,7 +366,7 @@ class PatchPipeline {
         fonts: payload.fonts,
         assets: payload.assets,
         metadata: {
-          'patch_seq': req.seq,
+          'module_id': req.moduleId,
           'fingerprint': resolved.fingerprint,
           ...code.metadata,
           'flutter_version': sdk.version,
@@ -400,7 +400,7 @@ class PatchPipeline {
         'abi': req.abi,
         'strategy': resolved.strategy,
         'fingerprint': resolved.fingerprint,
-        'patch_seq': req.seq,
+        'module_id': req.moduleId,
         'min_build': req.minBuild,
         ...code.report,
         'changed': facts.changed,

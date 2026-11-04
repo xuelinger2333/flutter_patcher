@@ -26,6 +26,7 @@ const releaseFiles = <String>['libapp.so', 'package_config.json'];
 
 /// Build receipt fields owned by the release object.
 const releaseReceiptKeys = {
+  'module_identity',
   'application_id',
   'version_code',
   'public_key',
@@ -162,6 +163,8 @@ SplitBaseline splitBaseline(
           : files[name],
   };
   final releaseReceipt = <String, dynamic>{
+    if (receipt.containsKey('module_identity'))
+      'module_identity': receipt['module_identity'],
     'schema': 1,
     'flavor': flavor,
     'version_code': versionCode,
@@ -361,10 +364,15 @@ Future<Map<String, dynamic>> verifyReleaseObject(
   final files = await hashPayload(root, releaseObjectPayload(m));
   await validatePackages(root);
   final receipt = await baselineObject(p.join(root, 'release_receipt.json'));
+  final receiptKeys = {...releaseReceiptKeys};
+  // Older releases predate the optional module-identity capability.
+  if (!receipt.containsKey('module_identity')) {
+    receiptKeys.remove('module_identity');
+  }
   valid(
-    receipt.length == releaseReceiptKeys.length + 4 &&
+    receipt.length == receiptKeys.length + 4 &&
         receipt.keys.toSet().containsAll({
-          ...releaseReceiptKeys,
+          ...receiptKeys,
           'schema',
           'flavor',
           'abi',

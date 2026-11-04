@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart' hide ZLibEncoder;
@@ -70,30 +71,25 @@ Uint8List plainZip(Map<String, List<int>> entries, {String? deflated}) {
   return out.takeBytes();
 }
 
-/// The patch sequence of a patch made at [time]: seconds since 2025, so
-/// patches made on any machine order by when they were made, with no store
-/// to ask. Bytecode compiles it into the module, so patch picks it.
-int patchSequence(DateTime time) =>
-    time.toUtc().difference(DateTime.utc(2025)).inSeconds;
+/// A numeric module namespace, unrelated to publication order. Keep the
+/// compiler's existing numeric URI/entry contract (52 random bits).
+int newModuleId() {
+  final random = Random.secure();
+  return 1 + random.nextInt(1 << 26) * (1 << 26) + random.nextInt(1 << 26);
+}
 
-/// When a patch of sequence [seq] was made.
-DateTime sequenceTime(int seq) =>
-    DateTime.utc(2025).add(Duration(seconds: seq));
-
-/// What patch produces: the archive devices read, complete but for its
-/// signature. publish seals it in a signed envelope.
+/// Immutable compiled code and resources, before publication numbering/signing.
 final class PatchDraft {
   PatchDraft._(this.payload, this.manifest);
 
   static const file = 'patch.draft';
 
-  /// The patch archive exactly as devices read it.
+  /// The draft archive; publish adds its sequence to the manifest.
   final Uint8List payload;
 
   /// Its patch_manifest.json.
   final Map<String, Object?> manifest;
 
-  int get seq => manifest['patch_seq'] as int;
   String get fingerprint => manifest['fingerprint'] as String;
 
   /// Identifies the draft: publish does not publish one twice.
@@ -123,12 +119,14 @@ final class PatchDraft {
       final manifest = Map<String, Object?>.from(
         jsonDecode(utf8.decode(entry!.content as List<int>)) as Map,
       );
-      final seq = manifest['patch_seq'];
+      final moduleId = manifest['module_id'];
       final fingerprint = manifest['fingerprint'];
       if (manifest['format_version'] != patchFormatVersion ||
-          seq is! int ||
-          seq <= 0 ||
-          seq > 0xffffffff ||
+          manifest['draft_version'] != 1 ||
+          manifest.containsKey('patch_seq') ||
+          moduleId is! int ||
+          moduleId <= 0 ||
+          moduleId > (1 << 52) ||
           fingerprint is! String ||
           !RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint)) {
         throw const FormatException();
@@ -216,6 +214,7 @@ Future<PatchDraft> packPatch({
   );
   final manifest = {
     ...metadata,
+    'draft_version': 1,
     'format_version': patchFormatVersion,
     'code': {
       'kind': kind,

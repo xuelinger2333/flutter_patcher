@@ -39,6 +39,11 @@ class BytecodeProducer implements CodeProducer {
   Future<void> prepare() async {
     final manifest = run.resolved.compile;
     require(
+      run.resolved.receipt['module_identity'] == 1,
+      'PATCH_BASELINE_INCOMPATIBLE',
+      'Rebuild this bytecode host to support publication-time sequences.',
+    );
+    require(
       manifest['flutter_version'] == _p.sdk.version &&
           manifest['engine_commit'] == _p.sdk.engine,
       'PATCH_BASELINE_INCOMPATIBLE',
@@ -190,7 +195,7 @@ class BytecodeProducer implements CodeProducer {
       run.config,
       dir,
       tier == 'lean' ? own : wholeOwn!,
-      run.req.seq,
+      run.req.moduleId,
     );
     require(
       !await File(p.join(dir, run.app, '__patch_entry.dart')).exists(),
@@ -213,7 +218,7 @@ class BytecodeProducer implements CodeProducer {
       patchEntry(
         names[run.app]!,
         req.target.substring(4),
-        req.seq,
+        req.moduleId,
         run.resolved.fingerprint,
         tier,
       ),
@@ -235,7 +240,8 @@ class BytecodeProducer implements CodeProducer {
       if (usage.contains('environment_defines'))
         'environment_defines': releaseDefines(req.flavor),
       'emit': emit,
-      'seq': req.seq,
+      // Tools call this module identity 'seq'; it is not patch_seq.
+      'seq': req.moduleId,
       'fingerprint': run.resolved.fingerprint,
       'entry': 'package:${names[run.app]}/__patch_entry.dart',
       'packages': virtual?.packagesUri ?? m.remap['packages'],

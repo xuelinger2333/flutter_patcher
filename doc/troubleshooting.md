@@ -172,7 +172,7 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 |---|---|---|
 | `PUBLISH_CONFIG_INVALID` | Invalid arguments or request file (e.g., no patch built yet, nothing to withdraw, or `--through` out of bounds) | Run `patch` first, or adjust flags per `message` |
 | `PUBLISH_TARGET_MISMATCH` | Patch does not belong to the specified target release | Regenerate the patch for the intended release |
-| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | The patch is older than the release's latest published or withdrawn patch, or was made on a machine whose clock is ahead; or the store changed concurrently | Run `patch` again (after fixing the clock, if that was the cause), then `publish` |
+| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | The patch's sequence does not exceed the latest published or withdrawn sequence, or the store changed concurrently | Run `publish` again without `--seq`, or with a `--seq` above every published or withdrawn sequence; the patch need not be made again |
 | `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | A prior publication or cleanup operation was interrupted | Run `publish` again in the same project, or the same request file, to resume (see above) |
 | `PUBLISH_STORE_UNAVAILABLE` | Cannot access publication storage, or backend lacks conditional write support | Check AWS CLI version, credentials, and `FLUTTER_PATCHER_S3_ENDPOINT` |
 | `PUBLISH_STORE_INVALID` | Invalid store URI (an S3 prefix must be below the bucket root and use only letters, digits, `_` and `-`), or an object exceeds the size limits | Fix the `store` setting as described in `message` |
