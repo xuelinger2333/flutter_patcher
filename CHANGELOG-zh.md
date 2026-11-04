@@ -17,10 +17,13 @@
   `build android --strategy so` 保留 0.1.x 替换 `libapp.so` 的方式，并同样使用签名更新。
 - **命令行工具随本包发布**：`dart run flutter_patcher <命令>`，版本始终等于 App 解析到的
   插件版本。在项目中，常规流程不需要任何参数：
-  - `keys init` 生成 root、publisher、patch 三对密钥和 `flutter_patcher.yaml` 模板；
+  - `keys init` 生成 root、publisher、patch 三对密钥：私钥保存在用户的密钥库中，公钥写入
+    `flutter_patcher.yaml`（应提交到 git）；`keys export`、`keys import`、`keys status`
+    用于迁移和查看密钥；
   - `build android|ios` 构建宿主并归档基线，宿主策略（包名、版本号、密钥等）自动生成；
-  - `patch android|ios` 与线上版本的基线对比，自动选择下一个序号，并拒绝补丁无法
-    携带的改动（原生代码、FFI、删除资源等），给出原因；
+  - `patch android|ios` 与线上版本的基线对比，生成未签名的补丁，并拒绝补丁无法携带的
+    改动（原生代码、FFI、删除资源等），给出原因。它不需要私钥，也不访问发布存储；补丁
+    序号就是补丁的生成时间；
   - `publish` 预览后签名并把补丁写入发布存储；`publish --withdraw [--through <序号>]` 撤回该版本
     已发布的补丁；提交过程中被中断的发布会在下次运行时自动续上；
   - `serve` 在开发时自动发布新补丁，并提供给 USB 连接的 Android 设备；
@@ -29,6 +32,9 @@
   ABI、且序号大于已接受序号的补丁；撤回同样需要签名。存储和 CDN 不需要被信任。
   root 密钥可以在不发新版的情况下更换 publisher 密钥（`trust sign`、`trust publish`、
   `updatePublicationTrust`）。
+- **私钥不在项目中。** `publish`、`serve` 和 `trust sign` 依次从 `--key-file`、环境变量
+  `FLUTTER_PATCHER_KEYS`（CI 的 secret）、外部签名命令 `signing.command`（KMS 或签名服务）
+  和密钥库获取每把私钥，并与项目的公钥核对。
 - `applySignedManifest` 和 `fetchSignedManifest`（以及 `SignedManifest`、`SignedUpdateResult`），
   供自行分发清单和补丁的 App 使用。
 - `PatchBootStatus.bytecodeBootFailed` 和 `soBootFailed`：启动失败但尚未达到熔断阈值。
@@ -62,7 +68,7 @@
 ### 从 0.1.x 迁移
 
 1. 把 Flutter 升级到 3.47，依赖改为 `flutter_patcher: ^1.0.0`。
-2. 运行 `dart run flutter_patcher keys init`，并备份密钥。
+2. 运行 `dart run flutter_patcher keys init`，提交 `flutter_patcher.yaml`，并用 `keys export --out <文件>` 备份私钥。
 3. 用 `dart run flutter_patcher build android` 构建 App 并发布。
 4. 把 `checkUpdate` 指向发布存储对外提供访问的地址（见[生产部署](doc/production-playbook-zh.md)），
    之后用 `patch` 和 `publish` 发布补丁。

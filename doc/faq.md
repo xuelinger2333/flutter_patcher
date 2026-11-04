@@ -34,7 +34,7 @@ Upgrading the Flutter SDK requires running `build` and shipping a new store rele
 
 ### Can patches be tampered with or forged if my CDN is compromised?
 
-**No.** The on-device runtime only accepts patches that are cryptographically signed by your private key and match the exact baseline fingerprint (`scope`) of the installed app. Even if your storage bucket or CDN is compromised, an attacker cannot forge a valid patch without your private key or replay a patch meant for a different version. See [How It Works: Security model](architecture.md#security-model). The private keys exist only in your key directory; include it in your backups (see [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage)).
+**No.** The on-device runtime only accepts patches that are cryptographically signed by your private key and match the exact baseline fingerprint (`scope`) of the installed app. Even if your storage bucket or CDN is compromised, an attacker cannot forge a valid patch without your private key or replay a patch meant for a different version. See [How It Works: Security model](architecture.md#security-model). The private keys live outside your project, in your key store, CI secrets or signing service; back them up with `keys export` (see [Production Playbook: Keys on Machines and CI](production-playbook.md#keys-on-machines-and-ci)).
 
 ### What if a buggy patch causes the app to crash on startup?
 

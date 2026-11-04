@@ -60,13 +60,12 @@ Future<void> checkForPatch() async {
 dart run flutter_patcher keys init
 ```
 
-This creates two items in your project root:
+This creates the project's three key pairs:
 
-| Path | Description |
+| Where | What |
 |---|---|
-| `flutter_patcher_keys/` | Three cryptographic keypairs. Private keys are automatically ignored by a bundled `.gitignore`—**back them up to a secure location immediately**. |
-| `flutter_patcher.yaml` | Configuration template (all options commented out by default). No changes needed for local testing. |
-
+| `flutter_patcher.yaml` in your project | The public keys, and a settings template with every option commented out; no changes needed for local testing. **Commit this file.** |
+| `~/.flutter_patcher/keys/` on this computer | The private keys, kept outside your project. **Back them up now** with `dart run flutter_patcher keys export --out <file>`, and keep the file somewhere safe. |
 ## 3. Build the Baseline Release
 
 ```bash
@@ -116,7 +115,7 @@ Leave `serve` running and trigger `checkForPatch()` in your app. The `serve` ter
 
 Force-close the app completely (swipe it away from the recent apps screen) and relaunch it. You will see the updated UI text.
 
-If you edit the code again and re-run `patch android` while `serve` is running, `serve` automatically publishes the new patch with an auto-incremented sequence number. Simply trigger an update check in the app and cold-start again.
+If you edit the code again and re-run `patch android` while `serve` is running, `serve` automatically publishes the new patch, which has a higher sequence number. Simply trigger an update check in the app and cold-start again.
 
 ## Differences on iOS
 

@@ -91,8 +91,13 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 
 | Error Code | Meaning | Resolution |
 |---|---|---|
-| `KEYS_MISSING` | Required key files not found | Run `keys init` in the project root, or verify the `keys` path in `flutter_patcher.yaml` |
-| `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | Target key directory already exists or is not writable | `keys init` never overwrites existing keys; specify a new directory |
+| `KEYS_NOT_CONFIGURED` | `flutter_patcher.yaml` has no `trust` keys | Run `keys init` once for the project, or `keys import` its key bundle |
+| `KEYS_NOT_FOUND` | No source holds a private key that `publish` or `trust sign` needs | Run `keys import <file>`, set `FLUTTER_PATCHER_KEYS`, or configure `signing.command`; `keys status` shows what this machine has |
+| `KEYS_MISMATCH` | A private key is not the one `flutter_patcher.yaml` names, or the release was built with other keys | Use the project's keys. Never create new keys for a project with shipped hosts |
+| `KEYS_ALREADY_CONFIGURED` | `keys init` in a project that already has keys | Bring the existing keys to this machine with `keys import` |
+| `KEYS_BUNDLE_INVALID` | The file is not a key bundle | Use a file written by `keys export` |
+| `SIGNER_COMMAND_FAILED` | `signing.command` failed, timed out or printed no valid signature | Run the command by hand; check that the service's key is Ed25519 |
+| `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | The output file already exists, or the key store directory cannot be created | Choose a new file; check the permissions of `~/.flutter_patcher/keys` |
 | `KEYS_PERMISSIONS_FAILED` | Failed to restrict file permissions on private keys | Verify that the filesystem supports standard permission attributes |
 | `KEYS_CRYPTO_FAILED`<br>`KEYS_IO_ERROR` | Failed to generate or write keypairs | Check directory permissions and retry |
 
@@ -152,7 +157,7 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 |---|---|---|
 | `PATCH_BASELINE_INCOMPATIBLE` | Flutter version differs from the baseline, or baseline was built with an older incompatible tool | See [`PATCH_BASELINE_INCOMPATIBLE` above](#patch_baseline_incompatible-flutter-version-mismatch) |
 | `PATCH_TARGET_MISMATCH` | Entry-point target file differs from the baseline build | Pass the same `--target` used during `build` |
-| `PATCH_KEY_INVALID`<br>`PATCH_KEY_MISMATCH` | Invalid `patch` private key, or public key does not match the one embedded in the baseline app | Use the exact keypair that was present when building the baseline release |
+| `PATCH_DRAFT_INVALID` | `publish` got a directory without a valid `patch.draft` | Pass an output of `patch` from this flutter_patcher version |
 | `PATCH_CONFIG_INVALID` | Invalid options, such as the sequence, flavor, fingerprint or `--target`, or an output directory that already exists | Fix them as described in `message` |
 | `PATCH_COMPILE_FAILED` | Dart compilation failed | Verify that a standard `flutter build` succeeds first |
 | `PATCH_SOURCE_INVALID`<br>`PACKAGE_INPUT_INVALID` | Unsupported source package layout (e.g., contains symlinks) | Remove symlinks or adjust layout as described in `message` |
@@ -167,7 +172,7 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 |---|---|---|
 | `PUBLISH_CONFIG_INVALID` | Invalid arguments or request file (e.g., no patch built yet, nothing to withdraw, or `--through` out of bounds) | Run `patch` first, or adjust flags per `message` |
 | `PUBLISH_TARGET_MISMATCH` | Patch does not belong to the specified target release | Regenerate the patch for the intended release |
-| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | Sequence number is not greater than the latest published/withdrawn sequence, or concurrent modification occurred | Re-run `patch` (to automatically pick the next valid sequence number) and `publish` again |
+| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | The patch is older than the release's latest published or withdrawn patch, or was made on a machine whose clock is ahead; or the store changed concurrently | Run `patch` again (after fixing the clock, if that was the cause), then `publish` |
 | `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | A prior publication or cleanup operation was interrupted | Run `publish` again in the same project, or the same request file, to resume (see above) |
 | `PUBLISH_STORE_UNAVAILABLE` | Cannot access publication storage, or backend lacks conditional write support | Check AWS CLI version, credentials, and `FLUTTER_PATCHER_S3_ENDPOINT` |
 | `PUBLISH_STORE_INVALID` | Invalid store URI (an S3 prefix must be below the bucket root and use only letters, digits, `_` and `-`), or an object exceeds the size limits | Fix the `store` setting as described in `message` |
@@ -175,8 +180,8 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 | `PUBLISH_MANIFEST_CONFLICT` | `manifests/<hash>.json` kept changing while `publish` rewrote it | Run `publish` again to rewrite it |
 | `PUBLISH_CATALOG_FULL` | Publication ledger (`catalog.json`) reached its 8 MiB capacity | Cleanup does not shrink it, and this version cannot archive it; open an issue |
 | `PUBLISH_PATCH_INVALID` | Patch bundle is corrupted or exceeds the 320 MB limit | Reduce asset payload size and regenerate the patch |
-| `PUBLISH_SIGN_FAILED` | A private key does not match its public key: the `publisher` pair for `publish`, the `root` pair for `trust sign` | Check the key files under `flutter_patcher_keys/` |
-| `PUBLISH_SIGNATURE_INVALID` | A signature does not verify: the patch against the baseline's `patch` public key (`publish`), or a trust document against `--root-public` (`trust publish`) | Build the patch with the keys the host was built with, or check the `root` key |
+| `PATCH_SIGN_FAILED` | A patch signature failed its self-check | Check where the patch key comes from with `keys status` |
+| `PUBLISH_SIGNATURE_INVALID` | A signature does not verify: the patch against the baseline's `patch` public key (`publish`), or a trust document against `--root-public` (`trust publish`) | Publish with the keys the host was built with, or check the `root` key |
 | `PUBLISH_RETENTION_STALE`<br>`PUBLISH_OBJECT_CHANGED` | The approved cleanup plan is stale because storage state changed | Re-run the dry run to generate a fresh cleanup plan |
 | `PUBLISH_FAILED` | Unexpected publication failure | Check `message` for details |
 | `SERVE_CONFIG_INVALID` | `serve` only supports local `file://` storage | Comment out the remote `store` setting in `flutter_patcher.yaml` during local development |

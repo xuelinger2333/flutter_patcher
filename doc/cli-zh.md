@@ -12,7 +12,7 @@ dart run flutter_patcher <命令> [选项]
 
 ## 通用约定
 
-- **项目目录**：默认是当前目录，可用 `--project` 指定（`keys init` 除外，它总是使用当前目录）。
+- **项目目录**：默认是当前目录，可用 `--project` 指定。
 - **输出**：成功时向标准输出打印一行 JSON；`serve` 例外（状态信息打印到标准错误），`doctor` 例外（打印检查清单，加 `--json` 时为 JSON）。失败时，`build`、`patch`、`baseline` 向标准错误打印一行包含 `code` 和 `message` 的 JSON，其他命令打印 `CODE: message`。失败的退出码为 `2`；`doctor` 检查不通过时为 `1`。错误码的含义见[错误码与排障](troubleshooting-zh.md)。
 - **警告**：以 `WARNING: <代码>: <说明>` 的形式打印到标准错误，不影响命令成功。
 - **Flutter SDK**（`build`、`patch`、`doctor`）：默认使用 `PATH` 中的 Flutter，可用 `--flutter-sdk <路径>` 指定。
@@ -22,44 +22,86 @@ dart run flutter_patcher <命令> [选项]
 
 ## 项目配置 `flutter_patcher.yaml`
 
-所有字段都是可选的，不写时使用默认值。`keys init` 会生成一份全部注释掉的模板。
+`keys init` 会生成这个文件：`trust` 下是项目的公钥，其余配置项是注释掉的模板。文件里没有任何机密，**请提交到 git**。
 
 | 字段 | 含义 | 默认值 |
 |---|---|---|
 | `store` | 发布存储，`publish` 把补丁和清单写到这里。支持 `file://` 和 `s3://` | `.flutter_patcher/updates/`（项目内） |
 | `baseline_store` | 基线存储，`build` 写入、`patch` 和 `publish` 读取。支持 `file://`、`s3://` 和 HTTPS | `.flutter_patcher/baselines/`（项目内） |
-| `keys` | 密钥目录，相对于本文件 | `flutter_patcher_keys` |
+| `trust` | `root`、`publisher`、`patch` 三把公钥，每个宿主构建时都会写入。由 `keys init` 和 `keys import` 写入 | |
+| `signing` | `command`：用一个外部程序签名，代替本机密钥库，见[私钥从哪里来](#私钥从哪里来) | 本机密钥库 |
 
-出现未知字段或非字符串的值会报 `CONFIG_INVALID`。存储的配置方法见[生产部署](production-playbook-zh.md#配置存储)，各类型的要求见[存储要求](#存储要求)。
+出现未知字段或格式不对的值会报 `CONFIG_INVALID`。存储的配置方法见[生产部署](production-playbook-zh.md#配置存储)，各类型的要求见[存储要求](#存储要求)。
 
 ## 目录一览
 
 | 路径 | 内容 | 是否需要备份 |
 |---|---|---|
-| `flutter_patcher_keys/` | 三对密钥 | **是**，私钥不要提交到 git |
+| `flutter_patcher.yaml` | 配置和项目的公钥 | 提交到 git |
+| `~/.flutter_patcher/keys/<ID>/` | 本机保存的该项目私钥（密钥库） | **是**，用 `keys export --out <文件>` |
 | `.flutter_patcher/baselines/` | 默认的基线存储 | **是**，或改用持久存储 |
 | `.flutter_patcher/updates/` | 默认的发布存储 | 视情况 |
 | `.dart_tool/flutter_patcher/releases/` | `build` 的输出 | 否 |
 | `.dart_tool/flutter_patcher/patches/` | `patch` 的输出 | 否 |
-| `~/.flutter_patcher/` | 下载的引擎和工具、准备好的 Flutter SDK 副本、基线缓存 | 否，可以重新下载 |
+| `~/.flutter_patcher/`（`keys/` 除外） | 下载的引擎和工具、准备好的 Flutter SDK 副本、基线缓存 | 否，可以重新下载 |
 
-## keys init
+## keys
 
-生成三对 Ed25519 密钥（`root`、`publisher`、`patch`），用途见[工作原理](architecture-zh.md#安全模型)。
+每个项目有三对 Ed25519 密钥：`root`、`publisher`、`patch`，用途见[工作原理](architecture-zh.md#安全模型)。公钥保存在 `flutter_patcher.yaml` 中，私钥从不放在项目里。`build` 和 `patch` 不需要任何私钥，只有 `publish`、`serve` 和 `trust sign` 需要签名。
+
+### keys init
 
 ```bash
 dart run flutter_patcher keys init
 ```
 
+生成项目的密钥：私钥保存到本机密钥库 `~/.flutter_patcher/keys/<ID>/keys.json`（POSIX 上文件权限 600、目录 700；Windows 上只有当前用户可读），公钥写入 `flutter_patcher.yaml` 的 `trust`。
+
+- `flutter_patcher.yaml` 已经有密钥时拒绝执行，报 `KEYS_ALREADY_CONFIGURED`：已经构建的宿主不会信任新密钥。在另一台机器上请用 `keys import`。
+- 只输出公钥，不输出私钥。请立即用 `keys export --out <文件>` 备份私钥：`root` 或 `patch` 私钥丢失后，已上线的宿主无法再更换。
+- `--out <文件>` 只把新密钥写到这个新文件，不改动密钥库和项目；加 `--role publisher` 时只生成一把 publisher 密钥，用于[轮换](advanced-zh.md#轮换发布密钥)。
+
+### keys export 与 keys import
+
+```bash
+dart run flutter_patcher keys export --out <文件>                  # 备份，或带到另一台机器
+dart run flutter_patcher keys import <文件>
+dart run flutter_patcher keys export --base64 --without-root       # 一行文本，用作 CI 的 secret
+```
+
 | 选项 | 说明 |
 |---|---|
-| `--out <目录>` | 写到另一个新目录，而不是项目的 `flutter_patcher_keys/` |
+| `export --out <文件>` | 把本机保存的该项目密钥写到一个新文件（POSIX 上权限 600） |
+| `export --base64` | 改为输出一行 base64，用于 `FLUTTER_PATCHER_KEYS` |
+| `export --without-root` | 不包含 root 私钥，它只用于信任更新 |
+| `import <文件>` | 把密钥包加入本机密钥库；`-` 表示从标准输入读取 |
+| `import --rotate` | 在信任更新发布之后，用密钥包里的 publisher 密钥替换当前的 |
 
-- 输出一行 JSON，包含密钥文件路径和公钥指纹，不含私钥。
-- 目标已存在时拒绝执行，不会覆盖或轮换已有密钥。
-- 在 POSIX 系统上，密钥目录权限为 700、私钥文件为 600；在 Windows 上，目录只授权给当前用户。
-- 使用默认目录、且项目中还没有 `flutter_patcher.yaml` 时，会顺带生成配置模板。
+`import` 只接受 `flutter_patcher.yaml` 中记录的那套密钥，否则报 `KEYS_MISMATCH`；项目还没有密钥时，会把公钥写入 `flutter_patcher.yaml`。
 
+### keys status
+
+列出每把密钥的公钥，以及它的私钥由哪里提供：`key store`（本机密钥库）、`FLUTTER_PATCHER_KEYS`、`--key-file`、`signing.command` 或 `none`。不会进行签名。
+
+### 私钥从哪里来
+
+`publish`、`serve` 和 `trust sign` 按以下顺序查找每把私钥，使用第一个找到的：
+
+1. `--key-file <文件>`：一个密钥包文件；
+2. 环境变量 `FLUTTER_PATCHER_KEYS`：`keys export --base64` 输出的密钥包；
+3. `flutter_patcher.yaml` 中的 `signing.command`；
+4. 本机密钥库。
+
+一个来源可以只包含部分密钥。如果某个来源里的密钥与 `flutter_patcher.yaml` 记录的不一致，会直接报 `KEYS_MISMATCH`，而不是跳过它。
+
+`signing.command` 让持有密钥的服务来签名，例如 KMS、HashiCorp Vault 或密码管理器，私钥不会出现在执行命令的机器上：
+
+```yaml
+signing:
+  command: my-signer --key "fp-$FLUTTER_PATCHER_SIGN_ROLE"
+```
+
+命令在系统 shell 中运行（`sh`；Windows 上是 `cmd`，变量写作 `%FLUTTER_PATCHER_SIGN_ROLE%`），并设置 `FLUTTER_PATCHER_SIGN_ROLE`（`root`、`publisher` 或 `patch`）和 `FLUTTER_PATCHER_SIGN_PUBLIC_KEY`。它从标准输入读取待签名的字节，把 Ed25519 签名以 base64 输出到标准输出，限时 60 秒。每个签名都会先校验再使用。签名服务必须使用纯 Ed25519（不是 Ed25519ph），HashiCorp Vault transit 和 Google Cloud KMS 的 `EC_SIGN_ED25519` 密钥都符合。
 ## build
 
 构建宿主安装包，并把这个版本的基线保存到基线存储。
@@ -101,20 +143,22 @@ dart run flutter_patcher patch ios
 |---|---|---|
 | `--version-code <数字>` | 为哪个版本生成补丁 | `pubspec.yaml` 中 `version` 的构建号 |
 | `--flavor <名称>` | 该版本的 flavor | `default` |
-| `--seq <数字>` | 补丁序号，必须大于该版本已发布过的序号 | 发布存储中已有的最大序号 + 1 |
+
 | `--assets <资源键>` | 只覆盖指定的资源（可重复） | 自动选出有变化的资源 |
 | `--target <文件>` | 入口文件 | `lib/main.dart` |
 | `--out <目录>` | 输出目录，必须是新目录 | `.dart_tool/flutter_patcher/patches/<时间戳>/` |
 | `--baseline-store <URI>` | 从这里读取基线，而不是 `flutter_patcher.yaml` 中的 `baseline_store` | 取自 `flutter_patcher.yaml` |
 
+- `patch` 只需要源码和该版本的基线：不需要私钥，也不访问发布存储。
 - 策略、渠道等都从基线读取，不需要再次指定。
-- 输出目录中有 `patch.fptc`（补丁）和 `patch.json`（报告）。报告中的 `changed` 列出改动的内容，`warnings` 列出需要注意的问题。
+- 输出目录中有 `patch.draft`（尚未签名的补丁）和 `patch.json`（报告）。报告中的 `changed` 列出改动的内容，`warnings` 列出需要注意的问题。
+- 补丁序号就是补丁的生成时间（自 2025 年起的秒数），因此在任何机器上生成的补丁都按时间排序；`publish` 会拒绝比该版本最新补丁更旧的补丁。
 - 不能热更的改动会导致命令失败，规则见[工作原理](architecture-zh.md#能更新什么)。
 - 修好 bug 后再生成补丁，**不要修改 `pubspec.yaml` 的构建号**，否则 `patch` 会去找一个不存在的版本；或者用 `--version-code` 明确指定。
 
 ## publish
 
-签名并把补丁发布到发布存储。
+为 `patch` 生成的补丁签名，并发布到发布存储。它和 `serve`、`trust sign` 是仅有的需要私钥的命令，见[私钥从哪里来](#私钥从哪里来)。
 
 ```bash
 dart run flutter_patcher publish
@@ -126,11 +170,14 @@ dart run flutter_patcher publish
 | `--withdraw` | 改为撤回该补丁所属版本已发布的补丁，见[生产部署](production-playbook-zh.md#撤回补丁) | |
 | `--through <序号>` | 与 `--withdraw` 一起使用：撤回到这个序号为止 | 已发布的最大序号 |
 | `--yes`, `-y` | 不询问，直接发布 | 先预览再询问；非交互环境下只预览 |
+| `--key-file <文件>` | 优先使用这个密钥包签名 | |
 | `--receipt <文件>` | 把发布结果另存为 JSON 文件（必须是新文件） | |
 | `--production --request <文件>` | 高级：执行手写的发布或清理请求文件，见[进阶操作](advanced-zh.md#清理历史补丁) | |
 
 - 没有 `--yes`、又没有终端可以询问时，只预览：不会发布任何内容，退出码仍为 `0`。
-- 发布前会再次校验：补丁确实是为该版本生成的，序号没有冲突，存储中的内容自上次读取后没有被别人改动。
+- 发布前会校验：补丁确实是为该版本生成的，且比该版本最新的补丁更新；签名密钥正是构建宿主时使用的那套；存储中的内容自上次读取后没有被别人改动。
+- 如果补丁的生成时间比本机时间晚一天以上（生成它的机器时钟超前），会被拒绝，否则它会挡住之后所有的补丁。
+- 发布一个已经是该版本最新补丁的补丁不会做任何改动，返回 `already_published`。
 - 提交期间，本次发布的请求保存在 `.dart_tool/flutter_patcher/publish-pending.json`。如果提交中途停止，存储在这次发布完成之前不接受其他操作，因此项目中下一次运行 `publish`（或 `serve`）时会先自动续上它。
 - 发布存储为 S3 时需要已配置好的 AWS CLI。
 
@@ -163,7 +210,7 @@ dart run flutter_patcher doctor
 | 选项 | 说明 |
 |---|---|
 | `--json` | 以 JSON 输出详细报告 |
-| `--project <目录>` | 同时检查项目 Dart 源码的换行符 |
+| `--project <目录>` | 同时检查项目 Dart 源码的换行符，并报告各私钥的来源 |
 | `--baseline-store <URI>` | 检查基线存储是否可以访问（写权限在构建时才检查） |
 | `--version-code <数字>` `--flavor <名称>` | 与 `--baseline-store` 一起使用，检查该版本的基线是否完整 |
 | `--apk <文件>` | 检查一个 APK 中的引擎是否与当前 Flutter 版本匹配 |
@@ -189,7 +236,7 @@ dart run flutter_patcher doctor
 | `s3://` | 需要支持条件写入（`--if-match`、`--if-none-match`）的 AWS CLI；除读写和 `s3:ListBucket` 外，清理历史补丁还需要 `s3:DeleteObject`。路径必须是存储桶下的专用前缀，每段只含字母、数字、`_` 和 `-`，例如 `s3://my-bucket/my-app` |
 | `file://` | 本地目录或网络挂载盘 |
 
-`patch` 需要读取发布存储来确定补丁序号，因此执行 `patch` 的机器也需要发布存储的读取权限。
+只有 `publish` 和 `serve` 使用发布存储，`patch` 不使用。
 
 发布存储的内容：
 
@@ -218,6 +265,8 @@ dart run flutter_patcher doctor
 
 | 变量 | 用途 |
 |---|---|
+| `FLUTTER_PATCHER_KEYS` | 用于签名的密钥包（`keys export --base64` 的输出），通常是 CI 的 secret |
+| `FLUTTER_PATCHER_SIGN_ROLE`、`FLUTTER_PATCHER_SIGN_PUBLIC_KEY` | 为 `signing.command` 设置：要使用哪把密钥签名 |
 | `FLUTTER_PATCHER_S3_ENDPOINT` | S3 兼容服务的 HTTPS 地址，例如 Cloudflare R2。AWS S3 不需要设置 |
 | `FLUTTER_PATCHER_BASELINE_TOKEN` | HTTPS 基线存储的访问令牌，以 `Authorization: Bearer` 头发送 |
 | AWS CLI 的标准变量和配置 | S3 的凭据和区域，例如 `AWS_PROFILE`、`AWS_REGION` |

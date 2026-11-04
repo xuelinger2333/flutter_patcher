@@ -90,8 +90,13 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 | 错误码 | 含义 | 处理方法 |
 |---|---|---|
-| `KEYS_MISSING` | 找不到所需的密钥文件 | 在项目根目录运行 `keys init`，或检查 `flutter_patcher.yaml` 中的 `keys` 路径配置 |
-| `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | 目标输出目录已存在或不可写 | `keys init` 默认拒绝覆盖已有密钥，请指定新目录 |
+| `KEYS_NOT_CONFIGURED` | `flutter_patcher.yaml` 中没有 `trust` 公钥 | 为项目运行一次 `keys init`，或用 `keys import` 导入它的密钥包 |
+| `KEYS_NOT_FOUND` | 找不到 `publish` 或 `trust sign` 需要的私钥 | 运行 `keys import <文件>`、设置 `FLUTTER_PATCHER_KEYS` 或配置 `signing.command`；`keys status` 可查看本机有哪些私钥 |
+| `KEYS_MISMATCH` | 私钥与 `flutter_patcher.yaml` 记录的不一致，或该版本是用另一套密钥构建的 | 使用项目原有的密钥。已有上线宿主的项目，切勿重新生成密钥 |
+| `KEYS_ALREADY_CONFIGURED` | 在已有密钥的项目中运行了 `keys init` | 用 `keys import` 把已有密钥带到本机 |
+| `KEYS_BUNDLE_INVALID` | 文件不是密钥包 | 使用 `keys export` 导出的文件 |
+| `SIGNER_COMMAND_FAILED` | `signing.command` 执行失败、超时或没有输出有效签名 | 手动运行该命令排查；确认签名服务中的密钥是 Ed25519 |
+| `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | 输出文件已存在，或无法创建密钥库目录 | 换一个新文件；检查 `~/.flutter_patcher/keys` 的权限 |
 | `KEYS_PERMISSIONS_FAILED` | 无法收紧私钥文件的文件系统访问权限 | 检查当前文件系统是否支持标准权限控制 |
 | `KEYS_CRYPTO_FAILED`<br>`KEYS_IO_ERROR` | 密钥对生成或写入失败 | 检查目录读写权限后重试 |
 
@@ -151,7 +156,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 |---|---|---|
 | `PATCH_BASELINE_INCOMPATIBLE` | 当前 Flutter 版本与基线不一致，或基线由不兼容的旧版工具构建 | 参见上文 [常见问题：`PATCH_BASELINE_INCOMPATIBLE`](#patch_baseline_incompatibleflutter-版本不一致) |
 | `PATCH_TARGET_MISMATCH` | 入口文件与构建基线时不一致 | 通过 `--target` 指定与构建基线时相同的入口文件 |
-| `PATCH_KEY_INVALID`<br>`PATCH_KEY_MISMATCH` | `patch` 私钥格式无效，或与基线安装包内置的公钥不匹配 | 切换回构建该基线版本时所使用的密钥目录 |
+| `PATCH_DRAFT_INVALID` | 传给 `publish` 的目录中没有有效的 `patch.draft` | 传入当前版本 flutter_patcher 的 `patch` 输出 |
 | `PATCH_CONFIG_INVALID` | 参数无效（如序号、flavor、指纹或 `--target`），或输出目录已存在 | 按提示修正 |
 | `PATCH_COMPILE_FAILED` | Dart 代码编译失败 | 先运行标准 `flutter build` 确认代码本身无编译错误 |
 | `PATCH_SOURCE_INVALID`<br>`PACKAGE_INPUT_INVALID` | 源码目录结构不受支持（如包含符号链接） | 按提示移除符号链接或调整结构 |
@@ -166,7 +171,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 |---|---|---|
 | `PUBLISH_CONFIG_INVALID` | 参数或请求文件无效（如尚未生成可发布的补丁、无可撤回的补丁，或 `--through` 越界） | 先运行 `patch` 生成补丁，或按提示修正参数 |
 | `PUBLISH_TARGET_MISMATCH` | 待发布的补丁与目标基线版本不匹配 | 重新为目标版本生成补丁 |
-| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | 补丁序号小于等于已发布/已撤回序号，或发布期间存储被并发修改 | 重新运行一次 `patch`（会自动获取最新递增序号）后再执行 `publish` |
+| `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | 补丁比该版本已发布或已撤回的最新补丁更旧，或生成补丁的机器时钟超前；也可能是发布期间存储被并发修改 | 重新运行 `patch`（如果是时钟问题，先校准时钟），再执行 `publish` |
 | `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | 上一次发布或清理操作异常中断 | 在同一个项目中再次运行 `publish`，或再次运行同一个请求文件，即可恢复，参见上文说明 |
 | `PUBLISH_STORE_UNAVAILABLE` | 无法访问发布存储，或存储端不支持条件写入 | 检查 AWS CLI 版本、访问凭据及 `FLUTTER_PATCHER_S3_ENDPOINT` 环境变量 |
 | `PUBLISH_STORE_INVALID` | 存储地址无效（S3 前缀必须位于存储桶根目录之下，且只能包含字母、数字、`_` 和 `-`），或对象超出大小限制 | 按提示修正 `store` 配置 |
@@ -174,8 +179,8 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `PUBLISH_MANIFEST_CONFLICT` | `publish` 改写 `manifests/<哈希>.json` 期间该文件不断变化 | 再次运行 `publish` 改写它 |
 | `PUBLISH_CATALOG_FULL` | 发布历史记录（`catalog.json`）达到 8 MiB 的容量上限 | 清理不会缩小它，当前版本也无法归档；请提交 Issue |
 | `PUBLISH_PATCH_INVALID` | 补丁文件损坏或体积超限（上限为 320 MB） | 缩减资源体积并重新生成补丁 |
-| `PUBLISH_SIGN_FAILED` | 私钥与公钥不匹配：`publish` 时是 `publisher` 密钥对，`trust sign` 时是 `root` 密钥对 | 检查 `flutter_patcher_keys/` 下对应的密钥文件 |
-| `PUBLISH_SIGNATURE_INVALID` | 签名校验失败：`publish` 时补丁与基线中的 `patch` 公钥不匹配，`trust publish` 时信任文件与 `--root-public` 不匹配 | 用构建宿主时的那套密钥生成补丁，或检查 `root` 密钥 |
+| `PATCH_SIGN_FAILED` | 补丁签名未通过自检 | 用 `keys status` 检查 patch 私钥的来源 |
+| `PUBLISH_SIGNATURE_INVALID` | 签名校验失败：`publish` 时补丁与基线中的 `patch` 公钥不匹配，`trust publish` 时信任文件与 `--root-public` 不匹配 | 用构建宿主时的那套密钥发布，或检查 `root` 密钥 |
 | `PUBLISH_RETENTION_STALE`<br>`PUBLISH_OBJECT_CHANGED` | 预生成的清理计划（Cleanup Plan）已过期 | 重新执行 Dry Run 生成最新的清理计划 |
 | `PUBLISH_FAILED` | 未预期的发布异常 | 查看 `message` 详情 |
 | `SERVE_CONFIG_INVALID` | `serve` 仅支持本地文件存储（`file://`） | 本地联调时请先注释掉 `flutter_patcher.yaml` 中的远端 `store` 配置 |

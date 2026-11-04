@@ -83,10 +83,13 @@ def prepare(args, repo, out):
         call([dart, cli, *argv], repo, out / (name + '.log'))
 
     call([flutter_launcher(args.flutter_sdk), 'pub', 'get'], repo, out / 'cli-pub.log')
-    keys = {}
-    for role in ['patch', 'publisher', 'root']:
-        patcher('keys-' + role, 'keys', 'init', '--out', out / 'keys' / role)
-        keys[role] = (out / 'keys' / role / 'public-key.base64').read_text().strip()
+    # One key bundle file signs everything; a project whose flutter_patcher.yaml
+    # names its public keys lets publish check them, as a CI job would.
+    patcher('keys', 'keys', 'init', '--out', out / 'keys.json')
+    keys = next(json.loads(line) for line in (out / 'keys.log').read_text().splitlines()
+                if line.startswith('{'))['public_keys']
+    write(out / 'keys-project/flutter_patcher.yaml',
+          'trust:\n' + ''.join(f'  {role}: {keys[role]}\n' for role in ['root', 'publisher', 'patch']))
     tls, password = out / 'tls', secrets.token_hex(16)
     tls.mkdir()
     keytool = tool(args.java_home and Path(args.java_home) / 'bin', 'keytool')
@@ -105,38 +108,40 @@ def prepare(args, repo, out):
     store = (out / 'store').as_uri()
     (out / 'store').mkdir()
     patcher('build', 'build', 'android', *common, '--project', app, '--baseline-store', store,
-            '--public-key', out / 'keys/patch/public-key.base64', '--host-policy', out / 'host-policy.json',
+            '--host-policy', out / 'host-policy.json',
             '--version-code', '1', '--out', out / 'release')
     built = json.loads((out / 'release/build.json').read_text())
 
     if args.strategy == 'so':  # Bytecode patches replace Dart code only.
         write(app / 'assets/msg.txt', 'asset-patched')
+    seqs = []
     for seq, revision, crash in [(1, 'patched', False), (2, 'crash', True), (3, 'patched-3', False)]:
         main = source.replace("const revision = 'original';", f"const revision = '{revision}';")
         write(app / 'lib/main.dart', main.replace('const crash = false;', f'const crash = {str(crash).lower()};'))
         patcher(f'patch{seq}', 'patch', 'android', *common, '--project', app, '--fingerprint',
-                built['fingerprint'], '--seq', str(seq), '--version-code', '1', '--baseline-store', store,
-                '--private-key', out / 'keys/patch/private-key.base64', '--out', out / f'patch{seq}')
+                built['fingerprint'], '--version-code', '1', '--baseline-store', store, '--out', out / f'patch{seq}')
+        # A patch's sequence is the time it was made: patches made later have higher ones.
+        seqs.append(json.loads((out / f'patch{seq}/patch.json').read_text())['patch_seq'])
+        time.sleep(1)
+    write(out / 'seqs.json', json.dumps(seqs))
 
     srv = out / 'srv'
     version = next(line.split(':', 1)[1].strip() for line in (repo / 'pubspec.yaml').read_text().splitlines()
                    if line.startswith('version:'))
-    for revision, extra in enumerate([dict(action='publish', patch_seq='1'), dict(action='publish', patch_seq='2'),
-                                      dict(action='publish', patch_seq='3'),
-                                      dict(action='withdraw', withdraw_through_seq='3')], 1):
+    for revision, extra in enumerate([dict(action='publish'), dict(action='publish'), dict(action='publish'),
+                                      dict(action='withdraw', withdraw_through_seq=str(seqs[2]))], 1):
         operation = secrets.token_hex(16)
         request = dict(application_id=PACKAGE, store=(srv / 'pub').as_uri(), operation=operation,
                        fields=dict(schema='1', key_id='release', application_id=PACKAGE, channel='device',
                                    flavor='default', version_code='1', abi='arm64-v8a',
                                    fingerprint=built['fingerprint'], strategy=args.strategy,
                                    minPluginVersion=version, revision=str(revision), **extra),
-                       baseline_store=store, expected_revision=revision - 1,
-                       private_key=str(out / 'keys/publisher/private-key.base64'),
-                       public_key=str(out / 'keys/publisher/public-key.base64'), created_at=int(time.time()))
+                       baseline_store=store, expected_revision=revision - 1, created_at=int(time.time()))
         if extra['action'] == 'publish':
-            request.update(patch=str(out / f'patch{extra["patch_seq"]}/patch.fptc'))
+            request.update(patch=str(out / f'patch{revision}'))
         write(out / f'publish{revision}.json', json.dumps(request, indent=2))
-        patcher(f'publish{revision}', 'publish', '--production', '--yes', '--request', out / f'publish{revision}.json')
+        patcher(f'publish{revision}', 'publish', '--production', '--yes', '--request', out / f'publish{revision}.json',
+                '--project', out / 'keys-project', '--key-file', out / 'keys.json')
         write(srv / f'manifest{revision}.json',
               json.loads((srv / 'pub/catalog.json').read_text())['releases'][operation]['wire'])
     write(srv / 'tampered.json', tamper((srv / 'manifest1.json').read_text()))
@@ -155,7 +160,7 @@ def remote_prepare(args, repo, out):
                           '--strategy', args.strategy, '--flutter-sdk', args.remote_flutter, '--out', 'out'])
     # Keys and the baseline store stay on the builder; verify needs only the APK, origin and TLS.
     ssh(f'cd {shlex.quote(root)} && tar -xzf source.tar.gz && ANDROID_HOME={shlex.quote(args.remote_android)} '
-        f'{prepare} > prepare.log 2>&1; code=$?; tar --exclude=./app --exclude=./store --exclude=./keys '
+        f'{prepare} > prepare.log 2>&1; code=$?; tar --exclude=./app --exclude=./store --exclude=./keys.json '
         f'-czf outputs.tar.gz prepare.log -C out .; exit $code')
     subprocess.run(['scp', '-q', f'{args.remote}:{root}/outputs.tar.gz', str(out)], check=True)
     with tarfile.open(out / 'outputs.tar.gz') as archive:
@@ -219,7 +224,8 @@ def verify(args, out):
 
         asset = 'asset-patched' if args.strategy == 'so' else 'asset-original'
         original = dict(revision='original', asset='asset-original', version=None, diagnostic='noPatch')
-        patched = dict(revision='patched', asset=asset, version='1', diagnostic='patched')
+        seqs = json.loads((out / 'seqs.json').read_text())
+        patched = dict(revision='patched', asset=asset, version=str(seqs[0]), diagnostic='patched')
         fields = json.loads(base64.b64decode(json.loads((srv / 'manifest1.json').read_text())['payload']))
         scope = hashlib.sha256(json.dumps({k: fields[k] for k in ['application_id', 'channel', 'flavor',
             'version_code', 'abi', 'fingerprint', 'strategy']}, separators=(',', ':')).encode()).hexdigest()
@@ -259,7 +265,7 @@ def verify(args, out):
              {'crash_started': False}),
             ('crash protection recovers', launch, {**original, 'diagnostic': 'droppedCircuitBreaker'}),
             ('apply next patch', check(3), {'update': True, 'ok': True}),
-            ('next patch boots', launch, {**patched, 'revision': 'patched-3', 'version': '3'}),
+            ('next patch boots', launch, {**patched, 'revision': 'patched-3', 'version': str(seqs[2])}),
             ('withdraw', check(4), {'update': True, 'ok': True}),
             ('original after withdraw', launch, original),
         ]

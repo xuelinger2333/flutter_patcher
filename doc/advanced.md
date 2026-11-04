@@ -23,7 +23,7 @@ await FlutterPatcher.updatePublicationTrust(doc);
 
 ### Steps
 
-1. Generate a new keypair with `dart run flutter_patcher keys init --out <new_dir>` (the directory must not exist yet) and use the keys under `publisher/`.
+1. Generate a new publisher key: `dart run flutter_patcher keys init --out new-publisher.json --role publisher`. The output shows its public key.
 
 2. Prepare `fields.json` with the target release's 7 identifying fields, plus `schema`, `revision` and the new `keys`:
 
@@ -48,19 +48,17 @@ await FlutterPatcher.updatePublicationTrust(doc);
 3. Sign with the `root` private key and publish the trust document:
 
    ```bash
-   dart run flutter_patcher trust sign --fields fields.json \
-     --root-public flutter_patcher_keys/root/public-key.base64 \
-     --root-private flutter_patcher_keys/root/private-key.base64 \
-     --out trust-1.json
+   dart run flutter_patcher trust sign --fields fields.json --out trust-1.json
 
    dart run flutter_patcher trust publish --wire trust-1.json \
-     --root-public flutter_patcher_keys/root/public-key.base64 \
      --store s3://my-bucket/my-app-trust
    ```
 
+   `trust sign` takes the root key the way `publish` takes its keys (see [Where private keys come from](cli.md#where-private-keys-come-from)), for example `--key-file root-backup.json` with the backup you keep offline.
+
    Each live release has its own trust document; give each release its own `--store` location. `trust publish` fails with `TRUST_SCOPE_CONFLICT` when the location already holds another release's document.
 
-4. Replace the files in `flutter_patcher_keys/publisher/` with the new keypair, then create and publish your latest patch again.
+4. Adopt the new key with `dart run flutter_patcher keys import new-publisher.json --rotate` and commit `flutter_patcher.yaml`, then create and publish your latest patch again. Machines and CI jobs that publish need the new key too (`keys export`).
 
 ### How Rotation Takes Effect
 

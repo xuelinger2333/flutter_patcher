@@ -64,13 +64,12 @@ Future<void> checkForPatch() async {
 dart run flutter_patcher keys init
 ```
 
-执行后项目根目录会生成以下文件：
+执行后会生成项目的三对密钥：
 
-| 路径 | 说明 |
+| 位置 | 内容 |
 |---|---|
-| `flutter_patcher_keys/` | 包含三对签名密钥。私钥已由目录内的 `.gitignore` 自动排除，**请立即将其备份到安全位置** |
-| `flutter_patcher.yaml` | 项目配置文件模板（默认全为注释）。本地试用无需修改 |
-
+| 项目中的 `flutter_patcher.yaml` | 公钥，以及全部注释掉的配置模板；本地试用无需修改。**请提交到 git。** |
+| 本机的 `~/.flutter_patcher/keys/` | 私钥，保存在项目之外。**请立即备份**：运行 `dart run flutter_patcher keys export --out <文件>`，并把文件保存在安全的地方。 |
 ## 3. 构建基线安装包
 
 ```bash
@@ -120,7 +119,7 @@ dart run flutter_patcher serve
 
 彻底杀掉 App 进程（从系统最近任务列表中划掉），重新打开 App，即可看到修改后的界面文字。
 
-如果在保持 `serve` 运行的状态下再次修改代码并执行 `patch android`，`serve` 会自动挂载新补丁且补丁序号自动递增。App 端只需再次触发检查更新并冷启动即可生效，无需手动管理版本号。
+如果在保持 `serve` 运行的状态下再次修改代码并执行 `patch android`，`serve` 会自动发布新补丁（新补丁的序号更大）。App 端只需再次触发检查更新并冷启动即可生效，无需手动管理版本号。
 
 ## iOS 的不同之处
 

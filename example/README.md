@@ -26,7 +26,7 @@ dart run flutter_patcher serve
 
 `serve` publishes the patch to the project's store and maps
 `127.0.0.1:8686` on the phone to this computer. Tap **Check for update**,
-then close and reopen the app: it shows your change and **Running patch 1**.
+then close and reopen the app: it shows your change and the patch it runs.
 Leave `serve` running; after the next change, run `patch android` again.
 
 ## iOS
@@ -38,7 +38,9 @@ enter that URL in the app.
 
 ## Going to production
 
-Set `store` in `flutter_patcher.yaml` to an S3 prefix, serve it from any
+In your own app, commit `flutter_patcher.yaml` (it holds only public keys) and
+back up the private keys with `dart run flutter_patcher keys export --out
+<file>`. Set `store` in `flutter_patcher.yaml` to an S3 prefix, serve it from any
 HTTPS host, run `dart run flutter_patcher publish`, and pass that HTTPS URL to
 `FlutterPatcher.checkUpdate`. Apps that deliver updates themselves pass the
 manifest and patch to `FlutterPatcher.applySignedManifest`.

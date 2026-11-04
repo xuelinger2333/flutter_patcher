@@ -23,7 +23,7 @@ await FlutterPatcher.updatePublicationTrust(doc);
 
 ### 步骤
 
-1. 生成新的密钥对：`dart run flutter_patcher keys init --out <新目录>`（目录必须尚不存在），使用其中 `publisher/` 下的公私钥。
+1. 生成新的 publisher 密钥：`dart run flutter_patcher keys init --out new-publisher.json --role publisher`，输出中包含它的公钥。
 
 2. 准备 `fields.json`，包含目标版本的 7 个标识字段，以及 `schema`、`revision` 和新的 `keys`：
 
@@ -48,19 +48,17 @@ await FlutterPatcher.updatePublicationTrust(doc);
 3. 用 `root` 私钥签名，并发布信任文件：
 
    ```bash
-   dart run flutter_patcher trust sign --fields fields.json \
-     --root-public flutter_patcher_keys/root/public-key.base64 \
-     --root-private flutter_patcher_keys/root/private-key.base64 \
-     --out trust-1.json
+   dart run flutter_patcher trust sign --fields fields.json --out trust-1.json
 
    dart run flutter_patcher trust publish --wire trust-1.json \
-     --root-public flutter_patcher_keys/root/public-key.base64 \
      --store s3://my-bucket/my-app-trust
    ```
 
+   `trust sign` 获取 root 私钥的方式与 `publish` 获取私钥相同（见[私钥从哪里来](cli-zh.md#私钥从哪里来)），例如用 `--key-file root-backup.json` 指定离线保存的备份。
+
    每个线上版本有各自的信任文件，请为每个版本使用单独的 `--store` 位置。位置中已有其他版本的信任文件时，`trust publish` 会报 `TRUST_SCOPE_CONFLICT`。
 
-4. 用新的公私钥替换 `flutter_patcher_keys/publisher/` 中的文件，然后重新生成并发布一次最新补丁。
+4. 用 `dart run flutter_patcher keys import new-publisher.json --rotate` 换上新密钥并提交 `flutter_patcher.yaml`，然后重新生成并发布一次最新补丁。负责发布的机器和 CI 也需要换上新密钥（`keys export`）。
 
 ### 生效方式
 

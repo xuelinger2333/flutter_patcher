@@ -70,7 +70,7 @@ if (check.hasUpdate) {
 **2. 生成密钥，构建基线安装包**
 
 ```bash
-dart run flutter_patcher keys init       # 只需执行一次：生成三对密钥和 flutter_patcher.yaml
+dart run flutter_patcher keys init       # 只需执行一次：生成密钥，并请提交 flutter_patcher.yaml
 dart run flutter_patcher build android   # 或 build ios（需在 Apple Silicon Mac 上执行）
 ```
 
@@ -90,7 +90,7 @@ dart run flutter_patcher publish         # 签名并上传至存储服务
 ## 注意事项
 
 - **生效时机**：补丁下载后在 App **下次冷启动**时生效。
-- **备份密钥与基线**：私钥丢失将无法再为已上线版本签发补丁；基线丢失将无法再为对应版本生成差分补丁。请务必妥善备份。
+- **备份密钥与基线**：私钥保存在项目之外，请用 `keys export` 备份。私钥丢失将无法再为已上线版本发布补丁；基线丢失将无法再为对应版本生成差分补丁。
 - **合规政策**：部分应用商店限制动态下载可执行代码，使用前请确认目标分发渠道的审核政策。
 
 ## 文档

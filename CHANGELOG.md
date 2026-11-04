@@ -19,13 +19,16 @@ Started](doc/getting-started.md).
 - **The command-line tool ships in this package**: `dart run flutter_patcher
   <command>`, always the version of the plugin the app resolved. In a project
   the usual workflow needs no flags:
-  - `keys init` creates the root, publisher and patch key pairs and a
-    `flutter_patcher.yaml` template;
+  - `keys init` creates the root, publisher and patch key pairs: the private
+    keys in the user's key store, the public keys in `flutter_patcher.yaml`,
+    which belongs in version control. `keys export`, `keys import` and `keys
+    status` move and inspect them;
   - `build android|ios` builds the host app and archives its baseline, and
     writes the host policy (application id, version, keys…) itself;
-  - `patch android|ios` compares the source with the released baseline,
-    picks the next sequence number, and rejects changes a patch cannot carry
-    (native code, FFI, removed assets…) with the reason;
+  - `patch android|ios` compares the source with the released baseline and
+    writes an unsigned patch, rejecting changes a patch cannot carry (native
+    code, FFI, removed assets…) with the reason. It needs no private key and
+    no publication store; a patch's sequence number is the time it was made;
   - `publish` signs the patch and writes it to the publication store after a
     preview; `publish --withdraw [--through <seq>]` withdraws the release's
     published patches; a publish interrupted while committing resumes on the
@@ -38,6 +41,10 @@ Started](doc/getting-started.md).
   above any they accepted; withdrawals are signed too. Storage and CDNs need
   not be trusted. The root key can replace the publisher key without a new
   release (`trust sign`, `trust publish`, `updatePublicationTrust`).
+- **Keys outside the project.** `publish`, `serve` and `trust sign` take each
+  private key from `--key-file`, the `FLUTTER_PATCHER_KEYS` environment
+  variable (a CI secret), an external `signing.command` (a KMS or signing
+  service) or the key store, and check it against the project's public keys.
 - `applySignedManifest` and `fetchSignedManifest`, with `SignedManifest` and
   `SignedUpdateResult`, for apps that deliver manifests and patches
   themselves.
@@ -85,7 +92,8 @@ Started](doc/getting-started.md).
 ### Migrating from 0.1.x
 
 1. Raise Flutter to 3.47 and update the dependency to `flutter_patcher: ^1.0.0`.
-2. Run `dart run flutter_patcher keys init` and back up the keys.
+2. Run `dart run flutter_patcher keys init`, commit `flutter_patcher.yaml` and
+   back up the private keys with `keys export --out <file>`.
 3. Build the app with `dart run flutter_patcher build android` and release it.
 4. Point `checkUpdate` at the address where your publication store is served
    (see the [Production Playbook](doc/production-playbook.md)), and make

@@ -28,9 +28,24 @@ baseline_store: s3://my-bucket/baselines
 await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
 ```
 
-> 密钥目录 `flutter_patcher_keys/` 和基线存储是为线上版本生成补丁的必要条件，请纳入日常备份。
+> 为线上版本生成补丁需要基线存储，发布补丁需要私钥，两者都请备份，见[机器与 CI 上的密钥](#机器与-ci-上的密钥)。
 
 各存储类型的权限、协议和 CDN 缓存要求见 [CLI 参考：存储要求](cli-zh.md#存储要求)。
+
+## 机器与 CI 上的密钥
+
+`flutter_patcher.yaml` 中保存的是项目的公钥，请提交到 git。只有签名时才需要私钥，也就是 `publish`（以及 `serve`）：
+
+| 谁 | 需要什么 |
+|---|---|
+| 生成补丁的任意开发机 | 源码和基线存储的访问权限，不需要私钥 |
+| 负责发布的机器或 CI 任务 | publisher 和 patch 私钥，以及发布存储 |
+| 轮换 publisher 密钥 | root 私钥，平时离线保存 |
+
+- **备份**：`keys init` 之后立即运行 `dart run flutter_patcher keys export --out <文件>`，把文件保存在安全的地方。`root` 或 `patch` 私钥丢失后，已上线的宿主无法再更换。
+- **换一台机器**：`dart run flutter_patcher keys import <文件>`。
+- **CI**：把 `dart run flutter_patcher keys export --base64 --without-root` 的输出保存为 secret，以环境变量 `FLUTTER_PATCHER_KEYS` 提供给任务，然后运行 `publish --yes`。
+- **KMS 或签名服务**：配置 `signing.command`，私钥始终不离开签名服务，见 [CLI 参考：私钥从哪里来](cli-zh.md#私钥从哪里来)。
 
 ## 发布流程
 
@@ -96,7 +111,7 @@ dart run flutter_patcher publish --withdraw
 - 只撤回到某个序号：使用 `--through <序号>`。
 - 撤回其他版本的补丁：使用 `--patch <目录>` 指向该版本的一次 `patch` 输出。
 
-撤回以普通更新的形式下发，应用对 `hasUpdate` 为 `true` 的结果调用 `applyPatch`（即上面示例中的用法）即可生效。之后发布的新补丁会自动使用更大的序号。
+撤回以普通更新的形式下发，应用对 `hasUpdate` 为 `true` 的结果调用 `applyPatch`（即上面示例中的用法）即可生效。之后生成的补丁序号更大：补丁序号就是它的生成时间。
 
 ## 进阶操作
 

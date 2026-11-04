@@ -66,7 +66,7 @@ if (check.hasUpdate) {
 **2. Initialize keys & build the baseline release**
 
 ```bash
-dart run flutter_patcher keys init       # Run once: generates three key pairs and flutter_patcher.yaml
+dart run flutter_patcher keys init       # Run once: creates the keys; commit flutter_patcher.yaml
 dart run flutter_patcher build android   # Or `build ios` (on an Apple Silicon Mac)
 ```
 
@@ -86,7 +86,7 @@ See the [Getting Started Guide](doc/getting-started.md) for the full walkthrough
 ## Caveats
 
 - **Activation**: Downloaded patches take effect on the **next cold start**.
-- **Back Up Your Keys & Baselines**: Losing your private key means you can no longer sign patches for live releases; losing a baseline snapshot means you cannot generate patches for that specific release. Back them up securely.
+- **Back Up Your Keys & Baselines**: Private keys live outside your project; back them up with `keys export`. Losing them means you can no longer publish patches for live releases; losing a baseline snapshot means you cannot generate patches for that specific release.
 - **Store Policies**: Some app stores restrict downloading executable code. Verify your distribution channel's policies before deploying.
 
 ## Documentation

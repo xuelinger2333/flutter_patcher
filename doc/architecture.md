@@ -69,14 +69,14 @@ It follows that **a release whose baseline is lost can no longer be patched.**
 | `publisher` | The publication manifest: which patch a release should install | Replace it with the root key; no new release needed |
 | `root` | Trust updates that replace the publisher public keys | Release a new host |
 
-`build` puts the three **public** keys in the host policy. The **private** keys stay on your computer.
+`build` puts the three **public** keys, recorded in `flutter_patcher.yaml`, in the host policy. The **private** keys never enter the project: only `publish` and `trust sign` use them, from a key store on your computer, a CI secret or a signing service. Making a patch needs none of them.
 
 Each time a device installs a patch, native code checks that:
 
 1. the manifest is signed by a publisher the host trusts;
 2. the manifest's scope is exactly this host: application id, version, flavor, channel, ABI, strategy and compile fingerprint;
 3. the patch's size and hash match the manifest, and the patch itself is signed with the patch key;
-4. the patch's sequence number is above the highest the device has accepted, so an old patch cannot be replayed, and a withdrawn sequence never takes effect again.
+4. the patch's sequence number, the time it was made, is above the highest the device has accepted, so an old patch cannot be replayed, and a withdrawn sequence never takes effect again.
 
 If any check fails, nothing is installed. Storage, CDNs and the network therefore **need not be trusted**: tampered content only fails verification. This is also why `serve` can use plain HTTP while developing: it changes only the transport, and every check still runs.
 

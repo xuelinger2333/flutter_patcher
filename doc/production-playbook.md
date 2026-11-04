@@ -28,9 +28,24 @@ Serve the publication store over HTTPS (for example, object storage behind a CDN
 await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
 ```
 
-> The key directory `flutter_patcher_keys/` and the baseline store are required to create patches for live releases. Include both in your regular backups.
+> Creating patches for live releases needs the baseline store, and publishing them needs the private keys. Back up both; see [Keys on Machines and CI](#keys-on-machines-and-ci).
 
 Permissions, protocol and CDN caching requirements for each store type are listed in [CLI Reference: Storage requirements](cli.md#storage-requirements).
+
+## Keys on Machines and CI
+
+`flutter_patcher.yaml` holds the project's public keys: commit it. Private keys are needed only to sign, by `publish` (and `serve`):
+
+| Who | Needs |
+|---|---|
+| Any developer machine that makes patches | The source and access to the baseline store. No private key |
+| The machine or CI job that publishes | The publisher and patch keys, and the publication store |
+| Rotating the publisher key | The root key, kept offline |
+
+- **Back up** the keys right after `keys init`: `dart run flutter_patcher keys export --out <file>`, and keep the file somewhere safe. A lost `root` or `patch` key cannot be replaced for hosts already shipped.
+- **Another machine**: `dart run flutter_patcher keys import <file>`.
+- **CI**: save the output of `dart run flutter_patcher keys export --base64 --without-root` as a secret, provide it as the `FLUTTER_PATCHER_KEYS` environment variable, and run `publish --yes`.
+- **A KMS or signing service**: configure `signing.command`, and the private keys never leave it; see [CLI Reference: Where private keys come from](cli.md#where-private-keys-come-from).
 
 ## Release Workflow
 
@@ -96,7 +111,7 @@ This withdraws every published patch of the release your latest `patch` output b
 - To withdraw only up to a given sequence: pass `--through <seq>`.
 - To withdraw another release's patches: pass `--patch <dir>` with one of that release's `patch` outputs.
 
-A withdrawal is delivered as a regular update: it takes effect when your app calls `applyPatch` for a result whose `hasUpdate` is `true`, as in the example above. Later patches automatically use a higher sequence number.
+A withdrawal is delivered as a regular update: it takes effect when your app calls `applyPatch` for a result whose `hasUpdate` is `true`, as in the example above. Patches you make later have higher sequence numbers: a sequence number is the time a patch was made.
 
 ## Advanced Operations
 
