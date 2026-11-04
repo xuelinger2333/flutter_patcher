@@ -70,12 +70,20 @@ extension ReleaseResolution on BaselineRepository {
   /// a legacy baseline by fingerprint. An equivalent legacy sidecar wins over
   /// a schema 5 release, so publication keeps the legacy identity shape.
   Future<ResolvedRelease> resolve(String flavor, String versionCode,
-      {String abi = 'arm64-v8a',
+          {String abi = 'arm64-v8a',
+          String? expectedFingerprint,
+          String? sdkRoot}) =>
+      scratch((staging) => _resolve(staging, flavor, versionCode,
+          abi: abi, expectedFingerprint: expectedFingerprint, sdkRoot: sdkRoot));
+
+  Future<ResolvedRelease> _resolve(
+      String staging, String flavor, String versionCode,
+      {required String abi,
       String? expectedFingerprint,
       String? sdkRoot}) async {
     final slot = releaseSlot(flavor, versionCode, abi);
     final v5 = await _v5(flavor, versionCode, abi, sdkRoot);
-    final sidecarFile = await _sidecar(flavor, versionCode, abi);
+    final sidecarFile = await _sidecar(staging, flavor, versionCode, abi);
     ResolvedRelease? legacy;
     final warnings = <String>[];
     if (sidecarFile != null && v5 == null) {
@@ -156,24 +164,27 @@ extension ReleaseResolution on BaselineRepository {
         receipt: await baselineObject(p.join(root, 'release_receipt.json')));
   }
 
-  /// The downloaded legacy sidecar of a slot; null without one or offline.
+  /// The legacy sidecar of a slot, downloaded into [staging]; null without
+  /// one or offline.
   Future<String?> _sidecar(
-      String flavor, String versionCode, String abi) async {
+      String staging, String flavor, String versionCode, String abi) async {
     if (store == null) return null;
     final name = sidecarName(flavor, versionCode, abi);
-    final file = p.join(await work(), name);
+    final file = p.join(staging, name);
     return await lookup(name, file) ? file : null;
   }
 
   /// The legacy sidecar binding of a slot; null when the store has none.
   Future<ResolvedRelease?> legacySlot(
-      String flavor, String versionCode, String abi,
-      {String? sdkRoot}) async {
-    final file = await _sidecar(flavor, versionCode, abi);
-    return file == null
-        ? null
-        : _fromSidecar(file, flavor, versionCode, abi, sdkRoot: sdkRoot);
-  }
+          String flavor, String versionCode, String abi,
+          {String? sdkRoot}) =>
+      scratch((staging) async {
+        final file = await _sidecar(staging, flavor, versionCode, abi);
+        return file == null
+            ? null
+            : await _fromSidecar(file, flavor, versionCode, abi,
+                sdkRoot: sdkRoot);
+      });
 
   Future<ResolvedRelease> _fromSidecar(
       String file, String flavor, String versionCode, String abi,

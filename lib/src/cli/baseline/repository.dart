@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../build/host_policy.dart';
+import '../run_work.dart';
 import 'archive.dart';
 import 'manifest.dart';
 import 'resolve.dart';
@@ -49,11 +50,16 @@ class BaselineRepository {
   final BaselineArchive archive;
   BaselineRepository(this.cache, this.store, {BaselineArchive? archive})
       : archive = archive ?? BaselineArchive();
-  Future<String> work() async {
+  /// Runs [action] in a new staging directory under [cache], removed when it
+  /// returns; one a killed process left behind goes after [RunWork.abandoned].
+  Future<T> scratch<T>(Future<T> Function(String staging) action) async {
     await rejectLinks(cache);
-    final path = temporaryName(p.join(cache, '.work'));
-    await Directory(path).create(recursive: true);
-    return path;
+    final staging = await RunWork.create(p.join(cache, '.work'));
+    try {
+      return await action(staging);
+    } finally {
+      await RunWork.finish(staging);
+    }
   }
 
   BaselineStore remote() {
@@ -125,28 +131,29 @@ class BaselineRepository {
           return target;
         }
         if (optional && store == null) return null;
-        final staging = await work(),
-            packed = p.join(staging, 'download.tar.gz');
-        final fetched = await lookup(object, packed);
-        trace('fetched $object');
-        if (!fetched) {
-          require(optional, 'BASELINE_NOT_FOUND', '$object not found.');
-          return null;
-        }
-        final unpacked = p.join(staging, 'baseline');
-        await archive.unpack(packed, unpacked, kind: kind);
-        trace('unpacked $object');
-        final stored = await verify(unpacked, sdkRoot: sdkRoot);
-        trace('verified stored $object');
-        valid(accept == null || accept(stored),
-            'Stored $object differs from the requested identity.');
-        if (cached != null) {
-          if (canonical(cached) == canonical(stored)) return target;
-          await quarantine(target);
-        }
-        await Directory(p.dirname(target)).create(recursive: true);
-        await Directory(unpacked).renameRetry(target);
-        return target;
+        return scratch((staging) async {
+          final packed = p.join(staging, 'download.tar.gz');
+          final fetched = await lookup(object, packed);
+          trace('fetched $object');
+          if (!fetched) {
+            require(optional, 'BASELINE_NOT_FOUND', '$object not found.');
+            return null;
+          }
+          final unpacked = p.join(staging, 'baseline');
+          await archive.unpack(packed, unpacked, kind: kind);
+          trace('unpacked $object');
+          final stored = await verify(unpacked, sdkRoot: sdkRoot);
+          trace('verified stored $object');
+          valid(accept == null || accept(stored),
+              'Stored $object differs from the requested identity.');
+          if (cached != null) {
+            if (canonical(cached) == canonical(stored)) return target;
+            await quarantine(target);
+          }
+          await Directory(p.dirname(target)).create(recursive: true);
+          await Directory(unpacked).renameRetry(target);
+          return target;
+        });
       });
 
   /// Legacy (schema 1–4) baseline by fingerprint.
@@ -197,15 +204,23 @@ class BaselineRepository {
   /// Archives a completed build output as schema 5 compile + release objects.
   /// No compilation or input mutation here.
   Future<Map<String, dynamic>> save(String input, Map<String, dynamic> metadata,
+          {required String flavor,
+          required String versionCode,
+          String abi = 'arm64-v8a'}) =>
+      scratch((staging) => _save(staging, input, metadata,
+          flavor: flavor, versionCode: versionCode, abi: abi));
+
+  Future<Map<String, dynamic>> _save(
+      String staging, String input, Map<String, dynamic> metadata,
       {required String flavor,
       required String versionCode,
-      String abi = 'arm64-v8a'}) async {
+      required String abi}) async {
     final slot = releaseSlot(flavor, versionCode, abi);
     require(
         [2, 3].contains(metadata['schema']),
         'BASELINE_SCHEMA_UNSUPPORTED',
         'Only build outputs with a build receipt (baseline schema 2-3) can be archived.');
-    final staging = await work(), payload = p.join(staging, 'baseline');
+    final payload = p.join(staging, 'baseline');
     await Directory(payload).create();
     var inputBytes = 0;
     validateMetadata(metadata);
@@ -300,7 +315,17 @@ class BaselineRepository {
   /// Archives an SO host as one release object holding its own host policy.
   /// [input] has libapp.so, package_config.json and host_policy.json.
   Future<Map<String, dynamic>> saveSo(
-      String input, Map<String, dynamic> receipt, HostPolicy policy,
+          String input, Map<String, dynamic> receipt, HostPolicy policy,
+          {required String flutterVersion,
+          required String engineCommit,
+          required String buildId}) =>
+      scratch((staging) => _saveSo(staging, input, receipt, policy,
+          flutterVersion: flutterVersion,
+          engineCommit: engineCommit,
+          buildId: buildId));
+
+  Future<Map<String, dynamic>> _saveSo(String staging, String input,
+      Map<String, dynamic> receipt, HostPolicy policy,
       {required String flutterVersion,
       required String engineCommit,
       required String buildId}) async {
@@ -308,7 +333,7 @@ class BaselineRepository {
     final flavor = fields['flavor']!, versionCode = fields['version_code']!;
     final slot = releaseSlot(flavor, versionCode, fields['abi']!);
     require(fields['strategy'] == 'so', 'BUILD_CONFIG_INVALID', 'Host policy strategy is not so.');
-    final staging = await work(), dir = p.join(staging, 'release');
+    final dir = p.join(staging, 'release');
     await Directory(dir).create();
     for (final name in [...releaseFiles, 'host_policy.json']) {
       await rejectLinks(p.join(input, name));

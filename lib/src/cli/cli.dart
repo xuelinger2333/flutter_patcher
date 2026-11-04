@@ -131,7 +131,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}');
+          'flutter_patcher keys init [--out <new-directory>]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw [--through <seq>]] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}');
       return 0;
     }
     if (parsed.command!['help'] == true) {
@@ -265,7 +265,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
       require(!cache.contains(',') && !cache.contains('\n'), 'CONFIG_INVALID',
           'Cache path cannot contain commas or newlines; select --cache-dir.');
       require(!host.isWindows || cache.length <= 80, 'CONFIG_INVALID',
-          'Cache path is ${cache.length} characters; select a short --cache-dir such as D:\\fp to stay within Windows path limits.');
+          'Cache path is ${cache.length} characters, above the 80 Windows path limits allow; select a shorter --cache-dir under the project\'s .dart_tool/flutter_patcher.');
     }, 'Cache path usable');
 
     await Directory(cache).create(recursive: true);

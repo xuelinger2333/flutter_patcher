@@ -110,6 +110,14 @@ void main() {
         flavor: 'default', versionCode: '1');
     expect(again['release_status'], 'existing');
     expect(again['attestation']['status'], 'existing');
+    // Staging directories go once each save or fetch returns.
+    for (final cache in ['one', 'two']) {
+      expect(
+          Directory(p.join(temp.path, cache))
+              .listSync()
+              .where((e) => p.basename(e.path).startsWith('.work')),
+          isEmpty);
+    }
   });
 
   test(

@@ -66,6 +66,11 @@ void main() {
     expect(await publish(first), 0);
     final next = await sign('next.json', {...fields, 'revision': '2'});
     expect(await publish(next), 0);
+    expect(
+        work
+            .listSync()
+            .where((e) => p.basename(e.path).startsWith('trust.pending-')),
+        isEmpty);
     await expectLater(publish(first), throwsA(isA<Failure>()));
     final wrongScope = await sign(
         'wrong.json', {...fields, 'revision': '3', 'channel': 'beta'});

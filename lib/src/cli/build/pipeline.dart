@@ -130,7 +130,9 @@ class BuildPipeline {
       final project =
           await workspace.copyPackage(request.project, application: true);
       final crlf = await crlfDartSources(project);
-      if (crlf.isNotEmpty) stderr.writeln('WARNING: ${crlfWarning(crlf)}');
+      if (crlf.isNotEmpty) {
+        stderr.writeln('WARNING: CRLF_DART_SOURCES: ${crlfWarning(crlf)}');
+      }
       final pubspec =
           loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
               as Map;
@@ -412,6 +414,10 @@ class BuildPipeline {
     try {
       final project =
           await workspace.copyPackage(request.project, application: true);
+      final crlf = await crlfDartSources(project);
+      if (crlf.isNotEmpty) {
+        stderr.writeln('WARNING: CRLF_DART_SOURCES: ${crlfWarning(crlf)}');
+      }
       final package =
           (loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
               as Map)['name'] as String;
@@ -454,7 +460,7 @@ class BuildPipeline {
         'package_inputs': sourceInputs,
         ..._built,
         'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
-        'crlf_dart_sources': const <String>[],
+        'crlf_dart_sources': crlf,
       };
       await workspace.verifyOriginals();
       phase = 'archive';

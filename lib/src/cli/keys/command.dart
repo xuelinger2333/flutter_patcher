@@ -10,7 +10,6 @@ import '../sdk/host.dart';
 
 ArgParser keysOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
-  ..addFlag('json', negatable: false, help: 'Output contains metadata only.')
   ..addOption('out',
       help: 'New key directory; default ${ProjectConfig.defaultKeys} in the '
           'current project, which then also gets ${ProjectConfig.file}.');

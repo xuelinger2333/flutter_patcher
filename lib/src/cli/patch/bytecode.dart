@@ -47,7 +47,7 @@ class BytecodeProducer implements CodeProducer {
             manifest['runtime_bootstrap'] == true &&
             manifest['host_policy_sha256'] is String,
         'BASELINE_NOT_RELEASE',
-        'A baseline archived by build ${run.req.platform} --host-policy is required');
+        'A baseline archived by build ${run.req.platform} is required');
     usage = await _p.commands.run(_p.sdk.dart, [_p.tool, '--help']);
     require(usage.contains('compile-patch'), 'TOOLS_VERSION_UNSUPPORTED',
         'Tools with compile-patch support are required; update the tools release');
