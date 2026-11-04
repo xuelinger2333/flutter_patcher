@@ -30,7 +30,7 @@ class HostIdentity {
   static const verifiedTargets = {
     'linux-x64': {'android', 'ios'},
     'windows-x64': {'android', 'ios'},
-    'macos-arm64': {'ios'},
+    'macos-arm64': {'android', 'ios'},
   };
   static Set<String> get verified => verifiedTargets.keys.toSet();
   static const implemented = {'linux-x64', 'windows-x64', 'macos-arm64'};
