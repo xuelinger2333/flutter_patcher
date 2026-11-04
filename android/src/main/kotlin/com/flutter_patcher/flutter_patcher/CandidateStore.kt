@@ -71,7 +71,7 @@ internal class CandidateStore(
         val meta = active() ?: return null
         if (meta.getString("fingerprint") != fingerprint || meta.getLong("versionCode") != PatcherConfig.currentVersionCode(context)) {
             commit(prefs.edit().remove("active"))
-            diagnostic(BootDiagnosticStore.DROPPED_VERSION_CODE_MISMATCH, "Host identity changed")
+            diagnostic(BootDiagnosticStore.DROPPED_VERSION_CODE_MISMATCH, "Host identity changed", meta)
             return null
         }
         return if (prefs.getBoolean("bad:${id(meta)}", false)) null else meta
@@ -116,25 +116,36 @@ internal class CandidateStore(
         if (prefs.getString("attempt_meta", null)?.let { id(JSONObject(it)) } == id) clearingAttempt(edit)
         if (tripped) {
             edit.putBoolean("bad:$id", true)
+            if (!prefs.contains("badAt:$id")) edit.putLong("badAt:$id", System.currentTimeMillis())
             if (active()?.let { id(it) } == id) edit.remove("active")
         }
         commit(edit)
-        diagnostic(if (tripped) BootDiagnosticStore.DROPPED_CIRCUIT_BREAKER else "${strategy.uppercase()}_BOOT_FAILED", message, meta, count)
+        diagnostic(when {
+            tripped -> BootDiagnosticStore.DROPPED_CIRCUIT_BREAKER
+            strategy == "so" -> BootDiagnosticStore.SO_BOOT_FAILED
+            else -> BootDiagnosticStore.BYTECODE_BOOT_FAILED
+        }, message, meta, count)
     }
 
     fun diagnostic(status: String, message: String, meta: JSONObject? = null, count: Int = 0) {
         BootDiagnosticStore.record(context, status, patchVersion = meta?.optString("version"),
+            patchTargetVersionCode = meta?.optLong("versionCode")?.takeIf { it > 0 },
             appVersionCode = PatcherConfig.currentVersionCode(context), crashCount = count, message = message)
     }
 
     fun noPatch() = BootDiagnosticStore.recordNoPatch(context, PatcherConfig.currentVersionCode(context))
 
     fun blacklist(): List<Map<String, Any?>> = prefs.all.filter { it.key.startsWith("bad:") && it.value == true }
-        .map { mapOf("version" to it.key.removePrefix("bad:"), "md5" to "", "reason" to "BOOT_CRASH", "strategy" to strategy) }
+        .map {
+            val id = it.key.removePrefix("bad:")
+            mapOf("version" to id, "reason" to "BOOT_CRASH", "strategy" to strategy,
+                "blacklistedAt" to prefs.getLong("badAt:$id", 0L))
+        }
 
     fun clearBlacklist() {
         val edit = prefs.edit()
-        prefs.all.keys.filter { it.startsWith("bad:") || it.startsWith("crashes:") }.forEach { edit.remove(it) }
+        prefs.all.keys.filter { it.startsWith("bad:") || it.startsWith("badAt:") || it.startsWith("crashes:") }
+            .forEach { edit.remove(it) }
         commit(edit)
     }
 

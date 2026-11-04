@@ -53,11 +53,13 @@ open class FlutterPatcherApplication : FlutterApplication() {
 
         private fun bootSo(context: Context, so: PatchHost): Boolean {
             val libapp = so.bootCode() ?: return false
-            val ok = LoaderHook.install(context, libapp.path, mutableListOf())
+            val attempted = mutableListOf<String>()
+            val ok = LoaderHook.install(context, libapp.path, attempted)
             if (!ok) {
                 so.cancel()
                 BootDiagnosticStore.record(context = context, status = BootDiagnosticStore.HOOK_INSTALL_FAILED,
                     appVersionCode = PatcherConfig.currentVersionCode(context),
+                    attemptedLoaderFields = attempted,
                     message = "FlutterLoader reflection failed; patch retained")
             }
             return ok

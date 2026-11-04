@@ -3,8 +3,8 @@ import 'package:flutter/foundation.dart';
 /// Last cold-start patch loading decision.
 ///
 /// Apply-time failures are reported by `PatchApplyError`. After a patch is
-/// installed, the next cold start can still drop it because of version mismatch,
-/// file corruption, crash rollback, or loader hook failure. This enum
+/// installed, the next cold start can still drop it because the app was
+/// upgraded, its starts failed, or the loader hook did not install. This enum
 /// exposes those native decisions to Dart for monitoring.
 enum PatchBootStatus {
   /// No local patch is installed or loaded.
@@ -13,19 +13,9 @@ enum PatchBootStatus {
   /// This cold start loaded the patch.
   patched,
 
-  /// The patch target versionCode does not match the installed APK.
+  /// The installed app is not the build the patch was made for (it was
+  /// upgraded), so the patch was dropped.
   droppedVersionCodeMismatch,
-
-  /// Cold-start validation found that local `libapp_patch.so` no longer
-  /// matches metadata.
-  droppedMd5Mismatch,
-
-  /// Metadata or required patch artifacts are missing or corrupt on disk.
-  ///
-  /// For asset patches, the on-disk asset bundle the install step produced
-  /// is missing or unreadable — typically caused by the patch directory
-  /// being partially wiped between install and boot.
-  droppedMetaCorrupted,
 
   /// Crash protection tripped after consecutive early boot failures.
   droppedCircuitBreaker,
@@ -33,11 +23,11 @@ enum PatchBootStatus {
   /// Loader injection failed; this launch used the APK built-in version.
   hookInstallFailed,
 
-  /// The device cannot perform mandatory bytecode signature verification.
-  bytecodeUnsupported,
-
   /// A bytecode startup failed but has not yet reached the crash threshold.
   bytecodeBootFailed,
+
+  /// An SO startup failed but has not yet reached the crash threshold.
+  soBootFailed,
 
   /// Unclassified startup failure.
   unknown,
@@ -51,18 +41,14 @@ PatchBootStatus _parseStatus(String? raw) {
       return PatchBootStatus.patched;
     case 'DROPPED_VERSION_CODE_MISMATCH':
       return PatchBootStatus.droppedVersionCodeMismatch;
-    case 'DROPPED_MD5_MISMATCH':
-      return PatchBootStatus.droppedMd5Mismatch;
-    case 'DROPPED_META_CORRUPTED':
-      return PatchBootStatus.droppedMetaCorrupted;
     case 'DROPPED_CIRCUIT_BREAKER':
       return PatchBootStatus.droppedCircuitBreaker;
     case 'HOOK_INSTALL_FAILED':
       return PatchBootStatus.hookInstallFailed;
-    case 'BYTECODE_UNSUPPORTED':
-      return PatchBootStatus.bytecodeUnsupported;
     case 'BYTECODE_BOOT_FAILED':
       return PatchBootStatus.bytecodeBootFailed;
+    case 'SO_BOOT_FAILED':
+      return PatchBootStatus.soBootFailed;
     default:
       return PatchBootStatus.unknown;
   }

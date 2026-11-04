@@ -240,9 +240,20 @@ class FlutterPatcherPlugin :
     }
 
 
+    /**
+     * The record of this cold start once it has one: a patched start is
+     * recorded at its first frame, so a query before it waits for that rather
+     * than return the previous start. null: nothing was ever recorded.
+     */
     private fun handleLastBootDiagnostic(result: Result) {
-        // null 表示从未 record 过（首次安装 / pm clear 后第一次启动且尚未到首帧）
-        result.success(BootDiagnosticStore.read(appContext))
+        Thread {
+            val deadline = System.nanoTime() + 10_000_000_000L
+            while (hostLoader.isInitialized() && host?.awaitingFirstFrame == true && System.nanoTime() < deadline) {
+                Thread.sleep(20)
+            }
+            val diagnostic = BootDiagnosticStore.read(appContext)
+            main.post { result.success(diagnostic) }
+        }.start()
     }
 
 }

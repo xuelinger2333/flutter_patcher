@@ -52,6 +52,9 @@ final class BytecodeAttempt {
   private(set) var failed = false
   private var succeeded = false
 
+  /// Started, and neither its first frame nor a failure has settled it.
+  var unsettled: Bool { running && !succeeded && !failed }
+
   init(_ token: String) { self.token = token }
 
   func start(_ received: String?) -> Bool {
@@ -171,6 +174,13 @@ final class BytecodePatchManager {
 
   private(set) var bootstrapped = false
   private(set) var frameToken: String?
+
+  /// Whether this start loaded a patch whose first frame is still to come.
+  var awaitingFirstFrame: Bool {
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
+    return attempt?.unsettled == true
+  }
   private var fingerprint: String?
   private var key: Data?
   private var offered: String?

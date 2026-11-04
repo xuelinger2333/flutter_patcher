@@ -37,12 +37,16 @@ enum BootDiagnosticStore {
     JSONFile(try Storage.root().appendingPathComponent("last_boot_diagnostic.json"))
   }
 
-  static func record(_ status: String, patchVersion: String? = nil, crashCount: Int? = nil, message: String? = nil) {
+  static func record(
+    _ status: String, patchVersion: String? = nil, patchTargetVersionCode: Int64? = nil, crashCount: Int? = nil,
+    message: String? = nil
+  ) {
     var value: [String: Any] = [
       "status": status, "appVersionCode": Platform.versionCode(),
       "recordedAt": Int64(Date().timeIntervalSince1970 * 1000),
     ]
     if let patchVersion = patchVersion { value["patchVersion"] = patchVersion }
+    if let patchTargetVersionCode = patchTargetVersionCode { value["patchTargetVersionCode"] = patchTargetVersionCode }
     if let crashCount = crashCount { value["crashCount"] = crashCount }
     if let message = message { value["message"] = message }
     try? file().write(value)
@@ -186,7 +190,7 @@ final class CandidateStore {
     guard let meta = active() else { return nil }
     if meta["fingerprint"] as? String != fingerprint || int64(meta["versionCode"]) != Platform.versionCode() {
       try commit { $0.removeValue(forKey: "active") }
-      diagnostic(BootDiagnosticStore.droppedVersionCodeMismatch, "Host identity changed")
+      diagnostic(BootDiagnosticStore.droppedVersionCodeMismatch, "Host identity changed", meta)
       return nil
     }
     return isBlacklisted(meta) ? nil : meta
@@ -278,6 +282,7 @@ final class CandidateStore {
       if ownsAttempt { Self.clearingAttempt(&$0) }
       if tripped {
         $0["bad:\(key)"] = true
+        if $0["badAt:\(key)"] == nil { $0["badAt:\(key)"] = Int64(Date().timeIntervalSince1970 * 1000) }
         if ownsActive { $0.removeValue(forKey: "active") }
       }
     }
@@ -287,20 +292,26 @@ final class CandidateStore {
   }
 
   func diagnostic(_ status: String, _ message: String, _ meta: Meta? = nil, _ count: Int = 0) {
-    BootDiagnosticStore.record(status, patchVersion: meta?["version"] as? String, crashCount: count, message: message)
+    BootDiagnosticStore.record(
+      status, patchVersion: meta?["version"] as? String,
+      patchTargetVersionCode: meta.flatMap { int64($0["versionCode"]) }, crashCount: count, message: message)
   }
 
   func noPatch() { BootDiagnosticStore.recordNoPatch() }
 
   func blacklist() -> [[String: Any]] {
-    state.filter { $0.key.hasPrefix("bad:") && $0.value as? Bool == true }.map {
-      ["version": String($0.key.dropFirst(4)), "md5": "", "reason": "BOOT_CRASH", "strategy": strategy]
+    state.filter { $0.key.hasPrefix("bad:") && $0.value as? Bool == true }.map { entry -> [String: Any] in
+      let id = String(entry.key.dropFirst(4))
+      return [
+        "version": id, "reason": "BOOT_CRASH", "strategy": strategy,
+        "blacklistedAt": int64(state["badAt:\(id)"]) ?? 0,
+      ]
     }
   }
 
   func clearBlacklist() throws {
     try commit { state in
-      for key in state.keys where key.hasPrefix("bad:") || key.hasPrefix("crashes:") {
+      for key in state.keys where key.hasPrefix("bad:") || key.hasPrefix("badAt:") || key.hasPrefix("crashes:") {
         state.removeValue(forKey: key)
       }
     }

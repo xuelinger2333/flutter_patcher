@@ -36,17 +36,17 @@ internal object BootDiagnosticStore {
     /** 补丁加载成功，本次启动按补丁运行。*/
     const val PATCHED = "PATCHED"
 
-    /** 补丁被丢弃：targetVersionCode 与当前 APK versionCode 不匹配。*/
+    /** 补丁被丢弃：已安装的 App 不是补丁对应的构建（App 已升级）。*/
     const val DROPPED_VERSION_CODE_MISMATCH = "DROPPED_VERSION_CODE_MISMATCH"
-
-    /** 补丁被丢弃：本地 .so 文件 md5 与 meta.effectiveMd5 不一致。*/
-    const val DROPPED_MD5_MISMATCH = "DROPPED_MD5_MISMATCH"
-
-    /** 补丁被丢弃：meta.json 损坏或缺关键字段（effectiveMd5 等）。*/
-    const val DROPPED_META_CORRUPTED = "DROPPED_META_CORRUPTED"
 
     /** 补丁被丢弃：连续启动失败累计 >= maxCrashCount，熔断器触发。*/
     const val DROPPED_CIRCUIT_BREAKER = "DROPPED_CIRCUIT_BREAKER"
+
+    /** 字节码补丁启动失败，尚未达到熔断阈值。*/
+    const val BYTECODE_BOOT_FAILED = "BYTECODE_BOOT_FAILED"
+
+    /** SO 补丁启动失败，尚未达到熔断阈值。*/
+    const val SO_BOOT_FAILED = "SO_BOOT_FAILED"
 
     /** 补丁文件保留，但反射替换 FlutterLoader 失败，本次启动用了内置 .so。*/
     const val HOOK_INSTALL_FAILED = "HOOK_INSTALL_FAILED"

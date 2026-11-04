@@ -30,12 +30,10 @@ internal data class ApplyResult(
 /**
  * applyPatch 可能的失败原因。调用方（Dart 业务层）按需要做不同处理：
  *
- * - [INVALID_ARGS]：服务端下发的 JSON 缺字段 → 告警服务端
- * - [BLACKLISTED]：(version, md5) 已在本地黑名单 → 服务端告警，下架补丁
- * - [NETWORK]：下载失败（重试后依然失败）→ 稍后重试
- * - [MD5_MISMATCH]：下载文件 md5 不匹配 → CDN 脏数据或服务端 md5 算错，检查后重试
- * - [SIGNATURE_INVALID]：Ed25519 验签失败（或 strict 模式下 API < 33 直接拒绝）→
- *   可能被篡改，**不建议**自动重试
+ * - [INVALID_ARGS]：补丁与签名清单不一致，或序号不大于已接受的序号 → 检查发布流程
+ * - [BLACKLISTED]：该补丁曾导致启动失败，已在本地黑名单 → 撤回补丁或发布修复
+ * - [NETWORK]：下载失败（由 Dart 侧报告）→ 稍后重试
+ * - [SIGNATURE_INVALID]：补丁签名校验失败 → 可能被篡改，**不建议**自动重试
  * - [IO_ERROR]：磁盘 / 文件系统错误（磁盘满、权限）→ 稍后重试
  * - [UNKNOWN]：未被分类的异常 → 上报到监控，看日志定位
  */
@@ -43,10 +41,7 @@ internal object ApplyErrorCode {
     const val INVALID_ARGS = "INVALID_ARGS"
     const val BLACKLISTED = "BLACKLISTED"
     const val NETWORK = "NETWORK"
-    const val MD5_MISMATCH = "MD5_MISMATCH"
     const val SIGNATURE_INVALID = "SIGNATURE_INVALID"
-    const val UNSUPPORTED_ABI = "UNSUPPORTED_ABI"
-    const val ASSET_PACKAGE_INVALID = "ASSET_PACKAGE_INVALID"
     const val IO_ERROR = "IO_ERROR"
     const val UNKNOWN = "UNKNOWN"
 }

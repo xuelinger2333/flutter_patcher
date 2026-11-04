@@ -57,6 +57,9 @@ internal class PatchHost private constructor(
     @Volatile var frameToken: String? = null
         private set
 
+    /** Whether this start runs a patch whose first frame is still to come. */
+    val awaitingFirstFrame: Boolean get() = synchronized(lock) { attempt?.boot?.unsettled == true }
+
     /** Code to load before the engine starts (SO); null to run the app as built. */
     fun bootCode(): File? = synchronized(lock) {
         select()?.also { store.markLoading(it.meta) }?.code

@@ -139,7 +139,14 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
     case "currentVersion":
       bytecodeCall(result) { [bytecode] in try bytecode.currentVersion() }
     case "lastBootDiagnostic":
-      result(BootDiagnosticStore.read())
+      // A patched start is recorded at its first frame: a query before it
+      // waits for that rather than return the previous start.
+      worker.async { [bytecode] in
+        let deadline = Date().addingTimeInterval(10)
+        while bytecode.awaitingFirstFrame && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        let diagnostic = BootDiagnosticStore.read()
+        DispatchQueue.main.async { result(diagnostic) }
+      }
     case "appVersionCode":
       result(Platform.versionCode())
     case "deviceAbi":

@@ -21,8 +21,7 @@ export 'src/signed_manifest.dart';
 /// Flutter hot-update entrypoint for Android and iOS.
 ///
 /// `flutter_patcher` installs signed patches on hosts built with
-/// `flutter_patcher build android|ios --host-policy`, and loads them on the next
-/// cold start. SO and bytecode hosts share this API; iOS hosts are bytecode only.
+/// `flutter_patcher build android|ios`, and loads them on the next cold start. SO and bytecode hosts share this API; iOS hosts are bytecode only.
 ///
 /// Main APIs:
 ///
@@ -63,7 +62,8 @@ class FlutterPatcher {
           (throw const FormatException('No signed manifest published')));
 
   /// Authenticate, download and commit a publication, or persist a withdrawal.
-  /// Requires a host built with --host-policy. Failure never enables legacy mode.
+  /// Requires a host built with `flutter_patcher build`. Failure never enables
+  /// legacy mode.
   ///
   /// A publication needs its patch: [payload] when the app fetched it itself,
   /// for example from its own server, or else [baseUrl], the store URL the
@@ -252,8 +252,8 @@ class FlutterPatcher {
 
     try {
       if (await _hostStrategy() == null) {
-        throw PatcherException('This host has no host policy; build it '
-            'with flutter_patcher build android|ios --host-policy');
+        throw PatcherException('This app was not built with flutter_patcher; '
+            'build it with dart run flutter_patcher build android|ios');
       }
       return await _checkSigned(url, timeout);
     } on PatcherException {
@@ -377,11 +377,8 @@ class FlutterPatcher {
     }
   }
 
-  /// Local bad-patch blacklist, ordered from oldest to newest.
-  ///
-  /// Automatic blacklist triggers include early boot failures, cold-start md5
-  /// mismatches, and cold-start signature failures. For asset patches, the md5
-  /// is the `patch.zip` payload md5.
+  /// Local bad-patch blacklist: patches whose starts failed `maxCrashCount`
+  /// times (see [init]).
   static Future<List<BlacklistEntry>> get blacklist async {
     if (_unsupportedGuard('blacklist')) return const [];
     try {
@@ -412,8 +409,10 @@ class FlutterPatcher {
   /// Last cold-start patch loading diagnostic.
   ///
   /// `applyPatch` reports install-time failures. This getter reports what
-  /// happened on the next cold start: version mismatch, md5/signature failure,
-  /// crash rollback, loader hook failure, or successful patch load.
+  /// happened on the next cold start: version mismatch, a failed start,
+  /// crash rollback, loader hook failure, or successful patch load. A start
+  /// that loaded a patch is recorded at its first frame; asked earlier, the
+  /// getter completes then, with this start's record.
   static Future<PatchBootDiagnostic?> get lastBootDiagnostic async {
     if (_unsupportedGuard('lastBootDiagnostic')) return null;
     try {

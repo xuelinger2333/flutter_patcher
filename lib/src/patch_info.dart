@@ -22,7 +22,7 @@ enum PatchApplyPhase {
   /// [PatchApplyProgress.totalBytes] are meaningful in this phase.
   downloading,
 
-  /// Payload MD5 / signature verification.
+  /// Payload SHA-256 and signature verification.
   verifying,
 
   /// Package parsing, asset installation, and transaction commit.
@@ -102,18 +102,8 @@ enum PatchApplyError {
   /// The payload download failed; retrying later may succeed.
   network,
 
-  /// An installed file did not match the package's recorded MD5.
-  md5Mismatch,
-
   /// The patch envelope signature did not verify with the host policy key.
   signatureInvalid,
-
-  /// The patch package has no `libapp.so` for the current device ABI.
-  unsupportedAbi,
-
-  /// Invalid asset package: bad zip/schema/manifest, unsafe path, missing asset
-  /// entry, or unsupported asset mode/op.
-  assetPackageInvalid,
 
   /// Filesystem, disk space, copy, fsync, or rename failure.
   ioError,
@@ -130,14 +120,8 @@ PatchApplyError _parseApplyError(String? code) {
       return PatchApplyError.blacklisted;
     case 'NETWORK':
       return PatchApplyError.network;
-    case 'MD5_MISMATCH':
-      return PatchApplyError.md5Mismatch;
     case 'SIGNATURE_INVALID':
       return PatchApplyError.signatureInvalid;
-    case 'UNSUPPORTED_ABI':
-      return PatchApplyError.unsupportedAbi;
-    case 'ASSET_PACKAGE_INVALID':
-      return PatchApplyError.assetPackageInvalid;
     case 'IO_ERROR':
       return PatchApplyError.ioError;
     default:

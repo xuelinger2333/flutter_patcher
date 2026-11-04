@@ -7,6 +7,9 @@ internal class BootAttempt(val token: String) {
     var failed = false
         private set
     private var succeeded = false
+
+    /** Started, and neither its first frame nor a failure has settled it. */
+    val unsettled: Boolean get() = running && !succeeded && !failed
     fun start(received: String?): Boolean {
         if (received != token || running || failed) return false
         running = true
