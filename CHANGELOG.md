@@ -24,11 +24,11 @@ Started](doc/getting-started.md).
     which belongs in version control. `keys export`, `keys import` and `keys
     status` move and inspect them;
   - `build android|ios` builds the host app and archives its baseline, and
-    writes the host policy (application id, version, keys…) itself;
+    writes the host policy (application id, version, keys...) itself;
   - `patch android|ios` compares the source with the released baseline and
     writes an unsigned patch, rejecting changes a patch cannot carry (native
-    code, FFI, removed assets…) with the reason. It needs no private key and
-    no publication store. `publish` numbers patches 1, 2, 3… per release, or as `--seq` says;
+    code, FFI, removed assets...) with the reason. It needs no private key and
+    no publication store. `publish` numbers patches 1, 2, 3... per release, or as `--seq` says;
   - `publish` signs the patch and writes it to the publication store after a
     preview; `publish --withdraw [--through <seq>]` withdraws the release's
     published patches; a publish interrupted while committing resumes on the
@@ -56,7 +56,7 @@ Started](doc/getting-started.md).
 
 ### Changed
 
-- Requires Flutter 3.47.0 (Dart 3.13.0) or later; Flutter 3.47.0 – 3.47.9
+- Requires Flutter 3.47.0 (Dart 3.13.0) or later; Flutter 3.47.0 - 3.47.9
   are supported.
 - `checkUpdate(url)` takes the address where the publication store is served
   and verifies the signed manifest there. Pass the `PatchInfo` it returns to
@@ -65,7 +65,7 @@ Started](doc/getting-started.md).
   AGP 9 it compiles with AGP's built-in Kotlin, on AGP 8 with the app's
   Kotlin plugin. Kotlin targets JVM 17 either way.
 - Patches apply on Android 9 (API 28) and later, in the app's main process;
-  on Android 7–8 the app runs as built.
+  on Android 7-8 the app runs as built.
 - Updates are fetched over HTTPS only, or plain HTTP from the device's own
   loopback address while developing; redirects are not followed.
 - `lastBootDiagnostic` reports the current start: asked before a patched
