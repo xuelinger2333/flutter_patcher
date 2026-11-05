@@ -13,13 +13,7 @@ class ProjectConfig {
   ProjectConfig._(this.root, this._values);
 
   static const file = 'flutter_patcher.yaml';
-  static const _known = {
-    'url',
-    'store',
-    'baseline_store',
-    'trust',
-    'signing',
-  };
+  static const _known = {'url', 'store', 'baseline_store', 'trust', 'signing'};
 
   /// Where serve offers patches, and where hosts look when url is not set.
   static const localUrl = 'http://127.0.0.1:8686';
