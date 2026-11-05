@@ -60,7 +60,7 @@ Future<void> checkForPatch() async {
 dart run flutter_patcher keys init
 ```
 
-Run it once per project. Commit the `flutter_patcher.yaml` it writes; before going live, back up the keys as described in [Production Playbook: Keys on Machines and CI](production-playbook.md#keys-on-machines-and-ci).
+Run it once per project. How the keys are stored and backed up: [Production Playbook: Keys on Machines and CI](production-playbook.md#keys-on-machines-and-ci).
 
 ## 3. Build the Baseline Release
 

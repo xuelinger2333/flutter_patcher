@@ -34,18 +34,24 @@ Permissions, protocol and CDN caching requirements for each store type are liste
 
 ## Keys on Machines and CI
 
-`keys init` writes the project's public keys to `flutter_patcher.yaml`: commit it. The private keys stay outside the project, in `~/.flutter_patcher/keys/` on the machine that ran it, and are needed only to sign, by `publish`, `serve` and `trust sign`:
+`keys init` writes the project's public keys to `flutter_patcher.yaml`: commit it. The private keys stay outside the project, in `~/.flutter_patcher/keys/` on the computer that ran it. Only signing needs them, that is `publish`, `serve` and `trust sign`; making patches does not:
 
 | Who | Needs |
 |---|---|
-| Any developer machine that makes patches | The source and access to the baseline store. No private key |
-| The machine or CI job that publishes | The publisher and patch keys, the publication store, and read access to the baseline store |
+| Any machine that makes patches | The source and access to the baseline store; no private key |
+| Whoever publishes | The publisher and patch keys, the publication store, and read access to the baseline store |
 | Rotating the publisher key | The root key, kept offline |
 
-- **Back up** the keys right after `keys init`: `dart run flutter_patcher keys export --out <file>`, and keep the file somewhere safe. A lost `root` or `patch` key cannot be replaced for hosts already shipped.
-- **Another machine**: `dart run flutter_patcher keys import <file>`.
-- **CI**: save the output of `dart run flutter_patcher keys export --base64 --without-root` as a secret, provide it as the `FLUTTER_PATCHER_KEYS` environment variable, and run `publish --yes`.
-- **A KMS or signing service**: configure `signing.command`, and the private keys never leave it; see [CLI Reference: Where private keys come from](cli.md#where-private-keys-come-from).
+**Back up** the keys right after `keys init`: `dart run flutter_patcher keys export --out <file>`, and keep the file somewhere safe. A lost `root` or `patch` key cannot be replaced for hosts already shipped.
+
+Whoever publishes uses these same keys; none of the ways below creates new ones. Pick the one that matches where you publish:
+
+| Where you publish | How the keys get there |
+|---|---|
+| The computer that ran `keys init` | They are already there |
+| Another computer | `keys export --out <file>` on the first one, then `keys import <file>` on the other |
+| A CI service, if you use one (a hosted machine that builds and publishes for you, such as GitHub Actions) | Save the output of `keys export --base64 --without-root` as a CI secret, provide it as the `FLUTTER_PATCHER_KEYS` environment variable, and run `publish --yes`. The root key is left out: publishing never needs it |
+| A signing service such as a KMS, when private keys must not exist as files | Configure `signing.command`: the service signs, and the keys never leave it. See [CLI Reference: Where private keys come from](cli.md#where-private-keys-come-from) |
 
 ## Release Workflow
 

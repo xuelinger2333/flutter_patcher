@@ -34,18 +34,24 @@ await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
 
 ## 机器与 CI 上的密钥
 
-`keys init` 把项目的公钥写入 `flutter_patcher.yaml`，请提交到 git。私钥保存在项目之外，即执行它的那台电脑的 `~/.flutter_patcher/keys/`；只有签名时才需要私钥，也就是 `publish`、`serve` 和 `trust sign`：
+`keys init` 把项目的公钥写入 `flutter_patcher.yaml`，这个文件应提交到 git。私钥保存在项目之外，即执行 `keys init` 的那台电脑的 `~/.flutter_patcher/keys/`。只有签名时才用到私钥，也就是 `publish`、`serve` 和 `trust sign`；生成补丁不需要：
 
 | 谁 | 需要什么 |
 |---|---|
-| 生成补丁的任意开发机 | 源码和基线存储的访问权限，不需要私钥 |
-| 负责发布的机器或 CI 任务 | publisher 和 patch 私钥、发布存储，以及基线存储的读权限 |
+| 生成补丁的任意机器 | 源码和基线存储的访问权限，不需要私钥 |
+| 负责发布的一方 | publisher 和 patch 私钥、发布存储，以及基线存储的读权限 |
 | 轮换 publisher 密钥 | root 私钥，平时离线保存 |
 
-- **备份**：`keys init` 之后立即运行 `dart run flutter_patcher keys export --out <文件>`，把文件保存在安全的地方。`root` 或 `patch` 私钥丢失后，已上线的宿主无法再更换。
-- **换一台机器**：`dart run flutter_patcher keys import <文件>`。
-- **CI**：把 `dart run flutter_patcher keys export --base64 --without-root` 的输出保存为 secret，以环境变量 `FLUTTER_PATCHER_KEYS` 提供给任务，然后运行 `publish --yes`。
-- **KMS 或签名服务**：配置 `signing.command`，私钥始终不离开签名服务，见 [CLI 参考：私钥从哪里来](cli-zh.md#私钥从哪里来)。
+**备份**：`keys init` 之后立即运行 `dart run flutter_patcher keys export --out <文件>`，把文件保存在安全的地方。`root` 或 `patch` 私钥丢失后，已上线的宿主无法再更换。
+
+负责发布的一方用的就是这套私钥，下面几种方式都不会生成新密钥，按你在哪里发布选一种：
+
+| 在哪里发布 | 私钥怎么到那里 |
+|---|---|
+| 执行 `keys init` 的那台电脑 | 已经在了，不用做任何事 |
+| 另一台电脑 | 在原电脑上 `keys export --out <文件>`，再到这台电脑上 `keys import <文件>` |
+| CI 服务，如果你在用（自动构建和发布的托管机器，例如 GitHub Actions） | 把 `keys export --base64 --without-root` 输出的一行文本保存为 CI 的 secret，以环境变量 `FLUTTER_PATCHER_KEYS` 提供给任务，然后运行 `publish --yes`。这里不带 root 私钥，发布用不到它 |
+| KMS 等签名服务，适用于私钥不能以文件形式出现的场合 | 配置 `signing.command`，由签名服务代为签名，私钥始终不离开服务。见 [CLI 参考：私钥从哪里来](cli-zh.md#私钥从哪里来) |
 
 ## 发布流程
 

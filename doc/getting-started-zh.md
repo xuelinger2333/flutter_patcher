@@ -64,7 +64,7 @@ Future<void> checkForPatch() async {
 dart run flutter_patcher keys init
 ```
 
-每个项目只需执行一次。请把它生成的 `flutter_patcher.yaml` 提交到 git；上线前请备份密钥，见[生产部署：机器与 CI 上的密钥](production-playbook-zh.md#机器与-ci-上的密钥)。
+每个项目只需执行一次。密钥的保存与备份见[生产部署：机器与 CI 上的密钥](production-playbook-zh.md#机器与-ci-上的密钥)。
 
 ## 3. 构建基线安装包
 
