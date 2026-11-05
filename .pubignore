@@ -36,10 +36,6 @@ test/
 android/src/test/
 android/src/androidTest/
 
-# Large media: README links them from GitHub.
-doc/feature-presentation.gif
-doc/social-preview.png
-
 # OS junk
 .DS_Store
 Thumbs.db
