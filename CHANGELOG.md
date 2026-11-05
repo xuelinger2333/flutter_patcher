@@ -20,9 +20,8 @@ Started](doc/getting-started.md).
   <command>`, always the version of the plugin the app resolved. In a project
   the usual workflow needs no flags:
   - `keys init` creates the root, publisher and patch key pairs: the private
-    keys in the user's key store, the public keys in `flutter_patcher.yaml`,
-    which belongs in version control. `keys export`, `keys import` and `keys
-    status` move and inspect them;
+    keys in the user's key store, the public keys in `flutter_patcher.yaml`.
+    `keys export`, `keys import` and `keys status` move and inspect them;
   - `build android|ios` builds the host app and archives its baseline, and
     writes the host policy (application id, version, keys...) itself, with
     `url`, the address devices download patches from;
@@ -96,8 +95,8 @@ Started](doc/getting-started.md).
 ### Migrating from 0.1.x
 
 1. Raise Flutter to 3.47 and update the dependency to `flutter_patcher: ^1.0.0`.
-2. Run `dart run flutter_patcher keys init`, commit `flutter_patcher.yaml` and
-   back up the private keys with `keys export --out <file>`.
+2. Run `dart run flutter_patcher keys init` and back up the private keys with
+   `keys export --out <file>`.
 3. Build the app with `dart run flutter_patcher build android` and release it.
 4. Set `url` in `flutter_patcher.yaml` to the address where your publication
    store is served, call `checkUpdate()` (see the

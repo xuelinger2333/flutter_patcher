@@ -27,7 +27,7 @@ class ProjectConfig {
   /// Written by `keys init` when the project has no configuration yet.
   static const template = '''
 # flutter_patcher project settings. Commands read them when no flag is given.
-# Nothing here is secret: commit this file.
+# Nothing here is secret.
 
 # The HTTPS address devices download patches from. build writes it into the
 # app, and publish reads what is live there before numbering a patch.

@@ -171,7 +171,7 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 
 | Error Code | Meaning | Resolution |
 |---|---|---|
-| `SERVE_PORT_BUSY` | Another program listens on the port `serve` uses | Stop it, or run `serve --port <port>` and use that port in the app |
+| `SERVE_PORT_BUSY` | Another program listens on the port `serve` uses | Stop it, or run `serve --port <port>` and map the phone's `8686` to it with `adb reverse tcp:8686 tcp:<port>` |
 | `PUBLISH_CONFIG_INVALID` | Invalid arguments or request file (e.g., no patch built yet, or nothing to withdraw) | Run `patch` first, or adjust flags per `message` |
 | `PUBLISH_TARGET_MISMATCH` | Patch does not belong to the specified target release | Regenerate the patch for the intended release |
 | `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | The patch's sequence does not exceed the latest published or withdrawn sequence, or the store changed concurrently | Run `publish` again without `--seq`, or with a `--seq` above every published or withdrawn sequence; the patch need not be made again |

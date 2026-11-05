@@ -70,7 +70,7 @@ if (check.hasUpdate) {
 **2. 生成密钥，构建基线安装包**
 
 ```bash
-dart run flutter_patcher keys init       # 只需执行一次：生成密钥，并请提交 flutter_patcher.yaml
+dart run flutter_patcher keys init       # 只需执行一次：生成密钥
 dart run flutter_patcher build android   # 或 build ios（需在 Apple Silicon Mac 上执行）
 ```
 

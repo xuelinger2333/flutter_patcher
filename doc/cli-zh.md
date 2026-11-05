@@ -84,7 +84,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 
 ## 项目配置 `flutter_patcher.yaml`
 
-`keys init` 会生成这个文件：`trust` 下是项目的公钥，其余配置项是注释掉的模板。文件里没有任何机密，**请提交到 git**。
+`keys init` 会生成这个文件：`trust` 下是项目的公钥，其余配置项是注释掉的模板。文件里没有任何机密。
 
 | 字段 | 含义 | 默认值 |
 |---|---|---|
@@ -100,10 +100,10 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 
 | 路径 | 内容 | 是否需要备份 |
 |---|---|---|
-| `flutter_patcher.yaml` | 配置和项目的公钥 | 提交到 git |
+| `flutter_patcher.yaml` | 配置和项目的公钥 | 可选；`keys import` 会重新写入公钥 |
 | `~/.flutter_patcher/keys/<ID>/` | 本机保存的该项目私钥（密钥库） | **是**，用 `keys export --out <文件>` |
 | `.flutter_patcher/baselines/` | 默认的基线存储 | **是**，或改用持久存储 |
-| `.flutter_patcher/updates/` | 默认的发布存储 | 视情况 |
+| `.flutter_patcher/updates/` | 默认的发布存储 | 填了 `url` 后不需要：`publish` 会从那里读取设备已有的内容 |
 | `.dart_tool/flutter_patcher/releases/` | `build` 的输出 | 否 |
 | `.dart_tool/flutter_patcher/patches/` | `patch` 的输出 | 否 |
 | `~/.flutter_patcher/`（`keys/` 除外） | 下载的引擎和工具、准备好的 Flutter SDK 副本、基线缓存 | 否，可以重新下载 |
@@ -256,7 +256,7 @@ dart run flutter_patcher serve
 
 | 选项 | 说明 | 默认值 |
 |---|---|---|
-| `--port <端口>` | 本机端口，也是 `adb reverse` 映射到手机上的端口 | `8686` |
+| `--port <端口>` | 本机端口，也是 `adb reverse` 映射到手机上的端口。未填 `url` 构建的 App 检查 `8686`，可用 `adb reverse tcp:8686 tcp:<端口>` 转过去 | `8686` |
 
 - 每当出现新的 `patch` 输出，自动发布到项目的发布存储，不需要手动运行 `publish`。已经发布过的输出（包括之后被撤回的）在 `serve` 重启时不会再次发布。
 - 设备可获取的内容发生变化时（包括撤回和你手动 `publish` 的补丁）在终端提示。

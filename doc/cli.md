@@ -84,7 +84,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 
 ## Project settings: `flutter_patcher.yaml`
 
-`keys init` writes this file: the project's public keys under `trust`, and a template whose other settings are commented out. Nothing in it is secret: **commit it**.
+`keys init` writes this file: the project's public keys under `trust`, and a template whose other settings are commented out. Nothing in it is secret.
 
 | Setting | Meaning | Default |
 |---|---|---|
@@ -100,10 +100,10 @@ Unknown settings or values of the wrong shape fail with `CONFIG_INVALID`. How to
 
 | Path | Contents | Back up? |
 |---|---|---|
-| `flutter_patcher.yaml` | Settings and the project's public keys | Commit it |
+| `flutter_patcher.yaml` | Settings and the project's public keys | Optional; `keys import` writes the keys again |
 | `~/.flutter_patcher/keys/<id>/` | This machine's private keys of the project (the key store) | **Yes**, with `keys export --out <file>` |
 | `.flutter_patcher/baselines/` | Default baseline store | **Yes**, or use durable storage |
-| `.flutter_patcher/updates/` | Default publication store | As needed |
+| `.flutter_patcher/updates/` | Default publication store | No, once `url` is set: `publish` reads what devices hold from there |
 | `.dart_tool/flutter_patcher/releases/` | `build` outputs | No |
 | `.dart_tool/flutter_patcher/patches/` | `patch` outputs | No |
 | `~/.flutter_patcher/` (besides `keys/`) | Downloaded engines and tools, prepared Flutter SDK copies, baseline cache | No; it can be downloaded again |
@@ -256,7 +256,7 @@ dart run flutter_patcher serve
 
 | Option | Description | Default |
 |---|---|---|
-| `--port <port>` | Port on this computer, and the port `adb reverse` maps on phones | `8686` |
+| `--port <port>` | Port on this computer, and the port `adb reverse` maps on phones. Apps built without `url` check `8686`; map it with `adb reverse tcp:8686 tcp:<port>` | `8686` |
 
 - Publishes each new `patch` output to the project's publication store by itself; no need to run `publish`. An output published before, even if withdrawn since, is not published again when `serve` restarts.
 - Prints what devices are offered whenever it changes, including withdrawals and patches you `publish` yourself.

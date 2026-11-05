@@ -66,7 +66,7 @@ if (check.hasUpdate) {
 **2. Initialize keys & build the baseline release**
 
 ```bash
-dart run flutter_patcher keys init       # Run once: creates the keys; commit flutter_patcher.yaml
+dart run flutter_patcher keys init       # Run once: creates the keys
 dart run flutter_patcher build android   # Or `build ios` (on an Apple Silicon Mac)
 ```
 

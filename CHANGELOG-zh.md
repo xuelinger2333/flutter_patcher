@@ -18,7 +18,7 @@
 - **命令行工具随本包发布**：`dart run flutter_patcher <命令>`，版本始终等于 App 解析到的
   插件版本。在项目中，常规流程不需要任何参数：
   - `keys init` 生成 root、publisher、patch 三对密钥：私钥保存在用户的密钥库中，公钥写入
-    `flutter_patcher.yaml`（应提交到 git）；`keys export`、`keys import`、`keys status`
+    `flutter_patcher.yaml`；`keys export`、`keys import`、`keys status`
     用于迁移和查看密钥；
   - `build android|ios` 构建宿主并归档基线，宿主策略（包名、版本号、密钥等）自动生成，
     并写入设备下载补丁的地址 `url`；
@@ -71,7 +71,7 @@
 ### 从 0.1.x 迁移
 
 1. 把 Flutter 升级到 3.47，依赖改为 `flutter_patcher: ^1.0.0`。
-2. 运行 `dart run flutter_patcher keys init`，提交 `flutter_patcher.yaml`，并用 `keys export --out <文件>` 备份私钥。
+2. 运行 `dart run flutter_patcher keys init`，并用 `keys export --out <文件>` 备份私钥。
 3. 用 `dart run flutter_patcher build android` 构建 App 并发布。
 4. 在 `flutter_patcher.yaml` 中把 `url` 设为发布存储对外提供访问的地址，调用 `checkUpdate()`
    （见[生产部署](doc/production-playbook-zh.md)），之后用 `patch` 和 `publish` 发布补丁。
