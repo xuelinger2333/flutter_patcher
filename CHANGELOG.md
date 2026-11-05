@@ -1,13 +1,13 @@
 > Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
 
-## 1.0.1
+## 1.0.0+1
 
 ### Fixed
 
 - The 1.0.0 package on pub.dev left out `lib/src/cli/build/`, so the
-  command-line tool could not run and pub.dev's analysis failed. 1.0.1
-  publishes every source file. Nothing else changes; use 1.0.1 instead of
-  1.0.0.
+  command-line tool could not run and pub.dev's analysis failed. 1.0.0+1
+  publishes every source file. Nothing else changes; use 1.0.0+1 instead of
+  1.0.0, which is retracted.
 
 ## 1.0.0
 

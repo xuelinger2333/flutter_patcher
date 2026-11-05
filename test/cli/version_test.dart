@@ -16,11 +16,11 @@ void main() {
       expect(
         File('ios/flutter_patcher/Sources/flutter_patcher/Bytecode.swift')
             .readAsStringSync(),
-        contains('static let pluginVersion = "$packageVersion"'),
+        contains('static let pluginVersion = "$pluginVersion"'),
       );
       expect(
         File('ios/flutter_patcher.podspec').readAsStringSync(),
-        contains("s.version          = '$packageVersion'"),
+        contains("s.version          = '$pluginVersion'"),
       );
     },
   );

@@ -505,7 +505,7 @@ Future<Map<String, dynamic>> projectRequest(
       ...fields,
       'schema': '1',
       'key_id': 'release',
-      'minPluginVersion': packageVersion,
+      'minPluginVersion': pluginVersion,
       'revision': '${state.revision + 1}',
       ...withdraw ? withdrawal(state) : {'action': 'publish'},
       if (seq != null)

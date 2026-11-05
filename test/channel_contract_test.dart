@@ -91,8 +91,9 @@ void main() {
             .containsAll(scan(swift, r'static let \w+ = "([A-Z_]+)"')),
         isTrue,
       );
+      // Hosts compare major.minor.patch; a +build suffix stays in pub.
       final version = RegExp(
-        r'^version: (\S+)',
+        r'^version: ([0-9]+\.[0-9]+\.[0-9]+)',
         multiLine: true,
       ).firstMatch(File('pubspec.yaml').readAsStringSync())!.group(1);
       expect(scan(swift, r'pluginVersion = "([0-9.]+)"'), {version});

@@ -67,7 +67,7 @@ android {
 
     defaultConfig {
         externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
-        def pluginVersion = (file('../pubspec.yaml').text =~ /(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$/)
+        def pluginVersion = (file('../pubspec.yaml').text =~ /(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)(\+[0-9A-Za-z.]+)?\s*$/)
         if (!pluginVersion.find()) throw new GradleException('Stable plugin version required')
         buildConfigField 'String', 'PATCHER_VERSION', '"' + pluginVersion.group(1) + '"'
         minSdk = 24

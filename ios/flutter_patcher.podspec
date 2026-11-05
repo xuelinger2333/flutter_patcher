@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'flutter_patcher'
-  s.version          = '1.0.1'
+  s.version          = '1.0.0'
   s.summary          = 'Self-hosted, signed Flutter hot updates.'
   s.homepage         = 'https://github.com/xuelinger2333/flutter_patcher'
   s.license          = { :file => '../LICENSE' }
