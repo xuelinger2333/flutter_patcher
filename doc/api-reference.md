@@ -11,6 +11,65 @@ This document lists the Dart API your app uses: the static members of `FlutterPa
 import 'package:flutter_patcher/flutter_patcher.dart';
 ```
 
+## Common tasks
+
+### Check for an update and install it
+
+**Goal**: install a patch when one is published, and handle every outcome.
+
+```dart
+Future<void> updateIfAvailable(String url) async {
+  final PatchCheckResult check;
+  try {
+    check = await FlutterPatcher.checkUpdate(url);
+  } on PatcherException catch (e) {
+    debugPrint('checkUpdate failed: $e'); // no network, or a manifest that fails verification
+    return;
+  }
+  if (!check.hasUpdate) return;
+
+  final result = await FlutterPatcher.applyPatch(
+    check.patch!,
+    onProgress: (p) => showProgress(p.fraction), // null outside downloading
+  );
+  if (result.ok) return; // runs from the next cold start
+
+  switch (result.error) {
+    case PatchApplyError.network || PatchApplyError.ioError:
+      scheduleRetry(); // temporary; call applyPatch again with the same check.patch
+    case PatchApplyError.blacklisted:
+      break; // this patch failed to start on this device; wait for a fixed one
+    default:
+      report('patch_apply', {'error': result.error?.name, 'message': result.message});
+  }
+}
+```
+
+- `checkUpdate` throws `PatcherException` when the network fails or the manifest does not verify. `applyPatch` never throws; its result says what happened.
+- The patch runs from the next cold start.
+
+**Check**: `result.ok` is `true`, and `await FlutterPatcher.currentVersion` returns the patch's sequence number.
+
+### Show which patch is running
+
+```dart
+Future<void> showRunningPatch() async {
+  final diag = await FlutterPatcher.lastBootDiagnostic; // how this start went
+  final installed = await FlutterPatcher.currentVersion; // runs from the next cold start
+  debugPrint('running: ${diag?.status.name} ${diag?.patchVersion}; installed: $installed');
+}
+```
+
+`lastBootDiagnostic` describes the current start; `currentVersion` the installed patch. They differ between a successful `applyPatch` and the next cold start.
+
+### Report unhealthy starts
+
+See [Crash Protection: Boot diagnostics](crash-protection.md#boot-diagnostics).
+
+### Deliver manifests through your own API
+
+See [Delivering manifests yourself](#delivering-manifests-yourself).
+
 ## Initialization
 
 ### `init`

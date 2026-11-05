@@ -11,6 +11,65 @@
 import 'package:flutter_patcher/flutter_patcher.dart';
 ```
 
+## 常见任务
+
+### 检查并安装更新
+
+**目标**：有新补丁时安装它，并处理每一种结果。
+
+```dart
+Future<void> updateIfAvailable(String url) async {
+  final PatchCheckResult check;
+  try {
+    check = await FlutterPatcher.checkUpdate(url);
+  } on PatcherException catch (e) {
+    debugPrint('checkUpdate failed: $e'); // 网络错误，或清单校验失败
+    return;
+  }
+  if (!check.hasUpdate) return;
+
+  final result = await FlutterPatcher.applyPatch(
+    check.patch!,
+    onProgress: (p) => showProgress(p.fraction), // 不在下载阶段时为 null
+  );
+  if (result.ok) return; // 下次冷启动起运行
+
+  switch (result.error) {
+    case PatchApplyError.network || PatchApplyError.ioError:
+      scheduleRetry(); // 临时问题；稍后用同一个 check.patch 再调用 applyPatch
+    case PatchApplyError.blacklisted:
+      break; // 这个补丁曾在本机启动失败；等待修复后的补丁
+    default:
+      report('patch_apply', {'error': result.error?.name, 'message': result.message});
+  }
+}
+```
+
+- 网络出错或清单校验失败时，`checkUpdate` 抛出 `PatcherException`。`applyPatch` 不抛异常，结果都在返回值里。
+- 补丁从下次冷启动起运行。
+
+**验证**：`result.ok` 为 `true`，`await FlutterPatcher.currentVersion` 返回该补丁的序号。
+
+### 显示正在运行的补丁
+
+```dart
+Future<void> showRunningPatch() async {
+  final diag = await FlutterPatcher.lastBootDiagnostic; // 本次启动的情况
+  final installed = await FlutterPatcher.currentVersion; // 下次冷启动起运行
+  debugPrint('running: ${diag?.status.name} ${diag?.patchVersion}; installed: $installed');
+}
+```
+
+`lastBootDiagnostic` 描述本次启动，`currentVersion` 描述已安装的补丁。在 `applyPatch` 成功之后、下次冷启动之前，两者不同。
+
+### 上报不健康的启动
+
+见[崩溃保护：启动诊断](crash-protection-zh.md#启动诊断)。
+
+### 通过自己的接口分发清单
+
+见[自行分发清单](#自行分发清单)。
+
 ## 初始化
 
 ### `init`
