@@ -1,36 +1,61 @@
 <!-- ========================================== -->
-<!-- doc/production-playbook-zh.md (简体中文)   -->
+<!-- doc/production-playbook-zh.md (简体中文)    -->
 <!-- ========================================== -->
 
 # 生产部署
 
 [English](production-playbook.md) | **简体中文**
 
-生产环境与本地调试使用相同的命令，区别仅在于补丁的存储和分发位置。本文介绍上线所需的配置，以及灰度发布、撤回补丁等发布管理功能。完整的命令行参数见 [CLI 参考](cli-zh.md)。
+生产环境使用与[快速上手](getting-started-zh.md)相同的命令，区别在于基线和补丁存放在哪里、设备从哪里下载。完整的命令参数见 [CLI 参考](cli-zh.md)。
+
+## 检查单
+
+**第一次用 flutter_patcher 发布商店版本之前**：
+
+- [ ] `flutter_patcher.yaml` 中的 `store` 和 `baseline_store` 指向持久存储，`build` 不再输出 `WARNING: BASELINE_STORE_LOCAL`（见[配置存储](#配置存储)）。
+- [ ] 已用 `keys export` 备份密钥，`flutter_patcher.yaml` 已提交到 git（见[机器与 CI 上的密钥](#机器与-ci-上的密钥)）。
+- [ ] 发布存储通过 HTTPS 对外提供访问，App 把这个地址传给 `checkUpdate`。
+- [ ] Android：release 包声明了 `android.permission.INTERNET`。
+- [ ] 提交商店的安装包是 `flutter_patcher build` 的产物，对应的源码在 git 中打了标签。
+
+**每次发布补丁之前**：
+
+- [ ] 源码是该商店版本的标签加上这次修复，`pubspec.yaml` 中的 `version` 没有改动。
+- [ ] `patch` 输出的 `changed` 只列出你想改的内容；如有 `warnings`，已逐条看过。
+- [ ] 知道出问题时如何[撤回](#撤回补丁)。
 
 ## 配置存储
 
-在 `flutter_patcher.yaml` 中指定两个存储位置：
+**目标**：基线和补丁保存在不依赖某台电脑的存储中，设备通过 HTTPS 下载补丁。
 
-```yaml
-store: s3://my-bucket/my-app
-baseline_store: s3://my-bucket/baselines
-```
+**操作**：
 
-| 配置项 | 用途 | 支持的类型 |
-|---|---|---|
-| `store` | 发布存储，存放补丁和签名清单，供设备下载 | `s3://`、`file://` |
-| `baseline_store` | 基线存储，存放每个线上版本的基线，生成补丁时使用 | `s3://`、HTTPS、`file://` |
+1. 在 `flutter_patcher.yaml` 中指定两个存储：
 
-将发布存储通过 HTTPS 对外提供访问（例如对象存储配合 CDN），然后在应用中使用该地址：
+   ```yaml
+   store: s3://my-bucket/my-app
+   baseline_store: s3://my-bucket/baselines
+   ```
 
-```dart
-await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
-```
+   | 配置项 | 存放内容 | 支持的类型 |
+   |---|---|---|
+   | `store` | 设备下载的补丁和签名清单 | `s3://`、`file://` |
+   | `baseline_store` | 每个线上版本的基线，`patch` 和 `publish` 都会读取 | `s3://`、HTTPS、`file://` |
 
-> 为线上版本生成补丁需要基线存储，发布补丁需要私钥，两者都请备份，见[机器与 CI 上的密钥](#机器与-ci-上的密钥)。
+2. 把发布存储通过 HTTPS 对外提供访问（例如对象存储配合 CDN），并在 App 中使用这个地址：
 
-各存储类型的权限、协议和 CDN 缓存要求见 [CLI 参考：存储要求](cli-zh.md#存储要求)。
+   ```dart
+   await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
+   ```
+
+各类型存储的权限、协议和 CDN 缓存设置见 [CLI 参考：存储要求](cli-zh.md#存储要求)。
+
+**验证**：
+
+- `dart run flutter_patcher doctor --baseline-store s3://my-bucket/baselines` 的 `baseline_store` 一项通过。
+- `build` 不再输出 `WARNING: BASELINE_STORE_LOCAL`。
+
+基线丢失的版本再也无法打补丁，基线存储要像备份一样对待。
 
 ## 机器与 CI 上的密钥
 
@@ -42,7 +67,7 @@ await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
 | 负责发布的一方 | publisher 和 patch 私钥、发布存储，以及基线存储的读权限 |
 | 轮换 publisher 密钥 | root 私钥，平时离线保存 |
 
-**备份**：`keys init` 之后立即运行 `dart run flutter_patcher keys export --out <文件>`，把文件保存在安全的地方。`root` 或 `patch` 私钥丢失后，已上线的宿主无法再更换。
+**备份**：`keys init` 之后立即运行 `dart run flutter_patcher keys export --out <文件>`，把文件保存在安全的地方。`publisher` 私钥丢失后可以用 root 私钥更换（见[进阶操作](advanced-zh.md#轮换发布密钥)）；`root` 或 `patch` 私钥丢失后，已上线的宿主无法再更换。
 
 负责发布的一方用的就是这套私钥，下面几种方式都不会生成新密钥，按你在哪里发布选一种：
 
@@ -53,47 +78,45 @@ await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
 | CI 服务，如果你在用（自动构建和发布的托管机器，例如 GitHub Actions） | 把 `keys export --base64 --without-root` 输出的一行文本保存为 CI 的 secret，以环境变量 `FLUTTER_PATCHER_KEYS` 提供给任务，然后运行 `publish --yes`。这里不带 root 私钥，发布用不到它 |
 | KMS 等签名服务，适用于私钥不能以文件形式出现的场合 | 配置 `signing.command`，由签名服务代为签名，私钥始终不离开服务。见 [CLI 参考：私钥从哪里来](cli-zh.md#私钥从哪里来) |
 
+**验证**：在负责发布的机器上运行 `dart run flutter_patcher keys status`，publisher 和 patch 两把私钥的来源都不是 `none`。
+
 ## 发布流程
 
-1. 构建安装包并提交应用商店：
+**目标**：发布商店版本，之后用补丁修复它。
+
+**操作**：
+
+1. 构建 App，把输出目录中的 `app-release.apk`（或 `app-release.ipa`）提交商店，并在 git 中为源码打标签：
 
    ```bash
-   dart run flutter_patcher build android
+   dart run flutter_patcher build android    # build ios 需在 Apple Silicon Mac 上运行
    ```
 
-   基线会自动归档至基线存储。
-
-2. 修复问题后生成补丁：
+2. 在该标签的源码上修复问题，不改 `version`，然后生成补丁：
 
    ```bash
-   dart run flutter_patcher patch android
+   dart run flutter_patcher patch android    # patch ios 可在任一支持的电脑上运行
    ```
 
-   输出中的 `changed` 列出本次改动的内容，可据此确认补丁范围。
-
-3. 发布补丁：
+3. 发布。命令先显示预览，确认后才写入；没有人确认的场合（例如 CI）加 `--yes`：
 
    ```bash
    dart run flutter_patcher publish
    ```
 
-   命令会先显示预览，确认后才写入发布存储；在 CI 中使用 `--yes`。
+**验证**：
 
-建议为每个上架版本创建 Git Tag，生成补丁时基于对应 Tag 的源码修改，并保持 `pubspec.yaml` 中的版本号不变。为更早的线上版本发布补丁时，检出该版本的 Tag，并用 `--version-code` 指定其构建号。
+- `build` 输出 `"status":"build_archived"`，`patch` 输出 `"status":"patch_created"`。
+- `publish` 输出 `"status":"published"`、分配的 `patch_seq`（同一版本依次为 1、2、3……），以及清单在存储中的路径 `manifest`。
+- `<你的 HTTPS 地址>/<manifest>` 返回 `200`。
 
-## 安全与可靠性
-
-以下机制默认启用，无需额外配置：
-
-- **签名校验**：设备只加载经过签名且内容完整的补丁。存储或 CDN 中的内容被篡改时，设备会拒绝加载。
-- **防回滚**：已撤回的补丁和比当前更旧的补丁不会被重新安装。
-- **启动保护**：补丁导致启动失败时，应用在下次冷启动时运行安装包自带的版本，并在本机停用该补丁。详见[崩溃保护](crash-protection-zh.md)。
-- **并发安全**：多台构建机可以共享同一组存储，同时发布时不会互相覆盖。
-- **中断恢复**：发布过程中断后，重新执行 `publish` 即可完成本次发布。
+为更早的线上版本打补丁时，检出该版本的标签，并用 `--version-code` 指定它的构建号。每个版本有各自的基线和各自的序号。
 
 ## 灰度发布
 
-补丁发布后，同一版本的所有设备都能检查到更新。如需按比例逐步放量，可在应用侧结合远程配置决定是否调用 `checkUpdate`：
+**目标**：先让一部分用户安装补丁，确认正常后再扩大范围。
+
+补丁发布后，同一版本的所有设备都能检查到它。由 App 决定哪些用户去检查，例如根据远程配置：
 
 ```dart
 if (userBucket(userId) < rolloutPercent) {
@@ -104,30 +127,49 @@ if (userBucket(userId) < rolloutPercent) {
 }
 ```
 
-逐步提高 `rolloutPercent`（例如 1% → 5% → 20% → 100%），每个阶段确认崩溃率和[启动诊断](crash-protection-zh.md#启动诊断)正常后再继续。
+`userBucket` 和 `rolloutPercent` 由你实现：前者为每个用户给出一个固定的 0–99 的数，后者来自远程配置。
+
+**操作**：逐步提高 `rolloutPercent`，例如 1% → 5% → 20% → 100%。
+
+**验证**：每次提高之前，查看崩溃率，以及[启动诊断](crash-protection-zh.md#启动诊断)中 `isHealthy` 为 `false` 的比例。
 
 ## 撤回补丁
+
+**目标**：让有问题的补丁不再运行。两种方式选一种。
+
+**方式一：让设备回到安装包自带的版本。**
 
 ```bash
 dart run flutter_patcher publish --withdraw
 ```
 
-撤回最近一次 `patch` 所属版本的全部已发布补丁。设备在 App 下次应用更新时移除被撤回的补丁，下次冷启动后恢复为安装包自带的版本。
+撤回最近一次 `patch` 输出所属版本的全部已发布补丁。`--through <序号>` 只撤回到该序号；`--patch <目录>` 通过另一个版本的 `patch` 输出指定那个版本。
 
-- 只撤回到某个序号：使用 `--through <序号>`。
-- 撤回其他版本的补丁：使用 `--patch <目录>` 指向该版本的一次 `patch` 输出。
-
-撤回总是让设备回到安装包自带的版本：设备只保存一个补丁，而且不会回到更小的序号。如果想回到之前的某个补丁，重新发布那个补丁的输出即可。它会得到下一个序号，以普通更新的形式送达设备：
+**方式二：让设备回到之前某个正常的补丁。** 重新发布那个补丁的输出。它会得到下一个序号，以普通更新的形式送达设备：
 
 ```bash
 dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目录>
 ```
 
-`patch` 输出保存在 `.dart_tool/flutter_patcher/patches/`，直到你删除它；如果输出已经不在，检出那个补丁的源码重新运行 `patch`。
+`patch` 输出保存在 `.dart_tool/flutter_patcher/patches/`，直到你删除它；输出已经不在时，检出那个补丁的源码重新运行 `patch`。不要重新发布有问题的那个补丁：它会得到新序号，设备会再次安装它。
 
-撤回以普通更新的形式下发，应用对 `hasUpdate` 为 `true` 的结果调用 `applyPatch`（即上面示例中的用法）即可生效。之后发布的补丁会使用更大的序号。
+两种方式都以普通更新的形式送达：App 对 `hasUpdate` 为 `true` 的 `checkUpdate` 结果调用 `applyPatch` 时生效，在下次冷启动时体现。设备只保存一个补丁，而且不会回到更小的序号，所以要回到之前的补丁，只能重新发布它。
+
+**验证**：
+
+- 方式一：`publish` 输出 `"action":"withdraw"`；设备下次冷启动后，`FlutterPatcher.currentVersion` 为 `null`，`lastBootDiagnostic` 为 `noPatch`。
+- 方式二：`publish` 输出的 `patch_seq` 大于问题补丁的序号；设备下次冷启动后，`currentVersion` 为这个序号。
+
+## 始终生效的保护
+
+- **签名校验**：设备只加载签名、哈希和目标版本都校验通过的补丁。存储或 CDN 中被改动的内容会被拒绝。
+- **防重放**：设备不会安装不大于已接受序号的补丁，已撤回的序号也不会再生效。
+- **启动保护**：导致启动失败的补丁会在该设备上停用，下次冷启动运行安装包自带的版本。见[崩溃保护](crash-protection-zh.md)。
+- **并发发布**：多台机器可以共享同一组存储，同时发布不会互相覆盖。
+- **中断恢复**：`publish` 中途中断后，在同一项目中再次运行即可完成。
 
 ## 进阶操作
 
-- [轮换发布密钥](advanced-zh.md#轮换发布密钥)：发布密钥泄露或丢失时，无需重新发版即可更换。
+- [轮换发布密钥](advanced-zh.md#轮换发布密钥)：publisher 私钥丢失或泄露时，无需重新发布商店版本即可更换。
 - [清理历史补丁](advanced-zh.md#清理历史补丁)：释放发布存储空间。
+- [自行分发清单](api-reference-zh.md#自行分发清单)：设备必须通过你自己的接口下载时。
