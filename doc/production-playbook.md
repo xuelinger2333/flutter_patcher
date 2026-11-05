@@ -34,12 +34,12 @@ Permissions, protocol and CDN caching requirements for each store type are liste
 
 ## Keys on Machines and CI
 
-`flutter_patcher.yaml` holds the project's public keys: commit it. Private keys are needed only to sign, by `publish` (and `serve`):
+`flutter_patcher.yaml` holds the project's public keys: commit it. Private keys are needed only to sign, by `publish`, `serve` and `trust sign`:
 
 | Who | Needs |
 |---|---|
 | Any developer machine that makes patches | The source and access to the baseline store. No private key |
-| The machine or CI job that publishes | The publisher and patch keys, and the publication store |
+| The machine or CI job that publishes | The publisher and patch keys, the publication store, and read access to the baseline store |
 | Rotating the publisher key | The root key, kept offline |
 
 - **Back up** the keys right after `keys init`: `dart run flutter_patcher keys export --out <file>`, and keep the file somewhere safe. A lost `root` or `patch` key cannot be replaced for hosts already shipped.

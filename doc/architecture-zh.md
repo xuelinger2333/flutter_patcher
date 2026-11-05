@@ -69,7 +69,7 @@ iOS 不允许加载下载的机器码，因此只能使用字节码。Android �
 | `publisher` | 发布清单：哪个版本应该安装哪个补丁 | 可以用 root 密钥更换，不需要发新版 |
 | `root` | 更换 publisher 公钥的信任更新 | 需要发布新的宿主 |
 
-三把**公钥**记录在 `flutter_patcher.yaml` 中，在 `build` 时写入宿主策略。**私钥**从不进入项目，只有 `publish` 和 `trust sign` 会用到，它们来自你电脑上的密钥库、CI 的 secret 或签名服务。生成补丁不需要任何私钥。
+三把**公钥**记录在 `flutter_patcher.yaml` 中，在 `build` 时写入宿主策略。**私钥**从不进入项目，只有 `publish`、`serve` 和 `trust sign` 会用到，它们来自你电脑上的密钥库、CI 的 secret 或签名服务。生成补丁不需要任何私钥。
 
 设备每次安装补丁，原生代码都会检查：
 

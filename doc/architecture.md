@@ -69,7 +69,7 @@ It follows that **a release whose baseline is lost can no longer be patched.**
 | `publisher` | The publication manifest: which patch a release should install | Replace it with the root key; no new release needed |
 | `root` | Trust updates that replace the publisher public keys | Release a new host |
 
-`build` puts the three **public** keys, recorded in `flutter_patcher.yaml`, in the host policy. The **private** keys never enter the project: only `publish` and `trust sign` use them, from a key store on your computer, a CI secret or a signing service. Making a patch needs none of them.
+`build` puts the three **public** keys, recorded in `flutter_patcher.yaml`, in the host policy. The **private** keys never enter the project: only `publish`, `serve` and `trust sign` use them, from a key store on your computer, a CI secret or a signing service. Making a patch needs none of them.
 
 Each time a device installs a patch, native code checks that:
 

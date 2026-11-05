@@ -143,7 +143,6 @@ dart run flutter_patcher patch ios
 |---|---|---|
 | `--version-code <n>` | The release to patch | The build number of `version` in `pubspec.yaml` |
 | `--flavor <name>` | The release's flavor | `default` |
-
 | `--assets <key>` | Override only these asset keys (repeatable) | Changed assets are selected |
 | `--target <file>` | Entry file | `lib/main.dart` |
 | `--out <dir>` | Output directory; must be new | `.dart_tool/flutter_patcher/patches/<timestamp>/` |

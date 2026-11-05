@@ -92,14 +92,14 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | 错误码 | 含义 | 处理方法 |
 |---|---|---|
 | `KEYS_NOT_CONFIGURED` | `flutter_patcher.yaml` 中没有 `trust` 公钥 | 为项目运行一次 `keys init`，或用 `keys import` 导入它的密钥包 |
-| `KEYS_NOT_FOUND` | 找不到 `publish` 或 `trust sign` 需要的私钥 | 运行 `keys import <文件>`、设置 `FLUTTER_PATCHER_KEYS` 或配置 `signing.command`；`keys status` 可查看本机有哪些私钥 |
+| `KEYS_NOT_FOUND` | 找不到 `publish`、`serve` 或 `trust sign` 需要的私钥 | 运行 `keys import <文件>`、设置 `FLUTTER_PATCHER_KEYS` 或配置 `signing.command`；`keys status` 可查看本机有哪些私钥 |
 | `KEYS_MISMATCH` | 私钥与 `flutter_patcher.yaml` 记录的不一致，或该版本是用另一套密钥构建的 | 使用项目原有的密钥。已有上线宿主的项目，切勿重新生成密钥 |
 | `KEYS_ALREADY_CONFIGURED` | 在已有密钥的项目中运行了 `keys init` | 用 `keys import` 把已有密钥带到本机 |
 | `KEYS_BUNDLE_INVALID` | 文件不是密钥包 | 使用 `keys export` 导出的文件 |
 | `SIGNER_COMMAND_FAILED` | `signing.command` 执行失败、超时或没有输出有效签名 | 手动运行该命令排查；确认签名服务中的密钥是 Ed25519 |
 | `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | 输出文件已存在，或无法创建密钥库目录 | 换一个新文件；检查 `~/.flutter_patcher/keys` 的权限 |
 | `KEYS_PERMISSIONS_FAILED` | 无法收紧私钥文件的文件系统访问权限 | 检查当前文件系统是否支持标准权限控制 |
-| `KEYS_CRYPTO_FAILED`<br>`KEYS_IO_ERROR` | 密钥对生成或写入失败 | 检查目录读写权限后重试 |
+| `KEYS_IO_ERROR` | 密钥写入失败 | 检查目录读写权限后重试 |
 
 ### 3. 构建基线（`build`）
 
@@ -158,12 +158,12 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `PATCH_BASELINE_INCOMPATIBLE` | 当前 Flutter 版本与基线不一致，或基线由不兼容的旧版工具构建 | 参见上文 [常见问题：`PATCH_BASELINE_INCOMPATIBLE`](#patch_baseline_incompatibleflutter-版本不一致) |
 | `PATCH_TARGET_MISMATCH` | 入口文件与构建基线时不一致 | 通过 `--target` 指定与构建基线时相同的入口文件 |
 | `PATCH_DRAFT_INVALID` | 传给 `publish` 的目录中没有有效的 `patch.draft` | 传入当前版本 flutter_patcher 的 `patch` 输出 |
-| `PATCH_CONFIG_INVALID` | 参数无效（如序号、flavor、指纹或 `--target`），或输出目录已存在 | 按提示修正 |
+| `PATCH_CONFIG_INVALID` | 参数无效（如 flavor、构建号或 `--target`），或输出目录已存在 | 按提示修正 |
 | `PATCH_COMPILE_FAILED` | Dart 代码编译失败 | 先运行标准 `flutter build` 确认代码本身无编译错误 |
 | `PATCH_SOURCE_INVALID`<br>`PACKAGE_INPUT_INVALID` | 源码目录结构不受支持（如包含符号链接） | 按提示移除符号链接或调整结构 |
 | `PATCH_ASSET_INVALID`<br>`FONT_SUBSET_FAILED` | 静态资源格式异常或字体子集化（Font Tree-shaking）失败 | 按提示检查并修复对应资源文件 |
 | `PATCH_TOOL_FAILED` | 内部差分或编译工具执行失败 | 查看 `message` 中的错误输出与工作目录日志 |
-| `PATCH_PACKAGE_INVALID`<br>`PATCH_SIGN_FAILED` | 补丁打包或签名过程失败 | 请提交 Issue |
+| `PATCH_PACKAGE_INVALID` | 补丁打包失败 | 请提交 Issue |
 | `PATCH_FAILED` | 未预期的补丁生成异常 | 查看 `message` 详情 |
 
 ### 6. 发布与本地调试（`publish`、`serve`）

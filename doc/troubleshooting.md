@@ -93,14 +93,14 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 | Error Code | Meaning | Resolution |
 |---|---|---|
 | `KEYS_NOT_CONFIGURED` | `flutter_patcher.yaml` has no `trust` keys | Run `keys init` once for the project, or `keys import` its key bundle |
-| `KEYS_NOT_FOUND` | No source holds a private key that `publish` or `trust sign` needs | Run `keys import <file>`, set `FLUTTER_PATCHER_KEYS`, or configure `signing.command`; `keys status` shows what this machine has |
+| `KEYS_NOT_FOUND` | No source holds a private key that `publish`, `serve` or `trust sign` needs | Run `keys import <file>`, set `FLUTTER_PATCHER_KEYS`, or configure `signing.command`; `keys status` shows what this machine has |
 | `KEYS_MISMATCH` | A private key is not the one `flutter_patcher.yaml` names, or the release was built with other keys | Use the project's keys. Never create new keys for a project with shipped hosts |
 | `KEYS_ALREADY_CONFIGURED` | `keys init` in a project that already has keys | Bring the existing keys to this machine with `keys import` |
 | `KEYS_BUNDLE_INVALID` | The file is not a key bundle | Use a file written by `keys export` |
 | `SIGNER_COMMAND_FAILED` | `signing.command` failed, timed out or printed no valid signature | Run the command by hand; check that the service's key is Ed25519 |
 | `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | The output file already exists, or the key store directory cannot be created | Choose a new file; check the permissions of `~/.flutter_patcher/keys` |
 | `KEYS_PERMISSIONS_FAILED` | Failed to restrict file permissions on private keys | Verify that the filesystem supports standard permission attributes |
-| `KEYS_CRYPTO_FAILED`<br>`KEYS_IO_ERROR` | Failed to generate or write keypairs | Check directory permissions and retry |
+| `KEYS_IO_ERROR` | Failed to write keys | Check directory permissions and retry |
 
 ### 3. Building Baselines (`build`)
 
@@ -159,12 +159,12 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 | `PATCH_BASELINE_INCOMPATIBLE` | Flutter version differs from the baseline, or baseline was built with an older incompatible tool | See [`PATCH_BASELINE_INCOMPATIBLE` above](#patch_baseline_incompatible-flutter-version-mismatch) |
 | `PATCH_TARGET_MISMATCH` | Entry-point target file differs from the baseline build | Pass the same `--target` used during `build` |
 | `PATCH_DRAFT_INVALID` | `publish` got a directory without a valid `patch.draft` | Pass an output of `patch` from this flutter_patcher version |
-| `PATCH_CONFIG_INVALID` | Invalid options, such as the sequence, flavor, fingerprint or `--target`, or an output directory that already exists | Fix them as described in `message` |
+| `PATCH_CONFIG_INVALID` | Invalid options, such as the flavor, build number or `--target`, or an output directory that already exists | Fix them as described in `message` |
 | `PATCH_COMPILE_FAILED` | Dart compilation failed | Verify that a standard `flutter build` succeeds first |
 | `PATCH_SOURCE_INVALID`<br>`PACKAGE_INPUT_INVALID` | Unsupported source package layout (e.g., contains symlinks) | Remove symlinks or adjust layout as described in `message` |
 | `PATCH_ASSET_INVALID`<br>`FONT_SUBSET_FAILED` | Asset processing or icon font tree-shaking failed | Fix the offending asset or font file as indicated in `message` |
 | `PATCH_TOOL_FAILED` | Internal compilation or diff tool failed | Inspect the tool output and working directory in `message` |
-| `PATCH_PACKAGE_INVALID`<br>`PATCH_SIGN_FAILED` | Failed to package or sign the patch bundle | Please open an issue |
+| `PATCH_PACKAGE_INVALID` | Failed to package the patch | Please open an issue |
 | `PATCH_FAILED` | Unexpected patch generation failure | Check `message` for details |
 
 ### 6. Publishing & Local Serving (`publish`, `serve`)

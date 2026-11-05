@@ -143,7 +143,6 @@ dart run flutter_patcher patch ios
 |---|---|---|
 | `--version-code <数字>` | 为哪个版本生成补丁 | `pubspec.yaml` 中 `version` 的构建号 |
 | `--flavor <名称>` | 该版本的 flavor | `default` |
-
 | `--assets <资源键>` | 只覆盖指定的资源（可重复） | 自动选出有变化的资源 |
 | `--target <文件>` | 入口文件 | `lib/main.dart` |
 | `--out <目录>` | 输出目录，必须是新目录 | `.dart_tool/flutter_patcher/patches/<时间戳>/` |

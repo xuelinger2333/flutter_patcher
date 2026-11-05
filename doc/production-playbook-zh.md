@@ -34,12 +34,12 @@ await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
 
 ## 机器与 CI 上的密钥
 
-`flutter_patcher.yaml` 中保存的是项目的公钥，请提交到 git。只有签名时才需要私钥，也就是 `publish`（以及 `serve`）：
+`flutter_patcher.yaml` 中保存的是项目的公钥，请提交到 git。只有签名时才需要私钥，也就是 `publish`、`serve` 和 `trust sign`：
 
 | 谁 | 需要什么 |
 |---|---|
 | 生成补丁的任意开发机 | 源码和基线存储的访问权限，不需要私钥 |
-| 负责发布的机器或 CI 任务 | publisher 和 patch 私钥，以及发布存储 |
+| 负责发布的机器或 CI 任务 | publisher 和 patch 私钥、发布存储，以及基线存储的读权限 |
 | 轮换 publisher 密钥 | root 私钥，平时离线保存 |
 
 - **备份**：`keys init` 之后立即运行 `dart run flutter_patcher keys export --out <文件>`，把文件保存在安全的地方。`root` 或 `patch` 私钥丢失后，已上线的宿主无法再更换。
