@@ -88,6 +88,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 
 | 字段 | 含义 | 默认值 |
 |---|---|---|
+| `url` | 设备下载补丁的 HTTPS 地址。`build` 把它写进 App，`checkUpdate()` 默认使用它；`publish` 编号前先读取这里该版本的清单 | `http://127.0.0.1:8686`，即 `serve` 提供补丁的地址；`build` 会警告 `URL_LOCAL` |
 | `store` | 发布存储，`publish` 把补丁和清单写到这里。支持 `file://` 和 `s3://` | `.flutter_patcher/updates/`（项目内） |
 | `baseline_store` | 基线存储，`build` 写入、`patch` 和 `publish` 读取。支持 `file://`、`s3://` 和 HTTPS | `.flutter_patcher/baselines/`（项目内） |
 | `trust` | `root`、`publisher`、`patch` 三把公钥，每个宿主构建时都会写入。由 `keys init` 和 `keys import` 写入 | |
@@ -189,6 +190,7 @@ dart run flutter_patcher build ios        # 仅限 Apple Silicon Mac
 - 构建在项目的一份隔离副本中进行，不会修改你的源码和 Flutter SDK。
 - 输出目录中有 `app-release.apk` 或 `app-release.ipa`，这就是要上架的安装包。
 - 同一 flavor 和版本号重复构建：内容相同则沿用已有基线；内容不同则报 `BASELINE_RELEASE_CONFLICT`，请提升版本号。
+- `flutter_patcher.yaml` 中没有 `url` 时，会打印 `WARNING: URL_LOCAL`：App 检查的是 `serve` 的本机地址。
 - 基线存储为项目内的默认位置、且没有指定 `--baseline-store` 时，会打印 `WARNING: BASELINE_STORE_LOCAL`。
 - Dart 源码含 CRLF 换行时会打印 `WARNING: CRLF_DART_SOURCES`，原因见[错误码与排障](troubleshooting-zh.md)。
 
@@ -228,16 +230,17 @@ dart run flutter_patcher publish
 | 选项 | 说明 | 默认值 |
 |---|---|---|
 | `--patch <目录>` | 要发布的 `patch` 输出目录 | 最近一次 `patch` 的输出 |
-| `--withdraw` | 改为撤回该补丁所属版本已发布的补丁，见[生产部署](production-playbook-zh.md#补丁回滚与撤回) | |
-| `--through <序号>` | 与 `--withdraw` 一起使用：撤回到这个序号为止 | 已发布的最大序号 |
+| `--withdraw` | 改为撤回该补丁所属版本已发布的全部补丁，见[生产部署](production-playbook-zh.md#补丁回滚与撤回) | |
 | `--yes`, `-y` | 不询问，直接发布 | 先预览再询问；非交互环境下只预览 |
-| `--seq <数字>` | 用这个序号发布，范围 1–4294967295，必须大于该版本已发布或已撤回的所有序号 | 已发布或已撤回的最大序号 + 1 |
+| `--seq <数字>` | 用这个序号发布，范围 1–4294967295，必须大于该版本已发布或已撤回的所有序号，包括 `url` 上线上的序号 | 已发布或已撤回的最大序号 + 1 |
 | `--key-file <文件>` | 优先使用这个密钥包签名 | |
 | `--receipt <文件>` | 把发布结果另存为 JSON 文件（必须是新文件） | |
 | `--production --request <文件>` | 高级：执行手写的发布或清理请求文件，见[进阶操作](advanced-zh.md#清理历史补丁) | |
 
 - 没有 `--yes`、又没有终端可以询问时，只预览：不会发布任何内容，退出码仍为 `0`。
 - 每发布一个补丁，自动取下一个序号：同一版本依次为 1、2、3……。`--seq` 可以跳号（用 `--seq 10` 之后，下一个是 11），但不能回退。预览不会占用序号。请求文件用 `fields.patch_seq` 指定，不写则自动编号。
+- 填了 `url` 时，会像 `git push` 先查看远端那样，先读取 `url` 上该版本的清单，并在它之上编号；所以即使 `.flutter_patcher/updates/` 丢了，序号也能接着往上走。读取失败时以 `PUBLISH_URL_UNREACHABLE` 停止；还没发布过的版本，那里必须返回 `404`。`serve` 不做这一步。
+- 填了 `url` 且发布存储是 `file://` 时，发布后会提醒你上传；上传之前设备什么也看不到。
 - 发布前会校验：补丁确实是为该版本生成的；签名密钥正是构建宿主时使用的那套；存储中的内容自上次读取后没有被别人改动。
 - 发布一个已经是该版本最新补丁的补丁不会做任何改动，返回 `already_published`。
 - 提交期间，本次发布的请求保存在 `.dart_tool/flutter_patcher/publish-pending.json`。如果提交中途停止，存储在这次发布完成之前不接受其他操作，因此项目中下一次运行 `publish`（或 `serve`）时会先自动续上它。

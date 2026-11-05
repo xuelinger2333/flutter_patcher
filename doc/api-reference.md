@@ -18,10 +18,10 @@ import 'package:flutter_patcher/flutter_patcher.dart';
 **Goal**: install a patch when one is published, and handle every outcome.
 
 ```dart
-Future<void> updateIfAvailable(String url) async {
+Future<void> updateIfAvailable() async {
   final PatchCheckResult check;
   try {
-    check = await FlutterPatcher.checkUpdate(url);
+    check = await FlutterPatcher.checkUpdate();
   } on PatcherException catch (e) {
     debugPrint('checkUpdate failed: $e'); // no network, or a manifest that fails verification
     return;
@@ -95,13 +95,13 @@ What these do in detail: [Crash Protection](crash-protection.md). `init` also ta
 ### `checkUpdate`
 
 ```dart
-static Future<PatchCheckResult> checkUpdate(
-  String url, {
+static Future<PatchCheckResult> checkUpdate({
+  String? url,
   Duration timeout = const Duration(seconds: 10),
 })
 ```
 
-`url` is the root address where your publication store is served, such as `https://cdn.example.com/my-app`, or `http://127.0.0.1:8686` from `serve` while developing. The plugin reads this host's manifest there and verifies it in native code.
+Without `url`, it checks the address `build` wrote into the app: `url` in `flutter_patcher.yaml`, or `http://127.0.0.1:8686`, where `serve` offers patches, when that is not set. Pass `url` to check elsewhere, such as an HTTPS tunnel to `serve` for an iPhone. Either way it is the root address where your publication store is served, such as `https://cdn.example.com/my-app`. The plugin reads this host's manifest there and verifies it in native code.
 
 - `hasUpdate` is `true` only when accepting the manifest would change the device: a patch with a higher sequence number, or a new withdrawal. A patch already installed is not an update.
 - Once `applyPatch` has downloaded a patch, the device has accepted its manifest, even if installing then fails; `checkUpdate` no longer reports it. To retry, call `applyPatch` again with the same `PatchInfo`.

@@ -88,6 +88,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 
 | Setting | Meaning | Default |
 |---|---|---|
+| `url` | The HTTPS address devices download patches from. `build` writes it into the app, where `checkUpdate()` uses it; `publish` reads the release's manifest there before numbering | `http://127.0.0.1:8686`, where `serve` offers patches; `build` warns `URL_LOCAL` |
 | `store` | Publication store, where `publish` writes patches and manifests. `file://` or `s3://` | `.flutter_patcher/updates/` in the project |
 | `baseline_store` | Baseline store, written by `build` and read by `patch` and `publish`. `file://`, `s3://` or HTTPS | `.flutter_patcher/baselines/` in the project |
 | `trust` | The `root`, `publisher` and `patch` public keys every host is built with. Written by `keys init` and `keys import` | |
@@ -189,6 +190,7 @@ dart run flutter_patcher build ios        # Apple Silicon Mac only
 - The build runs in an isolated copy of the project; your source and Flutter SDK are not modified.
 - The output directory holds `app-release.apk` or `app-release.ipa`, the app you release.
 - Rebuilding the same flavor and version: identical content reuses the existing baseline; different content fails with `BASELINE_RELEASE_CONFLICT`, so raise the version.
+- Without `url` in `flutter_patcher.yaml`, it prints `WARNING: URL_LOCAL`: the app checks `serve`'s local address.
 - With the default in-project baseline store, and no `--baseline-store`, it prints `WARNING: BASELINE_STORE_LOCAL`.
 - Dart sources with CRLF line endings draw `WARNING: CRLF_DART_SOURCES`; see [Error Codes and Troubleshooting](troubleshooting.md) for why.
 
@@ -228,16 +230,17 @@ dart run flutter_patcher publish
 | Option | Description | Default |
 |---|---|---|
 | `--patch <dir>` | The `patch` output to publish | The latest `patch` output |
-| `--withdraw` | Withdraw that patch's release's published patches instead; see the [Production Playbook](production-playbook.md#if-a-patch-goes-wrong) | |
-| `--through <seq>` | With `--withdraw`: withdraw up to this sequence | The highest published |
+| `--withdraw` | Withdraw every published patch of that patch's release instead; see the [Production Playbook](production-playbook.md#if-a-patch-goes-wrong) | |
 | `--yes`, `-y` | Publish without asking | Preview, then ask; only preview when not interactive |
-| `--seq <n>` | Publish with this sequence number, from 1 to 4294967295; it must exceed every sequence published or withdrawn for the release | The highest published or withdrawn + 1 |
+| `--seq <n>` | Publish with this sequence number, from 1 to 4294967295; it must exceed every sequence published or withdrawn for the release, including what is live at `url` | The highest published or withdrawn + 1 |
 | `--key-file <file>` | Sign with this key bundle first | |
 | `--receipt <file>` | Also write the result to a new JSON file | |
 | `--production --request <file>` | Advanced: run a publish or cleanup request file you wrote; see [Advanced Operations](advanced.md#cleaning-up-old-patches) | |
 
 - Without `--yes` and without a terminal to ask in, it only previews: nothing is published, and it still exits with `0`.
 - Each published patch gets the next sequence number: 1, 2, 3… for a release. `--seq` may skip ahead (after `--seq 10`, the next is 11), never back. A preview reserves no number. A request file sets `fields.patch_seq`, or leaves it out to number automatically.
+- With `url` set, it first reads the release's manifest there, as `git push` checks the remote, and numbers above it, so numbering continues even if `.flutter_patcher/updates/` was lost. If it cannot read `url`, it stops with `PUBLISH_URL_UNREACHABLE`; a release with nothing published must answer `404` there. `serve` skips this.
+- After publishing to a `file://` store with `url` set, it reminds you to upload; devices see nothing until you do.
 - Before writing, it checks that the patch was built for that release, that the keys are the ones its host was built with, and that nobody changed the store since it was read.
 - Publishing a patch that is already the release's latest does nothing and reports `already_published`.
 - While a publication commits, its request is saved in `.dart_tool/flutter_patcher/publish-pending.json`. If the commit stops midway, the store accepts nothing else until that publication finishes, so the next `publish` (or `serve`) in the project resumes it first.

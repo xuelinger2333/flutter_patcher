@@ -56,8 +56,8 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-// Check for updates at an appropriate time; `url` is the root address your publication store is served at
-final check = await FlutterPatcher.checkUpdate(url);
+// Check for updates at an appropriate time, at `url` from flutter_patcher.yaml
+final check = await FlutterPatcher.checkUpdate();
 if (check.hasUpdate) {
   await FlutterPatcher.applyPatch(check.patch!);
 }

@@ -36,14 +36,15 @@ dart run flutter_patcher keys export --out fp-keys.json
 
 **操作**：
 
-1. 确定第 5 步的文件上传地址，例如 `https://cdn.example.com/my-app`。
-2. 将代码中 `checkUpdate` 的 `http://127.0.0.1:8686` 替换为线上地址：
+1. 在 `flutter_patcher.yaml` 中填写第 5 步的文件上传地址：
 
-   ```dart
-   final check = await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
+   ```yaml
+   url: https://cdn.example.com/my-app
    ```
 
-3. 确认 `android/app/src/main/AndroidManifest.xml` 包含网络权限（无此权限 Release 包无法联网）。
+   `build` 会把它写进 App，快速上手中的 `checkUpdate()` 无需改动。`publish` 也会在编号前先读取这个地址上的线上状态。
+
+2. 确认 `android/app/src/main/AndroidManifest.xml` 包含网络权限（无此权限 Release 包无法联网）。
 
 > **按需替换**：先向小比例用户放量，见[灰度发布](#灰度发布)。
 
@@ -63,8 +64,8 @@ dart run flutter_patcher keys export --out fp-keys.json
 
 **验证**：
 
-- `build` 输出 `"status":"build_archived"`。
-- 出现 `WARNING: BASELINE_STORE_LOCAL` 提示：表示基线保存在项目的 `.flutter_patcher/` 文件夹里，见[不能丢的文件夹](#不能丢的文件夹)。
+- `build` 输出 `"status":"build_archived"`，并且不再出现 `WARNING: URL_LOCAL`。
+- 仍会出现 `WARNING: BASELINE_STORE_LOCAL` 提示：表示基线保存在项目的 `.flutter_patcher/` 文件夹里，见[不能丢的文件夹](#不能丢的文件夹)。
 
 ## 第 4 步：生成并发布补丁
 
@@ -89,6 +90,8 @@ dart run flutter_patcher keys export --out fp-keys.json
 
 - `patch` 输出 `"status":"patch_created"`。
 - `publish` 输出 `"status":"published"`、递增的补丁序号 `patch_seq`（同版本依次为 1、2、3…）以及清单路径 `manifest`（如 `manifests/<hash>.json`）。
+
+编号前，`publish` 会先读取 `url` 上该版本的清单，保证新序号不会低于设备可能已有的序号。读取失败时，它以 `PUBLISH_URL_UNREACHABLE` 停止，不发布任何内容。
 
 > **按需替换**：修复非最新的历史线上版本，见[给更早的版本打补丁](#给更早的版本打补丁)。
 
@@ -121,7 +124,7 @@ dart run flutter_patcher keys export --out fp-keys.json
 dart run flutter_patcher publish --withdraw
 ```
 
-默认撤回最近一次 `patch` 对应版本的全部补丁。可用 `--through <序号>` 指定撤回到的目标序号，或用 `--patch <目录>` 指定其他版本的补丁目录。
+默认撤回最近一次 `patch` 对应版本的全部补丁；可用 `--patch <目录>` 指定其他版本的补丁目录。
 
 **方式二：回退至历史正常补丁**
 
@@ -142,12 +145,10 @@ dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目
 
 ## 不能丢的文件夹
 
-项目里的 `.flutter_patcher/` 文件夹保存着基线和发布记录，请纳入备份。它和第 1 步备份的私钥，就是上线后需要保管的全部东西。
+项目里的 `.flutter_patcher/baselines/` 保存着各线上版本的构建基线，请纳入备份。丢失后，丢失前构建的线上版本将无法再生成补丁。它和第 1 步备份的私钥，就是上线后需要保管的全部东西。
 
-| 文件夹里的 | 丢失后果与补救 |
-|---|---|
-| `baselines/`：各线上版本的构建基线 | 不可逆：丢失前构建的线上版本将无法再生成补丁 |
-| `updates/`：待上传产物，及记录已发布序号的 `catalog.json` | 序号将重置为 1，而设备会忽略小于或等于当前序号的补丁。补救：下次发布通过 `--seq` 手动指定一个大于历史最大值（含已撤回）的序号，如 `publish --seq 100` |
+`.flutter_patcher/updates/` 无需备份：设备已有的内容就在 `url` 上，`publish` 会从那里读取。
+
 ## 按需替换
 
 ### 让 publish 直接写入存储桶
@@ -164,7 +165,7 @@ dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目
    baseline_store: s3://my-bucket/baselines
    ```
 
-3. 权限隔离：仅将 `my-app` 前缀设为公开读（其 HTTPS 地址用于第 2 步客户端拉取），`baselines` 保持私有。
+3. 权限隔离：仅将 `my-app` 前缀设为公开读（第 2 步把它的 HTTPS 地址填为 `url`），`baselines` 保持私有。
 
 `store` 供 CLI 凭你的凭证写入，HTTPS 地址供设备免密读取。
 
@@ -181,10 +182,10 @@ dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目
 | 角色 | 所需资产 |
 |---|---|
 | 构建补丁的机器 | 源码 + 基线（无需私钥） |
-| 执行发布的机器 | publisher 与 patch 私钥 + 基线 + `.flutter_patcher/updates/`（或远端存储桶） |
+| 执行发布的机器 | publisher 与 patch 私钥 + 基线 + 能访问 `url` |
 | 密钥轮换操作 | root 私钥（日常必须离线保存） |
 
-多机协同发布时，请务必[让 publish 直接写入存储桶](#让-publish-直接写入存储桶)以共享序号状态。
+多机协同发布时，请务必[让 publish 直接写入存储桶](#让-publish-直接写入存储桶)，这样每次发布都能立即看到上一次的结果，不必等上传。
 
 所有发布端共用同一套密钥，无需重新生成。按场景注入私钥：
 
@@ -204,7 +205,7 @@ dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目
 
 ```dart
 if (userBucket(userId) < rolloutPercent) {
-  final check = await FlutterPatcher.checkUpdate(url);
+  final check = await FlutterPatcher.checkUpdate();
   if (check.hasUpdate) {
     await FlutterPatcher.applyPatch(check.patch!);
   }

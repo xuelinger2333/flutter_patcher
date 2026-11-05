@@ -60,8 +60,8 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-// 在合适的时机检查更新，url 为发布存储对外访问的根地址
-final check = await FlutterPatcher.checkUpdate(url);
+// 在合适的时机检查更新，地址为 flutter_patcher.yaml 中的 url
+final check = await FlutterPatcher.checkUpdate();
 if (check.hasUpdate) {
   await FlutterPatcher.applyPatch(check.patch!);
 }

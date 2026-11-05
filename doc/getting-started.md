@@ -44,7 +44,7 @@ iOS differences are at the end; every command option is in the [CLI Reference](c
 
    Future<void> checkForPatch() async {
      try {
-       final check = await FlutterPatcher.checkUpdate('http://127.0.0.1:8686');
+       final check = await FlutterPatcher.checkUpdate();
        if (!check.hasUpdate) return;
        final result = await FlutterPatcher.applyPatch(check.patch!);
        debugPrint('applyPatch: $result');
@@ -54,7 +54,7 @@ iOS differences are at the end; every command option is in the [CLI Reference](c
    }
    ```
 
-   `http://127.0.0.1:8686` is the local address `serve` provides in Step 5; in production, use your own HTTPS address, see the [Production Playbook](production-playbook.md).
+   `checkUpdate()` looks where `build` tells the app to: `url` in `flutter_patcher.yaml`, or, while it is not set, `http://127.0.0.1:8686`, where `serve` offers patches in Step 5. Going live only means setting `url`; see the [Production Playbook](production-playbook.md).
 
 3. Add the internet permission under `<manifest>` in `android/app/src/main/AndroidManifest.xml`. `flutter create` declares it only for debug and profile builds:
 
@@ -99,7 +99,7 @@ adb install <output>/app-release.apk
 **Check**:
 
 - The last line `build` prints is JSON with `"status":"build_archived"`; `output` points to `.dart_tool/flutter_patcher/releases/<timestamp>/`, which holds `app-release.apk`.
-- A `WARNING: BASELINE_STORE_LOCAL` line also appears. It means the baseline is kept only in the project, which is fine; before going live, see [Production Playbook: The Folder You Must Keep](production-playbook.md#the-folder-you-must-keep).
+- Two warnings also appear, both expected while trying things out: `WARNING: URL_LOCAL` (the app checks `serve`'s local address) and `WARNING: BASELINE_STORE_LOCAL` (the baseline is kept only in the project). Before going live, see the [Production Playbook](production-playbook.md).
 - The app opens on the phone.
 
 ## Step 4: Change the code and make a patch
@@ -166,7 +166,7 @@ For every later change: keep `serve` running, run `patch android`, and repeat St
 | Signing | Run `build ios` in a terminal of the Mac's desktop session. Over SSH or in CI, unlock the keychain first, or signing fails with `errSecInternalComponent` |
 | Install | For example, add the ipa in Xcode's Devices and Simulators window. With a free developer account, first trust the developer on the phone under Settings → General → VPN & Device Management |
 | Make patches | `patch ios` runs on a Mac, Linux or Windows, on any computer that can read the baseline `build ios` saved |
-| Deliver patches | An iPhone cannot reach the computer's `127.0.0.1`, and `checkUpdate` requires HTTPS. Expose `serve` over HTTPS with a tunnel, such as `cloudflared tunnel --url http://127.0.0.1:8686`, and pass that address to `checkUpdate` |
+| Deliver patches | An iPhone cannot reach the computer's `127.0.0.1`, and `checkUpdate` requires HTTPS. Expose `serve` over HTTPS with a tunnel, such as `cloudflared tunnel --url http://127.0.0.1:8686`, and pass that address: `checkUpdate(url: 'https://…')` |
 
 ## Next steps
 

@@ -20,12 +20,14 @@
   - `keys init` 生成 root、publisher、patch 三对密钥：私钥保存在用户的密钥库中，公钥写入
     `flutter_patcher.yaml`（应提交到 git）；`keys export`、`keys import`、`keys status`
     用于迁移和查看密钥；
-  - `build android|ios` 构建宿主并归档基线，宿主策略（包名、版本号、密钥等）自动生成；
+  - `build android|ios` 构建宿主并归档基线，宿主策略（包名、版本号、密钥等）自动生成，
+    并写入设备下载补丁的地址 `url`；
   - `patch android|ios` 与线上版本的基线对比，生成未签名的补丁，并拒绝补丁无法携带的
     改动（原生代码、FFI、删除资源等），给出原因。它不需要私钥，也不访问发布存储；补丁
     序号由 `publish` 分配，同一版本依次为 1、2、3……，也可用 `--seq` 指定；
-  - `publish` 预览后签名并把补丁写入发布存储；`publish --withdraw [--through <序号>]` 撤回该版本
-    已发布的补丁；提交过程中被中断的发布会在下次运行时自动续上；
+  - `publish` 编号前先读取 `url` 上该版本的清单，本地记录丢失后序号也能接着往上走；预览后
+    签名并把补丁写入发布存储；`publish --withdraw` 撤回该版本已发布的全部补丁；提交过程中被
+    中断的发布会在下次运行时自动续上；
   - `serve` 在开发时自动发布新补丁，并提供给 USB 连接的 Android 设备；
   - `doctor` 检查工具链。
 - **签名更新。** 设备只安装用你的密钥签名、正好对应其包名、版本号、flavor、渠道和
@@ -44,8 +46,9 @@
 ### Changed
 
 - 需要 Flutter 3.47.0（Dart 3.13.0）及以上，支持 Flutter 3.47.0 – 3.47.9。
-- `checkUpdate(url)` 的参数改为发布存储对外提供访问的地址，并在那里校验签名清单。
-  把它返回的 `PatchInfo` 原样传给 `applyPatch`。
+- `checkUpdate()` 检查 `build` 从 `flutter_patcher.yaml` 写进 App 的 `url`（没填时是 `serve`
+  提供补丁的 `http://127.0.0.1:8686`）；`checkUpdate(url: ...)` 检查别的地址。它在那里校验
+  签名清单。把它返回的 `PatchInfo` 原样传给 `applyPatch`。
 - Android 插件不再自行应用 Kotlin Gradle 插件：在 AGP 9 上由 AGP 内置的 Kotlin 编译，
   在 AGP 8 上使用 App 自己的 Kotlin 插件。两种情况下 Kotlin 都以 JVM 17 为目标。
 - 补丁只在 Android 9（API 28）及以上、App 的主进程中生效；Android 7–8 上 App 按原包运行。
@@ -70,8 +73,8 @@
 1. 把 Flutter 升级到 3.47，依赖改为 `flutter_patcher: ^1.0.0`。
 2. 运行 `dart run flutter_patcher keys init`，提交 `flutter_patcher.yaml`，并用 `keys export --out <文件>` 备份私钥。
 3. 用 `dart run flutter_patcher build android` 构建 App 并发布。
-4. 把 `checkUpdate` 指向发布存储对外提供访问的地址（见[生产部署](doc/production-playbook-zh.md)），
-   之后用 `patch` 和 `publish` 发布补丁。
+4. 在 `flutter_patcher.yaml` 中把 `url` 设为发布存储对外提供访问的地址，调用 `checkUpdate()`
+   （见[生产部署](doc/production-playbook-zh.md)），之后用 `patch` 和 `publish` 发布补丁。
 
 ## 0.1.4
 

@@ -57,7 +57,7 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 
 ### `checkUpdate` on the device never finds an update
 
-- Verify that the URL passed to `checkUpdate` is the **root URL** of your publication store, not a direct link to a file inside `manifests/`.
+- Verify that the address the app checks is the **root URL** of your publication store, not a direct link to a file inside `manifests/`: `url` in `flutter_patcher.yaml` when the app was built (rebuild after changing it), or the `url` passed to `checkUpdate`.
 - Ensure the endpoint serves content directly over HTTPS without `3xx` redirects.
 - Confirm the patch was built for the exact `versionCode` installed on the device. If a user updates the app from the store, you must publish a separate patch targeting the new version.
 - Check whether the patch is already installed on the device (already-applied patches are not reported as new updates; check `FlutterPatcher.currentVersion`).
@@ -172,9 +172,11 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 | Error Code | Meaning | Resolution |
 |---|---|---|
 | `SERVE_PORT_BUSY` | Another program listens on the port `serve` uses | Stop it, or run `serve --port <port>` and use that port in the app |
-| `PUBLISH_CONFIG_INVALID` | Invalid arguments or request file (e.g., no patch built yet, nothing to withdraw, or `--through` out of bounds) | Run `patch` first, or adjust flags per `message` |
+| `PUBLISH_CONFIG_INVALID` | Invalid arguments or request file (e.g., no patch built yet, or nothing to withdraw) | Run `patch` first, or adjust flags per `message` |
 | `PUBLISH_TARGET_MISMATCH` | Patch does not belong to the specified target release | Regenerate the patch for the intended release |
 | `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | The patch's sequence does not exceed the latest published or withdrawn sequence, or the store changed concurrently | Run `publish` again without `--seq`, or with a `--seq` above every published or withdrawn sequence; the patch need not be made again |
+| `PUBLISH_URL_UNREACHABLE` | `publish` could not read the release's manifest at `url`: no network, a wrong address, or a status other than `200` or `404` | Fix `url` or the network and run `publish` again. A host that answers `403` for a missing file must be set to answer `404` |
+| `PUBLISH_URL_INVALID` | What `url` serves for this release is not a manifest of this release | Check that `url` points to this app's upload location |
 | `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | A prior publication or cleanup operation was interrupted | Run `publish` again in the same project, or the same request file, to resume (see above) |
 | `PUBLISH_STORE_UNAVAILABLE` | Cannot access publication storage, or backend lacks conditional write support | Check AWS CLI version, credentials, and `FLUTTER_PATCHER_S3_ENDPOINT` |
 | `PUBLISH_STORE_INVALID` | Invalid store URI (an S3 prefix must be below the bucket root and use only letters, digits, `_` and `-`), or an object exceeds the size limits | Fix the `store` setting as described in `message` |
@@ -206,6 +208,7 @@ These print as `WARNING: <code>: <text>` and do not fail the command:
 
 | Warning Code | Meaning |
 |---|---|
+| `URL_LOCAL` | `flutter_patcher.yaml` has no `url`, so the app checks `serve`'s local address. Set `url` before building a release for the store (see [Production Playbook](production-playbook.md#step-2-set-the-update-address)) |
 | `BASELINE_STORE_LOCAL` | `build` keeps the baseline only inside the project, in `.flutter_patcher/`. Back that folder up, or set `baseline_store` (see [Production Playbook: The Folder You Must Keep](production-playbook.md#the-folder-you-must-keep)) |
 | `CRLF_DART_SOURCES` | `build` found Dart sources with `CRLF` line endings; patches must be built from a checkout with the same line endings (see above) |
 | `ARTIFACT_CHECK_SKIPPED` | The artifact index could not be downloaded, so the cached index was used |

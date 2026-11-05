@@ -24,15 +24,17 @@ Started](doc/getting-started.md).
     which belongs in version control. `keys export`, `keys import` and `keys
     status` move and inspect them;
   - `build android|ios` builds the host app and archives its baseline, and
-    writes the host policy (application id, version, keys...) itself;
+    writes the host policy (application id, version, keys...) itself, with
+    `url`, the address devices download patches from;
   - `patch android|ios` compares the source with the released baseline and
     writes an unsigned patch, rejecting changes a patch cannot carry (native
     code, FFI, removed assets...) with the reason. It needs no private key and
     no publication store. `publish` numbers patches 1, 2, 3... per release, or as `--seq` says;
-  - `publish` signs the patch and writes it to the publication store after a
-    preview; `publish --withdraw [--through <seq>]` withdraws the release's
-    published patches; a publish interrupted while committing resumes on the
-    next run;
+  - `publish` reads the release's manifest at `url` before numbering, so
+    numbering continues even if local records are lost, then signs the patch
+    and writes it to the publication store after a preview; `publish
+    --withdraw` withdraws all of the release's published patches; a publish
+    interrupted while committing resumes on the next run;
   - `serve` publishes each new patch and serves it to a USB-connected Android
     device while developing;
   - `doctor` checks the toolchain.
@@ -58,8 +60,10 @@ Started](doc/getting-started.md).
 
 - Requires Flutter 3.47.0 (Dart 3.13.0) or later; Flutter 3.47.0 - 3.47.9
   are supported.
-- `checkUpdate(url)` takes the address where the publication store is served
-  and verifies the signed manifest there. Pass the `PatchInfo` it returns to
+- `checkUpdate()` checks the `url` that `build` wrote into the app from
+  `flutter_patcher.yaml` (`http://127.0.0.1:8686`, where `serve` offers
+  patches, until it is set); `checkUpdate(url: ...)` checks another address.
+  It verifies the signed manifest there. Pass the `PatchInfo` it returns to
   `applyPatch` unchanged.
 - The Android plugin no longer applies the Kotlin Gradle plugin itself: on
   AGP 9 it compiles with AGP's built-in Kotlin, on AGP 8 with the app's
@@ -95,9 +99,10 @@ Started](doc/getting-started.md).
 2. Run `dart run flutter_patcher keys init`, commit `flutter_patcher.yaml` and
    back up the private keys with `keys export --out <file>`.
 3. Build the app with `dart run flutter_patcher build android` and release it.
-4. Point `checkUpdate` at the address where your publication store is served
-   (see the [Production Playbook](doc/production-playbook.md)), and make
-   patches with `patch` and `publish`.
+4. Set `url` in `flutter_patcher.yaml` to the address where your publication
+   store is served, call `checkUpdate()` (see the
+   [Production Playbook](doc/production-playbook.md)), and make patches with
+   `patch` and `publish`.
 
 ## 0.1.4
 

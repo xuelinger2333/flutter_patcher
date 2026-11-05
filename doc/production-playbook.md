@@ -32,20 +32,21 @@ dart run flutter_patcher keys export --out fp-keys.json
 > **Your choice**: publishing from another computer, from CI, or through a signing service such as a KMS: [Publishing from Another Machine or CI](#publishing-from-another-machine-or-ci).
 
 **Check**: the command prints `"status":"keys_exported"` and `file`, the path of the copy.
-## Step 2: Point the App at Your Host
+## Step 2: Set the Update Address
 
 **Goal**: make the release build check your host instead of `serve`.
 
 **Do**:
 
-1. Pick the address you will upload to in Step 5, such as `https://cdn.example.com/my-app`.
-2. In the `checkUpdate` call from Getting Started, replace `http://127.0.0.1:8686` with it:
+1. Add the address you will upload to in Step 5 to `flutter_patcher.yaml`:
 
-   ```dart
-   final check = await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
+   ```yaml
+   url: https://cdn.example.com/my-app
    ```
 
-3. Make sure `android/app/src/main/AndroidManifest.xml` still has the internet permission added in Getting Started; release builds have none without it.
+   `build` writes it into the app, so `checkUpdate()` from Getting Started needs no change. `publish` reads what is live there before numbering a patch.
+
+2. Make sure `android/app/src/main/AndroidManifest.xml` still has the internet permission added in Getting Started; release builds have none without it.
 
 > **Your choice**: let only a share of users install patches first: [Staged Rollouts](#staged-rollouts).
 
@@ -65,8 +66,8 @@ dart run flutter_patcher keys export --out fp-keys.json
 
 **Check**:
 
-- `build` prints `"status":"build_archived"`.
-- It also prints `WARNING: BASELINE_STORE_LOCAL`: the release's baseline is in the project's `.flutter_patcher/` folder; see [The Folder You Must Keep](#the-folder-you-must-keep).
+- `build` prints `"status":"build_archived"`, and no longer `WARNING: URL_LOCAL`.
+- It still prints `WARNING: BASELINE_STORE_LOCAL`: the release's baseline is in the project's `.flutter_patcher/` folder; see [The Folder You Must Keep](#the-folder-you-must-keep).
 
 ## Step 4: Publish a Patch
 
@@ -91,6 +92,8 @@ dart run flutter_patcher keys export --out fp-keys.json
 
 - `patch` prints `"status":"patch_created"`.
 - `publish` prints `"status":"published"`, the `patch_seq` it assigned (1, 2, 3… per release), and `manifest`, the manifest's path, such as `manifests/<hash>.json`.
+
+Before numbering, `publish` reads the release's manifest at `url`, so a number is never below one devices may hold. If it cannot read `url`, it stops with `PUBLISH_URL_UNREACHABLE` and publishes nothing.
 
 > **Your choice**: patch a release older than the latest: [Patching an Earlier Release](#patching-an-earlier-release).
 
@@ -123,7 +126,7 @@ The order matters: a manifest uploaded before its patch points devices to a file
 dart run flutter_patcher publish --withdraw
 ```
 
-This withdraws every published patch of the release your latest `patch` output belongs to. `--through <seq>` withdraws only up to that sequence; `--patch <dir>` names another release through one of its `patch` outputs.
+This withdraws every published patch of the release your latest `patch` output belongs to; `--patch <dir>` names another release through one of its `patch` outputs.
 
 **Way 2: return devices to an earlier, good patch.** Publish that patch's output again. It gets the next sequence and reaches devices as a regular update:
 
@@ -142,12 +145,10 @@ Both are delivered as regular updates: a device acts on them when the app calls 
 
 ## The Folder You Must Keep
 
-The project's `.flutter_patcher/` folder holds the baselines and the publication records; include it in your backups. It and the private keys backed up in Step 1 are everything you need to keep once you are live.
+`.flutter_patcher/baselines/` in the project holds the build record of each live release; include it in your backups. If it is lost, releases built before the loss can no longer be patched. It and the private keys backed up in Step 1 are everything you need to keep once you are live.
 
-| Inside it | If it is lost |
-|---|---|
-| `baselines/`: the build record of each live release | Releases built before the loss can no longer be patched |
-| `updates/`: what you upload, and `catalog.json`, the record of every sequence published | Numbering starts again from 1, and devices ignore any patch numbered at or below the one they have. Publish the next patch with `--seq` above every sequence published or withdrawn before, such as `publish --seq 100` |
+`.flutter_patcher/updates/` needs no backup: what devices hold is at `url`, and `publish` reads it from there.
+
 ## Variations
 
 ### Publishing Straight to a Bucket
@@ -164,7 +165,7 @@ The project's `.flutter_patcher/` folder holds the baselines and the publication
    baseline_store: s3://my-bucket/baselines
    ```
 
-3. Make only the `my-app` prefix public, and use its HTTPS address in Step 2. Baselines stay private.
+3. Make only the `my-app` prefix public, and set its HTTPS address as `url` in Step 2. Baselines stay private.
 
 `store` is where `publish` writes, with your credentials; the HTTPS address is where devices read the same files, without any.
 
@@ -181,10 +182,10 @@ Only signing needs the private keys, that is `publish`, `serve` and `trust sign`
 | Who | Needs |
 |---|---|
 | Any machine that makes patches | The source and the baselines; no private key |
-| Whoever publishes | The publisher and patch keys, the baselines, and `.flutter_patcher/updates/` or the bucket |
+| Whoever publishes | The publisher and patch keys, the baselines, and access to `url` |
 | Rotating the publisher key | The root key, kept offline |
 
-When more than one machine publishes, [publish straight to a bucket](#publishing-straight-to-a-bucket), so that they share one record of sequences.
+When more than one machine publishes, [publish straight to a bucket](#publishing-straight-to-a-bucket), so that each publish sees the last one at once, without waiting for an upload.
 
 Whoever publishes uses the same keys; none of the ways below creates new ones:
 
@@ -204,7 +205,7 @@ Once a patch is published, every device on that release can find it. The app dec
 
 ```dart
 if (userBucket(userId) < rolloutPercent) {
-  final check = await FlutterPatcher.checkUpdate(url);
+  final check = await FlutterPatcher.checkUpdate();
   if (check.hasUpdate) {
     await FlutterPatcher.applyPatch(check.patch!);
   }

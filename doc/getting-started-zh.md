@@ -48,7 +48,7 @@ iOS 的差异见文末，命令的全部参数见 [CLI 参考](cli-zh.md)。
 
    Future<void> checkForPatch() async {
      try {
-       final check = await FlutterPatcher.checkUpdate('http://127.0.0.1:8686');
+       final check = await FlutterPatcher.checkUpdate();
        if (!check.hasUpdate) return;
        final result = await FlutterPatcher.applyPatch(check.patch!);
        debugPrint('applyPatch: $result');
@@ -58,7 +58,7 @@ iOS 的差异见文末，命令的全部参数见 [CLI 参考](cli-zh.md)。
    }
    ```
 
-   `http://127.0.0.1:8686` 是第 5 步 `serve` 提供的本机地址；上线时换成你自己的 HTTPS 地址，见[生产部署](production-playbook-zh.md)。
+   `checkUpdate()` 到 `build` 写进 App 的地址检查补丁：`flutter_patcher.yaml` 中的 `url`；没填时是 `http://127.0.0.1:8686`，即第 5 步 `serve` 提供补丁的地址。上线时只需填上 `url`，见[生产部署](production-playbook-zh.md)。
 
 3. 在 `android/app/src/main/AndroidManifest.xml` 的 `<manifest>` 下加入网络权限。`flutter create` 只给 debug 和 profile 包声明了它：
 
@@ -103,7 +103,7 @@ adb install <output>/app-release.apk
 **验证**：
 
 - `build` 输出的最后一行 JSON 中有 `"status":"build_archived"`；`output` 指向 `.dart_tool/flutter_patcher/releases/<时间戳>/`，其中有 `app-release.apk`。
-- 同时出现一行 `WARNING: BASELINE_STORE_LOCAL`。表示基线只保存在项目里，这是正常的；上线前请看[生产部署：不能丢的文件夹](production-playbook-zh.md#不能丢的文件夹)。
+- 同时出现两条警告，本地试用时都是正常的：`WARNING: URL_LOCAL`（App 检查的是 `serve` 的本机地址）和 `WARNING: BASELINE_STORE_LOCAL`（基线只保存在项目里）。上线前请看[生产部署](production-playbook-zh.md)。
 - App 在手机上能正常打开。
 
 ## 第 4 步：修改代码，生成补丁
@@ -170,7 +170,7 @@ adb install <output>/app-release.apk
 | 签名 | 在 Mac 的桌面终端中运行 `build ios`。通过 SSH 或在 CI 中运行时，需要先解锁钥匙串，否则签名失败并报 `errSecInternalComponent` |
 | 安装 | 例如在 Xcode 的 Devices and Simulators 窗口中添加 ipa。用免费开发者账号签名时，先在手机的“设置 → 通用 → VPN 与设备管理”中信任该开发者 |
 | 生成补丁 | `patch ios` 可在 Mac、Linux 或 Windows 上运行，只要这台电脑能读到 `build ios` 保存的基线 |
-| 下发补丁 | iPhone 访问不到电脑的 `127.0.0.1`，而 `checkUpdate` 要求 HTTPS。用隧道把 `serve` 暴露为 HTTPS 地址，例如 `cloudflared tunnel --url http://127.0.0.1:8686`，再把得到的地址传给 `checkUpdate` |
+| 下发补丁 | iPhone 访问不到电脑的 `127.0.0.1`，而 `checkUpdate` 要求 HTTPS。用隧道把 `serve` 暴露为 HTTPS 地址，例如 `cloudflared tunnel --url http://127.0.0.1:8686`，再把得到的地址传给 `checkUpdate(url: 'https://…')` |
 
 ## 下一步
 

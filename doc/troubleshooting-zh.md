@@ -56,7 +56,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 ### 客户端调用 `checkUpdate` 始终检测不到更新
 
-- 检查传入的 URL 是否为发布存储的**根地址**（切勿直接传入 `manifests/` 下的具体文件路径）。
+- 检查 App 检查的地址是否为发布存储的**根地址**（不是 `manifests/` 下的具体文件）：即构建时 `flutter_patcher.yaml` 中的 `url`（修改后需重新构建），或传给 `checkUpdate` 的 `url`。
 - 检查该 HTTPS 地址是否直接返回响应（客户端不支持 `3xx` 重定向）。
 - 确认补丁是否确实针对当前设备安装的构建号（`versionCode`）生成；若用户已升级新版本 App，需为新版本单独生成并发布补丁。
 - 确认该补丁是否已在当前设备上安装过（已安装的补丁不会重复触发更新，可通过 `currentVersion` 查看已安装的补丁版本）。
@@ -171,9 +171,11 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | 错误码 | 含义 | 处理方法 |
 |---|---|---|
 | `SERVE_PORT_BUSY` | `serve` 使用的端口已被其他程序占用 | 关闭该程序，或运行 `serve --port <端口>` 并在 App 中使用这个端口 |
-| `PUBLISH_CONFIG_INVALID` | 参数或请求文件无效（如尚未生成可发布的补丁、无可撤回的补丁，或 `--through` 越界） | 先运行 `patch` 生成补丁，或按提示修正参数 |
+| `PUBLISH_CONFIG_INVALID` | 参数或请求文件无效（如尚未生成可发布的补丁或无可撤回的补丁） | 先运行 `patch` 生成补丁，或按提示修正参数 |
 | `PUBLISH_TARGET_MISMATCH` | 待发布的补丁与目标基线版本不匹配 | 重新为目标版本生成补丁 |
 | `PUBLISH_SEQUENCE_CONFLICT`<br>`PUBLISH_CONFLICT` | 补丁序号不大于已发布或已撤回的最新序号，或发布期间存储被并发修改 | 不带 `--seq` 重新运行 `publish`，或用比所有已发布、已撤回序号都大的 `--seq`；不需要重新生成补丁 |
+| `PUBLISH_URL_UNREACHABLE` | `publish` 读取不到 `url` 上该版本的清单：没有网络、地址错误，或返回了 `200` 和 `404` 以外的状态码 | 修正 `url` 或网络后重新运行 `publish`。对不存在的文件返回 `403` 的托管服务，需要改为返回 `404` |
+| `PUBLISH_URL_INVALID` | `url` 上这个版本对应的文件不是该版本的清单 | 检查 `url` 是否指向这个 App 的上传位置 |
 | `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | 上一次发布或清理操作异常中断 | 在同一个项目中再次运行 `publish`，或再次运行同一个请求文件，即可恢复，参见上文说明 |
 | `PUBLISH_STORE_UNAVAILABLE` | 无法访问发布存储，或存储端不支持条件写入 | 检查 AWS CLI 版本、访问凭据及 `FLUTTER_PATCHER_S3_ENDPOINT` 环境变量 |
 | `PUBLISH_STORE_INVALID` | 存储地址无效（S3 前缀必须位于存储桶根目录之下，且只能包含字母、数字、`_` 和 `-`），或对象超出大小限制 | 按提示修正 `store` 配置 |
@@ -205,6 +207,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 | 警告码 | 含义 |
 |---|---|
+| `URL_LOCAL` | `flutter_patcher.yaml` 中没有 `url`，App 检查的是 `serve` 的本机地址。构建上架版本前请填写 `url`（见[生产部署](production-playbook-zh.md#第-2-步配置线上更新地址)） |
 | `BASELINE_STORE_LOCAL` | `build` 只把基线保存在项目的 `.flutter_patcher/` 中。请备份这个文件夹，或配置 `baseline_store`（见[生产部署：不能丢的文件夹](production-playbook-zh.md#不能丢的文件夹)） |
 | `CRLF_DART_SOURCES` | `build` 发现 Dart 源码使用 `CRLF` 换行；生成补丁时必须使用换行一致的检出（见上文） |
 | `ARTIFACT_CHECK_SKIPPED` | 无法下载产物索引，使用了本机缓存的索引 |

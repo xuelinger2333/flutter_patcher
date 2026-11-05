@@ -18,10 +18,10 @@ import 'package:flutter_patcher/flutter_patcher.dart';
 **目标**：有新补丁时安装它，并处理每一种结果。
 
 ```dart
-Future<void> updateIfAvailable(String url) async {
+Future<void> updateIfAvailable() async {
   final PatchCheckResult check;
   try {
-    check = await FlutterPatcher.checkUpdate(url);
+    check = await FlutterPatcher.checkUpdate();
   } on PatcherException catch (e) {
     debugPrint('checkUpdate failed: $e'); // 网络错误，或清单校验失败
     return;
@@ -95,13 +95,13 @@ static Future<void> init({
 ### `checkUpdate`
 
 ```dart
-static Future<PatchCheckResult> checkUpdate(
-  String url, {
+static Future<PatchCheckResult> checkUpdate({
+  String? url,
   Duration timeout = const Duration(seconds: 10),
 })
 ```
 
-`url` 是发布存储对外提供访问的根地址，例如 `https://cdn.example.com/my-app`，开发时是 `serve` 提供的 `http://127.0.0.1:8686`。插件会读取该地址下属于本宿主的清单，并在原生代码中校验。
+不传 `url` 时，检查 `build` 写进 App 的地址：`flutter_patcher.yaml` 中的 `url`；没填时是 `serve` 提供补丁的 `http://127.0.0.1:8686`。要检查别的地址时传入 `url`，例如 iPhone 通过 HTTPS 隧道访问 `serve`。两种情况下它都是发布存储对外提供访问的根地址，例如 `https://cdn.example.com/my-app`。插件会读取该地址下属于本宿主的清单，并在原生代码中校验。
 
 - 只有接受这份清单会改变设备状态时，`hasUpdate` 才为 `true`：有序号更大的新补丁，或者有新的撤回。已经安装过的补丁不算更新。
 - `applyPatch` 一旦下载完补丁，设备就已接受这份清单，即使随后安装失败，`checkUpdate` 也不会再报告它。要重试，请用同一个 `PatchInfo` 再次调用 `applyPatch`。
