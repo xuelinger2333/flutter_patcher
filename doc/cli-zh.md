@@ -49,7 +49,7 @@ dart run flutter_patcher publish --withdraw                                     
 dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目录>   # 回到之前的某个补丁
 ```
 
-**验证**：前者输出 `"action":"withdraw"`；后者输出的 `patch_seq` 大于问题补丁的序号。详见[生产部署：撤回补丁](production-playbook-zh.md#撤回补丁)。
+**验证**：前者输出 `"action":"withdraw"`；后者输出的 `patch_seq` 大于问题补丁的序号。详见[生产部署：补丁出问题时](production-playbook-zh.md#补丁出问题时)。
 
 ### 为更早的线上版本打补丁
 
@@ -93,7 +93,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 | `trust` | `root`、`publisher`、`patch` 三把公钥，每个宿主构建时都会写入。由 `keys init` 和 `keys import` 写入 | |
 | `signing` | `command`：用一个外部程序签名，代替本机密钥库，见[私钥从哪里来](#私钥从哪里来) | 本机密钥库 |
 
-出现未知字段或格式不对的值会报 `CONFIG_INVALID`。存储的配置方法见[生产部署](production-playbook-zh.md#配置存储)，各类型的要求见[存储要求](#存储要求)。
+出现未知字段或格式不对的值会报 `CONFIG_INVALID`。存储的配置方法见[生产部署](production-playbook-zh.md#第-1-步配置存储)，各类型的要求见[存储要求](#存储要求)。
 
 ## 目录一览
 
@@ -228,7 +228,7 @@ dart run flutter_patcher publish
 | 选项 | 说明 | 默认值 |
 |---|---|---|
 | `--patch <目录>` | 要发布的 `patch` 输出目录 | 最近一次 `patch` 的输出 |
-| `--withdraw` | 改为撤回该补丁所属版本已发布的补丁，见[生产部署](production-playbook-zh.md#撤回补丁) | |
+| `--withdraw` | 改为撤回该补丁所属版本已发布的补丁，见[生产部署](production-playbook-zh.md#补丁出问题时) | |
 | `--through <序号>` | 与 `--withdraw` 一起使用：撤回到这个序号为止 | 已发布的最大序号 |
 | `--yes`, `-y` | 不询问，直接发布 | 先预览再询问；非交互环境下只预览 |
 | `--seq <数字>` | 用这个序号发布，范围 1–4294967295，必须大于该版本已发布或已撤回的所有序号 | 已发布或已撤回的最大序号 + 1 |

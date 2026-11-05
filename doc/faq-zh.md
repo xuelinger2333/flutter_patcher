@@ -40,7 +40,7 @@
 
 ### 能同时为多个线上版本打补丁吗？
 
-能。每个版本有各自的基线和各自的序号。检出该版本的标签，修复后运行 `patch --version-code <它的构建号>`。见[生产部署：发布流程](production-playbook-zh.md#发布流程)。
+能。每个版本有各自的基线和各自的序号。检出该版本的标签，修复后运行 `patch --version-code <它的构建号>`。见[生产部署：给更早的版本打补丁](production-playbook-zh.md#给更早的版本打补丁)。
 
 ### 控制了我的存储或 CDN 的人，能推送补丁吗？
 
@@ -52,7 +52,7 @@
 
 ### 需要自己的后端吗？
 
-不需要。补丁和清单都是静态文件，任何支持 HTTPS 的静态托管都可以，例如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN。见[生产部署：配置存储](production-playbook-zh.md#配置存储)。
+不需要。补丁和清单都是静态文件，任何支持 HTTPS 的静态托管都可以，例如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN。见[生产部署：配置存储](production-playbook-zh.md#第-1-步配置存储)。
 
 ### 能在 Linux 或 Windows 上生成 iOS 补丁吗？
 

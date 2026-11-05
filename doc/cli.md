@@ -49,7 +49,7 @@ dart run flutter_patcher publish --withdraw                                   # 
 dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<dir>   # back to an earlier patch
 ```
 
-**Check**: the first prints `"action":"withdraw"`; the second prints a `patch_seq` above the bad patch's. Details: [Production Playbook: Withdrawing a Patch](production-playbook.md#withdrawing-a-patch).
+**Check**: the first prints `"action":"withdraw"`; the second prints a `patch_seq` above the bad patch's. Details: [Production Playbook: If a Patch Goes Wrong](production-playbook.md#if-a-patch-goes-wrong).
 
 ### Patch an earlier live release
 
@@ -93,7 +93,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 | `trust` | The `root`, `publisher` and `patch` public keys every host is built with. Written by `keys init` and `keys import` | |
 | `signing` | `command`: a program that signs instead of the key store; see [Where private keys come from](#where-private-keys-come-from) | The key store |
 
-Unknown settings or values of the wrong shape fail with `CONFIG_INVALID`. How to set up stores: [Production Playbook](production-playbook.md#configuring-storage); requirements per type: [Storage requirements](#storage-requirements).
+Unknown settings or values of the wrong shape fail with `CONFIG_INVALID`. How to set up stores: [Production Playbook](production-playbook.md#step-1-configure-storage); requirements per type: [Storage requirements](#storage-requirements).
 
 ## Directories
 
@@ -228,7 +228,7 @@ dart run flutter_patcher publish
 | Option | Description | Default |
 |---|---|---|
 | `--patch <dir>` | The `patch` output to publish | The latest `patch` output |
-| `--withdraw` | Withdraw that patch's release's published patches instead; see the [Production Playbook](production-playbook.md#withdrawing-a-patch) | |
+| `--withdraw` | Withdraw that patch's release's published patches instead; see the [Production Playbook](production-playbook.md#if-a-patch-goes-wrong) | |
 | `--through <seq>` | With `--withdraw`: withdraw up to this sequence | The highest published |
 | `--yes`, `-y` | Publish without asking | Preview, then ask; only preview when not interactive |
 | `--seq <n>` | Publish with this sequence number, from 1 to 4294967295; it must exceed every sequence published or withdrawn for the release | The highest published or withdrawn + 1 |

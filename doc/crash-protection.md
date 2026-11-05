@@ -70,7 +70,7 @@ On an SO host whose `libapp.so` has already loaded, a patch whose rest then fail
 
 The blacklist is per device: the patch is still in your publication store, and devices that have not tried it can still install it. When monitoring shows `droppedCircuitBreaker`:
 
-1. [Withdraw the patch](production-playbook.md#withdrawing-a-patch), either back to the installed version or to an earlier good patch.
+1. [Withdraw the patch](production-playbook.md#if-a-patch-goes-wrong), either back to the installed version or to an earlier good patch.
 2. Fix the problem and publish a new patch.
 
 Do not publish the bad patch's output again: with a new sequence number it is a different patch to the blacklist, and devices install it again.
@@ -80,7 +80,7 @@ Do not publish the bad patch's output again: with a new sequence number it is a 
 | Situation | Result |
 |---|---|
 | The user upgrades the app | Patches for the old version stop applying; diagnostic `droppedVersionCodeMismatch` |
-| You publish a withdrawal covering the patch's sequence | The device removes the patch once it applies the withdrawal; see [Production Playbook](production-playbook.md#withdrawing-a-patch) |
+| You publish a withdrawal covering the patch's sequence | The device removes the patch once it applies the withdrawal; see [Production Playbook](production-playbook.md#if-a-patch-goes-wrong) |
 | The app calls `rollback()` | The patch is removed but not blacklisted. The device has accepted its sequence, so it cannot install that patch again; publish one with a higher sequence instead |
 | The user clears app data or reinstalls | The patch and local records are gone |
 
