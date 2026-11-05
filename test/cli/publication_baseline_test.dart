@@ -494,7 +494,7 @@ void main() {
               as Map;
       expect(withdrawn['action'], 'withdraw');
       expect(withdrawn['withdrawn_through'], 1);
-      expect(withdrawn['revision'], 2);
+      expect(withdrawn['revision'], int.parse(interruptedFields['revision']!));
       expect((after['heads'] as Map).values.single, interrupted['operation']);
       expect((manifests.single as File).readAsStringSync(), withdrawn['wire']);
       // A saved request the store no longer waits for is discarded.
@@ -539,4 +539,14 @@ void main() {
       );
     },
   );
+  test('revisions keep rising when the catalog is lost', () {
+    final now = DateTime.utc(2026, 11, 5);
+    final seen = nextRevision(nextRevision(0, now), now);
+    expect(seen, nextRevision(0, now) + 1);
+    // Counting starts over from 0, yet devices that saw [seen] accept it.
+    expect(
+      nextRevision(0, now.add(const Duration(seconds: 2))),
+      greaterThan(seen),
+    );
+  });
 }

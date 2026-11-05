@@ -340,8 +340,7 @@ Future<Map<String, dynamic>> _publish(
   if (!await confirmed(
     args,
     'Publish $what to ${fields['application_id']} ${fields['channel']} '
-    'versionCode ${fields['version_code']} '
-    '(revision ${fields['revision']})?',
+    'versionCode ${fields['version_code']}?',
   )) {
     return preview;
   }
@@ -422,9 +421,15 @@ Future<bool> confirmed(ArgResults args, String question) async {
   return (stdin.readLineSync() ?? '').trim().toLowerCase() == 'y';
 }
 
+/// Devices accept only a revision at or above the last one they saw. Taking
+/// it from the clock keeps it rising when catalog.json is lost and the count
+/// starts over, so publishing again with a higher --seq still reaches them.
+int nextRevision(int current, [DateTime? now]) =>
+    max(current + 1, (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000);
+
 /// The request publishing a project's patch draft: its scope from the patch
-/// output, the store from the project, and the revision that follows the
-/// store's current one. With --withdraw, the request withdraws that scope's
+/// output, the store from the project, and a revision above the store's
+/// current one. With --withdraw, the request withdraws that scope's
 /// patches through --through, or through the latest published one.
 Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   final withdraw = args['withdraw'] == true;
@@ -490,7 +495,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
       'schema': '1',
       'key_id': 'release',
       'minPluginVersion': packageVersion,
-      'revision': '${revision + 1}',
+      'revision': '${nextRevision(revision)}',
       ...action,
       if (args['seq'] != null) 'patch_seq': args['seq'] as String,
     },
