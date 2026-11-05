@@ -175,4 +175,24 @@ void main() {
       expect(nextSequence(catalog, 'h'), 1);
     },
   );
+
+  test('url defaults to serve and accepts only an http(s) address', () async {
+    final yaml = File(p.join(project.path, ProjectConfig.file));
+    final trust = yaml.readAsStringSync();
+    var config = await ProjectConfig.load(project.path);
+    expect([config.url, config.urlIsLocal], [ProjectConfig.localUrl, true]);
+    yaml.writeAsStringSync('url: https://cdn.example.com/my-app/\n$trust');
+    config = await ProjectConfig.load(project.path);
+    expect(
+      [config.url, config.urlIsLocal],
+      ['https://cdn.example.com/my-app', false],
+    );
+    for (final bad in ['s3://bucket/app', 'https://cdn.example.com/a?x=1']) {
+      yaml.writeAsStringSync('url: $bad\n$trust');
+      await expectLater(
+        ProjectConfig.load(project.path),
+        failure('CONFIG_INVALID'),
+      );
+    }
+  });
 }

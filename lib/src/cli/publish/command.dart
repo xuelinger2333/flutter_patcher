@@ -14,6 +14,7 @@ import '../sdk/host.dart';
 import '../project.dart';
 import '../run_work.dart';
 import '../version.dart';
+import 'live.dart';
 import 'pipeline.dart';
 import 'retention.dart';
 import '../keys/signer.dart';
@@ -42,14 +43,8 @@ ArgParser publishOptions() => ArgParser()
     'withdraw',
     negatable: false,
     help:
-        'Withdraw that patch\'s release instead: devices remove its '
-        'patches when the app next applies updates.',
-  )
-  ..addOption(
-    'through',
-    help:
-        'With --withdraw: the highest patch sequence to withdraw; '
-        'default the latest published.',
+        'Withdraw every patch of that patch\'s release instead: devices '
+        'return to the installed version when the app next applies updates.',
   )
   ..addFlag(
     'production',
@@ -83,17 +78,19 @@ Future<int> productionPublish(ArgResults args) async {
 
 /// Runs a publish or cleanup request and returns its receipt. With [onlyNew]
 /// a draft published before in its release, even if withdrawn or replaced
-/// since, is not published again.
+/// since, is not published again. Without [live], what devices see at url
+/// is not read first: serve is itself what they see.
 Future<Map<String, dynamic>> publication(
   ArgResults args, {
   bool onlyNew = false,
+  bool live = true,
 }) async {
   requireSupportedHost();
   require(
     args.rest.isEmpty &&
         (args['request'] == null) == (args['production'] != true),
     'PUBLISH_CONFIG_INVALID',
-    'Use publish [--patch DIR] [--withdraw [--through SEQ]] [--yes], or '
+    'Use publish [--patch DIR] [--withdraw] [--yes], or '
         'publish --production --request FILE [--yes]',
   );
   require(
@@ -112,7 +109,8 @@ Future<Map<String, dynamic>> publication(
       : null;
   final request = project == null
       ? await readObject(args['request'] as String)
-      : await resumableRequest(project) ?? await projectRequest(args);
+      : await resumableRequest(project) ??
+            await projectRequest(args, live: live);
   require(
     request['kind'] == null || {'publish', 'cleanup'}.contains(request['kind']),
     'PUBLISH_CONFIG_INVALID',
@@ -349,6 +347,16 @@ Future<Map<String, dynamic>> _publish(
   if (project != null) await writeObject(pendingRequest(project), request);
   final result = await execute(true);
   if (project != null) await File(pendingRequest(project)).delete();
+  final config = project == null ? null : await ProjectConfig.load(project);
+  if (config != null &&
+      !config.urlIsLocal &&
+      Uri.parse(request['store'] as String).scheme == 'file') {
+    final dir = Uri.parse(request['store'] as String).toFilePath();
+    stderr.writeln(
+      'Devices see this once you upload ${p.join(dir, 'objects')} and then '
+      '${p.join(dir, 'manifests')} to ${config.url}.',
+    );
+  }
   return result;
 }
 
@@ -421,23 +429,15 @@ Future<bool> confirmed(ArgResults args, String question) async {
   return (stdin.readLineSync() ?? '').trim().toLowerCase() == 'y';
 }
 
-/// Devices accept only a revision at or above the last one they saw. Taking
-/// it from the clock keeps it rising when catalog.json is lost and the count
-/// starts over, so publishing again with a higher --seq still reaches them.
-int nextRevision(int current, [DateTime? now]) =>
-    max(current + 1, (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000);
-
 /// The request publishing a project's patch draft: its scope from the patch
-/// output, the store from the project, and a revision above the store's
-/// current one. With --withdraw, the request withdraws that scope's
-/// patches through --through, or through the latest published one.
-Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
+/// output, the store from the project, and a revision above both the
+/// store's and what devices see at url. With --withdraw, the request
+/// withdraws every patch published for that scope.
+Future<Map<String, dynamic>> projectRequest(
+  ArgResults args, {
+  bool live = true,
+}) async {
   final withdraw = args['withdraw'] == true;
-  require(
-    args['through'] == null || withdraw,
-    'PUBLISH_CONFIG_INVALID',
-    '--through needs --withdraw.',
-  );
   final project = p.absolute(
     args['project'] as String? ?? Directory.current.path,
   );
@@ -464,6 +464,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
   await Directory(cache).create(recursive: true);
   final work = await RunWork.create(p.join(cache, 'publish'));
   Map? head;
+  int next;
   try {
     final catalog = await PublicationTransaction(
       openPublishStore(Uri.parse(store), Commands(cache), work),
@@ -471,13 +472,22 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
     ).snapshot();
     final id = (catalog['heads'] as Map)[scopeOf(fields)];
     head = id == null ? null : (catalog['releases'] as Map)[id] as Map;
+    next = nextSequence(catalog, fields['fingerprint']!);
   } finally {
     await RunWork.finish(work);
   }
-  final revision = head?['revision'] as int? ?? 0;
-  final action = withdraw
-      ? withdrawal(head, args['through'] as String?)
-      : {'action': 'publish'};
+  final state = releaseState(
+    head,
+    live && !config.urlIsLocal ? await liveManifest(config.url, fields) : null,
+  );
+  final seq = args['seq'] as String?;
+  final online = max(state.high, state.floor) + 1;
+  require(
+    seq == null || (int.tryParse(seq) ?? 0) >= online,
+    'PUBLISH_SEQUENCE_CONFLICT',
+    'Devices at ${config.url} may already hold patch ${online - 1}; '
+        'publish with a higher --seq, or without one.',
+  );
   final random = Random.secure();
   return {
     'application_id': fields['application_id'],
@@ -487,7 +497,7 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
       for (var i = 0; i < 16; i++)
         random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ].join(),
-    'expected_revision': revision,
+    'expected_revision': head?['revision'] as int? ?? 0,
     'created_at': DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000,
     if (!withdraw) 'patch': directory,
     'fields': {
@@ -495,31 +505,25 @@ Future<Map<String, dynamic>> projectRequest(ArgResults args) async {
       'schema': '1',
       'key_id': 'release',
       'minPluginVersion': packageVersion,
-      'revision': '${nextRevision(revision)}',
-      ...action,
-      if (args['seq'] != null) 'patch_seq': args['seq'] as String,
+      'revision': '${state.revision + 1}',
+      ...withdraw ? withdrawal(state) : {'action': 'publish'},
+      if (seq != null)
+        'patch_seq': seq
+      else if (!withdraw && online > next)
+        'patch_seq': '$online',
     },
   };
 }
 
-/// The fields withdrawing a scope whose current catalog record is [head]:
-/// through [through], or through the highest sequence published for it.
-/// Only a published sequence above the current floor can be withdrawn.
-Map<String, String> withdrawal(Map? head, String? through) {
-  final high = head?['high_seq'] as int? ?? 0,
-      floor = head?['withdrawn_through'] as int? ?? 0;
+/// The fields withdrawing every patch published for a release in [state].
+Map<String, String> withdrawal(({int revision, int high, int floor}) state) {
   require(
-    high > floor,
+    state.high > state.floor,
     'PUBLISH_CONFIG_INVALID',
-    floor == 0
+    state.floor == 0
         ? 'Nothing to withdraw: no patch is published for this release.'
-        : 'Nothing to withdraw: this release is withdrawn through $floor.',
+        : 'Nothing to withdraw: this release is withdrawn through '
+              '${state.floor}.',
   );
-  final seq = through == null ? high : int.tryParse(through);
-  require(
-    seq != null && seq > floor && seq <= high,
-    'PUBLISH_CONFIG_INVALID',
-    'Withdraw through a sequence above $floor, up to the latest published $high.',
-  );
-  return {'action': 'withdraw', 'withdraw_through_seq': '$seq'};
+  return {'action': 'withdraw', 'withdraw_through_seq': '${state.high}'};
 }

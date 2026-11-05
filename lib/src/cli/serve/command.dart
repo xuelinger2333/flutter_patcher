@@ -135,6 +135,7 @@ Future<void> _offerLatest(String project, Set<String> offered) async {
         '--yes',
       ]),
       onlyNew: true,
+      live: false,
     );
     if (result['status'] == 'published_before') {
       stderr.writeln(

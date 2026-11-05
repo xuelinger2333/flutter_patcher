@@ -443,7 +443,6 @@ void main() {
         keys,
         '--yes',
       ]);
-      expect(await withdraw(['--through', '2']), 2);
       // A withdrawal stops after taking the store's gate. Every new request is
       // refused until the saved one resumes it.
       final interrupted = await projectRequest(
@@ -539,14 +538,4 @@ void main() {
       );
     },
   );
-  test('revisions keep rising when the catalog is lost', () {
-    final now = DateTime.utc(2026, 11, 5);
-    final seen = nextRevision(nextRevision(0, now), now);
-    expect(seen, nextRevision(0, now) + 1);
-    // Counting starts over from 0, yet devices that saw [seen] accept it.
-    expect(
-      nextRevision(0, now.add(const Duration(seconds: 2))),
-      greaterThan(seen),
-    );
-  });
 }

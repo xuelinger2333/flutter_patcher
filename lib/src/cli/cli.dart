@@ -174,7 +174,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw [--through <seq>]] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
+        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
       );
       return 0;
     }

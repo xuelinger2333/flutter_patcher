@@ -11,6 +11,7 @@
     "saveConfig": {"args": {"maxCrashCount": "int", "loaderFieldCandidates": "List<String>", "loaderFallbackHeuristic": "bool"}, "returns": "null"},
     "hostStrategy": {"args": {}, "returns": "String? (so | bytecode)"},
     "hostScope": {"args": {}, "returns": "Map<String, String>? {application_id, channel, flavor, version_code, abi, fingerprint, strategy}"},
+    "hostUrl": {"args": {}, "returns": "String? (the url build wrote into the host)"},
     "checkSignedManifest": {"args": {"wire": "String"}, "returns": "Map {action: String, fresh: bool, patch_seq: String?}"},
     "applySignedManifest": {"args": {"wire": "String", "payload": "String? (path of the downloaded patch; null for a withdrawal)"}, "returns": "Map {action: String, ok: bool, error: String?, message: String?}"},
     "updatePublicationTrust": {"args": {"wire": "String"}, "returns": "Map {ok: true}"},
