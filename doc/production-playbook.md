@@ -17,28 +17,21 @@ This guide assumes:
 - The project works locally as in Getting Started, including `keys init`.
 - An HTTPS host you can upload files to: object storage behind a CDN, your own web server, or any static hosting. It must return files without redirects and must not cache `manifests/` for long; see [CLI Reference: Storage requirements](cli.md#storage-requirements).
 
-## Step 1: Back Up the Keys
+## Step 1: Back Up the Private Keys
 
-**Goal**: keep the keys that sign patches safe. Devices install only patches signed with them.
+**Goal**: keep a copy of the private keys. Devices install only patches signed with them.
 
-`keys init` wrote the public keys to `flutter_patcher.yaml` and the private keys to `~/.flutter_patcher/keys/` on that computer.
+`keys init` saved the private keys on this computer in `~/.flutter_patcher/keys/<project id>/keys.json` (on Windows, `~` is your user folder), outside the project and out of Git. If that file is lost, releases already live can no longer be patched.
 
-**Do**:
+**Do**: export a copy and keep it off this computer:
 
 ```bash
-dart run flutter_patcher keys export --out <file>
+dart run flutter_patcher keys export --out fp-keys.json
 ```
-
-Keep the file somewhere safe, off this computer.
-
-- A lost `patch` key cannot be replaced in apps already shipped: those releases can no longer be patched.
-- A lost `root` key cannot be replaced in apps already shipped: the publisher key can no longer be rotated, though patches still publish.
-- A lost `publisher` key can be replaced with the root key ([Advanced Operations](advanced.md#rotating-the-publisher-key)).
 
 > **Your choice**: publishing from another computer, from CI, or through a signing service such as a KMS: [Publishing from Another Machine or CI](#publishing-from-another-machine-or-ci).
 
-**Check**: `dart run flutter_patcher keys status` shows a source other than `none` for the publisher and patch keys.
-
+**Check**: the command prints `"status":"keys_exported"` and `file`, the path of the copy.
 ## Step 2: Point the App at Your Host
 
 **Goal**: make the release build check your host instead of `serve`.

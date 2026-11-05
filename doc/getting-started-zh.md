@@ -85,7 +85,7 @@ dart run flutter_patcher keys init
 
 **验证**：输出中有 `"status":"keys_created"`，项目根目录出现 `flutter_patcher.yaml`。
 
-密钥的保存与备份见[生产部署：备份密钥](production-playbook-zh.md#第-1-步备份密钥)。
+密钥的保存与备份见[生产部署：备份私钥](production-playbook-zh.md#第-1-步备份私钥)。
 
 ## 第 3 步：构建并安装 App
 

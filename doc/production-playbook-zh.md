@@ -15,28 +15,21 @@
 - 已按快速上手在本地跑通流程（含 `keys init`）。
 - 准备一个可写入的 HTTPS 地址（对象存储 + CDN、自建服务器或静态托管均可）。要求：直接返回文件、不做重定向，且不对 `manifests/` 做长缓存。详见 [CLI 参考：存储要求](cli-zh.md#存储要求)。
 
-## 第 1 步：备份密钥
+## 第 1 步：备份私钥
 
-**目标**：妥善保管签名私钥。设备仅安装签名校验通过的补丁。
+**目标**：留一份私钥备份。补丁必须用私钥签名，设备才会安装。
 
-`keys init` 已将公钥写入 `flutter_patcher.yaml`，私钥则保存在本机 `~/.flutter_patcher/keys/`。
+`keys init` 生成的私钥保存在本机的 `~/.flutter_patcher/keys/<项目 ID>/keys.json`（Windows 下 `~` 即用户目录），不在项目目录里，也不会随 git 提交。这个文件丢了，已上线的版本就无法再发补丁。
 
-**操作**：
+**操作**：导出一份备份，存到本机以外的地方：
 
 ```bash
-dart run flutter_patcher keys export --out <文件>
+dart run flutter_patcher keys export --out fp-keys.json
 ```
-
-将导出文件保存在本机以外的安全位置。
-
-- `patch` 私钥丢失：已上线的 App 无法更换它，这些版本将无法再发布补丁。
-- `root` 私钥丢失：已上线的 App 无法更换它，此后无法再轮换 publisher 私钥；补丁仍可正常发布。
-- `publisher` 私钥丢失：可用 root 私钥轮换（见[进阶操作](advanced-zh.md#轮换发布密钥)）。
 
 > **按需替换**：跨机器、CI 自动发布，或接入 KMS 签名服务，见[在别的机器或 CI 上发布](#在别的机器或-ci-上发布)。
 
-**验证**：运行 `dart run flutter_patcher keys status`，确认 publisher 和 patch 私钥的来源均不为 `none`。
-
+**验证**：命令输出 `"status":"keys_exported"`，以及备份文件的路径 `file`。
 ## 第 2 步：配置线上更新地址
 
 **目标**：将 Release 包的检查地址从本地 `serve` 切换为线上 HTTPS 地址。

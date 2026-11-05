@@ -81,7 +81,7 @@ dart run flutter_patcher keys init
 
 **Check**: the output contains `"status":"keys_created"`, and `flutter_patcher.yaml` appears in the project root.
 
-How the keys are stored and backed up: [Production Playbook: Back Up the Keys](production-playbook.md#step-1-back-up-the-keys).
+How the keys are stored and backed up: [Production Playbook: Back Up the Private Keys](production-playbook.md#step-1-back-up-the-private-keys).
 
 ## Step 3: Build and install the app
 
