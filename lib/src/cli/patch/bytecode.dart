@@ -276,7 +276,13 @@ class BytecodeProducer implements CodeProducer {
     // Tools write their report to stdout; CFE incidental diagnostics stay in the log.
     await File(output).writeAsString(result.stdout);
     final report = await readObject(output);
-    run.reports.add(report);
+    // The host's icon list only feeds font subsetting; reports keep its size.
+    run.reports.add({
+      for (final entry in report.entries)
+        if (entry.key != 'host_icons') entry.key: entry.value,
+      if (report['host_icons'] case final List icons)
+        'host_icon_count': icons.length,
+    });
     require(
       report['status'] != 'compile_failed',
       'PATCH_COMPILE_FAILED',

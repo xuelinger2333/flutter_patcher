@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -71,9 +72,11 @@ Future<int> serveCommand(ArgResults args) async {
     if (!stop.isCompleted) stop.complete();
   });
   final reversed = <String>{}, offered = <String>{};
+  final heads = <String, String>{};
   while (!stop.isCompleted) {
     await _reverse(port, reversed);
     await _offerLatest(project, offered);
+    await _announce(root, heads);
     await Future.any([
       stop.future,
       Future<void>.delayed(const Duration(seconds: 2)),
@@ -115,8 +118,8 @@ Future<void> _respond(HttpRequest request, String root) async {
   }
 }
 
-/// Publishes the newest finished patch output once, unless it is already
-/// its scope's head: republishing would only make devices fetch it again.
+/// Publishes the newest finished patch output once, unless it was published
+/// before: a restart must not bring back a patch since withdrawn or replaced.
 Future<void> _offerLatest(String project, Set<String> offered) async {
   final latest = await latestPatchOutput(project);
   if (latest == null || !offered.add(latest)) return;
@@ -129,16 +132,48 @@ Future<void> _offerLatest(String project, Set<String> offered) async {
         latest,
         '--yes',
       ]),
+      onlyNew: true,
     );
-    stderr.writeln(
-      result['status'] == 'already_published'
-          ? 'Offering patch ${result['patch_seq']}'
-          : 'Offering patch ${result['patch_seq']} '
-                '(revision ${result['revision']}); restart the app after it '
-                'applies',
-    );
+    if (result['status'] == 'published_before') {
+      stderr.writeln(
+        'Not offering the latest patch output again: it was published as '
+        'patch ${result['patch_seq']}. To offer it again, run '
+        '`dart run flutter_patcher publish --patch $latest`.',
+      );
+    }
   } on Failure catch (error) {
     stderr.writeln('Not offered: ${error.code}: ${error.message}');
+  }
+}
+
+/// Says what devices are offered whenever a release's signed head manifest
+/// changes, whoever published it.
+Future<void> _announce(String root, Map<String, String> heads) async {
+  final manifests = Directory(p.join(root, 'manifests'));
+  if (!await manifests.exists()) return;
+  await for (final file in manifests.list()) {
+    if (file is! File || !file.path.endsWith('.json')) continue;
+    final Map fields;
+    try {
+      final envelope = jsonDecode(await file.readAsString()) as Map;
+      fields = jsonDecode(
+        utf8.decode(base64Decode(envelope['payload'] as String)),
+      ) as Map;
+    } catch (_) {
+      continue; // Being replaced; the next pass reads it.
+    }
+    final name = p.basename(file.path), revision = '${fields['revision']}';
+    final known = heads[name];
+    if (known == revision) continue;
+    heads[name] = revision;
+    final release = 'versionCode ${fields['version_code']} ${fields['abi']}';
+    stderr.writeln(
+      fields['action'] == 'withdraw'
+          ? 'Withdrawn through patch ${fields['withdraw_through_seq']} '
+                '($release): devices that apply it run the installed version'
+          : 'Offering patch ${fields['patch_seq']} ($release)'
+                '${known == null ? '' : '; restart the app after it applies'}',
+    );
   }
 }
 

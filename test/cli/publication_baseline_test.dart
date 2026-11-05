@@ -501,6 +501,30 @@ void main() {
       await writeObject(pendingRequest(project), interrupted);
       expect(await withdraw(), 2);
       expect(await File(pendingRequest(project)).exists(), false);
+      // serve does not bring back a draft published before and withdrawn.
+      final withdrawnCatalog = File(
+        p.join(temp.path, 'publication', 'catalog.json'),
+      ).readAsStringSync();
+      final offered = await publication(
+        publishOptions().parse([
+          '--production',
+          '--request',
+          req.path,
+          '--project',
+          project,
+          '--key-file',
+          keys,
+          '--yes',
+        ]),
+        onlyNew: true,
+      );
+      expect(offered['status'], 'published_before');
+      expect(offered['patch_seq'], 1);
+      expect(
+        File(p.join(temp.path, 'publication', 'catalog.json'))
+            .readAsStringSync(),
+        withdrawnCatalog,
+      );
       await File(p.join(temp.path, 'store', 'compile-$fp.tar.gz')).delete();
       await expectLater(
         publicationBaseline(store, fields, p.join(temp.path, 'new-fetch')),

@@ -111,6 +111,14 @@ dart run flutter_patcher publish --withdraw
 - 只撤回到某个序号：使用 `--through <序号>`。
 - 撤回其他版本的补丁：使用 `--patch <目录>` 指向该版本的一次 `patch` 输出。
 
+撤回总是让设备回到安装包自带的版本：设备只保存一个补丁，而且不会回到更小的序号。如果想回到之前的某个补丁，重新发布那个补丁的输出即可。它会得到下一个序号，以普通更新的形式送达设备：
+
+```bash
+dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目录>
+```
+
+`patch` 输出保存在 `.dart_tool/flutter_patcher/patches/`，直到你删除它；如果输出已经不在，检出那个补丁的源码重新运行 `patch`。
+
 撤回以普通更新的形式下发，应用对 `hasUpdate` 为 `true` 的结果调用 `applyPatch`（即上面示例中的用法）即可生效。之后发布的补丁会使用更大的序号。
 
 ## 进阶操作

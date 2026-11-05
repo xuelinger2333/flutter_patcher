@@ -81,8 +81,13 @@ Future<int> productionPublish(ArgResults args) async {
   return 0;
 }
 
-/// Runs a publish or cleanup request and returns its receipt.
-Future<Map<String, dynamic>> publication(ArgResults args) async {
+/// Runs a publish or cleanup request and returns its receipt. With [onlyNew]
+/// a draft published before in its release, even if withdrawn or replaced
+/// since, is not published again.
+Future<Map<String, dynamic>> publication(
+  ArgResults args, {
+  bool onlyNew = false,
+}) async {
   requireSupportedHost();
   require(
     args.rest.isEmpty &&
@@ -176,6 +181,7 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
         transaction,
         commands,
         work,
+        onlyNew,
       );
     }
   } finally {
@@ -205,6 +211,7 @@ Future<Map<String, dynamic>> _publish(
   PublicationTransaction transaction,
   Commands commands,
   String work,
+  bool onlyNew,
 ) async {
   final operation = request['operation'] as String;
   final baselineUri = Uri.parse(request['baseline_store'] as String);
@@ -270,6 +277,19 @@ Future<Map<String, dynamic>> _publish(
         'manifest': 'manifests/$scope.json',
       };
     }
+    final digest = draft.digest;
+    final earlier = (catalog['releases'] as Map).values.cast<Map>().where(
+      (record) => record['scope'] == scope && record['draft_sha256'] == digest,
+    );
+    if (onlyNew && earlier.isNotEmpty && !awaitsRequest(catalog, request)) {
+      return {
+        'status': 'published_before',
+        'scope': scope,
+        'patch_seq': earlier
+            .map((record) => record['patch_seq'] as int)
+            .reduce(max),
+      };
+    }
     final signer = patchSigner = await keyring.signer(KeyRole.patch);
     require(
       signer.publicKey == (release.identity['receipt'] as Map)['public_key'],
@@ -309,6 +329,14 @@ Future<Map<String, dynamic>> _publish(
   final what = fields['action'] == 'publish'
       ? 'patch ${preview['patch_seq']}'
       : 'withdrawal through ${fields['withdraw_through_seq']}';
+  if (fields['action'] == 'withdraw') {
+    stderr.writeln(
+      'Devices that apply this withdrawal remove patches through '
+      '${fields['withdraw_through_seq']} and run the installed version from '
+      'their next cold start. To return to an earlier patch instead, '
+      'publish its output again: publish --patch <its directory>.',
+    );
+  }
   if (!await confirmed(
     args,
     'Publish $what to ${fields['application_id']} ${fields['channel']} '

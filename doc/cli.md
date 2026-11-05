@@ -194,7 +194,8 @@ dart run flutter_patcher serve
 |---|---|---|
 | `--port <port>` | Port on this computer, and the port `adb reverse` maps on phones | `8686` |
 
-- Publishes each new `patch` output to the project's publication store by itself; no need to run `publish`.
+- Publishes each new `patch` output to the project's publication store by itself; no need to run `publish`. An output published before, even if withdrawn since, is not published again when `serve` restarts.
+- Prints what devices are offered whenever it changes, including withdrawals and patches you `publish` yourself.
 - Listens on `127.0.0.1` only and serves only manifests and patch files.
 - Every 2 seconds, runs `adb reverse` for newly connected Android devices.
 - Works only with a `file://` publication store; comment out an `s3://` `store` in `flutter_patcher.yaml` while developing.

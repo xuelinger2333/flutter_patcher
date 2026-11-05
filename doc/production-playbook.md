@@ -111,6 +111,14 @@ This withdraws every published patch of the release your latest `patch` output b
 - To withdraw only up to a given sequence: pass `--through <seq>`.
 - To withdraw another release's patches: pass `--patch <dir>` with one of that release's `patch` outputs.
 
+A withdrawal always returns devices to the installed version: they keep only one patch, and never go back to a lower sequence. To return them to an earlier patch instead, publish that patch's output again. It gets the next sequence and reaches devices as a regular update:
+
+```bash
+dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<dir>
+```
+
+Outputs stay in `.dart_tool/flutter_patcher/patches/` until you delete them; without the output, check out that patch's source and run `patch` again.
+
 A withdrawal is delivered as a regular update: it takes effect when your app calls `applyPatch` for a result whose `hasUpdate` is `true`, as in the example above. Patches published after it get higher sequence numbers.
 
 ## Advanced Operations
