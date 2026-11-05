@@ -6,52 +6,66 @@
 
 **English** | [简体中文](faq-zh.md)
 
-### Why do patches require a cold start to take effect?
+### Can a patch add or change images and fonts?
 
-To guarantee runtime state consistency. Active code and in-memory objects cannot be safely swapped out mid-execution. Once a patch is downloaded and verified, the app continues running the existing code until the next process launch, ensuring old and new code paths are never mixed within a single session. See [How It Works: Life on the device](architecture.md#life-on-the-device).
+Yes, for assets declared in `pubspec.yaml`. A patch cannot delete an asset that the installed app has (`PATCH_ASSET_DELETE_UNSUPPORTED`); that needs a store release. When patched assets exceed 16 MB in total, `patch` warns with `PATCH_RESOURCE_SIZE`: they stay in memory for the life of the process.
 
-### Can an app built with standard `flutter build` receive patches?
+### Can a patch add a new package?
 
-**No.** Patches can only be applied to baseline releases built with `flutter_patcher build`, which bundles the custom runtime engine and your embedded verification public keys (see [How It Works: The host](architecture.md#the-host-an-app-that-accepts-patches)). If you already have a standard build live in the store, you must rebuild and ship a new store release using `flutter_patcher build` first.
+Only a pure-Dart package. Packages with native code, platform plugins and FFI packages need a store release; `patch` fails with `PATCH_NATIVE_CHANGE`. Packages that native code depends on stay at the version the app was built with (`PATCH_PINNED_PACKAGE_CHANGED`). The full list is in [How It Works: What can be patched](architecture.md#what-can-be-patched).
 
-### Does the bytecode strategy slow down the app?
+### How big is a patch?
 
-**Unpatched apps run at full native AOT speed, identical to a standard Flutter release build. When patched, only the modified functions are executed by the bytecode interpreter—all unchanged code continues to run as compiled native machine code.**
+A bytecode patch carries only the changed code and assets: changing one line of text in the example app made a patch of about 19 KB. An SO patch carries the whole recompiled `libapp.so`, several megabytes. A published patch can be at most 320 MB, and devices must download it within 2 minutes.
 
-For typical UI and business logic changes, the performance difference is imperceptible. However, if a patch modifies compute-heavy hot loops, those specific functions will run slower than native code. On Android, if raw compute performance inside a patch is critical, you can switch to the `so` strategy at the cost of a larger patch bundle size. See [How It Works: Two patch strategies](architecture.md#two-patch-strategies).
+### Can a patch take effect without restarting the app?
 
-### What happens when I upgrade my Flutter SDK version?
+No. A patch runs from the next cold start; the running process keeps its code. The plugin does not restart the app for you.
 
-Upgrading the Flutter SDK requires running `build` and shipping a new store release. **Patches cannot cross Flutter SDK versions**—to continue patching an older live release, you must generate those patches using the exact Flutter version that built that baseline release (keep the older SDK cached in CI or pass `--flutter-sdk`).
+### Can an app built with plain `flutter build` receive patches?
 
-### What happens to installed patches when a user updates the app from the store?
+No. Only apps built with `flutter_patcher build` accept patches. If a plain build is already in the store, release one built with `flutter_patcher build` first.
 
-**They are automatically invalidated and cleaned up.** Every patch is strictly bound to the baseline `versionCode` it was built against. Once a user upgrades to a newer store release, old patches are ignored. If the new release also needs a hotfix, publish a new patch targeting the new version.
+### Does the bytecode strategy slow the app down?
 
-### Can I maintain and patch multiple live app versions simultaneously?
+Without a patch, the app runs exactly as a normal release build. With a patch, only the changed functions run in the interpreter, slower than machine code; everything else still runs as machine code. A change to compute-heavy code runs noticeably slower; on Android, the `so` strategy runs patches at full speed, with larger patches. See [How It Works: Two patch strategies](architecture.md#two-patch-strategies).
 
-**Yes.** Each store release has its own isolated baseline snapshot and patch sequence. To patch an older release, check out its source tag, apply the fix, and run `patch --version-code <target_build_number>`. See [Production Playbook: Release Workflow](production-playbook.md#release-workflow).
+### What happens when I upgrade Flutter?
 
-### Can patches be tampered with or forged if my CDN is compromised?
+You build and release a new store version. Patches never cross Flutter versions: patches for an older release are made with the Flutter version that built it, for example with `--flutter-sdk`.
 
-**No.** The on-device runtime only accepts patches that are cryptographically signed by your private key and match the exact baseline fingerprint (`scope`) of the installed app. Even if your storage bucket or CDN is compromised, an attacker cannot forge a valid patch without your private key or replay a patch meant for a different version. See [How It Works: Security model](architecture.md#security-model). The private keys live outside your project, in your key store, CI secrets or signing service; back them up with `keys export` (see [Production Playbook: Keys on Machines and CI](production-playbook.md#keys-on-machines-and-ci)).
+### What happens to a patch when a user updates the app from the store?
 
-### What if a buggy patch causes the app to crash on startup?
+It stops applying, and the boot diagnostic is `droppedVersionCodeMismatch`. Each patch belongs to one build number; if the new release needs a fix, publish a patch for it.
 
-**The SDK automatically rolls back to the bundled baseline build upon detecting a startup failure and blacklists the faulty patch locally**, preventing crash loops. You should immediately [withdraw the patch](production-playbook.md#withdrawing-a-patch) or publish a fixed patch so other devices do not install it. See [Crash Protection](crash-protection.md).
+### Can I patch several live releases?
 
-### Do I need to build and run a custom backend server?
+Yes. Each release has its own baseline and its own sequence numbers. Check out the release's tag, fix it, and run `patch --version-code <its build number>`. See [Production Playbook: Release Workflow](production-playbook.md#release-workflow).
 
-**No.** Both patches and manifests are static files. Any static file hosting service served over HTTPS—such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN—works out of the box. See [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage).
+### Can someone who controls my storage or CDN push a patch?
+
+No. Devices install only patches whose manifest is signed with your publisher key and whose patch is signed with your patch key, for exactly their app, version, flavor, channel and ABI, with a sequence higher than any they have accepted. Without your private keys, changed content only fails verification. See [How It Works: Security model](architecture.md#security-model).
+
+### What if a patch crashes the app at startup?
+
+The device turns the patch off, runs its installed version from the next cold start, and blacklists the patch. Withdraw it or publish a fix promptly, because devices that have not tried it can still install it. See [Crash Protection](crash-protection.md#what-to-do-when-it-trips).
+
+### Do I need my own backend?
+
+No. Patches and manifests are static files. Any HTTPS static hosting works, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. See [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage).
+
+### Can I make iOS patches on Linux or Windows?
+
+Yes. Only `build ios` needs an Apple Silicon Mac; `patch ios` runs on any supported computer that can read the baseline `build ios` saved.
 
 ### Are x86 emulators or 32-bit Android devices supported?
 
-**No.** On Android, only `arm64-v8a` is supported (which covers virtually all modern Android phones in active use and aligns with Google Play's 64-bit requirement).
+No. On Android, hosts and patches are `arm64-v8a` only.
 
-### Do app stores allow over-the-air hotfixing?
+### Do app stores allow this?
 
-Policies vary across distribution channels and regulated industries (such as finance, healthcare, or kids' apps), some of which restrict downloading executable code. `flutter_patcher` provides the technical mechanism; you are responsible for ensuring compliance with your target store guidelines and industry regulations before deploying.
+Policies differ between stores and between regulated industries such as finance, health and apps for children; some restrict downloading executable code. Check the rules of the stores and industries you ship in.
 
-### Why does running `patch` on Windows report that every single file changed?
+### Why does `patch` on Windows say every file changed?
 
-This happens when Git converts line endings to `CRLF` on Windows, causing byte-level diffs against a baseline built with `LF` line endings. See the fix in [Troubleshooting: Common Issues](troubleshooting.md#changed-a-single-line-of-dart-but-every-file-shows-as-modified-or-fails-with-patch_native_change).
+Git converted line endings to `CRLF`, so the files differ byte for byte from a baseline built with `LF`. The fix is in [Troubleshooting](troubleshooting.md#changed-a-single-line-of-dart-but-every-file-shows-as-modified-or-fails-with-patch_native_change).
