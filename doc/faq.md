@@ -40,7 +40,7 @@ It stops applying, and the boot diagnostic is `droppedVersionCodeMismatch`. Each
 
 ### Can I patch several live releases?
 
-Yes. Each release has its own baseline and its own sequence numbers. Check out the release's tag, fix it, and run `patch --version-code <its build number>`. See [Production Playbook: Patching an Earlier Release](production-playbook.md#patching-an-earlier-release).
+Yes. Each release has its own baseline and its own sequence numbers. Go back to that release's source, fix it, and run `patch --version-code <its build number>`. See [Production Playbook: Patching an Earlier Release](production-playbook.md#patching-an-earlier-release).
 
 ### Can someone who controls my storage or CDN push a patch?
 

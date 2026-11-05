@@ -101,7 +101,7 @@ dart run flutter_patcher publish         # 签名并上传至存储服务
 | [工作原理](doc/architecture-zh.md) | 宿主、基线、补丁策略与安全模型 |
 | [CLI 参考](doc/cli-zh.md) | 命令行参数与 `flutter_patcher.yaml` 配置说明 |
 | [API 参考](doc/api-reference-zh.md) | App 侧 Dart API 说明 |
-| [生产部署](doc/production-playbook-zh.md) | 存储配置、发布流程、灰度发布与补丁撤回 |
+| [生产部署](doc/production-playbook-zh.md) | 从本地跑通到上线：发布、上传、撤回，以及可按需替换的部分 |
 | [进阶操作](doc/advanced-zh.md) | 轮换发布密钥与清理历史补丁 |
 | [崩溃保护](doc/crash-protection-zh.md) | 自动回滚、坏包黑名单与启动诊断 |
 | [错误码与排障](doc/troubleshooting-zh.md) | 错误码速查与常见故障处理 |

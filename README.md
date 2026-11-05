@@ -97,7 +97,7 @@ See the [Getting Started Guide](doc/getting-started.md) for the full walkthrough
 | [How It Works](doc/architecture.md) | Host runtime, baselines, patching strategy, and security model |
 | [CLI Reference](doc/cli.md) | Commands, flags, and `flutter_patcher.yaml` configuration |
 | [API Reference](doc/api-reference.md) | Client-side Dart API reference |
-| [Production Playbook](doc/production-playbook.md) | Storage setup, release workflow, staged rollouts, and withdrawing patches |
+| [Production Playbook](doc/production-playbook.md) | From a local setup to a live app: publish, upload, withdraw, and what you can swap |
 | [Advanced Operations](doc/advanced.md) | Rotating the publisher key and cleaning up old patches |
 | [Crash Protection](doc/crash-protection.md) | Auto-rollback, patch blacklisting, and startup diagnostics |
 | [Troubleshooting](doc/troubleshooting.md) | Error code reference and resolution guide |

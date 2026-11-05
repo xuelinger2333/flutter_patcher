@@ -62,7 +62,6 @@ dart run flutter_patcher keys export --out fp-keys.json
    ```
 
 2. Submit `app-release.apk` (or `app-release.ipa`) from the output directory to the store.
-3. Tag the source in Git. Patches for this release are made from it.
 
 **Check**:
 
@@ -75,7 +74,7 @@ dart run flutter_patcher keys export --out fp-keys.json
 
 **Do**:
 
-1. Fix the issue on the tagged source, keeping `version` in `pubspec.yaml` unchanged.
+1. Fix the issue, keeping `version` in `pubspec.yaml` unchanged.
 2. Make the patch:
 
    ```bash
@@ -221,7 +220,7 @@ if (userBucket(userId) < rolloutPercent) {
 
 ### Patching an Earlier Release
 
-Check out that release's tag, fix it, and pass its build number when making the patch:
+Go back to that release's source, fix it, and pass its build number when making the patch:
 
 ```bash
 dart run flutter_patcher patch android --version-code <build number>

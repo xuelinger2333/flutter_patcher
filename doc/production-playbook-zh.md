@@ -60,7 +60,6 @@ dart run flutter_patcher keys export --out fp-keys.json
    ```
 
 2. 将生成的 `app-release.apk`（或 `app-release.ipa`）提交至应用商店。
-3. 在 git 中为当前源码打 Tag。该版本后续的所有补丁均基于此 Tag 生成。
 
 **验证**：
 
@@ -73,7 +72,7 @@ dart run flutter_patcher keys export --out fp-keys.json
 
 **操作**：
 
-1. 基于第 3 步的 Tag 源码修复问题，不要修改 `pubspec.yaml` 中的 `version`。
+1. 修复问题，不要修改 `pubspec.yaml` 中的 `version`。
 2. 生成补丁：
 
    ```bash
@@ -221,7 +220,7 @@ if (userBucket(userId) < rolloutPercent) {
 
 ### 给更早的版本打补丁
 
-检出对应历史版本的 Git Tag，修复代码后携带 `--version-code` 生成补丁：
+切回该版本的源码，修复后携带 `--version-code` 生成补丁：
 
 ```bash
 dart run flutter_patcher patch android --version-code <构建号>
