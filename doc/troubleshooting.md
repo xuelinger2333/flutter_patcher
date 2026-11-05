@@ -82,6 +82,7 @@ A previous `publish` operation was interrupted around the commit phase (e.g., ne
 | `JAVA_HOME_INVALID` | `JAVA_HOME` does not point to a valid JDK | Fix your `JAVA_HOME` environment variable |
 | `XCODE_MISSING` | Xcode or the iOS platform SDK is not installed | Install Xcode and download the iOS platform component in Xcode Settings |
 | `DISK_FULL` | Insufficient disk space | Free up disk space and retry |
+| `PUB_LOCKFILE_MISMATCH` | `pubspec.lock` does not match `pubspec.yaml`, or was resolved with another package host (for example, a `PUB_HOSTED_URL` mirror set in one terminal and not in another) | Run `flutter pub get` in the project from the terminal you build in, then retry |
 | `TOOL_FAILED` | An underlying build tool exited with an error | Inspect the tail of the tool's output included in `message` |
 | `CONFIG_INVALID` | Invalid `flutter_patcher.yaml` option or CLI flag | Fix the configuration or flag as described in `message` |
 | `USAGE_ERROR` | Incorrect CLI command syntax | Run with `--help` to see valid usage |

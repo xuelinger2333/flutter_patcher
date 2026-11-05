@@ -81,6 +81,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `JAVA_HOME_INVALID` | `JAVA_HOME` 指向的目录中无有效 Java 环境 | 修正 `JAVA_HOME` 环境变量 |
 | `XCODE_MISSING` | 未安装 Xcode 或缺失 iOS 平台组件 | 安装 Xcode，并在 Xcode 设置中下载 iOS 平台支持组件 |
 | `DISK_FULL` | 磁盘剩余空间不足 | 清理磁盘空间后重试 |
+| `PUB_LOCKFILE_MISMATCH` | `pubspec.lock` 与 `pubspec.yaml` 不一致，或是在另一个包源下解析的（例如一个终端设置了 `PUB_HOSTED_URL` 镜像，另一个没有） | 在执行构建的终端里，于项目目录运行 `flutter pub get` 后重试 |
 | `TOOL_FAILED` | 内部调用的外部构建工具执行失败 | 查看 `message` 中附带的工具标准错误输出末尾日志 |
 | `CONFIG_INVALID` | `flutter_patcher.yaml` 配置项或命令行参数无效 | 根据错误提示修正配置或参数 |
 | `USAGE_ERROR` | 命令调用语法错误 | 添加 `--help` 查看正确用法 |

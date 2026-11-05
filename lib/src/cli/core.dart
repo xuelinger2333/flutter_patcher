@@ -38,14 +38,33 @@ Failure unexpectedFailure(String code, String what, Object error) {
   return Failure(code, '$what failed (${error.runtimeType}).');
 }
 
+/// pub's refusal under `--enforce-lockfile`: pubspec.lock no longer matches
+/// pubspec.yaml, or was resolved from another package host (a pub mirror set
+/// in one shell and not in another).
+Failure? lockfileMismatch(CommandResult result) {
+  if (!'${result.stdout}\n${result.stderr}'.contains('using `pubspec.lock`')) {
+    return null;
+  }
+  final host = Platform.environment['PUB_HOSTED_URL'] ?? 'https://pub.dev';
+  return Failure(
+    'PUB_LOCKFILE_MISMATCH',
+    'pubspec.lock does not match pubspec.yaml or this shell\'s package host '
+        '($host). Run `flutter pub get` in the project from this shell, then '
+        'try again.',
+  );
+}
+
 /// The failure of a step that exited with [result]: [code], with the last
-/// lines the step printed, or `DISK_FULL` when it ran out of space.
+/// lines the step printed, `DISK_FULL` when it ran out of space, or
+/// `PUB_LOCKFILE_MISMATCH`.
 Failure stepFailure(
   String code,
   String what,
   CommandResult result,
   String evidence,
 ) {
+  final lockfile = lockfileMismatch(result);
+  if (lockfile != null) return lockfile;
   final lines = '${result.stdout}\n${result.stderr}'
       .split('\n')
       .map((line) => line.trim())
@@ -299,6 +318,8 @@ class Commands {
       extraEnvironment: extraEnvironment,
     );
     if (result.exitCode != 0) {
+      final lockfile = lockfileMismatch(result);
+      if (lockfile != null) throw lockfile;
       final detail = '${result.stderr}\n${result.stdout}'.trim();
       throw Failure(
         code,

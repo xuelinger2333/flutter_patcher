@@ -110,6 +110,21 @@ void main() {
         'analysis failed (exit 255): three | four; evidence: /work',
       );
     });
+    test('a lockfile pub refuses names the package host', () {
+      final failure = stepFailure(
+        'BUILD_STEP_FAILED',
+        'pub-get',
+        CommandResult(
+          65,
+          '* path 1.9.1 (was 1.9.1)\nUnable to satisfy `pubspec.yaml` using '
+              '`pubspec.lock`.',
+          '',
+        ),
+        '/work',
+      );
+      expect(failure.code, 'PUB_LOCKFILE_MISMATCH');
+      expect(failure.message, contains('flutter pub get'));
+    });
     test('a step that ran out of space is a full disk', () {
       final failure = stepFailure(
         'BUILD_STEP_FAILED',
