@@ -239,19 +239,22 @@ class FlutterPatcher {
     _BootVerifier.start();
   }
 
-  /// Checks the store `flutter_patcher publish` writes, served at [url]; by
-  /// default the address `build` wrote into the app: `url` in
-  /// flutter_patcher.yaml, or `http://127.0.0.1:8686`, where
-  /// `flutter_patcher serve` offers patches while developing. The host reads its own
-  /// `manifests/<scope>.json` there and verifies it natively without
-  /// persisting it. Only a manifest that would change the accepted state is
-  /// an update; pass its [PatchInfo] to [applyPatch]. Nothing published yet
-  /// is no update.
+  /// Checks the store `flutter_patcher publish` writes, served at [url]. By
+  /// default that is the address `build` wrote into the app: `url` in
+  /// `flutter_patcher.yaml`, or `http://127.0.0.1:8686`, where
+  /// `flutter_patcher serve` offers patches while developing. Pass [url] to
+  /// check elsewhere, such as an HTTPS tunnel to `serve` for an iPhone.
+  ///
+  /// The host reads its own `manifests/<scope>.json` there and verifies it
+  /// natively without persisting it. Only a manifest that would change the
+  /// accepted state is an update; pass its [PatchInfo] to [applyPatch].
+  /// Nothing published yet is no update.
   ///
   /// To deliver manifests and patches some other way, pass them to
   /// [applySignedManifest] instead.
   ///
-  /// Throws [PatcherException] on a host built without a host policy.
+  /// Throws [PatcherException] on a host built without a host policy, or
+  /// when no address is given and the app has none.
   static Future<PatchCheckResult> checkUpdate({
     String? url,
     Duration timeout = const Duration(seconds: 10),
