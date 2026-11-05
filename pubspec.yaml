@@ -1,6 +1,6 @@
 name: flutter_patcher
 description: Self-hosted code push for Flutter on Android and iOS. Signed Dart code and asset patches that apply on the next cold start and roll back automatically.
-version: 1.0.0
+version: 1.0.1
 homepage: https://github.com/xuelinger2333/flutter_patcher
 repository: https://github.com/xuelinger2333/flutter_patcher
 issue_tracker: https://github.com/xuelinger2333/flutter_patcher/issues
