@@ -60,12 +60,8 @@ Future<void> checkForPatch() async {
 dart run flutter_patcher keys init
 ```
 
-This creates the project's three key pairs:
+Run it once per project. Commit the `flutter_patcher.yaml` it writes; before going live, back up the keys as described in [Production Playbook: Keys on Machines and CI](production-playbook.md#keys-on-machines-and-ci).
 
-| Where | What |
-|---|---|
-| `flutter_patcher.yaml` in your project | The public keys, and a settings template with every option commented out; no changes needed for local testing. **Commit this file.** |
-| `~/.flutter_patcher/keys/` on this computer | The private keys, kept outside your project. **Back them up now** with `dart run flutter_patcher keys export --out <file>`, and keep the file somewhere safe. |
 ## 3. Build the Baseline Release
 
 ```bash

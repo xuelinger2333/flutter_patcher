@@ -34,7 +34,7 @@ Permissions, protocol and CDN caching requirements for each store type are liste
 
 ## Keys on Machines and CI
 
-`flutter_patcher.yaml` holds the project's public keys: commit it. Private keys are needed only to sign, by `publish`, `serve` and `trust sign`:
+`keys init` writes the project's public keys to `flutter_patcher.yaml`: commit it. The private keys stay outside the project, in `~/.flutter_patcher/keys/` on the machine that ran it, and are needed only to sign, by `publish`, `serve` and `trust sign`:
 
 | Who | Needs |
 |---|---|

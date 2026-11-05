@@ -34,7 +34,7 @@ await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
 
 ## 机器与 CI 上的密钥
 
-`flutter_patcher.yaml` 中保存的是项目的公钥，请提交到 git。只有签名时才需要私钥，也就是 `publish`、`serve` 和 `trust sign`：
+`keys init` 把项目的公钥写入 `flutter_patcher.yaml`，请提交到 git。私钥保存在项目之外，即执行它的那台电脑的 `~/.flutter_patcher/keys/`；只有签名时才需要私钥，也就是 `publish`、`serve` 和 `trust sign`：
 
 | 谁 | 需要什么 |
 |---|---|
