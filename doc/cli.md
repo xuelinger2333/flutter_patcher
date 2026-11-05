@@ -8,7 +8,7 @@ The CLI ships with the plugin. Run it in a project that depends on `flutter_patc
 dart run flutter_patcher <command> [options]
 ```
 
-This document lists every command and option. For the whole first-run flow see [Getting Started](getting-started.md); for going live see the [Production Playbook](production-playbook.md).
+This document lists every command and option. For the whole first-run flow see [Getting Started](getting-started.md); for going live see the [Production Deployment Guide](production-playbook.md).
 
 ## Common workflows
 
@@ -30,7 +30,7 @@ dart run flutter_patcher patch android
 dart run flutter_patcher publish        # preview, then confirm
 ```
 
-**Check**: `publish` prints `"status":"published"` and the `patch_seq` it assigned. Storage and key setup: [Production Playbook](production-playbook.md).
+**Check**: `publish` prints `"status":"published"` and the `patch_seq` it assigned. Storage and key setup: [Production Deployment Guide](production-playbook.md).
 
 ### Publish from CI
 
@@ -49,7 +49,7 @@ dart run flutter_patcher publish --withdraw                                   # 
 dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<dir>   # back to an earlier patch
 ```
 
-**Check**: the first prints `"action":"withdraw"`; the second prints a `patch_seq` above the bad patch's. Details: [Production Playbook: If a Patch Goes Wrong](production-playbook.md#if-a-patch-goes-wrong).
+**Check**: the first prints `"action":"withdraw"`; the second prints a `patch_seq` above the bad patch's. Details: [Production Deployment Guide: Rolling Back and Withdrawing](production-playbook.md#rolling-back-and-withdrawing).
 
 ### Patch an earlier live release
 
@@ -94,7 +94,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 | `trust` | The `root`, `publisher` and `patch` public keys every host is built with. Written by `keys init` and `keys import` | |
 | `signing` | `command`: a program that signs instead of the key store; see [Where private keys come from](#where-private-keys-come-from) | The key store |
 
-Unknown settings or values of the wrong shape fail with `CONFIG_INVALID`. How to set up stores: [Production Playbook: Publishing Straight to a Bucket](production-playbook.md#publishing-straight-to-a-bucket); requirements per type: [Storage requirements](#storage-requirements).
+Unknown settings or values of the wrong shape fail with `CONFIG_INVALID`. How to set up stores: [Production Deployment Guide: Publishing Straight to a Remote Bucket](production-playbook.md#publishing-straight-to-a-remote-bucket); requirements per type: [Storage requirements](#storage-requirements).
 
 ## Directories
 
@@ -230,7 +230,7 @@ dart run flutter_patcher publish
 | Option | Description | Default |
 |---|---|---|
 | `--patch <dir>` | The `patch` output to publish | The latest `patch` output |
-| `--withdraw` | Withdraw every published patch of that patch's release instead; see the [Production Playbook](production-playbook.md#if-a-patch-goes-wrong) | |
+| `--withdraw` | Withdraw every published patch of that patch's release instead; see the [Production Deployment Guide](production-playbook.md#rolling-back-and-withdrawing) | |
 | `--yes`, `-y` | Publish without asking | Preview, then ask; only preview when not interactive |
 | `--seq <n>` | Publish with this sequence number, from 1 to 4294967295; it must exceed every sequence published or withdrawn for the release, including what is live at `url` | The highest published or withdrawn + 1 |
 | `--key-file <file>` | Sign with this key bundle first | |

@@ -6,7 +6,7 @@
 
 **English** | [简体中文](advanced-zh.md)
 
-Operations you need only occasionally. Everyday setup and publishing are in the [Production Playbook](production-playbook.md).
+Operations you need only occasionally. Everyday setup and publishing are in the [Production Deployment Guide](production-playbook.md).
 
 ## Rotating the Publisher Key
 

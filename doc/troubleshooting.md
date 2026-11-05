@@ -208,8 +208,8 @@ These print as `WARNING: <code>: <text>` and do not fail the command:
 
 | Warning Code | Meaning |
 |---|---|
-| `URL_LOCAL` | `flutter_patcher.yaml` has no `url`, so the app checks `serve`'s local address. Set `url` before building a release for the store (see [Production Playbook](production-playbook.md#step-2-set-the-update-address)) |
-| `BASELINE_STORE_LOCAL` | `build` keeps the baseline only inside the project, in `.flutter_patcher/`. Back that folder up, or set `baseline_store` (see [Production Playbook: The Folder You Must Keep](production-playbook.md#the-folder-you-must-keep)) |
+| `URL_LOCAL` | `flutter_patcher.yaml` has no `url`, so the app checks `serve`'s local address. Set `url` before building a release for the store (see [Production Deployment Guide](production-playbook.md#2-set-the-production-address)) |
+| `BASELINE_STORE_LOCAL` | `build` keeps the baseline only inside the project, in `.flutter_patcher/`. Back that folder up, or set `baseline_store` (see [Production Deployment Guide: Data You Must Not Lose](production-playbook.md#data-you-must-not-lose)) |
 | `CRLF_DART_SOURCES` | `build` found Dart sources with `CRLF` line endings; patches must be built from a checkout with the same line endings (see above) |
 | `ARTIFACT_CHECK_SKIPPED` | The artifact index could not be downloaded, so the cached index was used |
 

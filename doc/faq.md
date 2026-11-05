@@ -40,7 +40,7 @@ It stops applying, and the boot diagnostic is `droppedVersionCodeMismatch`. Each
 
 ### Can I patch several live releases?
 
-Yes. Each release has its own baseline and its own sequence numbers. Go back to that release's source, fix it, and run `patch --version-code <its build number>`. See [Production Playbook: Patching an Earlier Release](production-playbook.md#patching-an-earlier-release).
+Yes. Each release has its own baseline and its own sequence numbers. Go back to that release's source, fix it, and run `patch --version-code <its build number>`. See [Production Deployment Guide: Patching Older Live Releases](production-playbook.md#patching-older-live-releases).
 
 ### Can someone who controls my storage or CDN push a patch?
 
@@ -52,7 +52,7 @@ The device turns the patch off, runs its installed version from the next cold st
 
 ### Do I need my own backend?
 
-No. Patches and manifests are static files. Any HTTPS static hosting works, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. See [Production Playbook: Upload](production-playbook.md#step-5-upload).
+No. Patches and manifests are static files. Any HTTPS static hosting works, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. See [Production Deployment Guide: Sync to Static Storage](production-playbook.md#5-sync-to-static-storage).
 
 ### Can I make iOS patches on Linux or Windows?
 

@@ -54,7 +54,7 @@ iOS differences are at the end; every command option is in the [CLI Reference](c
    }
    ```
 
-   `checkUpdate()` looks where `build` tells the app to: `url` in `flutter_patcher.yaml`, or, while it is not set, `http://127.0.0.1:8686`, where `serve` offers patches in Step 5. Going live only means setting `url`; see the [Production Playbook](production-playbook.md).
+   `checkUpdate()` looks where `build` tells the app to: `url` in `flutter_patcher.yaml`, or, while it is not set, `http://127.0.0.1:8686`, where `serve` offers patches in Step 5. Going live only means setting `url`; see the [Production Deployment Guide](production-playbook.md).
 
 3. Add the internet permission under `<manifest>` in `android/app/src/main/AndroidManifest.xml`. `flutter create` declares it only for debug and profile builds:
 
@@ -81,7 +81,7 @@ dart run flutter_patcher keys init
 
 **Check**: the output contains `"status":"keys_created"`, and `flutter_patcher.yaml` appears in the project root.
 
-How the keys are stored and backed up: [Production Playbook: Back Up the Private Keys](production-playbook.md#step-1-back-up-the-private-keys).
+How the keys are stored and backed up: [Production Deployment Guide: Back Up the Signing Keys](production-playbook.md#1-back-up-the-signing-keys).
 
 ## Step 3: Build and install the app
 
@@ -99,7 +99,7 @@ adb install <output>/app-release.apk
 **Check**:
 
 - The last line `build` prints is JSON with `"status":"build_archived"`; `output` points to `.dart_tool/flutter_patcher/releases/<timestamp>/`, which holds `app-release.apk`.
-- Two warnings also appear, both expected while trying things out: `WARNING: URL_LOCAL` (the app checks `serve`'s local address) and `WARNING: BASELINE_STORE_LOCAL` (the baseline is kept only in the project). Before going live, see the [Production Playbook](production-playbook.md).
+- Two warnings also appear, both expected while trying things out: `WARNING: URL_LOCAL` (the app checks `serve`'s local address) and `WARNING: BASELINE_STORE_LOCAL` (the baseline is kept only in the project). Before going live, see the [Production Deployment Guide](production-playbook.md).
 - The app opens on the phone.
 
 ## Step 4: Change the code and make a patch
@@ -171,5 +171,5 @@ For every later change: keep `serve` running, run `patch android`, and repeat St
 ## Next steps
 
 - What a patch can and cannot change: [How It Works](architecture.md#what-can-be-patched)
-- Storage, publishing and withdrawing: [Production Playbook](production-playbook.md)
+- Storage, publishing and withdrawing: [Production Deployment Guide](production-playbook.md)
 - What happens when a patch makes startup fail: [Crash Protection](crash-protection.md)
