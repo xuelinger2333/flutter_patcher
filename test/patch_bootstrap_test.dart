@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_patcher/src/bootstrap/patch_archive.dart';
 import 'package:flutter_patcher/src/bootstrap/runner.dart';
+import 'package:flutter_patcher/src/cli/patch/package.dart' show plainZip;
 
 final fp = 'ab' * 32;
 Uint8List envelope({
@@ -58,14 +58,8 @@ Uint8List envelope({
     if (fonts) 'fonts/a': [2],
     if (extra.isNotEmpty) extra: [3],
   };
-  final archive = Archive();
-  for (final row in files.entries) {
-    archive.addFile(
-      ArchiveFile(row.key, row.value.length, row.value)
-        ..compression = CompressionType.none,
-    );
-  }
-  final zip = ZipEncoder().encode(archive, level: 0);
+  // The CLI's own writer: the exact ZIP form devices receive.
+  final zip = plainZip(files);
   final header = ByteData(146)
     ..setUint32(0, 0x46505443)
     ..setUint16(4, 1)
