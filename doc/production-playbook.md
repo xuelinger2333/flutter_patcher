@@ -66,7 +66,7 @@ dart run flutter_patcher keys export --out fp-keys.json
 **Check**:
 
 - `build` prints `"status":"build_archived"`.
-- It also prints `WARNING: BASELINE_STORE_LOCAL`: the release's baseline is in `.flutter_patcher/baselines/` in the project. Keep that directory; see [Keep These Two Directories](#keep-these-two-directories).
+- It also prints `WARNING: BASELINE_STORE_LOCAL`: the release's baseline is in the project's `.flutter_patcher/` folder; see [The Folder You Must Keep](#the-folder-you-must-keep).
 
 ## Step 4: Publish a Patch
 
@@ -140,15 +140,14 @@ Both are delivered as regular updates: a device acts on them when the app calls 
 - Way 1: `publish` prints `"action":"withdraw"`; after the next cold start, `FlutterPatcher.currentVersion` is `null` and `lastBootDiagnostic` is `noPatch`.
 - Way 2: `publish` prints a `patch_seq` above the bad patch's; after the next cold start, `currentVersion` is that number.
 
-## Keep These Two Directories
+## The Folder You Must Keep
 
-Both are in the project. Commit them to Git or include them in your backups.
+The project's `.flutter_patcher/` folder holds the baselines and the publication records; include it in your backups. It and the private keys backed up in Step 1 are everything you need to keep once you are live.
 
-| Directory | Holds | If it is lost |
-|---|---|---|
-| `.flutter_patcher/baselines/` | The build record of each live release | Releases built before the loss can no longer be patched |
-| `.flutter_patcher/updates/` | What you upload, and `catalog.json`, the record of every sequence published | Numbering starts again from 1, and devices ignore any patch numbered at or below the one they have. Publish the next patch with `--seq` above every sequence published or withdrawn before, such as `publish --seq 100` |
-
+| Inside it | If it is lost |
+|---|---|
+| `baselines/`: the build record of each live release | Releases built before the loss can no longer be patched |
+| `updates/`: what you upload, and `catalog.json`, the record of every sequence published | Numbering starts again from 1, and devices ignore any patch numbered at or below the one they have. Publish the next patch with `--seq` above every sequence published or withdrawn before, such as `publish --seq 100` |
 ## Variations
 
 ### Publishing Straight to a Bucket

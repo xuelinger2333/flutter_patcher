@@ -103,7 +103,7 @@ adb install <output>/app-release.apk
 **验证**：
 
 - `build` 输出的最后一行 JSON 中有 `"status":"build_archived"`；`output` 指向 `.dart_tool/flutter_patcher/releases/<时间戳>/`，其中有 `app-release.apk`。
-- 同时出现一行 `WARNING: BASELINE_STORE_LOCAL`。表示基线只保存在项目里，这是正常的；上线前请看[生产部署：保管好这两个目录](production-playbook-zh.md#保管好这两个目录)。
+- 同时出现一行 `WARNING: BASELINE_STORE_LOCAL`。表示基线只保存在项目里，这是正常的；上线前请看[生产部署：不能丢的文件夹](production-playbook-zh.md#不能丢的文件夹)。
 - App 在手机上能正常打开。
 
 ## 第 4 步：修改代码，生成补丁

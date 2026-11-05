@@ -64,7 +64,7 @@ dart run flutter_patcher keys export --out fp-keys.json
 **验证**：
 
 - `build` 输出 `"status":"build_archived"`。
-- 出现 `WARNING: BASELINE_STORE_LOCAL` 提示：表示基线保存在本地 `.flutter_patcher/baselines/`。必须妥善备份该目录，详见[保管好这两个目录](#保管好这两个目录)。
+- 出现 `WARNING: BASELINE_STORE_LOCAL` 提示：表示基线保存在项目的 `.flutter_patcher/` 文件夹里，见[不能丢的文件夹](#不能丢的文件夹)。
 
 ## 第 4 步：生成并发布补丁
 
@@ -140,15 +140,14 @@ dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目
 - 方式一：`publish` 输出 `"action":"withdraw"`；设备冷启动生效后，`FlutterPatcher.currentVersion` 为 `null`，`lastBootDiagnostic` 为 `noPatch`。
 - 方式二：`publish` 输出的 `patch_seq` 大于问题补丁序号；设备冷启动生效后，`currentVersion` 更新为该新序号。
 
-## 保管好这两个目录
+## 不能丢的文件夹
 
-以下目录位于项目内，必须提交至 git 或纳入异地备份：
+项目里的 `.flutter_patcher/` 文件夹保存着基线和发布记录，请纳入备份。它和第 1 步备份的私钥，就是上线后需要保管的全部东西。
 
-| 目录 | 存储内容 | 丢失后果与补救 |
-|---|---|---|
-| `.flutter_patcher/baselines/` | 各线上版本的构建基线 | 不可逆：丢失前构建的线上版本将无法再生成补丁 |
-| `.flutter_patcher/updates/` | 待上传产物，及记录已发布序号的 `catalog.json` | 序号将重置为 1，而设备会忽略小于或等于当前序号的补丁。补救：下次发布通过 `--seq` 手动指定一个大于历史最大值（含已撤回）的序号，如 `publish --seq 100` |
-
+| 文件夹里的 | 丢失后果与补救 |
+|---|---|
+| `baselines/`：各线上版本的构建基线 | 不可逆：丢失前构建的线上版本将无法再生成补丁 |
+| `updates/`：待上传产物，及记录已发布序号的 `catalog.json` | 序号将重置为 1，而设备会忽略小于或等于当前序号的补丁。补救：下次发布通过 `--seq` 手动指定一个大于历史最大值（含已撤回）的序号，如 `publish --seq 100` |
 ## 按需替换
 
 ### 让 publish 直接写入存储桶

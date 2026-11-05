@@ -99,7 +99,7 @@ adb install <output>/app-release.apk
 **Check**:
 
 - The last line `build` prints is JSON with `"status":"build_archived"`; `output` points to `.dart_tool/flutter_patcher/releases/<timestamp>/`, which holds `app-release.apk`.
-- A `WARNING: BASELINE_STORE_LOCAL` line also appears. It means the baseline is kept only in the project, which is fine; before going live, see [Production Playbook: Keep These Two Directories](production-playbook.md#keep-these-two-directories).
+- A `WARNING: BASELINE_STORE_LOCAL` line also appears. It means the baseline is kept only in the project, which is fine; before going live, see [Production Playbook: The Folder You Must Keep](production-playbook.md#the-folder-you-must-keep).
 - The app opens on the phone.
 
 ## Step 4: Change the code and make a patch
