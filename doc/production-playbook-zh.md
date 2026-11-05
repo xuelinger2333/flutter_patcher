@@ -8,27 +8,39 @@
 
 生产环境使用与[快速上手](getting-started-zh.md)相同的命令，区别在于基线和补丁存放在哪里、设备从哪里下载。完整的命令参数见 [CLI 参考](cli-zh.md)。
 
-## 检查单
+## 上线需要什么
 
-**第一次用 flutter_patcher 发布商店版本之前**：
+开发时，`serve` 把补丁放在项目里，并通过 USB 交给手机。App 上线后，改为需要以下几样：
 
-- [ ] `flutter_patcher.yaml` 中的 `store` 和 `baseline_store` 指向持久存储，`build` 不再输出 `WARNING: BASELINE_STORE_LOCAL`（见[配置存储](#配置存储)）。
-- [ ] 已用 `keys export` 备份密钥，`flutter_patcher.yaml` 已提交到 git（见[机器与 CI 上的密钥](#机器与-ci-上的密钥)）。
-- [ ] 发布存储通过 HTTPS 对外提供访问，App 把这个地址传给 `checkUpdate`。
-- [ ] Android：release 包声明了 `android.permission.INTERNET`。
-- [ ] 提交商店的安装包是 `flutter_patcher build` 的产物，对应的源码在 git 中打了标签。
-
-**每次发布补丁之前**：
-
-- [ ] 源码是该商店版本的标签加上这次修复，`pubspec.yaml` 中的 `version` 没有改动。
-- [ ] `patch` 输出的 `changed` 只列出你想改的内容；如有 `warnings`，已逐条看过。
-- [ ] 知道出问题时如何[撤回](#撤回补丁)。
+| 需要什么 | 用途 | 在哪里配置 |
+|---|---|---|
+| 发布存储，以及它的 HTTPS 地址 | 设备从这里下载补丁 | `flutter_patcher.yaml` 中的 `store`，以及传给 `checkUpdate` 的地址 |
+| 基线存储 | 为线上版本生成补丁时要用到它的基线 | `flutter_patcher.yaml` 中的 `baseline_store` |
+| 在发布的地方能拿到私钥 | 设备只安装签过名的补丁 | [机器与 CI 上的密钥](#机器与-ci-上的密钥) |
+| Android release 包的网络权限 | `checkUpdate` 需要联网 | `android/app/src/main/AndroidManifest.xml` |
 
 ## 配置存储
 
-**目标**：基线和补丁保存在不依赖某台电脑的存储中，设备通过 HTTPS 下载补丁。
+**发布存储**存放设备要下载的内容：每个版本一份签名清单（`manifests/`），以及补丁文件（`objects/`）。`publish` 往里写，App 从里面读，所以同一个位置有两个地址：
 
-**操作**：
+| 地址 | 谁用 | 示例 |
+|---|---|---|
+| `flutter_patcher.yaml` 中的 `store` | `publish` 用来写入，需要写权限 | `s3://my-bucket/my-app` |
+| 传给 `checkUpdate` 的地址 | App 用来读取，公开访问，不需要凭证 | `https://cdn.example.com/my-app` |
+
+两个地址不能互相推出：存储桶通过哪个域名或 CDN 对外提供，只有你知道；写入用的凭证也绝不能放进 App。开发时，`serve` 一个命令同时扮演两边：写入 `.flutter_patcher/updates/`，并通过 `http://127.0.0.1:8686` 提供读取。
+
+**基线存储**存放每个线上版本的构建记录。`patch` 和 `publish` 会读取它，设备从不访问。基线丢失的版本再也无法打补丁。
+
+发布存储按下面任选一种方式：
+
+| 方式 | `store` | 设备从哪里读取 |
+|---|---|---|
+| 对象存储，可配合 CDN | `s3://存储桶/前缀`：AWS S3，或 Cloudflare R2 等 S3 兼容服务（设置 `FLUTTER_PATCHER_S3_ENDPOINT`） | 存储桶的公开 HTTPS 地址，或你的 CDN 地址 |
+| 你自己的 Web 服务器 | `file://` 加一个本地或网络目录 | 你的服务器：把这个目录复制上去，先复制 `objects/`，再复制 `manifests/`，不要复制 `catalog.json` |
+| 你自己的接口 | 以上任一种，不对外公开 | 你的接口；App 把清单和补丁交给 [`applySignedManifest`](api-reference-zh.md#自行分发清单) |
+
+**操作**（以对象存储为例）：
 
 1. 在 `flutter_patcher.yaml` 中指定两个存储：
 
@@ -37,25 +49,18 @@
    baseline_store: s3://my-bucket/baselines
    ```
 
-   | 配置项 | 存放内容 | 支持的类型 |
-   |---|---|---|
-   | `store` | 设备下载的补丁和签名清单 | `s3://`、`file://` |
-   | `baseline_store` | 每个线上版本的基线，`patch` 和 `publish` 都会读取 | `s3://`、HTTPS、`file://` |
-
-2. 把发布存储通过 HTTPS 对外提供访问（例如对象存储配合 CDN），并在 App 中使用这个地址：
+2. 让发布存储可以通过 HTTPS 读取，直接开放或经由 CDN。权限和缓存设置见 [CLI 参考：存储要求](cli-zh.md#存储要求)。
+3. 在 App 中把这个 HTTPS 地址传给 `checkUpdate`：
 
    ```dart
    await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
    ```
 
-各类型存储的权限、协议和 CDN 缓存设置见 [CLI 参考：存储要求](cli-zh.md#存储要求)。
-
 **验证**：
 
 - `dart run flutter_patcher doctor --baseline-store s3://my-bucket/baselines` 的 `baseline_store` 一项通过。
 - `build` 不再输出 `WARNING: BASELINE_STORE_LOCAL`。
-
-基线丢失的版本再也无法打补丁，基线存储要像备份一样对待。
+- 执行一次 `publish` 后，`<HTTPS 地址>/<输出中的 manifest>` 返回 `200`。
 
 ## 机器与 CI 上的密钥
 

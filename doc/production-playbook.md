@@ -8,27 +8,39 @@
 
 Production uses the same commands as [Getting Started](getting-started.md); what changes is where baselines and patches are stored and how devices reach them. Every command option is in the [CLI Reference](cli.md).
 
-## Checklists
+## What Going Live Needs
 
-**Before the first store release with flutter_patcher**:
+While developing, `serve` keeps patches inside the project and hands them to a phone over USB. A live app needs these instead:
 
-- [ ] `store` and `baseline_store` in `flutter_patcher.yaml` point to durable storage, and `build` no longer prints `WARNING: BASELINE_STORE_LOCAL` ([Configuring Storage](#configuring-storage)).
-- [ ] The keys are backed up with `keys export`, and `flutter_patcher.yaml` is committed ([Keys on Machines and CI](#keys-on-machines-and-ci)).
-- [ ] The publication store is served over HTTPS, and the app passes that address to `checkUpdate`.
-- [ ] Android: the release build declares `android.permission.INTERNET`.
-- [ ] The app submitted to the store is the output of `flutter_patcher build`, and its source is tagged in Git.
-
-**Before each patch**:
-
-- [ ] The source is the store release's tag plus the fix, and `version` in `pubspec.yaml` is unchanged.
-- [ ] `changed` in the `patch` output lists only what you meant to change, and you have read any `warnings`.
-- [ ] You know how to [withdraw](#withdrawing-a-patch) it.
+| What | Why | Where it is set |
+|---|---|---|
+| A publication store with an HTTPS address | Devices download patches from it | `store` in `flutter_patcher.yaml`, and the address passed to `checkUpdate` |
+| A baseline store | Patches for a live release are made from its baseline | `baseline_store` in `flutter_patcher.yaml` |
+| The private keys, wherever you publish | Devices install only signed patches | [Keys on Machines and CI](#keys-on-machines-and-ci) |
+| The internet permission in the Android release build | `checkUpdate` needs the network | `android/app/src/main/AndroidManifest.xml` |
 
 ## Configuring Storage
 
-**Goal**: baselines and patches live in storage that outlasts any one computer, and devices download patches over HTTPS.
+**The publication store** holds what devices download: a signed manifest for each release (`manifests/`) and the patch files (`objects/`). `publish` writes them and the app reads them, so the same location has two addresses:
 
-**Do**:
+| Address | Used by | Example |
+|---|---|---|
+| `store` in `flutter_patcher.yaml` | `publish`, to write; needs write access | `s3://my-bucket/my-app` |
+| The address passed to `checkUpdate` | The app, to read; public, no credentials | `https://cdn.example.com/my-app` |
+
+Neither can be derived from the other: only you know which domain or CDN serves the bucket, and write credentials never go into the app. While developing, `serve` plays both parts, with `.flutter_patcher/updates/` and `http://127.0.0.1:8686`.
+
+**The baseline store** holds the build record of each live release. `patch` and `publish` read it; devices never do. A release whose baseline is lost can no longer be patched.
+
+Choose one setup for the publication store:
+
+| Setup | `store` | Devices read from |
+|---|---|---|
+| Object storage, optionally behind a CDN | `s3://bucket/prefix`: AWS S3, or an S3-compatible service such as Cloudflare R2 with `FLUTTER_PATCHER_S3_ENDPOINT` | The bucket's public HTTPS address, or your CDN's |
+| Your own web server | `file://` and a local or network directory | Your server, after you copy the directory to it: `objects/` first, then `manifests/`; leave out `catalog.json` |
+| Your own API | Either of the above, not public | Your API; the app hands the manifest and patch to [`applySignedManifest`](api-reference.md#delivering-manifests-yourself) |
+
+**Do** (object storage):
 
 1. Set both stores in `flutter_patcher.yaml`:
 
@@ -37,25 +49,18 @@ Production uses the same commands as [Getting Started](getting-started.md); what
    baseline_store: s3://my-bucket/baselines
    ```
 
-   | Setting | Holds | Types |
-   |---|---|---|
-   | `store` | Patches and signed manifests that devices download | `s3://`, `file://` |
-   | `baseline_store` | The baseline of every live release; `patch` and `publish` read it | `s3://`, HTTPS, `file://` |
-
-2. Serve the publication store over HTTPS, for example object storage behind a CDN, and use that address in the app:
+2. Make the publication store readable over HTTPS, directly or through a CDN. Permissions and cache settings: [CLI Reference: Storage requirements](cli.md#storage-requirements).
+3. Pass that HTTPS address to `checkUpdate` in the app:
 
    ```dart
    await FlutterPatcher.checkUpdate('https://cdn.example.com/my-app');
    ```
 
-Permissions, protocol and CDN cache settings for each type are in [CLI Reference: Storage requirements](cli.md#storage-requirements).
-
 **Check**:
 
 - `dart run flutter_patcher doctor --baseline-store s3://my-bucket/baselines` passes its `baseline_store` check.
 - `build` no longer prints `WARNING: BASELINE_STORE_LOCAL`.
-
-A release whose baseline is lost can no longer be patched, so the baseline store needs the same care as a backup.
+- After a `publish`, `<HTTPS address>/<manifest from its output>` answers `200`.
 
 ## Keys on Machines and CI
 
