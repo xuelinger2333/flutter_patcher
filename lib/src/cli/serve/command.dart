@@ -61,9 +61,11 @@ Future<int> serveCommand(ArgResults args) async {
   final url = 'http://127.0.0.1:$port';
   stderr.writeln(
     'Serving $root at $url\n'
-    'In the app: FlutterPatcher.checkUpdate(\'$url\')\n'
+    'Apps built without url in ${ProjectConfig.file} check here: '
+    'FlutterPatcher.checkUpdate()\n'
     'iOS or another network: expose $url over HTTPS, for example with '
-    '`cloudflared tunnel --url $url`, and pass that URL instead.\n'
+    '`cloudflared tunnel --url $url`, and pass that address: '
+    'checkUpdate(url: ...).\n'
     'After a change run `dart run flutter_patcher patch android` (or ios); '
     'Ctrl+C stops.',
   );

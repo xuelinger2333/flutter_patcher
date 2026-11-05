@@ -120,6 +120,8 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
       }
     case "hostScope":
       bytecodeCall(result) { try HostTrustConfig.load()?.scope }
+    case "hostUrl":
+      bytecodeCall(result) { try HostTrustConfig.load()?.url }
     case "updatePublicationTrust":
       authenticatedCall(result) { [bytecode] in
         try bytecode.updateTrust(wire)

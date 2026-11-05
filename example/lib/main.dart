@@ -48,7 +48,7 @@ class Demo extends StatefulWidget {
 
 class _DemoState extends State<Demo> {
   // `flutter_patcher serve` on this computer, reached over USB by adb reverse.
-  final _url = TextEditingController(text: 'http://127.0.0.1:8686');
+  final _url = TextEditingController();
   final _log = <String>[];
   var _busy = false;
   var _checks = 0;
@@ -70,7 +70,10 @@ class _DemoState extends State<Demo> {
   }
 
   Future<void> _update() => _run(() async {
-    final check = await FlutterPatcher.checkUpdate(_url.text.trim());
+    final url = _url.text.trim();
+    final check = await FlutterPatcher.checkUpdate(
+      url: url.isEmpty ? null : url,
+    );
     if (!check.hasUpdate) return _note('Up to date');
     PatchApplyPhase? phase;
     final result = await FlutterPatcher.applyPatch(
@@ -137,8 +140,8 @@ class _DemoState extends State<Demo> {
                     controller: _url,
                     keyboardType: TextInputType.url,
                     decoration: const InputDecoration(
-                      labelText: 'Update store',
-                      helperText: 'flutter_patcher serve, or your HTTPS store',
+                      labelText: 'Update address',
+                      helperText: 'Empty: the url this app was built with',
                     ),
                   ),
                   const SizedBox(height: 16),

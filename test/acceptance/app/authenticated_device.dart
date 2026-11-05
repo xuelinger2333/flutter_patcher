@@ -40,7 +40,9 @@ Future<Object?> handle(String path, Map body, String asset) async {
         'diagnostic': (await FlutterPatcher.lastBootDiagnostic)?.status.name,
       };
     case '/check':
-      final check = await FlutterPatcher.checkUpdate(body['url'] as String);
+      final check = await FlutterPatcher.checkUpdate(
+        url: body['url'] as String?,
+      );
       if (!check.hasUpdate) return {'update': false};
       final result = await FlutterPatcher.applyPatch(check.patch!);
       return {'update': true, 'ok': result.ok, 'error': result.error?.name};

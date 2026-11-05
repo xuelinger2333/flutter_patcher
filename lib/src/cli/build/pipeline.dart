@@ -32,6 +32,9 @@ class BuildRequest {
   final String? flavor, versionCode, exportMethod;
   final HostPolicy hostPolicy;
 
+  /// Where the host downloads patches; recorded in its host trust.
+  final String? url;
+
   /// `android` or `ios`, from the host policy's ABI.
   String get platform => platformOfAbi[hostPolicy.fields['abi']]!;
 
@@ -44,6 +47,7 @@ class BuildRequest {
     this.flavor,
     this.versionCode,
     this.exportMethod,
+    this.url,
   });
   Future<void> validate() async {
     require(
@@ -362,6 +366,7 @@ class BuildPipeline {
         baseline,
         request.hostPolicy,
         identity,
+        url: request.url,
       );
       final target = await writeBootstrapEntry(
         project,
@@ -554,6 +559,7 @@ class BuildPipeline {
         release,
         policy,
         identity,
+        url: request.url,
       );
       final target = await writeBootstrapEntry(
         project,
@@ -645,19 +651,22 @@ class BuildPipeline {
 
   /// Writes host_policy.json into [policyDir] and the packaged host trust
   /// into the build copy [project] (an APK asset, or an iOS Info.plist key);
-  /// returns the trust text.
+  /// returns the trust text. [url], where the host downloads patches, sits
+  /// beside the policy: it is not part of the policy or its fingerprint.
   Future<String> writeHostTrust(
     String project,
     String policyDir,
     HostPolicy policy,
-    String identity,
-  ) async {
+    String identity, {
+    String? url,
+  }) async {
     await File(p.join(policyDir, 'host_policy.json'))
         .writeAsString(policy.canonical);
     final trust = jsonEncode({
       'policy': policy.canonical,
       'fingerprint': identity,
       'policy_sha256': policy.digest,
+      'url': ?url,
     });
     if (platformOfAbi[policy.fields['abi']] == 'ios') {
       await embedIosHostTrust(commands, project, trust);

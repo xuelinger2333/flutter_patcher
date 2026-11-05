@@ -135,6 +135,7 @@ class FlutterPatcherPlugin :
             }
             "hostStrategy" -> hostCall(result) { HostTrustConfig.load(appContext)?.strategy }
             "hostScope" -> hostCall(result) { HostTrustConfig.load(appContext)?.scope }
+            "hostUrl" -> hostCall(result) { HostTrustConfig.load(appContext)?.url }
             "checkSignedManifest" -> authenticatedCall(result) {
                 authenticated().inspect(call.argument<String>("wire") ?: "")
             }

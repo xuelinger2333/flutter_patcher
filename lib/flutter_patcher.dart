@@ -56,6 +56,13 @@ class FlutterPatcher {
             scope ?? (throw PatcherException('This host has no host policy')),
       );
 
+  static Future<String?>? _url;
+
+  /// Where `build` was told this host downloads patches: `url` in
+  /// flutter_patcher.yaml, or serve's address when it is not set.
+  static Future<String?> _hostUrl() =>
+      _url ??= PatcherChannel.channel.invokeMethod<String>('hostUrl');
+
   /// Fetch an untrusted envelope, preserving its exact signed representation.
   /// Authentication and replay checks occur only in [applySignedManifest].
   static Future<SignedManifest> fetchSignedManifest(String url) async =>
@@ -232,9 +239,10 @@ class FlutterPatcher {
     _BootVerifier.start();
   }
 
-  /// Checks the store `flutter_patcher publish` writes, served at [url]: an
-  /// HTTPS URL such as a CDN, or `http://127.0.0.1:8686` from
-  /// `flutter_patcher serve` while developing. The host reads its own
+  /// Checks the store `flutter_patcher publish` writes, served at [url]; by
+  /// default the address `build` wrote into the app: `url` in
+  /// flutter_patcher.yaml, or `http://127.0.0.1:8686`, where
+  /// `flutter_patcher serve` offers patches while developing. The host reads its own
   /// `manifests/<scope>.json` there and verifies it natively without
   /// persisting it. Only a manifest that would change the accepted state is
   /// an update; pass its [PatchInfo] to [applyPatch]. Nothing published yet
@@ -244,8 +252,8 @@ class FlutterPatcher {
   /// [applySignedManifest] instead.
   ///
   /// Throws [PatcherException] on a host built without a host policy.
-  static Future<PatchCheckResult> checkUpdate(
-    String url, {
+  static Future<PatchCheckResult> checkUpdate({
+    String? url,
     Duration timeout = const Duration(seconds: 10),
   }) async {
     if (_unsupportedGuard('checkUpdate')) {
@@ -259,7 +267,14 @@ class FlutterPatcher {
           'build it with dart run flutter_patcher build android|ios',
         );
       }
-      return await _checkSigned(url, timeout);
+      final address =
+          url ??
+          await _hostUrl() ??
+          (throw PatcherException(
+            'This app has no update address; rebuild it with this version '
+            'of flutter_patcher, or pass url to checkUpdate',
+          ));
+      return await _checkSigned(address, timeout);
     } on PatcherException {
       rethrow;
     } catch (e, s) {

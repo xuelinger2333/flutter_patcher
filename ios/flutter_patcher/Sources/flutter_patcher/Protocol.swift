@@ -211,14 +211,20 @@ final class HostTrustConfig {
   let root: Data
   let initialKeys: [String: Data]
   let policyHash: String
+  /// Where `build` was told devices download patches; outside the policy and its hash.
+  let url: String?
   var strategy: String { scope["strategy"]! }
 
-  private init(scope: [String: String], fptcKey: Data, root: Data, initialKeys: [String: Data], policyHash: String) {
+  private init(
+    scope: [String: String], fptcKey: Data, root: Data, initialKeys: [String: Data], policyHash: String,
+    url: String?
+  ) {
     self.scope = scope
     self.fptcKey = fptcKey
     self.root = root
     self.initialKeys = initialKeys
     self.policyHash = policyHash
+    self.url = url
   }
 
   static func load(_ bundle: Bundle = .main) throws -> HostTrustConfig? {
@@ -253,9 +259,12 @@ final class HostTrustConfig {
       try require(bytes.count == 32, "Host key encoding")
       return bytes
     }
+    let url = wrapper["url"] as? String
+    try require(wrapper["url"] == nil || url.map { $0.hasPrefix("https://") || $0.hasPrefix("http://") } == true,
+      "Host URL")
     return HostTrustConfig(
       scope: scope, fptcKey: try key("fptc_key"), root: try key("root_key"),
-      initialKeys: try TrustUpdate.keys(policy["keys"]!), policyHash: hash)
+      initialKeys: try TrustUpdate.keys(policy["keys"]!), policyHash: hash, url: url)
   }
 
   /// Updates run in the app itself, never in an extension sharing the plugin.

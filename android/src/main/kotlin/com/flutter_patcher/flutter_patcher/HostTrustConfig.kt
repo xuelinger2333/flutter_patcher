@@ -11,7 +11,7 @@ import org.json.JSONObject
 /** Read the installed APK, not a mutable Dart config or a patched asset overlay. */
 internal class HostTrustConfig internal constructor(val scope: Map<String, String>,
     val fptcKey: ByteArray, val root: ByteArray, val initialKeys: Map<String, ByteArray>,
-    val policyHash: String) {
+    val policyHash: String, val url: String? = null) {
     val strategy: String get() = scope.getValue("strategy")
     companion object {
         const val ASSET = "assets/flutter_patcher/host-trust.json"
@@ -46,7 +46,10 @@ internal class HostTrustConfig internal constructor(val scope: Map<String, Strin
                 require(bytes.size == 32 && Base64.getEncoder().encodeToString(bytes) == value) { "Host key encoding" }
                 return bytes
             }
-            HostTrustConfig(scope, key("fptc_key"), key("root_key"), TrustUpdate.keys(policy.getValue("keys")), hash)
+            // Where `build` was told devices download patches; outside the policy and its hash.
+            val url = if (wrapper.has("url")) wrapper.getString("url") else null
+            require(url == null || url.startsWith("https://") || url.startsWith("http://")) { "Host URL" }
+            HostTrustConfig(scope, key("fptc_key"), key("root_key"), TrustUpdate.keys(policy.getValue("keys")), hash, url)
         }
         fun requireOwner(context: Context) {
             require(Build.VERSION.SDK_INT >= 28 && Application.getProcessName() == context.packageName) {

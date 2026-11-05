@@ -70,6 +70,7 @@ Future<int> buildCommand(ArgResults args) async {
       flavor: args['flavor'] as String?,
       versionCode: args['version-code'] as String?,
       exportMethod: args['export-method'] as String?,
+      url: config.url,
     );
     require(
       request.platform == platform,
@@ -97,6 +98,13 @@ Future<int> buildCommand(ArgResults args) async {
         'WARNING: BASELINE_STORE_LOCAL: this host\'s baseline is '
         'kept only in ${config.baselineStore}; every patch of the host needs '
         'it, so set baseline_store in ${ProjectConfig.file} to a durable store.',
+      );
+    }
+    if (config.urlIsLocal) {
+      stderr.writeln(
+        'WARNING: URL_LOCAL: this host looks for patches at ${config.url}, '
+        'where serve offers them while developing; set url in '
+        '${ProjectConfig.file} to your HTTPS address before going live.',
       );
     }
     // build archives a host's first baseline, so a new file store starts here.

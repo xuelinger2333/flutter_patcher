@@ -13,16 +13,30 @@ class ProjectConfig {
   ProjectConfig._(this.root, this._values);
 
   static const file = 'flutter_patcher.yaml';
-  static const _known = {'store', 'baseline_store', 'trust', 'signing'};
+  static const _known = {
+    'url',
+    'store',
+    'baseline_store',
+    'trust',
+    'signing',
+  };
+
+  /// Where serve offers patches, and where hosts look when url is not set.
+  static const localUrl = 'http://127.0.0.1:8686';
 
   /// Written by `keys init` when the project has no configuration yet.
   static const template = '''
 # flutter_patcher project settings. Commands read them when no flag is given.
 # Nothing here is secret: commit this file.
 
+# The HTTPS address devices download patches from. build writes it into the
+# app, and publish reads what is live there before numbering a patch.
+# Default: http://127.0.0.1:8686, where serve offers patches while developing.
+# url: https://cdn.example.com/my-app
+
 # Where publish puts patches and the manifests devices read: file:// or s3://.
-# Serve it from any HTTPS host; apps pass that URL to checkUpdate. Default:
-# .flutter_patcher/updates in the project, which serve offers while developing.
+# Upload it to url, or serve it there. Default: .flutter_patcher/updates in the
+# project, which serve offers while developing.
 # store: s3://my-bucket/patches
 
 # Where host baselines are kept. Every patch of a host needs its baseline:
@@ -60,13 +74,24 @@ class ProjectConfig {
         'CONFIG_INVALID',
         'Unknown $file settings: ${unknown.join(', ')}',
       );
-      for (final key in ['store', 'baseline_store']) {
+      for (final key in ['url', 'store', 'baseline_store']) {
         require(
           values[key] == null || values[key] is String,
           'CONFIG_INVALID',
           '$file: $key is a string.',
         );
       }
+      final url = Uri.tryParse(values['url'] as String? ?? localUrl);
+      require(
+        url != null &&
+            const ['https', 'http'].contains(url.scheme) &&
+            url.host.isNotEmpty &&
+            !url.hasQuery &&
+            !url.hasFragment,
+        'CONFIG_INVALID',
+        '$file: url is an https:// address, such as '
+            'https://cdn.example.com/my-app.',
+      );
       bool strings(Object? map, Set<String> keys) =>
           map is Map &&
           map.keys.every(keys.contains) &&
@@ -89,6 +114,11 @@ class ProjectConfig {
 
   /// A setting, or null when it is not configured.
   String? operator [](String name) => _values[name] as String?;
+
+  /// Where hosts download patches: the configured url, or serve's address.
+  String get url => (this['url'] ?? localUrl).replaceFirst(RegExp(r'/+$'), '');
+
+  bool get urlIsLocal => this['url'] == null;
 
   /// Publications live in the configured store, or in the project.
   String get store =>
