@@ -29,7 +29,11 @@ This guide assumes:
 dart run flutter_patcher keys export --out <file>
 ```
 
-Keep the file somewhere safe, off this computer. A lost `root` or `patch` key cannot be replaced for apps already shipped; a lost `publisher` key can be replaced with the root key ([Advanced Operations](advanced.md#rotating-the-publisher-key)).
+Keep the file somewhere safe, off this computer.
+
+- A lost `patch` key cannot be replaced in apps already shipped: those releases can no longer be patched.
+- A lost `root` key cannot be replaced in apps already shipped: the publisher key can no longer be rotated, though patches still publish.
+- A lost `publisher` key can be replaced with the root key ([Advanced Operations](advanced.md#rotating-the-publisher-key)).
 
 > **Your choice**: publishing from another computer, from CI, or through a signing service such as a KMS: [Publishing from Another Machine or CI](#publishing-from-another-machine-or-ci).
 

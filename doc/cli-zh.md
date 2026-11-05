@@ -49,7 +49,7 @@ dart run flutter_patcher publish --withdraw                                     
 dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目录>   # 回到之前的某个补丁
 ```
 
-**验证**：前者输出 `"action":"withdraw"`；后者输出的 `patch_seq` 大于问题补丁的序号。详见[生产部署：补丁出问题时](production-playbook-zh.md#补丁出问题时)。
+**验证**：前者输出 `"action":"withdraw"`；后者输出的 `patch_seq` 大于问题补丁的序号。详见[生产部署：补丁回滚与撤回](production-playbook-zh.md#补丁回滚与撤回)。
 
 ### 为更早的线上版本打补丁
 
@@ -228,7 +228,7 @@ dart run flutter_patcher publish
 | 选项 | 说明 | 默认值 |
 |---|---|---|
 | `--patch <目录>` | 要发布的 `patch` 输出目录 | 最近一次 `patch` 的输出 |
-| `--withdraw` | 改为撤回该补丁所属版本已发布的补丁，见[生产部署](production-playbook-zh.md#补丁出问题时) | |
+| `--withdraw` | 改为撤回该补丁所属版本已发布的补丁，见[生产部署](production-playbook-zh.md#补丁回滚与撤回) | |
 | `--through <序号>` | 与 `--withdraw` 一起使用：撤回到这个序号为止 | 已发布的最大序号 |
 | `--yes`, `-y` | 不询问，直接发布 | 先预览再询问；非交互环境下只预览 |
 | `--seq <数字>` | 用这个序号发布，范围 1–4294967295，必须大于该版本已发布或已撤回的所有序号 | 已发布或已撤回的最大序号 + 1 |
