@@ -206,7 +206,7 @@ These print as `WARNING: <code>: <text>` and do not fail the command:
 
 | Warning Code | Meaning |
 |---|---|
-| `BASELINE_STORE_LOCAL` | `build` keeps the baseline only inside the project; set `baseline_store` to durable storage (see [Production Playbook](production-playbook.md#step-1-configure-storage)) |
+| `BASELINE_STORE_LOCAL` | `build` keeps the baseline only inside the project, in `.flutter_patcher/baselines/`. Back that directory up, or set `baseline_store` (see [Production Playbook: Keep These Two Directories](production-playbook.md#keep-these-two-directories)) |
 | `CRLF_DART_SOURCES` | `build` found Dart sources with `CRLF` line endings; patches must be built from a checkout with the same line endings (see above) |
 | `ARTIFACT_CHECK_SKIPPED` | The artifact index could not be downloaded, so the cached index was used |
 

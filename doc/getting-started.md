@@ -81,7 +81,7 @@ dart run flutter_patcher keys init
 
 **Check**: the output contains `"status":"keys_created"`, and `flutter_patcher.yaml` appears in the project root.
 
-How the keys are stored and backed up: [Production Playbook: Back Up the Keys](production-playbook.md#step-2-back-up-the-keys).
+How the keys are stored and backed up: [Production Playbook: Back Up the Keys](production-playbook.md#step-1-back-up-the-keys).
 
 ## Step 3: Build and install the app
 
@@ -99,7 +99,7 @@ adb install <output>/app-release.apk
 **Check**:
 
 - The last line `build` prints is JSON with `"status":"build_archived"`; `output` points to `.dart_tool/flutter_patcher/releases/<timestamp>/`, which holds `app-release.apk`.
-- A `WARNING: BASELINE_STORE_LOCAL` line also appears. It is expected while trying things out locally; before going live, see [Production Playbook: Configure Storage](production-playbook.md#step-1-configure-storage).
+- A `WARNING: BASELINE_STORE_LOCAL` line also appears. It means the baseline is kept only in the project, which is fine; before going live, see [Production Playbook: Keep These Two Directories](production-playbook.md#keep-these-two-directories).
 - The app opens on the phone.
 
 ## Step 4: Change the code and make a patch

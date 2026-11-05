@@ -52,7 +52,7 @@ The device turns the patch off, runs its installed version from the next cold st
 
 ### Do I need my own backend?
 
-No. Patches and manifests are static files. Any HTTPS static hosting works, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. See [Production Playbook: Configure Storage](production-playbook.md#step-1-configure-storage).
+No. Patches and manifests are static files. Any HTTPS static hosting works, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. See [Production Playbook: Upload](production-playbook.md#step-5-upload).
 
 ### Can I make iOS patches on Linux or Windows?
 

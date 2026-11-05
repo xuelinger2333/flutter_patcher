@@ -93,7 +93,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 | `trust` | `root`、`publisher`、`patch` 三把公钥，每个宿主构建时都会写入。由 `keys init` 和 `keys import` 写入 | |
 | `signing` | `command`：用一个外部程序签名，代替本机密钥库，见[私钥从哪里来](#私钥从哪里来) | 本机密钥库 |
 
-出现未知字段或格式不对的值会报 `CONFIG_INVALID`。存储的配置方法见[生产部署](production-playbook-zh.md#第-1-步配置存储)，各类型的要求见[存储要求](#存储要求)。
+出现未知字段或格式不对的值会报 `CONFIG_INVALID`。存储的配置方法见[生产部署：让 publish 直接写入存储桶](production-playbook-zh.md#让-publish-直接写入存储桶)，各类型的要求见[存储要求](#存储要求)。
 
 ## 目录一览
 

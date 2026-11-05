@@ -93,7 +93,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 | `trust` | The `root`, `publisher` and `patch` public keys every host is built with. Written by `keys init` and `keys import` | |
 | `signing` | `command`: a program that signs instead of the key store; see [Where private keys come from](#where-private-keys-come-from) | The key store |
 
-Unknown settings or values of the wrong shape fail with `CONFIG_INVALID`. How to set up stores: [Production Playbook](production-playbook.md#step-1-configure-storage); requirements per type: [Storage requirements](#storage-requirements).
+Unknown settings or values of the wrong shape fail with `CONFIG_INVALID`. How to set up stores: [Production Playbook: Publishing Straight to a Bucket](production-playbook.md#publishing-straight-to-a-bucket); requirements per type: [Storage requirements](#storage-requirements).
 
 ## Directories
 

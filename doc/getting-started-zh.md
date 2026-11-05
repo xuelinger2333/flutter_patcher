@@ -85,7 +85,7 @@ dart run flutter_patcher keys init
 
 **验证**：输出中有 `"status":"keys_created"`，项目根目录出现 `flutter_patcher.yaml`。
 
-密钥的保存与备份见[生产部署：备份密钥](production-playbook-zh.md#第-2-步备份密钥)。
+密钥的保存与备份见[生产部署：备份密钥](production-playbook-zh.md#第-1-步备份密钥)。
 
 ## 第 3 步：构建并安装 App
 
@@ -103,7 +103,7 @@ adb install <output>/app-release.apk
 **验证**：
 
 - `build` 输出的最后一行 JSON 中有 `"status":"build_archived"`；`output` 指向 `.dart_tool/flutter_patcher/releases/<时间戳>/`，其中有 `app-release.apk`。
-- 同时出现一行 `WARNING: BASELINE_STORE_LOCAL`。本地试用时这是正常的，上线前的处理见[生产部署：配置存储](production-playbook-zh.md#第-1-步配置存储)。
+- 同时出现一行 `WARNING: BASELINE_STORE_LOCAL`。表示基线只保存在项目里，这是正常的；上线前请看[生产部署：保管好这两个目录](production-playbook-zh.md#保管好这两个目录)。
 - App 在手机上能正常打开。
 
 ## 第 4 步：修改代码，生成补丁

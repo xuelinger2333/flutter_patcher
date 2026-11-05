@@ -205,7 +205,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 | 警告码 | 含义 |
 |---|---|
-| `BASELINE_STORE_LOCAL` | `build` 只把基线保存在项目目录中；请把 `baseline_store` 配置到持久存储（见[生产部署](production-playbook-zh.md#第-1-步配置存储)） |
+| `BASELINE_STORE_LOCAL` | `build` 只把基线保存在项目的 `.flutter_patcher/baselines/` 中。请备份这个目录，或配置 `baseline_store`（见[生产部署：保管好这两个目录](production-playbook-zh.md#保管好这两个目录)） |
 | `CRLF_DART_SOURCES` | `build` 发现 Dart 源码使用 `CRLF` 换行；生成补丁时必须使用换行一致的检出（见上文） |
 | `ARTIFACT_CHECK_SKIPPED` | 无法下载产物索引，使用了本机缓存的索引 |
 
