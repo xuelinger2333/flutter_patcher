@@ -21,7 +21,7 @@ This guide assumes:
 
 **Goal**: keep the keys that sign patches safe. Devices install only patches signed with them.
 
-`keys init` wrote the public keys to `flutter_patcher.yaml`, which you commit, and the private keys to `~/.flutter_patcher/keys/` on that computer.
+`keys init` wrote the public keys to `flutter_patcher.yaml` and the private keys to `~/.flutter_patcher/keys/` on that computer.
 
 **Do**:
 

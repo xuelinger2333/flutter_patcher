@@ -19,7 +19,7 @@
 
 **目标**：妥善保管签名私钥。设备仅安装签名校验通过的补丁。
 
-`keys init` 已将公钥写入 `flutter_patcher.yaml`（需提交至 git），私钥则保存在本机 `~/.flutter_patcher/keys/`。
+`keys init` 已将公钥写入 `flutter_patcher.yaml`，私钥则保存在本机 `~/.flutter_patcher/keys/`。
 
 **操作**：
 
