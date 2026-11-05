@@ -10,6 +10,68 @@ dart run flutter_patcher <command> [options]
 
 This document lists every command and option. For the whole first-run flow see [Getting Started](getting-started.md); for going live see the [Production Playbook](production-playbook.md).
 
+## Common workflows
+
+Each workflow runs in the project root. Options are explained per command further down.
+
+### Try a change on a phone over USB
+
+```bash
+dart run flutter_patcher patch android
+dart run flutter_patcher serve          # leave running; patch again after each change
+```
+
+**Check**: `serve` prints `Offering patch <n>`, then `A device downloaded the patch` once the app checks for updates.
+
+### Publish a patch to production
+
+```bash
+dart run flutter_patcher patch android
+dart run flutter_patcher publish        # preview, then confirm
+```
+
+**Check**: `publish` prints `"status":"published"` and the `patch_seq` it assigned. Storage and key setup: [Production Playbook](production-playbook.md).
+
+### Publish from CI
+
+```bash
+export FLUTTER_PATCHER_KEYS="<secret: keys export --base64 --without-root>"
+dart run flutter_patcher patch android
+dart run flutter_patcher publish --yes
+```
+
+**Check**: as above; `keys status` in the job shows `FLUTTER_PATCHER_KEYS` as the source of the publisher and patch keys.
+
+### Withdraw a patch, or return to an earlier one
+
+```bash
+dart run flutter_patcher publish --withdraw                                   # back to the installed version
+dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<dir>   # back to an earlier patch
+```
+
+**Check**: the first prints `"action":"withdraw"`; the second prints a `patch_seq` above the bad patch's. Details: [Production Playbook: Withdrawing a Patch](production-playbook.md#withdrawing-a-patch).
+
+### Patch an earlier live release
+
+```bash
+git checkout <that release's tag>
+# fix the code
+dart run flutter_patcher patch android --version-code <its build number>
+dart run flutter_patcher publish
+```
+
+**Check**: `patch` prints `"status":"patch_created"` with `version_code` set to that build number.
+
+### Make iOS patches on Linux or Windows
+
+```bash
+dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
+```
+
+`--baseline-store` is not needed when `baseline_store` in `flutter_patcher.yaml` already points to the store `build ios` used.
+
+**Check**: `patch` prints `"status":"patch_created"` with `"abi":"ios-arm64"`.
+
 ## Conventions
 
 - **Project directory**: the current directory, or `--project`.
@@ -120,7 +182,7 @@ dart run flutter_patcher build ios        # Apple Silicon Mac only
 | `--application-id <id>` | When the project does not declare exactly one application id | Read from the Gradle or Xcode project |
 | `--target <file>` | Entry file | `lib/main.dart` |
 | `--out <dir>` | Output directory; must be new | `.dart_tool/flutter_patcher/releases/<timestamp>/` |
-| `--export-method <method>` | iOS only, passed to `flutter build ipa` | `app-store` |
+| `--export-method <method>` | iOS only, passed to `flutter build ipa`. `development` installs on your registered devices; `app-store` needs a distribution certificate | `app-store` |
 | `--baseline-store <uri>` | Save the baseline here instead of `baseline_store` in `flutter_patcher.yaml` | From `flutter_patcher.yaml` |
 | `--host-policy <file>` | Advanced: use a host policy you wrote instead of one derived from the project | |
 

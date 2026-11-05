@@ -10,6 +10,68 @@ dart run flutter_patcher <命令> [选项]
 
 本文逐一列出命令和选项。完整的上手流程见[快速上手](getting-started-zh.md)，上线相关的做法见[生产部署](production-playbook-zh.md)。
 
+## 常见工作流
+
+以下命令都在项目根目录运行。各命令的选项见后文。
+
+### 通过 USB 在手机上试一处改动
+
+```bash
+dart run flutter_patcher patch android
+dart run flutter_patcher serve          # 保持运行；每次改动后再执行一次 patch
+```
+
+**验证**：`serve` 输出 `Offering patch <序号>`，App 检查更新后输出 `A device downloaded the patch`。
+
+### 向生产环境发布补丁
+
+```bash
+dart run flutter_patcher patch android
+dart run flutter_patcher publish        # 先预览，确认后发布
+```
+
+**验证**：`publish` 输出 `"status":"published"` 和分配的 `patch_seq`。存储和密钥的配置见[生产部署](production-playbook-zh.md)。
+
+### 在 CI 中发布
+
+```bash
+export FLUTTER_PATCHER_KEYS="<secret：keys export --base64 --without-root 的输出>"
+dart run flutter_patcher patch android
+dart run flutter_patcher publish --yes
+```
+
+**验证**：同上；在任务中运行 `keys status`，publisher 和 patch 私钥的来源显示为 `FLUTTER_PATCHER_KEYS`。
+
+### 撤回补丁，或回到之前的补丁
+
+```bash
+dart run flutter_patcher publish --withdraw                                         # 回到安装包自带的版本
+dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目录>   # 回到之前的某个补丁
+```
+
+**验证**：前者输出 `"action":"withdraw"`；后者输出的 `patch_seq` 大于问题补丁的序号。详见[生产部署：撤回补丁](production-playbook-zh.md#撤回补丁)。
+
+### 为更早的线上版本打补丁
+
+```bash
+git checkout <该版本的标签>
+# 修改代码
+dart run flutter_patcher patch android --version-code <它的构建号>
+dart run flutter_patcher publish
+```
+
+**验证**：`patch` 输出 `"status":"patch_created"`，其中 `version_code` 为该构建号。
+
+### 在 Linux 或 Windows 上生成 iOS 补丁
+
+```bash
+dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
+```
+
+`flutter_patcher.yaml` 中的 `baseline_store` 已经指向 `build ios` 使用的存储时，不需要 `--baseline-store`。
+
+**验证**：`patch` 输出 `"status":"patch_created"`，其中 `"abi":"ios-arm64"`。
+
 ## 通用约定
 
 - **项目目录**：默认是当前目录，可用 `--project` 指定。
@@ -120,7 +182,7 @@ dart run flutter_patcher build ios        # 仅限 Apple Silicon Mac
 | `--application-id <包名>` | 工程中没有声明、或声明了多个包名，无法自动识别时指定 | 从 Gradle 或 Xcode 工程读取 |
 | `--target <文件>` | 入口文件 | `lib/main.dart` |
 | `--out <目录>` | 输出目录，必须是新目录 | `.dart_tool/flutter_patcher/releases/<时间戳>/` |
-| `--export-method <方式>` | 仅 iOS，传给 `flutter build ipa` | `app-store` |
+| `--export-method <方式>` | 仅 iOS，传给 `flutter build ipa`。`development` 可安装到已注册的测试设备；`app-store` 需要发布证书 | `app-store` |
 | `--baseline-store <URI>` | 把基线保存到这里，而不是 `flutter_patcher.yaml` 中的 `baseline_store` | 取自 `flutter_patcher.yaml` |
 | `--host-policy <文件>` | 高级：使用自己编写的宿主策略，而不是根据项目自动生成 | |
 
