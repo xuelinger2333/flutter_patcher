@@ -350,6 +350,7 @@ Future<Map<String, dynamic>> _publish(
   final config = project == null ? null : await ProjectConfig.load(project);
   if (config != null &&
       !config.urlIsLocal &&
+      !Uri.parse(config.url).isScheme('http') &&
       Uri.parse(request['store'] as String).scheme == 'file') {
     final dir = Uri.parse(request['store'] as String).toFilePath();
     stderr.writeln(
