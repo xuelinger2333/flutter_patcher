@@ -2,125 +2,174 @@
 
 **English** | [简体中文](getting-started-zh.md)
 
-This guide walks you through a complete hotfix cycle from scratch: integrating `flutter_patcher` into an Android app, modifying a line of UI text, and seeing the change take effect after a cold start. Everything runs locally without setting up a remote server (iOS differences are covered at the end).
+**Goal**: add `flutter_patcher` to a Flutter app, change one line of UI text, and see the change on an Android phone after a cold start. Everything runs on your computer; no server is needed. The first run takes about 15 minutes, a few of them downloading the engine.
 
-For full command flags, see the [CLI Reference](cli.md); for under-the-hood mechanics, see [Architecture](architecture.md).
+iOS differences are at the end; every command option is in the [CLI Reference](cli.md).
 
-## Prerequisites
+## Before you start
 
-- **Build Host**: Linux x64, Windows x64 or Apple Silicon Mac
-- **Flutter**: 3.47.0 – 3.47.9 (available in `PATH`)
-- **Git**: Installed and available in `PATH`
-- **Test Device**: An `arm64-v8a` Android device (Android 9+) with USB debugging enabled and visible via `adb devices`
-- **Network**: Internet access is required on the first run to download the matching custom Flutter engine and toolchain from GitHub (cached locally for subsequent runs)
+| You need | How to check |
+|---|---|
+| Linux x64, Windows x64 or an Apple Silicon Mac, with Git | `git --version` |
+| Flutter 3.47.0 – 3.47.9 on your `PATH` | `flutter --version` |
+| An `arm64-v8a` Android phone on Android 9 or later, with USB debugging on | `adb devices` lists it |
+| A Flutter project whose `pubspec.yaml` `version` has a build number, such as `1.0.0+1` | Projects from `flutter create` do |
+| Access to GitHub on the first run | The engine and tools come from there, then from the local cache |
 
-## 1. Integrate the SDK
+## Step 1: Add the plugin
 
-Add the dependency:
+**Goal**: the app can check for and install patches.
 
-```bash
-flutter pub add flutter_patcher
-```
+**Do**:
 
-Then verify your environment from the project root:
+1. In the project root, run:
 
-```bash
-dart run flutter_patcher doctor
-```
+   ```bash
+   flutter pub add flutter_patcher
+   dart run flutter_patcher doctor
+   ```
 
-If the last line starts with `Toolchain ready.`, you are good to go. If it fails, look up the reported error code in [Troubleshooting](troubleshooting.md).
+2. Replace `main()` in `lib/main.dart` with the code below and add `checkForPatch()`. The app checks for an update every time it starts:
 
-Initialize `FlutterPatcher` in `main()`, and trigger an update check at an appropriate point in your app (e.g., on a button tap or screen load):
+   ```dart
+   import 'package:flutter/material.dart';
+   import 'package:flutter_patcher/flutter_patcher.dart';
 
-```dart
-import 'package:flutter/material.dart';
-import 'package:flutter_patcher/flutter_patcher.dart';
+   Future<void> main() async {
+     WidgetsFlutterBinding.ensureInitialized();
+     await FlutterPatcher.init();
+     runApp(const MyApp());
+     checkForPatch();
+   }
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await FlutterPatcher.init();
-  runApp(const MyApp());
-}
+   Future<void> checkForPatch() async {
+     try {
+       final check = await FlutterPatcher.checkUpdate('http://127.0.0.1:8686');
+       if (!check.hasUpdate) return;
+       final result = await FlutterPatcher.applyPatch(check.patch!);
+       debugPrint('applyPatch: $result');
+     } on PatcherException catch (e) {
+       debugPrint('checkUpdate failed: $e');
+     }
+   }
+   ```
 
-Future<void> checkForPatch() async {
-  final check = await FlutterPatcher.checkUpdate('http://127.0.0.1:8686');
-  if (!check.hasUpdate) return;
-  final result = await FlutterPatcher.applyPatch(check.patch!);
-  debugPrint('applyPatch: $result'); // When 'ok', takes effect on next cold start
-}
-```
+   `http://127.0.0.1:8686` is the local address `serve` provides in Step 5; in production, use your own HTTPS address, see the [Production Playbook](production-playbook.md).
 
-- `http://127.0.0.1:8686` points to the local dev server started by `serve` in Step 5. For production, replace this with your own HTTPS endpoint (see [Production Playbook](production-playbook.md)).
-- Release builds need the internet permission to check for updates. `flutter create` declares it only for debug and profile builds, so add `<uses-permission android:name="android.permission.INTERNET"/>` to `android/app/src/main/AndroidManifest.xml`.
-- Make sure `version` in `pubspec.yaml` includes a build number (e.g., `version: 1.0.0+1`). The build number maps to Android's `versionCode`, which `flutter_patcher` uses to match patches against the exact baseline release.
+3. Add the internet permission under `<manifest>` in `android/app/src/main/AndroidManifest.xml`. `flutter create` declares it only for debug and profile builds:
 
-## 2. Generate Signing Keys
+   ```xml
+   <uses-permission android:name="android.permission.INTERNET"/>
+   ```
+
+**Check**:
+
+- The last line of `doctor` starts with `Toolchain ready.` The first run downloads the engine and takes a few minutes.
+- `flutter analyze` prints `No issues found!`.
+
+If `doctor` fails, look up its error code in [Troubleshooting](troubleshooting.md).
+
+## Step 2: Create the keys
+
+**Goal**: the keys patches are signed with. Once per project.
+
+**Do**:
 
 ```bash
 dart run flutter_patcher keys init
 ```
 
-Run it once per project. How the keys are stored and backed up: [Production Playbook: Keys on Machines and CI](production-playbook.md#keys-on-machines-and-ci).
+**Check**: the output contains `"status":"keys_created"`, and `flutter_patcher.yaml` appears in the project root.
 
-## 3. Build the Baseline Release
+How the keys are stored and backed up: [Production Playbook: Keys on Machines and CI](production-playbook.md#keys-on-machines-and-ci).
+
+## Step 3: Build and install the app
+
+**Goal**: an app that accepts patches, installed on the phone.
+
+**Do**:
 
 ```bash
 dart run flutter_patcher build android
-```
-
-`build` compiles a release APK using the `flutter_patcher` engine and saves a baseline snapshot of this release. The first run will take longer while it downloads engine artifacts and prepares the toolchain.
-
-When finished, the CLI outputs a single-line JSON object. The `output` field points to the release directory (defaults to `.dart_tool/flutter_patcher/releases/`), which contains the store-ready `app-release.apk`. Install it on your device:
-
-```bash
 adb install <output>/app-release.apk
 ```
 
-Launch the app and verify it runs normally.
+`<output>` is the directory in the `output` field of the JSON `build` prints.
 
-> **Note**: The `WARNING: BASELINE_STORE_LOCAL` message indicates that the baseline snapshot is currently stored only in your local project directory. You can ignore this for local testing; before going to production, configure persistent baseline storage as described in the [Production Playbook](production-playbook.md).
+**Check**:
 
-## 4. Modify Code & Generate a Patch
+- The last line `build` prints is JSON with `"status":"build_archived"`; `output` points to `.dart_tool/flutter_patcher/releases/<timestamp>/`, which holds `app-release.apk`.
+- A `WARNING: BASELINE_STORE_LOCAL` line also appears. It is expected while trying things out locally; before going live, see [Production Playbook: Configuring Storage](production-playbook.md#configuring-storage).
+- The app opens on the phone.
 
-Change any text string in your UI—**do not change the `version` in `pubspec.yaml`**—and run:
+## Step 4: Change the code and make a patch
 
-```bash
-dart run flutter_patcher patch android
-```
+**Goal**: a patch with your change.
 
-`patch` locates the baseline saved in Step 3, diffs your changes, and generates a patch bundle. On success, the JSON output shows `"status": "patch_created"` and lists modified items under `changed`.
+**Do**:
 
-If your changes include unsupported modifications (such as native code edits), the command fails immediately with an error code and reason. See [Troubleshooting](troubleshooting.md) for details.
+1. Change some text you can see on screen in `lib/main.dart`, such as the title. **Do not change `version` in `pubspec.yaml`**: the patch uses it to find the release from Step 3.
+2. Run:
 
-## 5. Serve the Patch to Your Device
+   ```bash
+   dart run flutter_patcher patch android
+   ```
 
-With your phone connected via USB, start the local patch server:
+**Check**: the output JSON contains `"status":"patch_created"`, and `changed` lists `package:<your package>/main.dart`; `.dart_tool/flutter_patcher/patches/<timestamp>/` holds `patch.draft` and `patch.json`.
 
-```bash
-dart run flutter_patcher serve
-```
+When the change includes something a patch cannot carry, such as native code, the command fails with an error code such as `PATCH_NATIVE_CHANGE`; see [Troubleshooting](troubleshooting.md).
 
-`serve` automatically performs three actions:
-1. Publishes the latest patch to local storage (`.flutter_patcher/updates/`);
-2. Starts an HTTP server listening on `127.0.0.1:8686`;
-3. Runs `adb reverse` on connected Android devices so `127.0.0.1:8686` on the phone routes directly to your computer.
+## Step 5: Send the patch to the phone
 
-Leave `serve` running and trigger `checkForPatch()` in your app. The `serve` terminal will log `A device checked for updates` followed by `A device downloaded the patch`, and the app logs `applyPatch: PatchApplyResult(ok)`.
+**Goal**: the phone downloads and installs the patch.
 
-## 6. Cold Start to Verify
+**Before**: the phone is connected to this computer over USB.
 
-Force-close the app completely (swipe it away from the recent apps screen) and relaunch it. You will see the updated UI text.
+**Do**:
 
-If you edit the code again and re-run `patch android` while `serve` is running, `serve` automatically publishes the new patch, which has a higher sequence number. Simply trigger an update check in the app and cold-start again.
+1. In another terminal, in the project root, run this and leave it running:
+
+   ```bash
+   dart run flutter_patcher serve
+   ```
+
+2. Open the app on the phone; if it is open, swipe it away from recent apps and open it again. It runs `checkForPatch()` as it starts.
+
+**Check**:
+
+- The `serve` terminal prints, in order:
+
+  ```text
+  Android device <serial> reaches this computer at 127.0.0.1:8686
+  Offering patch 1 (versionCode 1 arm64-v8a)
+  A device checked for updates
+  A device downloaded the patch
+  ```
+
+- `adb logcat -s flutter` shows `applyPatch: PatchApplyResult(ok)`.
+
+## Step 6: Cold start and see the change
+
+**Goal**: run the patch.
+
+**Do**: swipe the app away from recent apps and open it again.
+
+**Check**: the screen shows the text you changed in Step 4.
+
+For every later change: keep `serve` running, run `patch android`, and repeat Steps 5 and 6. `serve` prints `Offering patch 2 ...`, and the number keeps rising.
 
 ## Differences on iOS
 
-- **Building the baseline**: Run `build ios` on an Apple Silicon Mac. Code signing uses your existing Xcode project settings, producing `app-release.ipa` in the output directory.
-- **Cross-platform patching**: `patch ios` can run on macOS, Linux, or Windows, provided the machine has access to the baseline snapshot saved by `build ios` (see baseline storage in the [Production Playbook](production-playbook.md)).
-- **Local device testing**: iOS devices cannot route `127.0.0.1` to your host machine via `adb reverse`. As prompted when starting `serve`, expose the local port via an HTTPS tunnel (e.g., `cloudflared tunnel --url http://127.0.0.1:8686`) and pass the tunnel URL to `checkUpdate`.
+| Stage | How it differs from Android |
+|---|---|
+| Build | `build ios` runs only on an Apple Silicon Mac, with signing (Team and Bundle ID) set up in Xcode. To install on your own phone, add `--export-method development`; the default, `app-store`, needs a distribution certificate. The output directory holds `app-release.ipa` |
+| Signing | Run `build ios` in a terminal of the Mac's desktop session. Over SSH or in CI, unlock the keychain first, or signing fails with `errSecInternalComponent` |
+| Install | For example, add the ipa in Xcode's Devices and Simulators window. With a free developer account, first trust the developer on the phone under Settings → General → VPN & Device Management |
+| Make patches | `patch ios` runs on a Mac, Linux or Windows, on any computer that can read the baseline `build ios` saved |
+| Deliver patches | An iPhone cannot reach the computer's `127.0.0.1`, and `checkUpdate` requires HTTPS. Expose `serve` over HTTPS with a tunnel, such as `cloudflared tunnel --url http://127.0.0.1:8686`, and pass that address to `checkUpdate` |
 
-## Next Steps
+## Next steps
 
-- Understand how patches work and what cannot be patched: [Architecture](architecture.md)
-- Prepare for production (storage, CDN, staged rollouts): [Production Playbook](production-playbook.md)
-- Learn what happens if a bad patch crashes on startup: [Crash Protection](crash-protection.md)
+- What a patch can and cannot change: [How It Works](architecture.md#what-can-be-patched)
+- Storage, publishing and withdrawing: [Production Playbook](production-playbook.md)
+- What happens when a patch makes startup fail: [Crash Protection](crash-protection.md)
