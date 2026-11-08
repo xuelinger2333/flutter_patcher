@@ -14,7 +14,11 @@ void main() {
         );
   });
 
-  test('checkUpdate and patchTarget throw', () async {
+  test('checkUpdate, patchTarget and inspectPatch throw', () async {
+    await expectLater(
+      FlutterPatcher.inspectPatch(List.filled(146, 0)),
+      throwsA(isA<PatcherException>()),
+    );
     await expectLater(
       FlutterPatcher.checkUpdate(url: 'https://cdn.example.com'),
       throwsA(isA<PatcherException>()),

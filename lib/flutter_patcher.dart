@@ -93,6 +93,7 @@ class FlutterPatcher {
     if (_unsupportedGuard('inspectPatch')) {
       throw PatcherException('inspectPatch requires Android or iOS');
     }
+    await _requireHost();
     final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
       'inspectPatch',
       {

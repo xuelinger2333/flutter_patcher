@@ -2,6 +2,79 @@
 
 [English](CHANGELOG.md) | **简体中文**
 
+## 1.1.0
+
+1.1.0 让补丁变成一个文件。`patch` 写出 `<version_code>-<flavor>-<channel>-<abi>.fptc`；App 用任何方式拿到
+这个文件交给插件，插件校验后安装，下次冷启动生效。签名变为可选，插件也不再自行获取任何内容：`checkUpdate`
+和 `applyPatch` 保留为可选的下载器。已上线的 1.0.0 宿主不受影响，见下文"从 1.0 升级"。
+
+### Removed
+
+以下删除对用到它们的代码和脚本是不兼容的改动，是在次版本中有意为之：它们所属的签名清单协议已被移除，
+没有可以对应的新接口。用到它们的 Dart 代码会编译失败；CLI 会报未知命令或未知参数。
+
+- Dart：`SignedManifest`、`SignedUpdateResult`、`FlutterPatcher.fetchSignedManifest`、`applySignedManifest`
+  和 `updatePublicationTrust`。请改用 `applyPatchBytes` 或 `applyPatchFile` 处理补丁文件，或使用
+  `checkUpdate` 和 `applyPatch`。
+- CLI：`trust sign` 和 `trust publish`（不再需要）；`publish --production --request`（清理时直接删除存储中
+  的文件）；`keys import --rotate`；`keys init --role root|publisher`。
+- 清单协议的错误码：`PUBLISH_BUSY`、`PUBLISH_CATALOG_FULL`、`PUBLISH_CATALOG_INVALID`、
+  `PUBLISH_COMMIT_UNKNOWN`、`PUBLISH_DELETE_UNKNOWN`、`PUBLISH_MANIFEST_CONFLICT`、`PUBLISH_OBJECT_CHANGED`、
+  `PUBLISH_PATCH_INVALID`、`PUBLISH_RETENTION_STALE`、`PUBLISH_TARGET_MISMATCH`、`PUBLISH_UPLOAD_FAILED`、
+  `PUBLISH_URL_INVALID`、`PUBLISH_URL_UNREACHABLE`，以及所有 `TRUST_*`。
+
+### Changed
+
+- **用补丁文件代替签名清单。** 补丁文件（FPTC v1）由 146 字节的文件头（魔数、版本、宿主指纹、序号、
+  payload 长度、payload 的 SHA-256、Ed25519 签名或全 0）和其后的补丁 ZIP 组成；没有 payload 的文件是撤回。
+  设备只安装正好属于本宿主、内容完整、宿主有公钥时由它签名、且序号大于所有已接受文件的文件；每次冷启动
+  还会再次检查已安装的补丁。见[工作原理](doc/architecture-zh.md)。
+- **签名变为可选。** `build` 不需要密钥：`flutter_patcher.yaml` 中没有 `trust.patch` 时，构建不签名的宿主
+  并打印 `WARNING: UNSIGNED`。宿主保持构建时的模式。不签名宿主接受本构建的任何文件，能把文件交给 App
+  的一方就能在 App 中执行代码；内置下载器只接受 HTTPS，以及指向设备本机的明文 HTTP。
+- 宿主策略改为 schema 2：`application_id`、`version_code`、`flavor`、`channel`、`abi`、`strategy` 和
+  `fptc_key`（补丁公钥；不签名的宿主为 `-`）。
+- `publish` 重新封装补丁输出，把 `<fileName>.fptc` 写在存储的根目录下。只有序号更大时才替换那里的文件
+  （否则报 `PUBLISH_SEQUENCE_CONFLICT`）；同一个补丁报 `already_published`；发布过程中文件被改动时报
+  `PUBLISH_CONFLICT`。`publish --withdraw` 写入撤回文件。`publish` 不再读取 `url`。
+- `checkUpdate()` 只读取 `<url>/<fileName>` 的前 146 字节（`Range` 请求）；那里没有文件（404）即为没有
+  更新。既没有传入也没有构建时写入的 `url` 时，抛出 `PatcherException`。
+- 序号改为 Unix 秒：文件以封装时的时间编号。`currentVersion`、`PatchInfo.version`、
+  `PatchBootDiagnostic.patchVersion` 以及 `BlacklistEntry.version` 中的序号显示这样的数字，而不再是
+  1、2、3……；在界面上显示它们的 App 会显示新的数字。
+- `flutter_patcher.yaml` 的 `trust` 只读取 `patch`；1.0 写在那里的 `root` 和 `publisher` 公钥被忽略。
+- 只有一把密钥：补丁密钥。`keys init`、`export`、`import`、`status` 只处理它；1.0 的密钥包和密钥库目录
+  仍然可用，只使用其中的补丁密钥。`signing.command` 总是以 `FLUTTER_PATCHER_SIGN_ROLE=patch` 签名。
+- 安全：在签名宿主上安装恶意补丁，现在只需要补丁私钥。1.0 需要补丁和 publisher 两把私钥，但两者在同一个
+  密钥包中、由同一条命令使用。补丁私钥丢失或泄露时，用它构建的宿主需要发布新版本，与 1.0 的补丁私钥相同；
+  没有密钥轮换。
+- 设备第一次作为 1.1 宿主启动时，删除 1.0 保存的签名清单状态（Android 的
+  `noBackupFilesDir/flutter_patcher_auth/`，iOS 插件目录下的 `auth/`）。
+
+### Added
+
+- `FlutterPatcher.patchTarget`：本宿主安装的文件名，它的版本号、flavor、渠道、ABI、策略和指纹，是否签名，
+  以及已接受的最大序号，供由服务端挑选文件的 App 使用。
+- `FlutterPatcher.inspectPatch(header)`：根据文件的前 146 字节判断它对本宿主是否是新的。
+- `FlutterPatcher.applyPatchBytes(bytes)` 和 `applyPatchFile(path)`：安装 App 以任何方式拿到的补丁文件，
+  或应用撤回。
+- `patch` 同时把补丁文件写入输出目录，并输出 `file` 和 `seq`。签名宿主而本机没有私钥时，`file` 为 null，
+  由 `publish` 封装。
+- `publish --seq <n>` 指定文件序号；默认为当前的 Unix 时间（秒），并且必须大于存储中现有文件的序号。
+- `serve` 支持 `checkUpdate` 发出的 `Range` 请求。
+
+### 从 1.0 升级
+
+- 已上线的 1.0.0 宿主继续用 1.0.0+1 打补丁：它们的补丁用 flutter_patcher 1.0.0+1 生成、发布和撤回。
+  在 1.1 上为 1.0 的基线运行 `patch` 会报 `PATCH_BASELINE_INCOMPATIBLE`。
+- 项目照常可用：命令、`flutter_patcher.yaml` 和密钥库都不需要改动。下一次 `build` 起构建的是 1.1 宿主，
+  用现有的补丁密钥签名。
+- 存储中 1.0 的文件（`manifests/`、`objects/`、`catalog.json`）1.1 不读不写，继续为 1.0 宿主服务；1.1
+  的文件与它们并列放在存储根目录下。1.0 未完成的发布（`.dart_tool/flutter_patcher/publish-pending.json`）
+  1.1 不处理，请用 1.0.0+1 完成。
+- 替换对已删除 API 的调用：App 自行获取的文件用 `applyPatchBytes` 或 `applyPatchFile`，放在 URL 下的文件
+  用 `checkUpdate` 和 `applyPatch`。
+
 ## 1.0.0+1
 
 ### Fixed

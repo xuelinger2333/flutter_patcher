@@ -61,4 +61,4 @@ jobs:
           python3 test/acceptance/linux_tests.py --repo "$PWD" --dart "$(command -v dart)" --out "$PWD/.dart_tool/flutter_patcher/ci-fast"
       - name: Native JVM regression
         run: python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
-      - run: echo 'Fast tests only; run test/acceptance/authenticated_device.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"
+      - run: echo 'Fast tests only; run test/acceptance/device_acceptance.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"

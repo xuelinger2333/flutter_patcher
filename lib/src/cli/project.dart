@@ -76,12 +76,19 @@ class ProjectConfig {
       final url = Uri.tryParse(values['url'] as String? ?? localUrl);
       require(
         url != null &&
-            const ['https', 'http'].contains(url.scheme) &&
+            // Devices take plain HTTP only from themselves (serve, adb reverse).
+            (url.scheme == 'https' ||
+                (url.scheme == 'http' &&
+                    const {
+                      '127.0.0.1',
+                      'localhost',
+                      '::1',
+                    }.contains(url.host))) &&
             url.host.isNotEmpty &&
             !url.hasQuery &&
             !url.hasFragment,
         'CONFIG_INVALID',
-        '$file: url is an https:// address, such as '
+        '$file: url is an https:// address (http only for 127.0.0.1), such as '
             'https://cdn.example.com/my-app.',
       );
       bool strings(Object? map, Set<String> keys) =>

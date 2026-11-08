@@ -2,7 +2,7 @@
 
 **English** | [简体中文](getting-started-zh.md)
 
-**Goal**: add `flutter_patcher` to a Flutter app, change one line of UI text, and see the change on an Android phone after a cold start. Everything runs on your computer; no server is needed. The first run takes about 15 minutes, a few of them downloading the engine.
+**Goal**: add `flutter_patcher` to a Flutter app, change one line of UI text, and see the change on an Android phone after a cold start. Everything runs on your computer; no server, no keys and no `flutter_patcher.yaml` are needed. The first run takes about 15 minutes, a few of them downloading the engine.
 
 iOS differences are at the end; every command option is in the [CLI Reference](cli.md).
 
@@ -54,7 +54,7 @@ iOS differences are at the end; every command option is in the [CLI Reference](c
    }
    ```
 
-   `checkUpdate()` looks where `build` tells the app to: `url` in `flutter_patcher.yaml`, or, while it is not set, `http://127.0.0.1:8686`, where `serve` offers patches in Step 5. Going live only means setting `url`; see the [Production Deployment Guide](production-playbook.md).
+   `checkUpdate()` requests `<url>/<file name>` and reads only its first 146 bytes, the file header, to see whether the file is new to this app. `<url>` is the address `build` wrote into the app: `url` in `flutter_patcher.yaml`, or, while there is none, `http://127.0.0.1:8686`, where `serve` offers patches in Step 4. Passing it explicitly works the same: `checkUpdate(url: 'http://127.0.0.1:8686')`.
 
 3. Add the internet permission under `<manifest>` in `android/app/src/main/AndroidManifest.xml`. `flutter create` declares it only for debug and profile builds:
 
@@ -69,21 +69,9 @@ iOS differences are at the end; every command option is in the [CLI Reference](c
 
 If `doctor` fails, look up its error code in [Troubleshooting](troubleshooting.md).
 
-## Step 2: Create the keys
+`checkUpdate` is only a built-in downloader. An app can get the patch file any other way and install it itself; see [Fetching the file yourself](#fetching-the-file-yourself).
 
-**Goal**: the keys patches are signed with. Once per project.
-
-**Do**:
-
-```bash
-dart run flutter_patcher keys init
-```
-
-**Check**: the output contains `"status":"keys_created"`, and `flutter_patcher.yaml` appears in the project root.
-
-How the keys are stored and backed up: [Production Deployment Guide: Back Up the Signing Keys](production-playbook.md#1-back-up-the-signing-keys).
-
-## Step 3: Build and install the app
+## Step 2: Build and install the app
 
 **Goal**: an app that accepts patches, installed on the phone.
 
@@ -99,27 +87,30 @@ adb install <output>/app-release.apk
 **Check**:
 
 - The last line `build` prints is JSON with `"status":"build_archived"`; `output` points to `.dart_tool/flutter_patcher/releases/<timestamp>/`, which holds `app-release.apk`.
-- Two warnings also appear, both expected while trying things out: `WARNING: URL_LOCAL` (the app checks `serve`'s local address) and `WARNING: BASELINE_STORE_LOCAL` (the baseline is kept only in the project). Before going live, see the [Production Deployment Guide](production-playbook.md).
+- Three warnings also appear, all expected while trying things out:
+  - `WARNING: UNSIGNED`: the app accepts patch files that are not signed. Signing is optional; see [Production Deployment Guide: Enable signing](production-playbook.md#3-optional-enable-signing).
+  - `WARNING: URL_LOCAL`: the app checks `serve`'s local address.
+  - `WARNING: BASELINE_STORE_LOCAL`: the baseline, which every patch of this build needs, is kept only in the project's `.flutter_patcher/baselines/`.
 - The app opens on the phone.
 
-## Step 4: Change the code and make a patch
+## Step 3: Change the code and make a patch
 
-**Goal**: a patch with your change.
+**Goal**: a patch file with your change.
 
 **Do**:
 
-1. Change some text you can see on screen in `lib/main.dart`, such as the title. **Do not change `version` in `pubspec.yaml`**: the patch uses it to find the release from Step 3.
+1. Change some text you can see on screen in `lib/main.dart`, such as the title. **Do not change `version` in `pubspec.yaml`**: the patch uses it to find the build from Step 2.
 2. Run:
 
    ```bash
    dart run flutter_patcher patch android
    ```
 
-**Check**: the output JSON contains `"status":"patch_created"`, and `changed` lists `package:<your package>/main.dart`; `.dart_tool/flutter_patcher/patches/<timestamp>/` holds `patch.draft` and `patch.json`.
+**Check**: the output JSON contains `"status":"patch_created"`, `changed` lists `package:<your package>/main.dart`, and `file` is the patch file, such as `.dart_tool/flutter_patcher/patches/<timestamp>/1-default-production-arm64-v8a.fptc`. Its name is `<version_code>-<flavor>-<channel>-<abi>.fptc`; `seq` is its sequence, the Unix time in seconds when it was made.
 
 When the change includes something a patch cannot carry, such as native code, the command fails with an error code such as `PATCH_NATIVE_CHANGE`; see [Troubleshooting](troubleshooting.md).
 
-## Step 5: Send the patch to the phone
+## Step 4: Send the patch to the phone
 
 **Goal**: the phone downloads and installs the patch.
 
@@ -133,43 +124,72 @@ When the change includes something a patch cannot carry, such as native code, th
    dart run flutter_patcher serve
    ```
 
+   `serve` publishes the newest patch to the project's store, `.flutter_patcher/updates/`, serves the `.fptc` files there at `http://127.0.0.1:8686`, and maps that port onto the phone with `adb reverse`.
+
 2. Open the app on the phone; if it is open, swipe it away from recent apps and open it again. It runs `checkForPatch()` as it starts.
 
 **Check**:
 
-- The `serve` terminal prints, in order:
+- After its startup notes, the `serve` terminal prints:
 
   ```text
   Android device <serial> reaches this computer at 127.0.0.1:8686
-  Offering patch 1 (versionCode 1 arm64-v8a)
+  Offering patch <seq> (1-default-production-arm64-v8a.fptc)
   A device checked for updates
-  A device downloaded the patch
+  A device downloaded 1-default-production-arm64-v8a.fptc
   ```
 
 - `adb logcat -s flutter` shows `applyPatch: PatchApplyResult(ok)`.
 
-## Step 6: Cold start and see the change
+## Step 5: Cold start and see the change
 
 **Goal**: run the patch.
 
 **Do**: swipe the app away from recent apps and open it again.
 
-**Check**: the screen shows the text you changed in Step 4.
+**Check**: the screen shows the text you changed in Step 3.
 
-For every later change: keep `serve` running, run `patch android`, and repeat Steps 5 and 6. `serve` prints `Offering patch 2 ...`, and the number keeps rising.
+For every later change: keep `serve` running, run `patch android`, and repeat Steps 4 and 5. `serve` prints `Offering patch <seq> ...` with a higher sequence each time; a device installs only a file numbered above every file it accepted before.
+
+## Fetching the file yourself
+
+The plugin does not have to download anything. An app that gets patch files from its own API, a push message, a file picker or its assets passes the bytes to `applyPatchBytes` (or a path to `applyPatchFile`). `patchTarget` says which file this build needs. A sketch with the `http` package:
+
+```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_patcher/flutter_patcher.dart';
+import 'package:http/http.dart' as http;
+
+Future<void> fetchPatch() async {
+  final target = await FlutterPatcher.patchTarget;
+  // Your server picks the file from target.fileName (or versionCode, flavor,
+  // channel, abi) and target.acceptedSeq, the last sequence this app took.
+  final response = await http.get(
+    Uri.parse(
+      'https://api.example.com/patches/${target.fileName}'
+      '?after=${target.acceptedSeq}',
+    ),
+  );
+  if (response.statusCode != 200) return;
+  final result = await FlutterPatcher.applyPatchBytes(response.bodyBytes);
+  debugPrint('applyPatchBytes: $result');
+}
+```
+
+The file is the `.fptc` that `patch` or `publish` wrote. The device verifies it the same way whatever delivered it. Every API is in the [API Reference](api-reference.md).
 
 ## Differences on iOS
 
 | Stage | How it differs from Android |
 |---|---|
 | Build | `build ios` runs only on an Apple Silicon Mac, with signing (Team and Bundle ID) set up in Xcode. To install on your own phone, add `--export-method development`; the default, `app-store`, needs a distribution certificate. The output directory holds `app-release.ipa` |
-| Signing | Run `build ios` in a terminal of the Mac's desktop session. Over SSH or in CI, unlock the keychain first, or signing fails with `errSecInternalComponent` |
+| Code signing | Run `build ios` in a terminal of the Mac's desktop session. Over SSH or in CI, unlock the keychain first, or signing fails with `errSecInternalComponent` |
 | Install | For example, add the ipa in Xcode's Devices and Simulators window. With a free developer account, first trust the developer on the phone under Settings → General → VPN & Device Management |
-| Make patches | `patch ios` runs on a Mac, Linux or Windows, on any computer that can read the baseline `build ios` saved |
-| Deliver patches | An iPhone cannot reach the computer's `127.0.0.1`, and `checkUpdate` requires HTTPS. Expose `serve` over HTTPS with a tunnel, such as `cloudflared tunnel --url http://127.0.0.1:8686`, and pass that address: `checkUpdate(url: 'https://…')` |
+| Make patches | `patch ios` runs on a Mac, Linux or Windows, on any computer that can read the baseline `build ios` saved. The file is named like `1-default-production-ios-arm64.fptc` |
+| Deliver patches | An iPhone cannot reach the computer's `127.0.0.1`, and `checkUpdate` accepts plain HTTP only for `127.0.0.1`/`localhost`. Either expose `serve` over HTTPS with a tunnel, such as `cloudflared tunnel --url http://127.0.0.1:8686`, and pass that address: `checkUpdate(url: 'https://…')`; or get the `.fptc` onto the phone another way and [install it yourself](#fetching-the-file-yourself) |
 
 ## Next steps
 
-- What a patch can and cannot change: [How It Works](architecture.md#what-can-be-patched)
-- Storage, publishing and withdrawing: [Production Deployment Guide](production-playbook.md)
+- What a patch can and cannot change: [How It Works](architecture.md)
+- Hosting patch files, signing, withdrawing and rolling back: [Production Deployment Guide](production-playbook.md)
 - What happens when a patch makes startup fail: [Crash Protection](crash-protection.md)

@@ -241,6 +241,20 @@ void main() {
     });
   });
 
+  test('a store file of that name that is not a patch file is named', () async {
+    File(p.join(store, name))
+      ..createSync(recursive: true)
+      ..writeAsStringSync('not a patch file');
+    await expectLater(
+      publish(['--patch', await output(), '--yes']),
+      throwsA(
+        isA<Failure>()
+            .having((f) => f.code, 'code', 'PUBLISH_STORE_INVALID')
+            .having((f) => f.message, 'message', contains(name)),
+      ),
+    );
+  });
+
   test('a receipt records the result in a new file', () async {
     final receipt = p.join(root.path, 'receipt.json');
     final result = await publish([

@@ -50,7 +50,7 @@ enum JSONText {
 }
 
 enum Platform {
-  /// The publish-manifest ABI of every iOS host.
+  /// The ABI of every iOS host, as its policy and patch file names give it.
   static let abi = "ios-arm64"
 
   /// CFBundleVersion, the iOS counterpart of Android's versionCode; -1 if not an integer.

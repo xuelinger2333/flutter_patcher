@@ -4,21 +4,21 @@
 
 This document explains why flutter_patcher works, why you can trust it, and where its limits are. It covers concepts only; for commands see the [CLI Reference](cli.md).
 
-## Three parties
+## Three roles
 
 ```text
-  Your computer (CLI)           Storage                      User's device (plugin)
- ─────────────────────        ───────────                  ──────────────────────
- build  → app + baseline  ──→  baseline store
- patch  → patch                                          runs the app build produced
- publish → signed manifest ──→ publication store ─(HTTPS)─→ checkUpdate / applyPatch
-           + patch                                               │
-                                                     loads the patch on the next cold start
+  Your computer (CLI)              Wherever the app gets files         User's device (plugin)
+ ─────────────────────           ─────────────────────────────       ──────────────────────
+ build  → host + baseline                                            runs the host build produced
+ patch  → one .fptc file  ──→    any HTTPS host, your own API,  ──→  applyPatchBytes / applyPatchFile
+ publish → .fptc in a store       push, bundled, a file picker…       (or checkUpdate / applyPatch)
+                                                                             │
+                                                          verifies, installs; loads at the next cold start
 ```
 
-- **Your computer**: `dart run flutter_patcher` builds the app, builds patches, signs and publishes them.
-- **Storage**, of two kinds. The **baseline store** keeps the build record of every released version and is used only by the CLI. The **publication store** holds patches and manifests, which your HTTPS server or CDN serves to devices.
-- **Device**: the plugin downloads a patch, checks every part of it in native code, installs it, and loads it on the next cold start.
+- **Your computer**: `dart run flutter_patcher` builds the host app and its baseline, then turns each change into one patch file, `<version_code>-<flavor>-<channel>-<abi>.fptc`. `publish` writes that file to a store (a directory or S3); `serve` does it for you while developing. The **baseline store**, which keeps the build record of every released version, is used only by the CLI.
+- **Wherever the app gets files**: the plugin does not fetch patches. Your app gets the file in any way it likes and hands it to `applyPatchBytes` or `applyPatchFile`. `checkUpdate` and `applyPatch` are an optional built-in downloader for files placed at a URL.
+- **Device**: native code checks every part of the file, installs it, and loads it on the next cold start.
 
 ## The host: an app that accepts patches
 
@@ -26,7 +26,7 @@ Patches install only on apps built with `flutter_patcher build`, called **hosts*
 
 1. **The Flutter engine flutter_patcher provides**: the official engine with the abilities patch loading needs. The CLI downloads and verifies it for your Flutter version; your Flutter SDK is not modified.
 2. **A generated entry point** that runs before your `main` and installs the patch at a cold start. Your source is not modified.
-3. **The host policy**: identity and public keys built into the app, namely its application id, version, flavor, channel, ABI, patch strategy and three public keys. Once the app is signed, the policy cannot change, and the device judges every patch by it.
+3. **The host policy**: the build's identity and, optionally, one public key, namely its application id, version code, flavor, channel, ABI, patch strategy and `fptc_key` (the patch public key, or `-` for an unsigned host). `build` writes it, with the compile fingerprint, into the APK (`assets/flutter_patcher/host-trust.json`) or Info.plist. Once the app is signed, the policy cannot change, and the device judges every patch file by it. A host keeps the mode it was built with: adding a key later changes only hosts built after it.
 
 On Android a host applies patches on Android 9 (API 28) and later, in the app's main process; on older devices it runs the app as built.
 
@@ -48,7 +48,7 @@ Bytecode patches come in two tiers, which `patch` chooses for you: **lean** carr
 
 ## Baselines: what a patch is compared with
 
-A patch is the difference between your current code and the version on the user's phone, so the CLI must know that version exactly. Alongside the app, `build` saves its complete record as a **baseline**: compiled output, source hashes, dependencies, assets, public keys, and the versions of the engine and tools it used.
+A patch is the difference between your current code and the version on the user's phone, so the CLI must know that version exactly. Alongside the app, `build` saves its complete record as a **baseline**: compiled output, source hashes, dependencies, assets, the host policy, and the versions of the engine and tools it used.
 
 `patch` finds the baseline by flavor and version number (Android versionCode, iOS CFBundleVersion), compares your current source with it, and packs only what changed.
 
@@ -59,46 +59,70 @@ Two rules apply to baselines:
 
 It follows that **a release whose baseline is lost can no longer be patched.**
 
+## The patch file
+
+A patch file (FPTC v1) is a 146-byte header followed by the payload, a ZIP of the patch:
+
+| Offset | Bytes | Field |
+|---:|---:|---|
+| 0 | 4 | Magic `FPTC` |
+| 4 | 2 | Format version, 1 |
+| 6 | 32 | Fingerprint of the host it is for |
+| 38 | 4 | Sequence (uint32, above 0) |
+| 42 | 8 | Payload length |
+| 50 | 32 | SHA-256 of the payload |
+| 82 | 64 | Ed25519 signature over bytes 0–81 followed by the payload; 64 zero bytes when unsigned |
+| 146 | | Payload |
+
+- A file with an empty payload is a **withdrawal**: devices that apply it drop their patch.
+- The **sequence** is the Unix time in seconds when the file was sealed, unless `publish --seq` gives another. A device accepts only files numbered above every file it has accepted.
+- The **name** is `<version_code>-<flavor>-<channel>-<abi>.fptc`, for example `7-default-production-arm64-v8a.fptc`. `patch` and `publish` name files this way, and `FlutterPatcher.patchTarget` gives the same `fileName` on the device, so an app or its server can pick the right file.
+- A file is at most 320 MiB.
+
 ## Security model
 
-`keys init` creates three Ed25519 key pairs:
+There is one key, the **patch key**, and it is optional:
 
-| Key | Signs | If it leaks |
-|---|---|---|
-| `patch` | The patch itself | Release a new host |
-| `publisher` | The publication manifest: which patch a release should install | Replace it with the root key; no new release needed |
-| `root` | Trust updates that replace the publisher public keys | Release a new host |
+- **Signed host** (built while `trust.patch` in `flutter_patcher.yaml` names a public key): the device installs only files signed by that key. Storage, CDNs, the transport and however your app fetches the file **need not be trusted**: changed content only fails verification. This is also why `serve` can use plain HTTP while developing.
+- **Unsigned host** (no key; `build` prints `WARNING: UNSIGNED`): the signature field is ignored, so whoever can hand the app a file can run code in it. The built-in downloader accepts only HTTPS, or plain HTTP to the device itself for `serve`; when the app fetches files itself, securing that channel is the app's job. An unsigned host also accepts signed files.
 
-`build` puts the three **public** keys, recorded in `flutter_patcher.yaml`, in the host policy. The **private** keys never enter the project: only `publish`, `serve` and `trust sign` use them, from a key store on your computer, a CI secret or a signing service. Making a patch needs none of them.
+The private key never enters the project. `publish` signs with it, and so does `patch` when it finds it, from `--key-file` (publish only), the `FLUTTER_PATCHER_KEYS` environment variable, `signing.command` or the key store on your computer; see the [CLI Reference](cli.md). Building a host needs no private key.
 
-Each time a device installs a patch, native code checks that:
+If the patch key is lost, hosts built with it accept no new patch file; if it leaks, whoever holds it can sign files for them. Either way those hosts need a new store release built with a new key: the key in a released host cannot be replaced.
 
-1. the manifest is signed by a publisher the host trusts;
-2. the manifest's scope is exactly this host: application id, version, flavor, channel, ABI, strategy and compile fingerprint;
-3. the patch's size and hash match the manifest, and the patch itself is signed with the patch key;
-4. the patch's publication sequence number is above the highest the device has accepted, so an old patch cannot be replayed, and a withdrawn sequence never takes effect again.
+Each time a device installs a file, native code checks that:
 
-If any check fails, nothing is installed. Storage, CDNs and the network therefore **need not be trusted**: tampered content only fails verification. This is also why `serve` can use plain HTTP while developing: it changes only the transport, and every check still runs.
+1. its size matches its header and is at most 320 MiB, and its magic and version are FPTC v1;
+2. its fingerprint is this host's, so a file for another app, version, flavor, channel, ABI or build cannot install;
+3. the payload matches its SHA-256 and, on a signed host, the signature verifies with the host's key;
+4. its sequence is above the highest the device has accepted, of a patch or a withdrawal, so an old file cannot be replayed;
+5. the patch is not on the device's blacklist.
+
+Applying the installed file again succeeds and changes nothing. If any check fails, nothing is installed. At every cold start the device checks the installed patch again before loading it: on a bytecode host the whole file as above, on an SO host the unpacked files against what was verified at install.
 
 ## Life on the device
 
 ```text
-checkUpdate   downloads this host's manifest and verifies it natively;
-     ↓        hasUpdate only when there is something new
-applyPatch    downloads the patch → verifies it → writes it and commits atomically
+your app gets   from your API, a URL (checkUpdate / applyPatch), push, a bundled file…
+the file
+     ↓
+apply           native code verifies the whole file → writes it and commits atomically;
+                a withdrawal removes the installed patch
      ↓
 (the app keeps running its current code)
      ↓
-next cold     confirms the patch is still valid → loads it →
-start         marks the start successful after the first frame
+next cold       checks the installed patch again → loads it →
+start           marks the start successful after the first frame
      ↓
-failed start  past the threshold, returns to the app's built-in version
-              and blacklists the patch
+failed start    past the threshold, returns to the app's built-in version
+                and blacklists the patch
 ```
 
-- A patch **never** replaces running code; it takes effect at a cold start.
+- A patch **never** replaces running code; a new patch or a withdrawal takes effect at the next cold start.
 - Installation is atomic: power loss or a killed process never leaves half a patch.
+- `rollback()` removes the installed patch on this device only. It does not blacklist the patch, and the highest accepted sequence stays, so only a newer file can install.
 - When the user upgrades the app, patches for the old version stop applying.
+- A device that ran a 1.0 host deletes the signed-manifest state 1.0 left (`noBackupFilesDir/flutter_patcher_auth/` on Android, `Application Support/flutter_patcher/auth/` on iOS) on its first start as a 1.1 host.
 - How failed starts are detected and rolled back: [Crash Protection](crash-protection.md).
 
 ## What can be patched

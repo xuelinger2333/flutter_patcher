@@ -12,7 +12,7 @@ a private Dart Uint8List before releasing native storage. A response is the
 big-endian u32 length of a StandardMethodCodec envelope, the envelope, then an
 offer's `envelopeBytes` unencoded, which Dart puts back into the offer as a
 view of that copy; the largest value never passes through the codec. CRC,
-entry SHA, candidate verification, attempt tokens and publication checks remain.
+entry SHA, candidate verification, attempt tokens and patch-file checks remain.
 
 `patcher_boot_v1_span(handle, index)` reports, for a finished handle, the
 microseconds its worker spent waiting to start, attaching to the JVM, in Kotlin

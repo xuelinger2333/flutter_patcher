@@ -1,17 +1,16 @@
-"""Build, patch, publish and verify an authenticated host on a real device.
+"""Build, patch, publish and verify a patchable host on a real device.
 
-One command per strategy (`so` or `bytecode`). Keys, the TLS certificate and
-the HTTPS origin are generated per run and trusted only by the fixture app;
-the phone reaches the origin through `adb reverse`. Requires Python 3, a JDK
-(keytool), the Android SDK and an unlocked API 28+ arm64 device.
+One command per strategy (`so` or `bytecode`) and signing (`signed` or
+`unsigned`). The patch key, the TLS certificate and the HTTPS origin are
+generated per run and trusted only by the fixture app; the phone reaches the
+origin through `adb reverse`. Requires Python 3, a JDK (keytool), the Android
+SDK and an unlocked API 28+ arm64 device.
 
 `--remote HOST` prepares on an SSH build host (e.g. the Linux builder) from a
 snapshot of this working tree, fetches the outputs and verifies locally.
 """
 import argparse
-import base64
 from datetime import datetime
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,7 +25,7 @@ import urllib.request
 
 from integration import WINDOWS, call, configure_android, dart_binary, flutter_launcher, normalize_line_endings, snapshot
 
-PACKAGE = 'com.example.authenticated_device'
+PACKAGE = 'com.example.device_fixture'
 CONTROL = 'http://127.0.0.1:8767'
 ORIGIN = 'https://localhost:8443'
 
@@ -47,7 +46,7 @@ def write(path, text):
 def create_app(flutter, repo, out, ca):
     app = out / 'app'
     call([flutter_launcher(flutter), 'create', '--empty', '--platforms', 'android', '--org', 'com.example',
-          '--project-name', 'authenticated_device', app], out, out / 'create.log')
+          '--project-name', 'device_fixture', app], out, out / 'create.log')
     configure_android(app)
     res = app / 'android/app/src/main/res'
     (res / 'raw').mkdir(exist_ok=True)
@@ -62,11 +61,12 @@ def create_app(flutter, repo, out, ca):
           '"android.permission.INTERNET"/>\n    <application android:networkSecurityConfig='
           '"@xml/network_security_config"', 1))
     write(app / 'pubspec.yaml', json.dumps(dict(
-        name='authenticated_device', version='1.0.0+1', environment={'sdk': '>=3.8.0 <4.0.0'},
-        dependencies={'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': repo.as_posix()}},
+        name='device_fixture', version='1.0.0+1', environment={'sdk': '>=3.8.0 <4.0.0'},
+        dependencies={'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': repo.as_posix()},
+                      'fixture_support': {'path': (repo / 'test/acceptance/app/fixture_support').as_posix()}},
         flutter={'assets': ['assets/msg.txt']})))
     write(app / 'assets/msg.txt', 'asset-original')
-    source = (repo / 'test/acceptance/app/authenticated_device.dart').read_text(encoding='utf-8')
+    source = (repo / 'test/acceptance/app/device_fixture.dart').read_text(encoding='utf-8')
     source = source.replace('__TEST_CA__', ca.read_text().strip())
     write(app / 'lib/main.dart', source)
     normalize_line_endings(app)
@@ -83,13 +83,6 @@ def prepare(args, repo, out):
         call([dart, cli, *argv], repo, out / (name + '.log'))
 
     call([flutter_launcher(args.flutter_sdk), 'pub', 'get'], repo, out / 'cli-pub.log')
-    # One key bundle file signs everything; a project whose flutter_patcher.yaml
-    # names its public keys lets publish check them, as a CI job would.
-    patcher('keys', 'keys', 'init', '--out', out / 'keys.json')
-    keys = next(json.loads(line) for line in (out / 'keys.log').read_text().splitlines()
-                if line.startswith('{'))['public_keys']
-    write(out / 'keys-project/flutter_patcher.yaml',
-          'trust:\n' + ''.join(f'  {role}: {keys[role]}\n' for role in ['root', 'publisher', 'patch']))
     tls, password = out / 'tls', secrets.token_hex(16)
     tls.mkdir()
     keytool = tool(args.java_home and Path(args.java_home) / 'bin', 'keytool')
@@ -100,47 +93,43 @@ def prepare(args, repo, out):
           '-storepass', password, '-file', tls / 'test_ca.pem'], out, out / 'keytool-export.log')
     write(tls / 'password.txt', password)
     app, source = create_app(args.flutter_sdk, repo, out, tls / 'test_ca.pem')
-
-    policy = dict(schema='1', application_id=PACKAGE, version_code='1', channel='device', flavor='default',
-                  abi='arm64-v8a', strategy=args.strategy, fptc_key=keys['patch'], root_key=keys['root'],
-                  keys='release:' + keys['publisher'])
-    write(out / 'host-policy.json', json.dumps(policy, sort_keys=True, separators=(',', ':')))
-    store = (out / 'store').as_uri()
+    srv = out / 'srv'
+    (srv / 'pub').mkdir(parents=True)
+    config = f"store: '{(srv / 'pub').as_uri()}/'\nbaseline_store: '{(out / 'store').as_uri()}/'\n"
+    key = []
+    if args.signing == 'signed':
+        # One key bundle file signs everything, as a CI job's would.
+        patcher('keys', 'keys', 'init', '--out', out / 'keys.json')
+        public = next(json.loads(line) for line in (out / 'keys.log').read_text().splitlines()
+                      if line.startswith('{'))['public_key']
+        config += f'trust:\n  patch: {public}\n'
+        key = ['--key-file', out / 'keys.json']
+    write(app / 'flutter_patcher.yaml', config)
     (out / 'store').mkdir()
-    patcher('build', 'build', 'android', *common, '--project', app, '--baseline-store', store,
-            '--host-policy', out / 'host-policy.json',
-            '--version-code', '1', '--out', out / 'release')
+    patcher('build', 'build', 'android', *common, '--project', app, '--channel', 'device',
+            '--strategy', args.strategy, '--version-code', '1', '--out', out / 'release')
     built = json.loads((out / 'release/build.json').read_text())
 
     if args.strategy == 'so':  # Bytecode patches replace Dart code only.
         write(app / 'assets/msg.txt', 'asset-patched')
-    for seq, revision, crash in [(1, 'patched', False), (2, 'crash', True), (3, 'patched-3', False)]:
+    for n, revision, crash in [(1, 'patched', False), (2, 'crash', True), (3, 'patched-3', False)]:
         main = source.replace("const revision = 'original';", f"const revision = '{revision}';")
         write(app / 'lib/main.dart', main.replace('const crash = false;', f'const crash = {str(crash).lower()};'))
-        patcher(f'patch{seq}', 'patch', 'android', *common, '--project', app, '--fingerprint',
-                built['fingerprint'], '--version-code', '1', '--baseline-store', store, '--out', out / f'patch{seq}')
+        patcher(f'patch{n}', 'patch', 'android', *common, '--project', app, '--fingerprint',
+                built['fingerprint'], '--version-code', '1', '--out', out / f'patch{n}')
 
-
-    srv = out / 'srv'
-    version = next(line.split(':', 1)[1].strip() for line in (repo / 'pubspec.yaml').read_text().splitlines()
-                   if line.startswith('version:'))
-    for revision, extra in enumerate([dict(action='publish'), dict(action='publish'), dict(action='publish'),
-                                      dict(action='withdraw', withdraw_through_seq='3')], 1):
-        operation = secrets.token_hex(16)
-        request = dict(application_id=PACKAGE, store=(srv / 'pub').as_uri(), operation=operation,
-                       fields=dict(schema='1', key_id='release', application_id=PACKAGE, channel='device',
-                                   flavor='default', version_code='1', abi='arm64-v8a',
-                                   fingerprint=built['fingerprint'], strategy=args.strategy,
-                                   minPluginVersion=version, revision=str(revision), **extra),
-                       baseline_store=store, expected_revision=revision - 1, created_at=int(time.time()))
-        if extra['action'] == 'publish':
-            request.update(patch=str(out / f'patch{revision}'))
-        write(out / f'publish{revision}.json', json.dumps(request, indent=2))
-        patcher(f'publish{revision}', 'publish', '--production', '--yes', '--request', out / f'publish{revision}.json',
-                '--project', out / 'keys-project', '--key-file', out / 'keys.json')
-        write(srv / f'manifest{revision}.json',
-              json.loads((srv / 'pub/catalog.json').read_text())['releases'][operation]['wire'])
-    write(srv / 'tampered.json', tamper((srv / 'manifest1.json').read_text()))
+    name = '1-default-device-arm64-v8a.fptc'
+    # Sequences 1, 2, 3, a withdrawal as 4, and patch 1 again as 5: the rollback.
+    for seq, patch, extra in [(1, 1, []), (2, 2, []), (3, 3, []), (4, 3, ['--withdraw']), (5, 1, [])]:
+        patcher(f'publish{seq}', 'publish', '--project', app, '--patch', out / f'patch{patch}', *extra,
+                '--seq', str(seq), '--yes', *key)
+        shutil.copyfile(srv / 'pub' / name, srv / f'file{seq}.fptc')
+    write_bytes = (srv / 'file1.fptc').read_bytes()
+    # A flipped signature byte (signed) or payload byte (unsigned) must fail on the device.
+    offset = 100 if args.signing == 'signed' else len(write_bytes) - 1
+    (srv / 'tampered.fptc').write_bytes(write_bytes[:offset] + bytes([write_bytes[offset] ^ 1])
+                                        + write_bytes[offset + 1:])
+    write(out / 'file-name.txt', name)
 
 
 def remote_prepare(args, repo, out):
@@ -152,21 +141,16 @@ def remote_prepare(args, repo, out):
     ssh(shlex.join(['mkdir', '-p', root]))
     subprocess.run(['scp', '-q', str(out / 'source.tar.gz'), f'{args.remote}:{root}/'], check=True)
     print(f'STAGE remote-prepare {args.remote}:{root}', flush=True)
-    prepare = shlex.join(['python3', 'source/test/acceptance/authenticated_device.py', '--prepare-only',
-                          '--strategy', args.strategy, '--flutter-sdk', args.remote_flutter, '--out', 'out'])
-    # Keys and the baseline store stay on the builder; verify needs only the APK, origin and TLS.
+    prepare = shlex.join(['python3', 'source/test/acceptance/device_acceptance.py', '--prepare-only',
+                          '--strategy', args.strategy, '--signing', args.signing,
+                          '--flutter-sdk', args.remote_flutter, '--out', 'out'])
+    # The key and the baseline store stay on the builder; verify needs only the APK, origin and TLS.
     ssh(f'cd {shlex.quote(root)} && tar -xzf source.tar.gz && ANDROID_HOME={shlex.quote(args.remote_android)} '
         f'{prepare} > prepare.log 2>&1; code=$?; tar --exclude=./app --exclude=./store --exclude=./keys.json '
         f'-czf outputs.tar.gz prepare.log -C out .; exit $code')
     subprocess.run(['scp', '-q', f'{args.remote}:{root}/outputs.tar.gz', str(out)], check=True)
     with tarfile.open(out / 'outputs.tar.gz') as archive:
         archive.extractall(out, filter='data')
-
-
-def tamper(wire):
-    """Flip one signature character, keeping the envelope byte-canonical."""
-    signature = json.loads(wire)['signature']
-    return wire.replace(signature, ('B' if signature[0] == 'A' else 'A') + signature[1:], 1)
 
 
 def control(path, body=None):
@@ -220,42 +204,28 @@ def verify(args, out):
 
         asset = 'asset-patched' if args.strategy == 'so' else 'asset-original'
         original = dict(revision='original', asset='asset-original', version=None, diagnostic='noPatch')
-        # publish numbers the three patches 1, 2 and 3 in the fresh store.
         patched = dict(revision='patched', asset=asset, version='1', diagnostic='patched')
-        fields = json.loads(base64.b64decode(json.loads((srv / 'manifest1.json').read_text())['payload']))
-        scope = hashlib.sha256(json.dumps({k: fields[k] for k in ['application_id', 'channel', 'flavor',
-            'version_code', 'abi', 'fingerprint', 'strategy']}, separators=(',', ':')).encode()).hexdigest()
+        name = (out / 'file-name.txt').read_text().strip()
 
-        def offer(name):  # The device reads its scope's manifest in the store by convention.
-            shutil.copyfile(srv / name, srv / 'pub/manifests' / f'{scope}.json')
+        def offer(file):  # The device finds its file in the store by name.
+            shutil.copyfile(srv / file, srv / 'pub' / name)
             return control('/check', {'url': ORIGIN + '/pub'})
 
-        check = lambda n: lambda: offer(f'manifest{n}.json')
-        payload = srv / 'pub' / fields['path']
-        good = payload.read_bytes()
-
-        def rejected():  # Must fail native verification, not an earlier parse.
-            actual = offer('tampered.json')
-            return {**actual, 'native': 'AUTH_UPDATE_REJECTED' in actual.get('error', '')}
-
-        def corrupt():  # The origin serves altered bytes for an authentic manifest.
-            payload.write_bytes(good[:-1] + bytes([good[-1] ^ 1]))
-            try:
-                return check(1)()
-            finally:
-                payload.write_bytes(good)
-
+        check = lambda n: lambda: offer(f'file{n}.fptc')
         plan = [
             ('original boot', launch, original),
-            ('tampered manifest rejected', rejected, {'http': 409, 'native': True}),
-            ('corrupt payload rejected', corrupt, {'update': True, 'ok': False}),
-            ('retry after corrupt payload', check(1), {'update': True, 'ok': True}),
-            ('same manifest is not fresh', check(1), {'update': False}),
+            ('target names the file', lambda: control('/target'),
+             {'file': name, 'signed': args.signing == 'signed', 'accepted': 0}),
+            ('tampered file rejected', lambda: offer('tampered.fptc'),
+             {'update': True, 'ok': False, 'error': 'signatureInvalid'}),
+            ('app fetches the file itself', lambda: control('/fetch', {'url': ORIGIN + '/file1.fptc'}),
+             {'ok': True}),
+            ('the same file is not new', check(1), {'update': False}),
             ('patched boot', launch, patched),
             ('patched second boot', launch, patched),
             ('rollback', lambda: control('/rollback', {}), {'ok': True}),
             ('original after rollback', launch, original),
-            ('replay after rollback', check(1), {'update': False}),
+            ('the rolled back file is not new', check(1), {'update': False}),
             ('apply crash patch', check(2), {'update': True, 'ok': True}),
             ('crash patch does not start', lambda: {'crash_started': launch().get('revision') == 'crash'},
              {'crash_started': False}),
@@ -264,6 +234,9 @@ def verify(args, out):
             ('next patch boots', launch, {**patched, 'revision': 'patched-3', 'version': '3'}),
             ('withdraw', check(4), {'update': True, 'ok': True}),
             ('original after withdraw', launch, original),
+            ('an older file is not new after it', check(3), {'update': False}),
+            ('patch 1 again as 5', check(5), {'update': True, 'ok': True}),
+            ('rolled back to patch 1', launch, {**patched, 'version': '5'}),
         ]
         for name, action, expected in plan:
             actual = action()
@@ -286,6 +259,7 @@ def verify(args, out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--strategy', choices=['so', 'bytecode'], required=True)
+    parser.add_argument('--signing', choices=['signed', 'unsigned'], default='signed')
     parser.add_argument('--flutter-sdk', type=Path, required=True)
     parser.add_argument('--serial')
     parser.add_argument('--java-home', default=os.environ.get('JAVA_HOME'))
@@ -294,17 +268,17 @@ def main():
                         help='Reuse a completed build/patch/publish in --out; rerun device steps only')
     parser.add_argument('--prepare-only', action='store_true', help='Build, patch and publish; skip the device')
     parser.add_argument('--remote', help='SSH host alias that builds, patches and publishes')
-    parser.add_argument('--remote-root', default='/root/.flutter_patcher/authenticated')
+    parser.add_argument('--remote-root', default='/root/.flutter_patcher/device')
     parser.add_argument('--remote-flutter', default='/opt/flutter')
     parser.add_argument('--remote-android', default='/opt/android-sdk')
     args = parser.parse_args()
     if not args.prepare_only and not args.serial:
         parser.error('--serial is required unless --prepare-only')
     repo = Path(__file__).resolve().parents[2]
-    out = (args.out or repo / '.dart_tool/flutter_patcher/authenticated' /
-           f'{args.strategy}-{datetime.now():%Y%m%d-%H%M%S}').resolve()
+    out = (args.out or repo / '.dart_tool/flutter_patcher/device' /
+           f'{args.strategy}-{args.signing}-{datetime.now():%Y%m%d-%H%M%S}').resolve()
     if args.resume_built:
-        if not (out / 'srv/manifest4.json').exists():
+        if not (out / 'srv/file5.fptc').exists():
             raise SystemExit('--resume-built needs a prepared --out')
     else:
         out.mkdir(parents=True, exist_ok=False)
@@ -313,7 +287,8 @@ def main():
             print(f'PREPARED {out}')
             return
     steps, failed = verify(args, out)
-    result = dict(status='failed' if failed else 'passed', strategy=args.strategy, serial=args.serial,
+    result = dict(status='failed' if failed else 'passed', strategy=args.strategy, signing=args.signing,
+                  serial=args.serial,
                   steps=steps, failed=failed)
     write(out / 'result.json', json.dumps(result, indent=2))
     print(f'{result["status"].upper()} {out}')

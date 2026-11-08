@@ -133,7 +133,15 @@ Future<Map<String, dynamic>> publication(
       work,
     );
     final existing = await store.read(name);
-    final current = existing == null ? null : PatchHeader.parse(existing.bytes);
+    PatchHeader? current;
+    try {
+      current = existing == null ? null : PatchHeader.parse(existing.bytes);
+    } on FormatException {
+      throw Failure(
+        'PUBLISH_STORE_INVALID',
+        'The store holds $name, which is not a patch file; remove it.',
+      );
+    }
     final summary = {
       'action': withdraw ? 'withdraw' : 'publish',
       'file': name,

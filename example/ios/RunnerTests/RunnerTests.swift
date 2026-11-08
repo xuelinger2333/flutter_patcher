@@ -21,38 +21,22 @@ final class RunnerTests: XCTestCase {
     return data
   }
 
-  /// The vectors shared with the CLI, Dart and Android tests.
-  func testSharedManifestVectors() throws {
+  /// The FPTC v1 vectors shared with the CLI, Dart and Android tests.
+  func testSharedPatchFileVectors() throws {
     let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("../../../test/protocol/manifest-v1.json").standardized
-    let rows = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [[String: Any]]
+      .appendingPathComponent("../../../test/protocol/fptc-v1.json").standardized
+    let vectors = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+    let rows = vectors["files"] as! [[String: Any]]
     XCTAssertFalse(rows.isEmpty)
     for row in rows {
       let name = row["name"] as! String
-      let payload = Data(base64Encoded: row["payload"] as! String)!
-      if row["parse_valid"] as! Bool {
-        XCTAssertNoThrow(try PublishManifest.parse(payload), name)
-        XCTAssertEqual(hex(PublishManifest.domain + payload), row["signing_hex"] as? String, name)
+      let bytes = Data(base64Encoded: row["file"] as! String)!
+      let key = (row["host_key"] as? String).map { Data(base64Encoded: $0)! }
+      let seq = try? BytecodeEnvelope.verify(bytes, fingerprint: row["fingerprint"] as! String, rawKey: key)
+      if row["valid"] as! Bool {
+        XCTAssertEqual(seq, (row["seq"] as! NSNumber).int64Value, name)
       } else {
-        XCTAssertThrowsError(try PublishManifest.parse(payload), name)
-      }
-      let s = row["state"] as! [String: Any]
-      let state = PublishManifest.State(
-        revision: int64(s["revision"]) ?? 0, manifestHash: s["manifestHash"] as? String ?? "",
-        highSeq: int64(s["highSeq"]) ?? 0, patchHash: s["patchHash"] as? String ?? "",
-        withdrawnThrough: int64(s["withdrawnThrough"]) ?? 0)
-      let verify = {
-        try PublishManifest.verify(
-          row["wire"] as! String, trustedKeys: ["release": self.bytes(row["public_key"] as! String)],
-          scope: row["scope"] as! [String: String], pluginVersion: row["plugin_version"] as! String, state: state)
-      }
-      if row["verify_valid"] as! Bool {
-        let decision = try verify()
-        XCTAssertEqual(decision.action, row["action"] as? String, name)
-        XCTAssertEqual(decision.next.revision, Int64(decision.fields["revision"]!), name)
-        XCTAssertGreaterThanOrEqual(decision.next.highSeq, state.highSeq, name)
-      } else {
-        XCTAssertThrowsError(try verify(), name)
+        XCTAssertNil(seq, name)
       }
     }
   }
@@ -86,7 +70,7 @@ final class RunnerTests: XCTestCase {
   func testCrashBeforeFirstFrameTripsTheBreaker() throws {
     try PatcherConfig.save(maxCrashCount: 1)
     let store = try CandidateStore(strategy: "bytecode")
-    let meta = store.candidate(fingerprint: "ab", seq: 1, sha256: "cd", version: "1", authorization: "{}")
+    let meta = store.candidate(fingerprint: "ab", seq: 1, sha256: "cd")
     try store.save(meta, bytes: Data("x".utf8))
     try store.markLoading(meta, foreground: true)
     // The process ends before its first frame; the next launch settles it.
@@ -100,7 +84,7 @@ final class RunnerTests: XCTestCase {
   func testEndingInTheBackgroundIsNotACrash() throws {
     try PatcherConfig.save(maxCrashCount: 1)
     let store = try CandidateStore(strategy: "bytecode")
-    let meta = store.candidate(fingerprint: "ab", seq: 2, sha256: "ce", version: "2", authorization: "{}")
+    let meta = store.candidate(fingerprint: "ab", seq: 2, sha256: "ce")
     try store.save(meta, bytes: Data("x".utf8))
     // Swiped away (or ended by the system) after leaving the foreground.
     try store.markLoading(meta, foreground: true)
@@ -118,10 +102,9 @@ final class RunnerTests: XCTestCase {
 
   func testHostPolicyBindsBundleAndBuild() throws {
     let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString()
-    let policy = PublishManifest.canonical([
+    let policy = HostTrustConfig.canonical([
       "abi": "ios-arm64", "application_id": "com.example.app", "channel": "stable", "flavor": "default",
-      "fptc_key": key, "keys": "release:\(key)", "root_key": key, "schema": "1", "strategy": "bytecode",
-      "version_code": "3",
+      "fptc_key": key, "schema": "2", "strategy": "bytecode", "version_code": "3",
     ])
     let trust = String(
       decoding: try JSONSerialization.data(withJSONObject: [

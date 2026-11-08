@@ -1,4 +1,4 @@
-// Device fixture for authenticated hosts (SO or bytecode). Test-only trust: the
+// Device fixture for patchable hosts (SO or bytecode). Test-only trust: the
 // CA is accepted by this app alone, via HttpOverrides and its native NSC on
 // Android; on iOS the device trusts the test CA (native downloads use it).
 //
@@ -46,6 +46,29 @@ Future<Object?> handle(String path, Map body, String asset) async {
       if (!check.hasUpdate) return {'update': false};
       final result = await FlutterPatcher.applyPatch(check.patch!);
       return {'update': true, 'ok': result.ok, 'error': result.error?.name};
+    case '/fetch':
+      // The app fetches the file itself, as from its own server.
+      final client = HttpClient();
+      try {
+        final response = await (await client.getUrl(
+          Uri.parse(body['url'] as String),
+        )).close();
+        final bytes = await response.fold<List<int>>(
+          [],
+          (a, b) => a..addAll(b),
+        );
+        final result = await FlutterPatcher.applyPatchBytes(bytes);
+        return {'ok': result.ok, 'error': result.error?.name};
+      } finally {
+        client.close();
+      }
+    case '/target':
+      final target = await FlutterPatcher.patchTarget;
+      return {
+        'file': target.fileName,
+        'signed': target.signed,
+        'accepted': target.acceptedSeq,
+      };
     case '/rollback':
       await FlutterPatcher.rollback();
       return {'ok': true};

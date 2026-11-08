@@ -50,7 +50,7 @@ class PatchApplyProgress {
   /// Meaningful only when [phase] is [PatchApplyPhase.downloading].
   final int bytesReceived;
 
-  /// The signed patch size. Meaningful only when [phase] is
+  /// The patch file size. Meaningful only when [phase] is
   /// [PatchApplyPhase.downloading].
   final int totalBytes;
 
@@ -92,8 +92,8 @@ class PatchApplyProgress {
 
 /// Classified failure reason for `FlutterPatcher.applyPatch`.
 enum PatchApplyError {
-  /// Not a [PatchInfo] from `checkUpdate`, a patch whose sequence or hash
-  /// differs from its manifest, or a sequence this device already installed.
+  /// Not a [PatchInfo] from `checkUpdate`, or a file numbered no higher than
+  /// one this device already installed.
   invalidArgs,
 
   /// The payload is in the local bad-patch blacklist after a failed start.

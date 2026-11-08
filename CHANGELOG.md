@@ -1,5 +1,117 @@
 > Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
 
+## 1.1.0
+
+1.1.0 makes a patch one file. `patch` writes
+`<version_code>-<flavor>-<channel>-<abi>.fptc`; the app gets that file in any
+way it likes and hands it to the plugin, which verifies it and installs it for
+the next cold start. Signing is optional, and the plugin no longer fetches
+anything itself: `checkUpdate` and `applyPatch` remain as an optional
+downloader. Hosts shipped with 1.0.0 are not affected; see "Upgrading from
+1.0" below.
+
+### Removed
+
+These are breaking changes for code and scripts that used them, made on
+purpose in a minor release: the signed-manifest protocol they belong to is
+gone, and nothing maps onto them. Dart code that uses them fails to compile;
+the CLI reports an unknown command or option.
+
+- Dart: `SignedManifest`, `SignedUpdateResult`,
+  `FlutterPatcher.fetchSignedManifest`, `applySignedManifest` and
+  `updatePublicationTrust`. Use `applyPatchBytes` or `applyPatchFile` with a
+  patch file, or `checkUpdate` and `applyPatch`.
+- CLI: `trust sign` and `trust publish`, which are no longer needed; `publish
+  --production --request` (to clean up, delete files in the store directly);
+  `keys import --rotate`; `keys init --role root|publisher`.
+- Error codes of the manifest protocol: `PUBLISH_BUSY`,
+  `PUBLISH_CATALOG_FULL`, `PUBLISH_CATALOG_INVALID`, `PUBLISH_COMMIT_UNKNOWN`,
+  `PUBLISH_DELETE_UNKNOWN`, `PUBLISH_MANIFEST_CONFLICT`,
+  `PUBLISH_OBJECT_CHANGED`, `PUBLISH_PATCH_INVALID`,
+  `PUBLISH_RETENTION_STALE`, `PUBLISH_TARGET_MISMATCH`,
+  `PUBLISH_UPLOAD_FAILED`, `PUBLISH_URL_INVALID`, `PUBLISH_URL_UNREACHABLE`
+  and every `TRUST_*` code.
+
+### Changed
+
+- **Patch files instead of signed manifests.** A patch file (FPTC v1) is a
+  146-byte header (magic, version, host fingerprint, sequence, payload length,
+  payload SHA-256, Ed25519 signature or zeros) followed by the patch ZIP; a
+  file with no payload is a withdrawal. A device installs a file only when it
+  is for this exact host, intact, signed by the host's key when the host has
+  one, and numbered above every file it accepted; it checks the installed
+  patch again at every cold start. See [How It Works](doc/architecture.md).
+- **Signing is optional.** `build` needs no keys: without `trust.patch` in
+  `flutter_patcher.yaml` it builds an unsigned host and prints `WARNING:
+  UNSIGNED`. A host keeps the mode it was built with. An unsigned host
+  installs any file of its own build, so whoever can hand the app a file can
+  run code in it; the built-in downloader accepts only HTTPS, or plain HTTP to
+  the device itself.
+- The host policy is schema 2: `application_id`, `version_code`, `flavor`,
+  `channel`, `abi`, `strategy` and `fptc_key` (the patch public key, or `-`
+  for an unsigned host).
+- `publish` seals the patch output again and writes `<fileName>.fptc` at the
+  root of the store. It replaces the file there only with a higher sequence
+  (`PUBLISH_SEQUENCE_CONFLICT` otherwise), reports `already_published` for the
+  same patch, and fails with `PUBLISH_CONFLICT` when the file changed while
+  publishing. `publish --withdraw` writes a withdrawal file. `publish` no
+  longer reads `url`.
+- `checkUpdate()` reads only the first 146 bytes of `<url>/<fileName>` (a
+  `Range` request); no file there (404) means no update. Without `url` given
+  or built in, it throws `PatcherException`.
+- Sequences are Unix seconds: a file is numbered with the time it was sealed.
+  `currentVersion`, `PatchInfo.version`, `PatchBootDiagnostic.patchVersion`
+  and the sequence in `BlacklistEntry.version` show these numbers instead of
+  1, 2, 3...; an app that displays them shows the new numbers.
+- `trust` in `flutter_patcher.yaml` is read only for `patch`; the `root` and
+  `publisher` keys 1.0 wrote there are ignored.
+- One key: the patch key is the only one. `keys init`, `export`, `import` and
+  `status` handle it; 1.0 key bundles and key-store directories still work,
+  and only their patch key is used. `signing.command` always signs with
+  `FLUTTER_PATCHER_SIGN_ROLE=patch`.
+- Security: installing a malicious patch on a signed host now takes only the
+  patch private key. In 1.0 it took the patch and the publisher keys, which
+  lived in one key bundle and were used by the same command. Losing or leaking
+  the patch key means the hosts built with it need a new release, as with the
+  1.0 patch key; there is no key rotation.
+- On its first start as a 1.1 host, a device deletes the signed-manifest state
+  1.0 kept (`noBackupFilesDir/flutter_patcher_auth/` on Android, `auth/` in
+  the plugin's directory on iOS).
+
+### Added
+
+- `FlutterPatcher.patchTarget`: the file name this host installs, its version
+  code, flavor, channel, ABI, strategy and fingerprint, whether it is signed,
+  and the highest sequence it accepted, for an app whose server picks the
+  file.
+- `FlutterPatcher.inspectPatch(header)`: whether a file is new to this host,
+  from its first 146 bytes.
+- `FlutterPatcher.applyPatchBytes(bytes)` and `applyPatchFile(path)`: install
+  a patch file, or apply a withdrawal, that the app got in any way.
+- `patch` also writes the patch file into its output directory and reports
+  `file` and `seq`. On a signed host whose private key this machine lacks,
+  `file` is null and `publish` seals it.
+- `publish --seq <n>` numbers the file; by default it is the current Unix time
+  in seconds, and it must be above the sequence of the file in the store.
+- `serve` answers `Range` requests, as `checkUpdate` sends.
+
+### Upgrading from 1.0
+
+- Hosts shipped with 1.0.0 stay on 1.0.0+1 for their patches: make, publish
+  and withdraw their patches with flutter_patcher 1.0.0+1. On 1.1, `patch` for
+  a 1.0 baseline fails with `PATCH_BASELINE_INCOMPATIBLE`.
+- The project keeps working: commands, `flutter_patcher.yaml` and the key
+  store need no change. The next `build` makes a 1.1 host, signed with the
+  existing patch key.
+- The 1.0 files in the store (`manifests/`, `objects/`, `catalog.json`) are
+  neither read nor written by 1.1 and keep serving 1.0 hosts; 1.1 files sit
+  beside them at the store root. A 1.0 publish left unfinished
+  (`.dart_tool/flutter_patcher/publish-pending.json`) is ignored by 1.1;
+  finish it with 1.0.0+1.
+- Replace calls to the removed APIs: `applyPatchBytes` or `applyPatchFile` for
+  files the app fetches itself, `checkUpdate` and `applyPatch` for files at a
+  URL.
+
 ## 1.0.0+1
 
 ### Fixed

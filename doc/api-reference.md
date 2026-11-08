@@ -4,8 +4,8 @@
 
 This document lists the Dart API your app uses: the static members of `FlutterPatcher` and the types they take and return.
 
-- The plugin works on Android and iOS only. On other platforms calls do nothing and print a warning the first time: getters return empty values, `checkUpdate` reports no update and `applyPatch` returns `unknown`. `fetchSignedManifest`, `applySignedManifest` and `updatePublicationTrust` are not guarded and fail there.
-- Only hosts built with `flutter_patcher build` accept patches; see [How It Works](architecture.md#the-host-an-app-that-accepts-patches).
+- The plugin works on Android and iOS only. On other platforms calls do nothing and print a warning the first time: getters return empty values, `checkUpdate` reports no update, `applyPatch`, `applyPatchBytes` and `applyPatchFile` return `unknown`, and `patchTarget` and `inspectPatch` throw `PatcherException`.
+- Only hosts built with `flutter_patcher build` accept patches; see [How It Works](architecture.md).
 
 ```dart
 import 'package:flutter_patcher/flutter_patcher.dart';
@@ -15,44 +15,51 @@ import 'package:flutter_patcher/flutter_patcher.dart';
 
 ### Check for an update and install it
 
-**Goal**: install a patch when one is published, and handle every outcome.
+**Goal**: download and install the host's patch file from `url` when there is a newer one, and handle every outcome.
 
 ```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_patcher/flutter_patcher.dart';
+
 Future<void> updateIfAvailable() async {
   final PatchCheckResult check;
   try {
     check = await FlutterPatcher.checkUpdate();
   } on PatcherException catch (e) {
-    debugPrint('checkUpdate failed: $e'); // no network, or a manifest that fails verification
+    debugPrint('checkUpdate failed: $e'); // no network, an HTTP error, or no address
     return;
   }
   if (!check.hasUpdate) return;
 
   final result = await FlutterPatcher.applyPatch(
     check.patch!,
-    onProgress: (p) => showProgress(p.fraction), // null outside downloading
+    onProgress: (p) => debugPrint('$p'),
   );
   if (result.ok) return; // runs from the next cold start
 
   switch (result.error) {
     case PatchApplyError.network || PatchApplyError.ioError:
-      scheduleRetry(); // temporary; call applyPatch again with the same check.patch
+      break; // temporary: check again later
     case PatchApplyError.blacklisted:
       break; // this patch failed to start on this device; wait for a fixed one
     default:
-      report('patch_apply', {'error': result.error?.name, 'message': result.message});
+      debugPrint('patch rejected: ${result.error?.name} ${result.message}');
   }
 }
 ```
 
-- `checkUpdate` throws `PatcherException` when the network fails or the manifest does not verify. `applyPatch` never throws; its result says what happened.
-- The patch runs from the next cold start.
+**Check**: `result.ok` is `true`, and `await FlutterPatcher.currentVersion` returns the file's `seq`.
 
-**Check**: `result.ok` is `true`, and `await FlutterPatcher.currentVersion` returns the patch's sequence number.
+### Install a patch file you fetched yourself
+
+See [Obtaining patch files yourself](#obtaining-patch-files-yourself).
 
 ### Show which patch is running
 
 ```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_patcher/flutter_patcher.dart';
+
 Future<void> showRunningPatch() async {
   final diag = await FlutterPatcher.lastBootDiagnostic; // how this start went
   final installed = await FlutterPatcher.currentVersion; // runs from the next cold start
@@ -60,15 +67,11 @@ Future<void> showRunningPatch() async {
 }
 ```
 
-`lastBootDiagnostic` describes the current start; `currentVersion` the installed patch. They differ between a successful `applyPatch` and the next cold start.
+`lastBootDiagnostic` describes the current start; `currentVersion` the installed patch. They differ between a successful install and the next cold start.
 
 ### Report unhealthy starts
 
-See [Crash Protection: Boot diagnostics](crash-protection.md#boot-diagnostics).
-
-### Deliver manifests through your own API
-
-See [Delivering manifests yourself](#delivering-manifests-yourself).
+See [Crash Protection](crash-protection.md).
 
 ## Initialization
 
@@ -90,7 +93,82 @@ Call it in `main()` before `runApp()`; calling it again has no effect. It config
 
 What these do in detail: [Crash Protection](crash-protection.md). `init` also takes `loaderFieldCandidates` and `loaderFallbackHeuristic`, which adapt to changes in Flutter's internals; keep their defaults.
 
-## Checking for and installing updates
+## What a device accepts
+
+Every install goes through the same native check, whichever API hands over the file. The file format is described in [CLI Reference: Patch files](cli.md#patch-files).
+
+| File | Result |
+|---|---|
+| Wrong length, magic, version, host fingerprint or payload digest; or, on a signed host, a missing or invalid signature | Rejected: `signatureInvalid` |
+| A patch with `seq` above `acceptedSeq` | Installed; `acceptedSeq` becomes its `seq`. It runs from the next cold start |
+| The installed patch file again | Success; nothing changes |
+| Any other patch with `seq` not above `acceptedSeq` | Rejected: `invalidArgs` |
+| A blacklisted patch | Rejected: `blacklisted` |
+| A withdrawal with `seq` above `acceptedSeq` | The installed patch is deleted and `acceptedSeq` becomes its `seq`. The running process continues; the next cold start runs the app's built-in version |
+| A withdrawal with `seq` not above `acceptedSeq` | Rejected: `invalidArgs` |
+
+- `acceptedSeq` is kept per host build. A new build of the app (a new fingerprint) starts at 0 and drops the previous build's patch.
+- An unsigned host ignores the signature field and also accepts signed files.
+- `rollback()` deletes the installed patch and keeps `acceptedSeq`, so the same file cannot be installed again; publish the output again (`publish --patch <dir>`) for a new `seq`.
+- At each cold start the installed file is verified again before it loads.
+
+## Patch files
+
+### `patchTarget`
+
+```dart
+static Future<PatchTarget> get patchTarget
+```
+
+Who this host is. An app that fetches patch files itself sends these values to its server to pick the file. Throws `PatcherException` on an app not built with flutter_patcher.
+
+**`PatchTarget`**
+
+| Member | Description |
+|---|---|
+| `fileName` | The name the CLI gives this host's patch files: `<version_code>-<flavor>-<channel>-<abi>.fptc` |
+| `versionCode`, `flavor`, `channel`, `abi`, `strategy` | The build, as `build` recorded it in the host policy |
+| `fingerprint` | The host build's fingerprint; a file of another fingerprint is rejected |
+| `signed` | Whether the host accepts only files signed by its patch key |
+| `acceptedSeq` | The largest `seq` this host accepted, of a patch or a withdrawal; `0` before any. Only files numbered above it install |
+| `scope` | All of the above as a map, plus `application_id` |
+
+### `inspectPatch`
+
+```dart
+static Future<PatchInspection> inspectPatch(List<int> header)
+```
+
+Tells from the first 146 bytes of a file (more are ignored) whether installing it would change this host, before you download the rest. It checks magic, version, fingerprint and `seq` only; installing still verifies the whole file. On an app not built with flutter_patcher it throws a `PlatformException`.
+
+**`PatchInspection`**
+
+| Field | Description |
+|---|---|
+| `fresh` | `true` when the header is this host's and its `seq` is above `acceptedSeq` |
+| `action` | `publish` for a patch, `withdraw` for a withdrawal; `null` when the bytes are not a patch file header |
+| `seq` | The file's sequence; `null` when the bytes are not a patch file header |
+| `reason` | Why it is not `fresh`, for example `Patch file of another host` or `Not newer than the accepted patch` |
+
+### `applyPatchBytes`
+
+```dart
+static Future<PatchApplyResult> applyPatchBytes(List<int> bytes)
+```
+
+Installs the patch file `bytes`, or applies the withdrawal it is, by the rules in [What a device accepts](#what-a-device-accepts). The bytes are written to a temporary file for native verification, which is deleted afterwards. It does not throw; every outcome is in the result.
+
+### `applyPatchFile`
+
+```dart
+static Future<PatchApplyResult> applyPatchFile(String path)
+```
+
+As `applyPatchBytes`, for a file on the device. The file is left in place. A path that cannot be read gives `ioError`.
+
+## Built-in downloader
+
+`checkUpdate` and `applyPatch` download the host's file from a URL where the CLI's files are placed. You do not need them when the app obtains files itself.
 
 ### `checkUpdate`
 
@@ -101,20 +179,21 @@ static Future<PatchCheckResult> checkUpdate({
 })
 ```
 
-Without `url`, it checks the address `build` wrote into the app: `url` in `flutter_patcher.yaml`, or `http://127.0.0.1:8686`, where `serve` offers patches, when that is not set. Pass `url` to check elsewhere, such as an HTTPS tunnel to `serve` for an iPhone. Either way it is the root address where your publication store is served, such as `https://cdn.example.com/my-app`. The plugin reads this host's manifest there and verifies it in native code.
+Requests `GET <url>/<fileName>` with `Range: bytes=0-145`, reads the first 146 bytes and judges them with `inspectPatch`.
 
-- `hasUpdate` is `true` only when accepting the manifest would change the device: a patch with a higher sequence number, or a new withdrawal. A patch already installed is not an update.
-- Once `applyPatch` has downloaded a patch, the device has accepted its manifest, even if installing then fails; `checkUpdate` no longer reports it. To retry, call `applyPatch` again with the same `PatchInfo`.
-- When nothing has been published, the store answers 404 and `checkUpdate` returns `hasUpdate: false`. Any other error status throws, so a store that answers 403 for a missing file, as private S3 and R2 buckets often do, must be set to answer 404.
-- The address must be HTTPS, except the device's own `http://127.0.0.1`, `http://[::1]` or `http://localhost` used by `serve`. It must not contain a user name, a password or a `#` fragment, and redirects are not followed. A manifest larger than 24,000 bytes is rejected.
-- Network errors, a manifest that fails verification, or a host not built with `flutter_patcher build` throw a `PatcherException`.
+- Without `url`, it uses the address `build` wrote into the app: `url` in `flutter_patcher.yaml`, or `http://127.0.0.1:8686`, where `serve` offers patches, when that is not set. Pass `url` to check elsewhere, such as an HTTPS tunnel to `serve` for an iPhone.
+- `hasUpdate` is `true` only when the file is `fresh`: a newer patch or a newer withdrawal of this host.
+- `404` means no update. Any status other than `200`, `206` or `404` throws, so a store that answers `403` for a missing file, as private S3 and R2 buckets often do, must be set to answer `404`.
+- The address must be HTTPS, except the device's own `http://127.0.0.1`, `http://[::1]` or `http://localhost` used by `serve`. It must not contain a user name, a password or a `#` fragment, and redirects are not followed.
+- `timeout` limits the connection and the header read.
+- Throws `PatcherException` when the app was not built with flutter_patcher, when no `url` is given and the app has none, and when the request fails, including a response shorter than 146 bytes.
 
 **`PatchCheckResult`**
 
 | Field | Description |
 |---|---|
-| `hasUpdate` | Whether there is an update to install |
-| `patch` | The update; pass it unchanged to `applyPatch`. `patch.version` is the patch sequence number, or `withdraw` for a withdrawal |
+| `hasUpdate` | Whether there is an update to apply |
+| `patch` | The update; pass it unchanged to `applyPatch`. `patch.version` is its `seq` as a string; `patch.raw` holds `url`, `size`, `seq` and `action` (`publish` or `withdraw`) |
 
 ### `applyPatch`
 
@@ -125,17 +204,19 @@ static Future<PatchApplyResult> applyPatch(
 })
 ```
 
-Downloads and installs the update `checkUpdate` returned. Native code verifies the manifest again, then the patch's hash, signature, host and sequence number, and commits it atomically only when all pass. **The patch takes effect on the next cold start**; the running process keeps its current code. For a withdrawal, the installed patch is removed instead.
+Downloads the file `checkUpdate` found to a temporary file and installs it as `applyPatchFile` does; the temporary file is deleted afterwards. **A patch takes effect on the next cold start**; the running process keeps its current code. A withdrawal deletes the installed patch.
 
-The download has its own limits, independent of `checkUpdate`'s `timeout`: it fails after 15 seconds without data or 2 minutes in total.
+- The download expects `200` and exactly the size the header announced (a `Content-Length` other than that size fails, unless the response is compressed). It fails after 15 seconds without data or 2 minutes in total, independent of `checkUpdate`'s `timeout`. Every download failure is `network`; call `checkUpdate` again later.
+- A `PatchInfo` that `checkUpdate` did not return gives `invalidArgs`.
+- It does not throw; every outcome is in the result.
 
-It does not throw; every outcome is in the result.
+## Results
 
-**`PatchApplyResult`**
+**`PatchApplyResult`**, returned by `applyPatch`, `applyPatchBytes` and `applyPatchFile`:
 
 | Field | Description |
 |---|---|
-| `ok` | Whether it installed; installing the same patch again also succeeds |
+| `ok` | Whether the file was installed or the withdrawal applied; the installed file again also succeeds |
 | `error` | Why it failed, a `PatchApplyError` |
 | `message` | A description for developers; do not show it to users |
 
@@ -143,13 +224,12 @@ It does not throw; every outcome is in the result.
 
 | Value | Meaning | What to do |
 |---|---|---|
-| `network` | The patch download failed | Retry later |
-| `ioError` | A disk or file system error, such as no space | Retry later with the same `PatchInfo` |
-| `signatureInvalid` | The patch signature did not verify; on iOS also when the app did not start through flutter_patcher's generated entry point | Do not retry; check your publishing, storage and build |
+| `invalidArgs` | The file's `seq` is not above `acceptedSeq`: an older patch or withdrawal, or the same patch after `rollback`. With `applyPatch`, also a `PatchInfo` that `checkUpdate` did not return | Publish the patch output again (`publish --patch <dir>`) for a new `seq` |
 | `blacklisted` | This patch made a start fail and is blacklisted on this device | Publish a fixed patch |
-| `invalidArgs` | Not a result from `checkUpdate`; a patch whose sequence or hash differs from its manifest; or a sequence this device already installed, for example after `rollback` | Check how you call it and how you publish |
-| `unknown` | Anything else, including a manifest that fails verification, a patch whose size or hash differs from its manifest, and a plugin older than the manifest requires | Report `message` |
-
+| `network` | `applyPatch` could not download the file | Retry later |
+| `signatureInvalid` | Not this host's file (another build, flavor, channel or ABI), damaged or truncated, or not signed by the host's patch key | Do not retry; deliver the file named `patchTarget.fileName` of this build, signed by its key |
+| `ioError` | The file could not be read, or a disk or file system error such as no space | Retry later |
+| `unknown` | Anything else: an unsupported platform, an app not built with flutter_patcher, a patch the host rejects while installing | Report `message` |
 
 ### Progress
 
@@ -157,19 +237,19 @@ It does not throw; every outcome is in the result.
 
 | Field | Description |
 |---|---|
-| `phase` | `downloading`, `verifying`, `finalizing` |
+| `phase` | `downloading` (`applyPatch` only), `verifying`, `finalizing` |
 | `bytesReceived` / `totalBytes` | Meaningful only while `downloading` |
 | `fraction` | Download progress from 0.0 to 1.0, or `null` when unknown |
 
-`applyProgress` is a broadcast stream; subscribe before calling `applyPatch`.
+`applyProgress` is a broadcast stream; subscribe before installing. It also reports `verifying` and `finalizing` for `applyPatchBytes` and `applyPatchFile`.
 
 ## Status
 
 | API | Description |
 |---|---|
-| `currentVersion` | Sequence number of the installed patch, or `null`. It changes as soon as `applyPatch` succeeds, but the patch runs only after the next cold start |
-| `lastBootDiagnostic` | How the latest cold start handled the patch; see [Crash Protection](crash-protection.md#boot-diagnostics) |
-| `blacklist` | Patches blacklisted on this device |
+| `currentVersion` | The installed patch's `seq` as a decimal string (Unix seconds when it was sealed), or `null`. It changes as soon as an install succeeds, but the patch runs only after the next cold start |
+| `lastBootDiagnostic` | How the latest cold start handled the patch; see [Crash Protection](crash-protection.md) |
+| `blacklist` | Patches blacklisted on this device; `BlacklistEntry.version` is `<fingerprint>:<seq>:<SHA-256>` |
 | `appVersionCode` | The host's version: Android versionCode, iOS CFBundleVersion |
 | `deviceAbi` | The device's primary ABI: on Android the first of `Build.SUPPORTED_ABIS` (such as `arm64-v8a`), on iOS `ios-arm64` |
 
@@ -177,30 +257,49 @@ It does not throw; every outcome is in the result.
 
 | API | Description |
 |---|---|
-| `rollback()` | Removes the installed patch; the next cold start runs the app's built-in version. Does not blacklist the patch, but the device has accepted its sequence, so it cannot install that patch again; publish one with a higher sequence |
+| `rollback()` | Deletes the installed patch; the next cold start runs the app's built-in version. Does not blacklist the patch and keeps `acceptedSeq`, so that file cannot be installed again |
 | `clearBlacklist()` | Empties this device's blacklist, for tests or after you have ruled out the problem |
 
-## Delivering manifests yourself
+## Obtaining patch files yourself
 
-If your app should not read the publication store directly (for example, requests must pass through your own authenticated API), fetch the manifest and patch yourself and hand them to the plugin to verify and install:
+The plugin does not need to fetch anything: any way the app obtains the file works, such as your own API, a CDN, a push message, a file bundled with an update or picked by the user. The file must be the one the CLI wrote for this host build, `<fileName>` in the `patch` output or in the publication store.
 
 ```dart
-// 1. The manifest: the file named by the manifest field of publish's result
-//    (manifests/<hash>.json), kept exactly as published.
-final manifest = await FlutterPatcher.fetchSignedManifest(manifestUrl);
-// or: SignedManifest.parse(theExactStringFromYourApi)
+import 'dart:io';
 
-// 2. Hand it over with the store's root address, or with the patch bytes.
-final result = await FlutterPatcher.applySignedManifest(
-  manifest,
-  baseUrl: storeUrl,      // one of the two
-  // payload: patchBytes,
-);
-// result.action is 'publish' or 'withdraw'; result.result is a PatchApplyResult
+import 'package:flutter/foundation.dart';
+import 'package:flutter_patcher/flutter_patcher.dart';
+
+/// Asks your server for this host's patch file and installs it.
+Future<void> updateFromMyServer() async {
+  final target = await FlutterPatcher.patchTarget;
+  final uri = Uri.https('api.example.com', '/patches', {
+    'file': target.fileName,
+    'fingerprint': target.fingerprint,
+    'after': '${target.acceptedSeq}',
+  });
+  final client = HttpClient();
+  try {
+    final response = await (await client.getUrl(uri)).close();
+    if (response.statusCode == HttpStatus.noContent) return; // nothing newer
+    if (response.statusCode != HttpStatus.ok) {
+      throw HttpException('HTTP ${response.statusCode}', uri: uri);
+    }
+    final bytes = await consolidateHttpClientResponseBytes(response);
+    final result = await FlutterPatcher.applyPatchBytes(bytes);
+    if (!result.ok) {
+      debugPrint('patch rejected: ${result.error?.name} ${result.message}');
+    }
+  } finally {
+    client.close();
+  }
+}
 ```
 
-The signature covers the manifest's exact text: any rewrite, even reformatting the JSON, fails verification.
+- The server picks the file by `fileName` (and `fingerprint` when one name may have several builds); which users get which file is the server's choice.
+- Only a file with `seq` above `acceptedSeq` installs; the server may skip sending others, or the app can check the first 146 bytes with `inspectPatch`.
+- On an unsigned host, whoever can hand the app a file can run code in it: protect the transport yourself. A signed host rejects any file its patch key did not sign, wherever it came from.
 
-Unlike `applyPatch`, these throw: `fetchSignedManifest` a `FormatException` when nothing is published at that address, and `applySignedManifest` an `ArgumentError` without `baseUrl` or `payload`, or a `PlatformException` when native code rejects the manifest.
+## Removed in 1.1
 
-`updatePublicationTrust(SignedManifest)` applies a root-signed trust update on the device, together with the `trust` command; see [Advanced Operations](advanced.md#rotating-the-publisher-key).
+`SignedManifest`, `SignedUpdateResult`, `fetchSignedManifest`, `applySignedManifest` and `updatePublicationTrust` no longer exist; code using them does not compile. Use `applyPatchBytes` or `applyPatchFile` for files you obtain, or `checkUpdate` and `applyPatch` to download from a URL.

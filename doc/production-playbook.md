@@ -6,71 +6,98 @@
 
 **English** | [简体中文](production-playbook-zh.md)
 
-This guide takes the patch flow you verified locally (see [Getting Started](getting-started.md)) to production. The core commands are exactly the same: `publish` still writes the distribution files into a local folder, and you then sync them to your live HTTPS static file host.
-
-Steps marked **Optional** can be chosen to fit your infrastructure (see [Advanced and Optional Setups](#advanced-and-optional-setups)). Every option is described in the [CLI Reference](cli.md).
+This guide takes the patch flow you verified locally (see [Getting Started](getting-started.md)) to production. The commands stay the same. Going live means: put the `.fptc` file where the app gets it, keep the baselines safe, and, optionally, sign patches. Every option is described in the [CLI Reference](cli.md).
 
 ## Prerequisites
 
-- The local flow from Getting Started works, including `keys init`.
-- An HTTPS host that serves files directly (object storage + CDN, your own Nginx, or any static hosting). Hard requirements: it returns file contents directly, does not redirect, and does not cache `manifests/` for long. See [CLI Reference: Storage requirements](cli.md#storage-requirements).
+- The local flow from Getting Started works.
+- A way for the app to get patch files: an HTTPS host for the built-in downloader (`checkUpdate`), or your own API, push or other channel that hands the file to `applyPatchBytes` / `applyPatchFile`.
 
-## 1. Back Up the Signing Keys
+## 1. Decide Where the App Gets Patch Files
 
-Devices verify and load a patch only if it is signed with your private keys.
+A patch is one file, `<version_code>-<flavor>-<channel>-<abi>.fptc`, such as `7-default-production-arm64-v8a.fptc`. Each build (version code, flavor, channel, ABI) has its own name, and the name stays the same for every patch of that build: a newer patch or a withdrawal replaces the file.
 
-`keys init` saved the private keys on this computer in `~/.flutter_patcher/keys/<project id>/keys.json` (on Windows, `~` is the current user folder). The file is outside the project repository and is not committed with Git. If the private keys are lost, releases already live can no longer be patched.
+**With the built-in downloader**:
 
-Export the keys and keep the copy somewhere other than this computer (for example a company secrets vault or offline media):
-
-```bash
-dart run flutter_patcher keys export --out fp-keys.json
-```
-
-> **Optional**: CI/CD builds, publishing from several machines, or a KMS signing service: see [Multi-Machine and CI Publishing](#multi-machine-and-ci-publishing).
-
-**Check**: the command prints `"status":"keys_exported"` and `file`, the path of the backup.
-
-## 2. Set the Production Address
-
-Switch the address the app checks for updates from the local `serve` to your HTTPS address.
-
-1. In `flutter_patcher.yaml`, set the root address that serves the static files (where you upload in step 5):
+1. Set the address in `flutter_patcher.yaml` (create the file if the project has none):
 
    ```yaml
    url: https://cdn.example.com/my-app
    ```
 
-   `build` then writes this address into the app, so `checkUpdate()` needs no code change. `publish` also reads the live manifest at this address first to find the current patch sequence.
+   `build` writes it into the app; `checkUpdate()` then requests `https://cdn.example.com/my-app/<file name>`.
 
-2. Check that `android/app/src/main/AndroidManifest.xml` declares the internet permission (without it, the release build cannot go online to check for updates):
+2. The host must meet these requirements:
 
-   ```xml
-   <uses-permission android:name="android.permission.INTERNET" />
-   ```
+   | Requirement | Why |
+   |---|---|
+   | HTTPS | The downloader accepts plain HTTP only for `127.0.0.1`/`localhost` |
+   | A short cache time for `.fptc` files, such as `Cache-Control: max-age=60` | The name never changes, so a long cache keeps serving the old file |
+   | Returns the file directly, with `200` (or `206` for a range), `404` when there is none, and no redirects | The downloader does not follow redirects; any other status fails the check |
 
-> **Optional**: roll out to a growing share of users? See [Staged Rollout Strategy](#staged-rollout-strategy).
+   Range requests are optional: `checkUpdate` asks for the first 146 bytes and stops reading after them either way.
 
-## 3. Build and Ship the Store Release
+**With your own delivery**: your server picks the file from what [`FlutterPatcher.patchTarget`](api-reference.md) reports (`fileName`, `versionCode`, `flavor`, `channel`, `abi`, `acceptedSeq`) and the app passes the bytes to `applyPatchBytes`. Transport security is then up to the app; see [3. Optional: Enable Signing](#3-optional-enable-signing).
 
-Build an app that can receive patches and submit it to the store.
+Either way, check that `android/app/src/main/AndroidManifest.xml` declares the internet permission; release builds need it:
 
-1. Build for production:
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+```
 
-   ```bash
-   dart run flutter_patcher build android    # build ios must run on an Apple Silicon Mac
-   ```
+## 2. Keep the Baselines
 
-2. Submit the generated `app-release.apk` (or `app-release.ipa`) to the store as usual.
+`build` records a baseline of every build it makes (compiled output, source hashes, dependencies, assets); every patch of that build is made against it. By default it is kept only in the project, in `.flutter_patcher/baselines/`, and `build` prints `WARNING: BASELINE_STORE_LOCAL`.
 
-**Check**:
+Point `baseline_store` at durable storage, such as a private S3 or R2 prefix (the [CLI Reference](cli.md) lists the storage requirements and credentials):
 
-- It prints `"status":"build_archived"`, and the `WARNING: URL_LOCAL` seen during local testing is gone.
-- It still prints `WARNING: BASELINE_STORE_LOCAL`: the build baseline is kept in the project's `.flutter_patcher/` folder; read [Data You Must Not Lose](#data-you-must-not-lose).
+```yaml
+baseline_store: s3://my-bucket/baselines
+```
 
-## 4. Make and Publish a Patch
+**Check**: `dart run flutter_patcher doctor --baseline-store s3://my-bucket/baselines` passes, and `build` no longer prints `WARNING: BASELINE_STORE_LOCAL`.
 
-Fix the live bug, then produce a signed patch with the next sequence number.
+**If a baseline is lost**: that build can no longer be patched (`patch` fails with `BASELINE_NOT_FOUND`). Fix it with a new store release.
+
+## 3. Optional: Enable Signing
+
+Signing is recommended and off by default.
+
+| Host | Who can run code in the app |
+|---|---|
+| Unsigned (the default) | Anyone who can hand the app a file. The built-in downloader enforces HTTPS; when the app fetches files itself, the transport is the app's responsibility |
+| Signed | Only whoever holds the patch private key. Storage, CDN, transport and the app's way of fetching need not be trusted |
+
+To sign, run this **before the build you ship**:
+
+```bash
+dart run flutter_patcher keys init
+```
+
+It creates one patch key: the private key in `~/.flutter_patcher/keys/<id>/keys.json` on this computer (on Windows, `~` is the user folder), the public key in `flutter_patcher.yaml` as `trust.patch`. Hosts built from then on accept only files signed by it; `build` stops printing `WARNING: UNSIGNED`. A host keeps the mode it was built with: hosts already shipped unsigned stay unsigned, and signed hosts never accept unsigned files.
+
+Signing needs the private key on the machine that seals the file. `patch` and `publish` look for it in this order:
+
+1. `--key-file <bundle>` (`publish` only)
+2. The `FLUTTER_PATCHER_KEYS` environment variable, the base64 line from `keys export --base64`
+3. `signing.command` in `flutter_patcher.yaml`, an external signer such as a KMS (it reads the bytes on stdin and prints a base64 Ed25519 signature; `FLUTTER_PATCHER_SIGN_ROLE` is `patch`)
+4. The key store, `~/.flutter_patcher/keys/`
+
+Move the key with `keys export --out <file>` and `keys import <file>`; `keys status` shows which source would sign. Without the key on a machine, `patch` there writes only the draft (`"file": null`, with a notice), and `publish --patch <output>` on a machine with the key seals and signs it.
+
+**If the private key is lost**: hosts built with it can no longer be patched. Remove the `trust:` entry from `flutter_patcher.yaml`, run `keys init` again and ship a new store release built with the new key.
+
+## 4. Build and Ship the Store Release
+
+```bash
+dart run flutter_patcher build android    # build ios must run on an Apple Silicon Mac
+```
+
+Submit the generated `app-release.apk` (or `app-release.ipa`) to the store as usual.
+
+**Check**: it prints `"status":"build_archived"`; `WARNING: URL_LOCAL` is gone once `url` is set, `WARNING: BASELINE_STORE_LOCAL` once `baseline_store` is set, and `WARNING: UNSIGNED` once signing is on.
+
+## 5. Make and Publish a Patch
 
 1. Fix the code. Do not change `version` in `pubspec.yaml`.
 2. Make the patch:
@@ -79,133 +106,52 @@ Fix the live bug, then produce a signed patch with the next sequence number.
    dart run flutter_patcher patch android    # patch ios runs on any supported host; no Mac needed
    ```
 
-3. Write the publication (it first shows a summary and waits for you to type `y`; in CI or other unattended runs, add `--yes`):
+3. Publish it to the store:
 
    ```bash
    dart run flutter_patcher publish
    ```
 
-**Check**:
+   `publish` takes the newest patch output (or `--patch <dir>`), seals it again with a new sequence, the current Unix time in seconds (or `--seq N`), signs it when the host is signed, and writes `<file name>.fptc` to the store. It shows a summary and waits for `y`; in CI or other unattended runs add `--yes`. Without `--yes` and without a terminal it only previews (`"status":"preview"`) and writes nothing.
 
-- `patch` prints `"status":"patch_created"`.
-- `publish` prints `"status":"published"`, the increasing patch sequence `patch_seq` (1, 2, 3… within one release), and the manifest path `manifest` (such as `manifests/<hash>.json`).
-
-**Note**: before assigning a sequence, `publish` reads this release's live manifest at `url`, so a new sequence is never below one devices may already hold. If the read fails, the command stops with `PUBLISH_URL_UNREACHABLE` and publishes nothing.
-
-> **Optional**: patch a live release that is not the latest: see [Patching Older Live Releases](#patching-older-live-releases).
-
-## 5. Sync to Static Storage
-
-Upload the generated files to your live address so devices can download them.
-
-After `publish`, the files to release are in `.flutter_patcher/updates/`. Upload two of its folders to the root address from step 2 (keeping the folder names), in this order:
-
-1. `objects/` first
-2. `manifests/` second
-
-**Key constraints**:
-
-- **Do not reverse the order**: if `manifests/` goes up first, a device that gets the new manifest immediately downloads the patch file it points to. With `objects/` not uploaded yet, the download returns 404 and this update fails; the device retries only the next time the app calls `checkUpdate`.
-- After every `publish` (including the rollbacks and withdrawals below), sync the changes again.
-- Do not upload `catalog.json` or `.publish.lock` (local state files of the CLI).
-
-> **Optional**: let `publish` upload to S3/R2 directly, with no manual step: see [Publishing Straight to a Remote Bucket](#publishing-straight-to-a-remote-bucket).
-
-**Check**: request `<live address>/<manifest path printed by publish>` directly and confirm it returns HTTP `200` with complete JSON. An app with this release installed applies the patch after its next update check and download, at its next cold start.
-
-## Rolling Back and Withdrawing
-
-What to do when a live patch goes wrong. Pick one option; afterwards, sync again as in step 5.
-
-**Option A: withdraw completely (back to the version in the installed app)**
-
-```bash
-dart run flutter_patcher publish --withdraw
-```
-
-By default this withdraws **every** published patch of the release that your latest `patch` belongs to. To name another release, add `--patch <a patch folder of that release>`.
-
-**Option B: go back to an earlier good patch**
-
-Publish the earlier good patch again. It gets a new, higher sequence and reaches devices as a regular update:
-
-```bash
-dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<target folder>
-```
-
-Earlier patches are kept in `.dart_tool/flutter_patcher/patches/` by default. If they were cleaned up, check out that code and run `patch` again. Do not publish the bad patch again, or devices will install it again.
-
-**How devices apply it**: a device keeps only one patch, and accepts only a patch whose sequence is above the highest it has ever accepted. Withdrawing and republishing both publish a new manifest: a withdrawal manifest makes the device remove its patch, a republished one carries a new sequence. Once the app gets `hasUpdate == true` from `checkUpdate` and completes `applyPatch`, the change takes effect at the next cold start.
+4. Put the file where the app gets it. The store is `.flutter_patcher/updates/` by default: upload `.flutter_patcher/updates/<file name>.fptc` to `url` (`publish` prints this reminder when `url` is set). With `store: s3://my-bucket/my-app` in `flutter_patcher.yaml`, `publish` writes to the bucket itself, through the AWS CLI (`FLUTTER_PATCHER_S3_ENDPOINT` for S3-compatible storage such as R2); serve that prefix publicly at `url`. Apps with their own delivery take the file from the store or from the patch output.
 
 **Check**:
 
-- Option A: the CLI prints `"action":"withdraw"`. After a cold start on the device, `FlutterPatcher.currentVersion` is `null` and `lastBootDiagnostic` is `noPatch`.
-- Option B: the CLI prints a `patch_seq` above the bad patch's. After a cold start on the device, `currentVersion` is that new sequence and the stable code is back.
+- `publish` prints `"status":"published"`, the `file` name and the `seq`.
+- `curl -sI <url>/<file name>` returns `200`.
+- An app of this build takes the patch at its next check and runs it from the next cold start; `FlutterPatcher.currentVersion` then returns the `seq`.
 
-## Data You Must Not Lose
-
-`.flutter_patcher/baselines/` in the project root holds the build baseline of each live release (compiled output, source hashes, dependencies, assets and public keys).
-
-- **Back it up**: if a baseline is lost, that live release can never be patched again.
-- **Alongside the keys**: once you are live, the only two things to keep are the exported private keys and the `baselines` folder.
-
-Note: losing `.flutter_patcher/updates/` is not a problem. The manifests devices see are at `url`, and `publish` reads the current state from there before numbering.
-
-## Advanced and Optional Setups
-
-### Publishing Straight to a Remote Bucket
-
-AWS S3 and S3-compatible object storage such as Cloudflare R2 are supported. Once configured, `publish` uploads the objects and keeps the publication records itself: no manual upload, and the records live in the bucket, so several machines and CI can work together.
-
-1. On the publishing machine, install the AWS CLI and configure credentials (access key and secret) with write access. Permissions: [CLI Reference: Storage requirements](cli.md#storage-requirements). For third-party object storage, set its endpoint in an environment variable:
-
-   ```bash
-   export FLUTTER_PATCHER_S3_ENDPOINT="https://<account_id>.r2.cloudflarestorage.com"
-   ```
-
-2. Set the target paths in `flutter_patcher.yaml`:
-
-   ```yaml
-   store: s3://my-bucket/my-app
-   baseline_store: s3://my-bucket/baselines
-   ```
-
-3. Access control: make the `my-app` prefix public read-only (its HTTPS address is the `url` from step 2); the `baselines` prefix must stay private.
-
-**Check**: run the command below and confirm the `baseline_store` check passes; after that, `build` no longer prints `WARNING: BASELINE_STORE_LOCAL`.
-
-```bash
-dart run flutter_patcher doctor --baseline-store s3://my-bucket/baselines
-```
-
-### Multi-Machine and CI Publishing
-
-Making patches and signed publishing are independent; only signing (`publish`, `serve`, `trust sign`) needs private keys:
-
-| Role | Needs |
+| `publish` result | Meaning and what to do |
 |---|---|
-| Patch build machine (local or build server) | Source + the release's baseline (no private keys) |
-| Publishing node (release machine or CI) | publisher and patch private keys + baseline + access to `url` |
-| Key rotation | root private key (not needed day to day; keep it out of CI, offline) |
+| `"status":"already_published"` | The store already holds this patch; nothing written |
+| `PUBLISH_SEQUENCE_CONFLICT` | The store holds a file of this build with a sequence at or above the new one, usually from a computer whose clock runs ahead. Fix the clock, or publish with the `--seq` the message suggests |
+| `PUBLISH_CONFLICT` | The file in the store changed while publishing, for example another machine published. Run `publish` again |
+| `KEYS_NOT_FOUND` | The host is signed and this machine has no private key for it; see [step 3](#3-optional-enable-signing) |
 
-When several machines publish the same app, [publish straight to a remote bucket](#publishing-straight-to-a-remote-bucket): each publish sees the previous one at once, instead of getting a duplicate sequence because someone has not uploaded yet.
+Each build has its own file, so patches for several live builds coexist. To patch an older live release, check out its code and pass its build number: `patch android --version-code <build number>`, then publish as above.
 
-Getting the private keys to where they are used:
+## Withdrawing and Rolling Back
 
-- **Another local computer**: run `keys export --out <file>` on the source machine and `keys import <file>` on the target.
-- **CI (such as GitHub Actions)**: run `keys export --base64 --without-root` to get a single line without the root private key (it still contains the publisher and patch private keys; treat it as a secret), store it as a CI secret, provide it as the `FLUTTER_PATCHER_KEYS` environment variable, and run with `--yes` in the pipeline:
+| Goal | Do |
+|---|---|
+| Withdraw: devices go back to the version in the installed app | `publish --withdraw` (add `--patch <dir>` for another build than the newest patch's). It writes a withdrawal file, a file without payload, with a new sequence. A device that applies it drops its patch; the next cold start runs the installed version |
+| Go back to an earlier good patch | `publish --patch .dart_tool/flutter_patcher/patches/<its output>`: the old patch is sealed again with a new, higher sequence and reaches devices as a regular update |
+| Stop distributing | Stop offering the file (delete it from the host or from your API's answers). Devices that installed the patch keep it; this is not a withdrawal |
+| One device | Call `FlutterPatcher.rollback()` in the app: it deletes the patch on that device and does not blacklist it |
 
-  ```bash
-  dart run flutter_patcher publish --yes
-  ```
+Upload the new file as in step 5 after each `publish`. Uploading an old `.fptc` again does nothing: its sequence is not above the one devices already accepted. If an earlier patch output was deleted, check out that code and run `patch` again.
 
-- **KMS / external signing service**: configure `signing.command` to have an external service sign; the private keys never leave it. See [CLI Reference: Where private keys come from](cli.md#where-private-keys-come-from).
+**How devices decide**: a device installs a file only if it belongs to this build, is intact, is signed when the host is signed, and is numbered above every file it accepted before. Patches and withdrawals take effect at the next cold start.
 
-**Check**: on the publishing machine, run `dart run flutter_patcher keys status` and confirm the source of the publisher and patch keys is not `none`.
+**Check**:
 
-### Staged Rollout Strategy
+- Withdrawal: the CLI prints `"action":"withdraw"`. After a cold start, `FlutterPatcher.currentVersion` is `null` and `lastBootDiagnostic` is `noPatch`.
+- Earlier patch: the CLI prints a `seq` above the bad patch's. After a cold start, `currentVersion` is that sequence and the earlier code runs.
 
-Once a patch is live, every device on that release that reads the manifest can fetch it. To roll out by percentage, put a dynamic switch in front of the update check in the app (for example Firebase Remote Config or your own config service):
+## Staged Rollout
+
+The file at `url` reaches every device of that build that checks. To roll out by share or by user, decide in the app or on your server: gate the check, or have your server choose which file to return.
 
 ```dart
 // Staged rollout gate
@@ -217,31 +163,31 @@ if (userBucket(userId) < rolloutPercent) {
 }
 ```
 
-- `userBucket(userId)`: hashes a unique user identifier (such as a UUID) modulo 100, into 0–99.
-- `rolloutPercent`: a percentage delivered by your backend config (for example `5` means 5%).
+- `userBucket(userId)`: hashes a unique user identifier modulo 100, into 0–99.
+- `rolloutPercent`: a share delivered by your configuration service.
 
-Both are yours to implement. Raise the share step by step (for example 1% → 10% → 30% → everyone), watching crash rates and the share of [boot diagnostics](crash-protection.md#boot-diagnostics) with `isHealthy == false`.
+Both are yours to implement. Watch crash rates and the share of [boot diagnostics](crash-protection.md) with `isHealthy == false` as you raise the share.
 
-### Patching Older Live Releases
+## Upgrading from 1.0
 
-When several live releases need the fix, check out the code of that release and pass its build number when making the patch:
-
-```bash
-dart run flutter_patcher patch android --version-code <build number>
-```
-
-Then publish and sync as in steps 4 and 5. Each release has its own baseline and its own patch sequences.
+| What | 1.1 behavior |
+|---|---|
+| Hosts already shipped with 1.0.0 | Unaffected. Patch, publish and withdraw for them only with flutter_patcher 1.0.0+1: in a checkout of that release with `flutter_patcher: 1.0.0+1` in `pubspec.yaml`. 1.1 rejects their baselines with `PATCH_BASELINE_INCOMPATIBLE` |
+| The project | Keeps working: `trust.patch` in `flutter_patcher.yaml` is read (`root` and `publisher` are ignored), `url`, `store`, `baseline_store`, `signing.command` and the commands mean the same. 1.0 key bundles in the key store are found by their patch key. The next `build` makes a 1.1 host, signed with that patch key |
+| The store | 1.0's `manifests/`, `objects/` and `catalog.json` stay; 1.0.0 hosts still read them. 1.1 writes `.fptc` files at the store root, next to them |
+| Dart API | Removed: `SignedManifest`, `SignedUpdateResult`, `fetchSignedManifest`, `applySignedManifest`, `updatePublicationTrust`. Use `applyPatchBytes`, `applyPatchFile` or `checkUpdate` |
+| CLI | Removed: `trust`, `publish --production` and `--request` (delete the file from the store instead), `keys import --rotate`, the key roles `root` and `publisher` |
+| Version shown | `currentVersion` is now the file's sequence, a Unix timestamp |
 
 ## Built-in Protection
 
-- **Tamper and integrity checks**: devices verify the signatures, SHA-256 hashes and target release of manifests and patches; files altered in transit or corrupted in a CDN cache are rejected.
-- **No downgrades or replays**: devices persist the highest patch sequence they have accepted and install only higher ones; a withdrawn sequence never takes effect again.
-- **Boot circuit breaker**: when a patch makes startup fail (a crash or ANR before the first frame, or an uncaught Dart exception within `verifyAfter` after it) `maxCrashCount` times (1 by default), the device turns the patch off and blocklists it, and runs the version in the installed app from the next cold start, so users are not stuck in repeated crashes. See [Crash Protection](crash-protection.md).
-- **No overwrites under concurrency**: when several machines publish to the same bucket at once, conditional writes keep them from overwriting each other.
-- **Interrupted publishing**: if `publish` stops midway, run it again with the same arguments in the same project to finish it.
+- **Integrity and target checks**: the device checks every file's length, format, target build and SHA-256 hash, and its signature on signed hosts; files altered in transit or corrupted in a cache are rejected.
+- **No downgrades or replays**: devices keep the highest sequence they accepted and install only higher ones, so a withdrawn or replaced file never takes effect again.
+- **Boot circuit breaker**: when a patch makes startup fail (a crash or ANR before the first frame, or an uncaught Dart exception within `verifyAfter` after it) `maxCrashCount` times (1 by default), the device turns the patch off and blacklists it, and runs the version in the installed app from the next cold start. See [Crash Protection](crash-protection.md).
+- **No overwrites under concurrency**: `publish` replaces the file in the store only if it did not change meanwhile (`PUBLISH_CONFLICT`), and only with a higher sequence.
 
 ## Related Reading
 
-- [Rotating the publisher key](advanced.md#rotating-the-publisher-key): when the publisher private key leaks or is lost, replace it with a trust update signed by the root private key, without a new store release (the app must already apply trust updates).
-- [Cleaning up old patches](advanced.md#cleaning-up-old-patches): delete expired patches from the publication store to free space.
-- [Delivering manifests yourself](api-reference.md#delivering-manifests-yourself): deliver manifests and patches through your own authenticated API instead of a public static CDN.
+- [CLI Reference](cli.md): every command, flag and `flutter_patcher.yaml` setting.
+- [API Reference](api-reference.md): `patchTarget`, `inspectPatch`, `applyPatchBytes`, `applyPatchFile`, `checkUpdate`.
+- [Troubleshooting](troubleshooting.md): error codes and recovery.
