@@ -3,9 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/patch/package.dart';
-import 'package:flutter_patcher/src/cli/publish/pipeline.dart';
 
 /// The CLI libraries [file] reaches through relative imports and exports.
 Set<String> reached(String file) {
@@ -46,23 +44,7 @@ void main() {
     }
   });
 
-  group('patch sequences', () {
-    Matcher conflict(String text) => throwsA(
-      isA<Failure>()
-          .having((f) => f.code, 'code', 'PUBLISH_SEQUENCE_CONFLICT')
-          .having((f) => f.message, 'message', contains(text)),
-    );
-
-    test(
-      'publication sequence is independent of clocks and module identity',
-      () {
-        final id = newModuleId();
-        expect(id, inInclusiveRange(1, 1 << 52));
-        checkSequence(1, 1);
-        checkSequence(10, 2);
-        expect(() => checkSequence(1, 2), conflict('older'));
-        expect(() => checkSequence(0x100000000, 1), conflict('4294967295'));
-      },
-    );
+  test('patch modules get a module identity, never a sequence', () {
+    expect(newModuleId(), inInclusiveRange(1, 1 << 52));
   });
 }

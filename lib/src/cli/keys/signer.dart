@@ -5,13 +5,10 @@ import 'dart:typed_data';
 
 import '../core.dart';
 import '../crypto/ed25519.dart';
-import 'bundle.dart';
 
-/// Signs bytes as one role. [Keyring] checks the public key and verifies
-/// every signature before anything uses it.
+/// Signs bytes with a patch key. [Keyring] checks the public key and
+/// verifies every signature before anything uses it.
 abstract interface class Signer {
-  KeyRole get role;
-
   /// The base64 Ed25519 public key it signs for.
   String get publicKey;
 
@@ -24,11 +21,9 @@ abstract interface class Signer {
 
 /// A seed held in memory for this run only.
 final class SeedSigner implements Signer {
-  SeedSigner(this.role, this._seed, this.source)
+  SeedSigner(this._seed, this.source)
     : publicKey = base64Encode(ed25519PublicKey(_seed));
 
-  @override
-  final KeyRole role;
   @override
   final String publicKey, source;
   final Uint8List _seed;
@@ -43,15 +38,12 @@ final class SeedSigner implements Signer {
 /// stay in a KMS, Vault, an HSM or a password manager.
 final class CommandSigner implements Signer {
   CommandSigner(
-    this.role,
     this.command,
     this.publicKey, {
     Map<String, String>? environment,
     this.timeout = const Duration(seconds: 60),
   }) : _environment = environment ?? Platform.environment;
 
-  @override
-  final KeyRole role;
   @override
   final String publicKey;
   @override
@@ -74,7 +66,9 @@ final class CommandSigner implements Signer {
           // The command gets no key bundle, only what it needs to sign.
           for (final e in _environment.entries)
             if (e.key != 'FLUTTER_PATCHER_KEYS') e.key: e.value,
-          'FLUTTER_PATCHER_SIGN_ROLE': role.name,
+          // 1.0 also signed as root and publisher; commands may still
+          // pick their key by it.
+          'FLUTTER_PATCHER_SIGN_ROLE': 'patch',
           'FLUTTER_PATCHER_SIGN_PUBLIC_KEY': publicKey,
         };
         if (script == null) {

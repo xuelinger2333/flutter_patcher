@@ -30,25 +30,20 @@ PublishStore openPublishStore(Uri uri, Commands commands, String work) {
 abstract class PublishStore {
   Future<StoredObject?> read(String name);
   Future<bool> write(String name, List<int> bytes, String? expected);
-  Future<void> delete(String name);
-  Future<List<String>> list();
 }
 
+/// Patch files are the only objects publish writes: `<fileName>.fptc` at
+/// the store's root, beside anything flutter_patcher 1.0 left there.
 void publicationName(String name) => require(
-  name == 'catalog.json' ||
-      name == 'trust.json' ||
-      RegExp(r'^manifests/[a-f0-9]{64}\.json$').hasMatch(name) ||
-      RegExp(r'^objects/[a-f0-9]{32}/[a-f0-9]{64}\.fptc$').hasMatch(name),
+  RegExp(
+    r'^[1-9][0-9]{0,9}-[A-Za-z0-9_-]{1,64}-[A-Za-z0-9_-]{1,64}-'
+    r'(arm64-v8a|ios-arm64)\.fptc$',
+  ).hasMatch(name),
   'PUBLISH_STORE_INVALID',
-  'Invalid publication object name',
+  'Invalid patch file name',
 );
 
-/// The largest object [name] may be: signed documents are small.
-int publicationLimit(String name) => name == 'catalog.json'
-    ? 8 * 1024 * 1024
-    : name.endsWith('.fptc')
-    ? 320 * 1024 * 1024
-    : 24000;
+const publicationLimit = 320 * 1024 * 1024;
 
 class FilePublishStore implements PublishStore {
   FilePublishStore(String root) : root = p.normalize(p.absolute(root));
@@ -75,7 +70,7 @@ class FilePublishStore implements PublishStore {
     final file = File(path);
     if (!await file.exists()) return null;
     require(
-      await file.length() <= publicationLimit(name),
+      await file.length() <= publicationLimit,
       'PUBLISH_STORE_INVALID',
       'Object exceeds limit',
     );
@@ -97,41 +92,9 @@ class FilePublishStore implements PublishStore {
         await staging.renameRetry(file.path);
         return true;
       });
-  @override
-  Future<void> delete(String name) => _locked(() async {
-    require(
-      name != 'catalog.json' && name != 'trust.json',
-      'PUBLISH_STORE_INVALID',
-      'Cannot delete catalog',
-    );
-    if (await _read(name) != null) {
-      await File(p.join(root, name)).deleteRetry();
-    }
-  });
-  @override
-  Future<List<String>> list() async {
-    await rejectLinks(root);
-    if (!await Directory(root).exists()) return [];
-    final result = <String>[];
-    await for (final entry in Directory(
-      root,
-    ).list(recursive: true, followLinks: false)) {
-      require(
-        entry is! Link,
-        'PUBLISH_STORE_INVALID',
-        'Store contains symlink',
-      );
-      final name = p.relative(entry.path, from: root).replaceAll('\\', '/');
-      if (entry is File && name != '.publish.lock') {
-        publicationName(name);
-        result.add(name);
-      }
-    }
-    return result;
-  }
 }
 
-/// A dedicated application namespace; only this protocol may write to it.
+/// A dedicated prefix of a bucket; publish writes patch files there.
 class S3PublishStore implements PublishStore {
   S3PublishStore(this.uri, this.commands, this.work) {
     require(
@@ -193,7 +156,7 @@ class S3PublishStore implements PublishStore {
     publicationName(name);
     await Directory(work).create(recursive: true);
     final destination = temporaryName(p.join(work, 'read'));
-    final max = publicationLimit(name);
+    final max = publicationLimit;
     final result = await _call('get-object', [
       '--key',
       '$prefix$name',
@@ -255,53 +218,5 @@ class S3PublishStore implements PublishStore {
     } finally {
       await file.deleteRetry();
     }
-  }
-
-  @override
-  Future<void> delete(String name) async {
-    publicationName(name);
-    require(
-      name != 'catalog.json' && name != 'trust.json',
-      'PUBLISH_STORE_INVALID',
-      'Cannot delete catalog',
-    );
-    _success(await _call('delete-object', ['--key', '$prefix$name']));
-  }
-
-  @override
-  Future<List<String>> list() async {
-    final names = <String>[];
-    final seen = <String>{};
-    String? cursor;
-    do {
-      final result = await _call('list-objects-v2', [
-        '--prefix',
-        prefix,
-        '--no-paginate',
-        if (cursor != null) ...['--continuation-token', cursor],
-      ]);
-      _success(result);
-      final page = jsonDecode(result.stdout) as Map;
-      for (final row in (page['Contents'] as List? ?? [])) {
-        final key = row['Key'] as String;
-        require(
-          key.startsWith(prefix),
-          'PUBLISH_STORE_INVALID',
-          'Wrong listing prefix',
-        );
-        final name = key.substring(prefix.length);
-        publicationName(name);
-        names.add(name);
-      }
-      cursor = page['IsTruncated'] == true
-          ? page['NextContinuationToken'] as String?
-          : null;
-      require(
-        page['IsTruncated'] != true || (cursor != null && seen.add(cursor)),
-        'PUBLISH_STORE_INVALID',
-        'Invalid pagination token',
-      );
-    } while (cursor != null);
-    return names;
   }
 }

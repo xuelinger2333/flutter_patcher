@@ -16,12 +16,11 @@ import 'baseline/store.dart';
 import 'build/command.dart';
 import 'build/ios.dart' show iosExportMethods;
 import 'build/line_endings.dart';
-import 'patch/command.dart';
+import 'patch_command.dart';
 import 'keys/command.dart';
 import 'keys/keyring.dart';
 import 'project.dart';
 import 'publish/command.dart';
-import 'publish/trust_command.dart';
 import 'serve/command.dart';
 import 'version.dart';
 
@@ -154,7 +153,6 @@ ArgParser parser() {
     ..addCommand('serve', serveOptions())
     ..addCommand('baseline', baselineOptions())
     ..addCommand('keys', keysOptions())
-    ..addCommand('trust', trustOptions())
     ..addCommand('interface', interfaces);
 }
 
@@ -174,7 +172,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
+        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--seq <n>] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
       );
       return 0;
     }
@@ -184,18 +182,6 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed.command!.name == 'build') {
       return await buildCommand(parsed.command!);
-    }
-    if (parsed.command!.name == 'trust') {
-      try {
-        return await trustCommand(parsed.command!);
-      } on Failure {
-        rethrow;
-      } catch (_) {
-        throw Failure(
-          'TRUST_FAILED',
-          'Trust operation failed; check public inputs and local key files.',
-        );
-      }
     }
     if (parsed.command!.name == 'keys') {
       try {
@@ -215,13 +201,13 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed.command!.name == 'publish') {
       try {
-        return await productionPublish(parsed.command!);
+        return await publishCommand(parsed.command!);
       } on Failure {
         rethrow;
       } catch (_) {
         throw Failure(
           'PUBLISH_FAILED',
-          'Publication failed; check configuration and operation receipt',
+          'Publication failed; check the configuration and the store.',
         );
       }
     }
@@ -542,24 +528,27 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
         'New host interface converged under bytecode validation; host/device execution not verified',
       );
     }
-    final anchors = project == null
+    final patchKey = project == null
         ? null
-        : (await ProjectConfig.load(p.absolute(project))).anchors;
-    if (anchors == null) {
+        : (await ProjectConfig.load(p.absolute(project))).patchKey;
+    if (patchKey == null) {
       pending(
         'project_keys',
         project == null
             ? 'No project supplied; its keys are not checked.'
-            : 'The project has no trust keys; run keys init or keys import.',
+            : 'The project names no patch key: its hosts accept unsigned '
+                  'patch files. Run keys init to sign them.',
       );
     } else {
       await check('project_keys', () async {
         final config = await ProjectConfig.load(p.absolute(project!));
         report['keys'] = {
-          for (final e in (await Keyring.forProject(config).describe()).entries)
-            e.key.name: e.value,
+          'patch': await Keyring(
+            patchKey,
+            command: config.signingCommand,
+          ).describe(),
         };
-      }, 'Trust keys configured; keys says where each private key comes from');
+      }, 'Patch key configured; keys says where its private key comes from');
     }
     final uri = args['baseline-store'] as String?;
     if (uri == null) {

@@ -6,7 +6,6 @@ import 'package:archive/archive.dart';
 
 import '../core.dart';
 import '../crypto/ed25519.dart';
-import '../keys/bundle.dart';
 import '../keys/signer.dart';
 import '../patch/package.dart';
 
@@ -59,11 +58,6 @@ Future<Uint8List> _seal(
   List<int> payload,
   Signer? signer,
 ) async {
-  require(
-    signer == null || signer.role == KeyRole.patch,
-    'KEYS_MISMATCH',
-    'Patch files are signed with the patch key.',
-  );
   final header = ByteData(82)
     ..setUint32(0, 0x46505443)
     ..setUint16(4, 1);

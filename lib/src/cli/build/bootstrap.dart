@@ -2,7 +2,8 @@ import 'dart:convert';
 
 import '../core.dart';
 
-/// The generated main of a host: it runs [PatchBootstrap] before the app's
+/// The generated main of a host, trusting patch key [key] (`-` for none):
+/// it runs [PatchBootstrap] before the app's
 /// own main. A bytecode host also retains the runtime that loads modules;
 /// an SO host ([modules] false) runs a patch as its whole libapp.so and only
 /// receives the patch's resources.
@@ -24,20 +25,23 @@ String bootstrapSource(
     'BUILD_CONFIG_INVALID',
     'Invalid bootstrap identity.',
   );
-  List<int> bytes;
-  try {
-    bytes = base64Decode(key);
-  } catch (_) {
-    throw Failure(
+  // `-`: the host trusts no key and takes unsigned patch files.
+  if (key != '-') {
+    List<int> bytes;
+    try {
+      bytes = base64Decode(key);
+    } catch (_) {
+      throw Failure(
+        'BUILD_CONFIG_INVALID',
+        'Public key must be raw Ed25519 base64.',
+      );
+    }
+    require(
+      bytes.length == 32,
       'BUILD_CONFIG_INVALID',
-      'Public key must be raw Ed25519 base64.',
+      'Public key must contain 32 bytes.',
     );
   }
-  require(
-    bytes.length == 32,
-    'BUILD_CONFIG_INVALID',
-    'Public key must contain 32 bytes.',
-  );
   final library = jsonEncode('package:$package/$entry').replaceAll(r'$', r'\$');
   final loader = modules ? ', loadModule: loadModule' : '';
   return "import 'package:flutter_patcher/src/patch_bootstrap.dart';\n"

@@ -8,27 +8,24 @@ import 'package:flutter_patcher/src/cli/crypto/ed25519.dart';
 import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 import 'package:flutter_patcher/src/cli/keys/signer.dart';
 
-/// A [role] signer of a test seed.
-Signer testSigner(String seed, [KeyRole role = KeyRole.publisher]) =>
-    SeedSigner(role, base64Decode(seed), 'test');
+/// A signer of a test seed.
+Signer testSigner(String seed) => SeedSigner(base64Decode(seed), 'test');
 
-/// Makes [project] a project whose root, publisher and patch keys are all
-/// [seed]'s: its flutter_patcher.yaml names the public key, and the returned
-/// key bundle file holds the seed for each role.
+/// Makes [project] a project whose patch key is [seed]'s: its
+/// flutter_patcher.yaml names the public key, and the returned key bundle
+/// file holds the seed.
 Future<String> writeTestKeys(
   String project,
   String seed, {
   String? store,
   String? baselineStore,
 }) async {
-  final raw = base64Decode(seed);
-  final bundle = KeyBundle({for (final role in KeyRole.values) role: raw});
-  final public = bundle.publicKey(KeyRole.root);
+  final bundle = KeyBundle(base64Decode(seed));
   await Directory(project).create(recursive: true);
   await File(p.join(project, 'flutter_patcher.yaml')).writeAsString(
     "${store == null ? '' : "store: '$store'\n"}"
     "${baselineStore == null ? '' : "baseline_store: '$baselineStore'\n"}"
-    'trust:\n  root: $public\n  publisher: $public\n  patch: $public\n',
+    'trust:\n  patch: ${bundle.publicKey}\n',
   );
   final file = p.join(project, 'test-keys.json');
   await File(file).writeAsString(bundle.encode());

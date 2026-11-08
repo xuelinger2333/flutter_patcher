@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -80,9 +79,8 @@ class ReleaseFixture {
     String vc = '42',
     Map<String, String> change = const {},
   }) async {
-    final key = base64Encode(List.filled(32, 1));
     final policy = HostPolicy({
-      'schema': '1',
+      'schema': '2',
       'application_id': 'com.example.app',
       'version_code': vc,
       'channel': 'stable',
@@ -90,8 +88,6 @@ class ReleaseFixture {
       'abi': 'arm64-v8a',
       'strategy': 'bytecode',
       'fptc_key': base.testPublicKey,
-      'root_key': key,
-      'keys': 'one:$key',
       ...change,
     });
     await File(p.join(input, 'host_policy.json'))

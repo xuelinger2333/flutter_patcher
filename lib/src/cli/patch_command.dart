@@ -4,17 +4,23 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 
-import '../core.dart';
-import '../sdk/artifacts.dart';
-import '../sdk/host.dart';
-import '../sdk/environment.dart';
-import '../baseline/repository.dart';
-import '../baseline/store.dart';
-import '../build/host_policy.dart';
-import '../project.dart';
-import 'package.dart' show newModuleId;
-import 'pipeline.dart';
+import 'core.dart';
+import 'sdk/artifacts.dart';
+import 'sdk/host.dart';
+import 'sdk/environment.dart';
+import 'baseline/repository.dart';
+import 'baseline/store.dart';
+import 'build/host_policy.dart';
+import 'keys/keyring.dart';
+import 'project.dart';
+import 'publish/seal.dart';
+import '../patch_file.dart';
+import 'patch/package.dart' show PatchDraft, newModuleId;
+import 'patch/pipeline.dart';
 
+/// `patch`: the patch layer makes a draft from the source and the host's
+/// baseline, never touching a key; this command then seals it as the file
+/// devices take, signing it when the host trusts a key this machine has.
 Future<int> patchCommand(ArgResults args) async {
   RandomAccessFile? lock;
   try {
@@ -130,7 +136,8 @@ Future<int> patchCommand(ArgResults args) async {
     for (final warning in result['warnings'] as List? ?? const []) {
       stderr.writeln('WARNING: ${warning['code']}: ${warning['message']}');
     }
-    stdout.writeln(jsonEncode({'command': 'patch', ...result}));
+    final file = await sealOutput(result, config);
+    stdout.writeln(jsonEncode({'command': 'patch', ...result, ...file}));
     return 0;
   } catch (error) {
     final failure = error is Failure
@@ -152,4 +159,43 @@ Future<int> patchCommand(ArgResults args) async {
       await lock.close();
     }
   }
+}
+
+/// Seals the draft of a patch output as `<output>/<fileName>`, numbered now.
+/// A host that trusts a key this machine lacks gets its file from publish,
+/// on a machine that has it.
+Future<Map<String, Object?>> sealOutput(
+  Map<String, Object?> result,
+  ProjectConfig config,
+) async {
+  final output = result['output'] as String;
+  final key = result['patch_key'] as String;
+  final name = patchFileName(Map<String, String>.from(result['scope'] as Map));
+  final ring = key == '-' ? null : Keyring(key, command: config.signingCommand);
+  if (ring != null && await ring.describe() == 'none') {
+    return {
+      'file': null,
+      'notice':
+          'This host accepts only files signed by its patch key, which this '
+          'machine does not have: run `flutter_patcher publish --patch '
+          '$output` where it is, or `flutter_patcher keys import` it here.',
+    };
+  }
+  final seq = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  final bytes = await sealPatch(
+    await PatchDraft.read(output),
+    signer: await ring?.signer(),
+    seq: seq,
+  );
+  final file = p.join(output, name);
+  await File(file).writeAsBytes(bytes, flush: true);
+  return {
+    'file': file,
+    'seq': seq,
+    'sealed_at': DateTime.fromMillisecondsSinceEpoch(
+      seq * 1000,
+      isUtc: true,
+    ).toIso8601String(),
+    'signed': ring != null,
+  };
 }

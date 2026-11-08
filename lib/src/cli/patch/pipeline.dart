@@ -9,7 +9,6 @@ import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
 import '../build/host_policy.dart';
 import '../build/runtime_package.dart';
-import '../publish/trust.dart';
 import '../build/workspace.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/package_inputs.dart';
@@ -391,11 +390,13 @@ class PatchPipeline {
         'status': 'patch_created',
         // What publish signs this patch for.
         'scope': {
-          for (final key in TrustUpdate.scopeKeys)
+          for (final key in scopeKeys)
             key: key == 'fingerprint'
                 ? resolved.fingerprint
                 : policy.fields[key],
         },
+        // The host's patch key, or `-`: whether this patch must be signed.
+        'patch_key': policy.patchKey,
         'platform': req.platform,
         'abi': req.abi,
         'strategy': resolved.strategy,

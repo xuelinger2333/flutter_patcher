@@ -19,15 +19,13 @@ ArgParser keysOptions() => ArgParser()
   ..addOption(
     'out',
     help:
-        'init: write the new keys to this new file only, leaving the key '
+        'init: write the new key to this new file only, leaving the key '
         'store and the project alone. export: the new file to write.',
   )
   ..addOption(
     'role',
-    allowed: [for (final role in KeyRole.values) role.name],
-    help:
-        'init --out: generate only this key, such as a publisher key to '
-        'rotate to.',
+    allowed: ['patch'],
+    help: 'init --out: the key to generate; the patch key is the only one.',
   )
   ..addFlag(
     'base64',
@@ -39,25 +37,18 @@ ArgParser keysOptions() => ArgParser()
   ..addFlag(
     'without-root',
     negatable: false,
-    help: 'export: leave out the root key, which only trust updates need.',
-  )
-  ..addFlag(
-    'rotate',
-    negatable: false,
-    help:
-        'import: adopt the bundle\'s publisher key in place of the '
-        'current one, once its trust update is published.',
+    help: 'export: accepted for flutter_patcher 1.0 scripts; bundles hold no root key.',
   )
   ..addOption('key-file', help: 'status: also consider this key bundle.');
 
 const _usage =
-    'Use keys init [--out <file> [--role <role>]], keys export '
-    '(--out <file> | --base64) [--without-root], keys import '
-    '<file|directory|-> [--rotate] or keys status.';
+    'Use keys init [--out <file>], keys export (--out <file> | --base64), '
+    'keys import <file|directory|-> or keys status.';
 
-/// Creates, moves and inspects a project's keys. Its public keys live in
-/// flutter_patcher.yaml; its private keys live in the user's key store, a
-/// CI secret or a signing service, never in the project.
+/// Signing: creates, moves and inspects a project's patch key. Its public
+/// key lives in flutter_patcher.yaml (`trust.patch`); hosts built while it
+/// is there accept only patch files it signed. Its private key lives in the
+/// user's key store, a CI secret or a signing service, never in the project.
 Future<int> keysCommand(ArgResults args) async {
   final rest = args.rest;
   final action = rest.isEmpty ? null : rest.first;
@@ -74,12 +65,12 @@ Future<int> keysCommand(ArgResults args) async {
   require(
     args['role'] == null || (action == 'init' && args['out'] != null),
     'USAGE_ERROR',
-    '--role only selects the key keys init --out generates.',
+    '--role only names the key keys init --out generates.',
   );
   final Map<String, Object?> report;
   switch (action) {
     case 'init':
-      report = await _init(project, args['out'] as String?, args['role']);
+      report = await _init(project, args['out'] as String?);
     case 'export':
       final line = await _export(project, args);
       if (line != null) {
@@ -88,7 +79,7 @@ Future<int> keysCommand(ArgResults args) async {
       }
       report = {'status': 'keys_exported', 'file': p.absolute(args['out'])};
     case 'import':
-      report = await _import(project, rest[1], args['rotate'] == true);
+      report = await _import(project, rest[1]);
     default:
       report = await _status(project, args['key-file'] as String?);
   }
@@ -96,50 +87,39 @@ Future<int> keysCommand(ArgResults args) async {
   return 0;
 }
 
-Future<Map<String, Object?>> _init(
-  String project,
-  String? out,
-  Object? role,
-) async {
+Future<Map<String, Object?>> _init(String project, String? out) async {
+  final bundle = KeyBundle.generate();
   if (out != null) {
-    final bundle = role == null
-        ? KeyBundle.generate()
-        : KeyBundle({
-            KeyRole.values.byName(role as String):
-                KeyBundle.generate().seeds[KeyRole.values.byName(role)]!,
-          });
     await writeNewKeyFile(out, bundle.encode());
     return {
       'status': 'keys_created',
       'file': p.absolute(out),
-      'public_keys': _publicKeys(bundle),
+      'public_key': bundle.publicKey,
     };
   }
   final config = await ProjectConfig.load(project);
   final legacy = p.join(project, 'flutter_patcher_keys');
   require(
-    config.anchors == null && !await Directory(legacy).exists(),
+    config.patchKey == null && !await Directory(legacy).exists(),
     'KEYS_ALREADY_CONFIGURED',
-    config.anchors == null
+    config.patchKey == null
         ? 'This project has keys in $legacy; move them to the key store '
               'with `flutter_patcher keys import flutter_patcher_keys`.'
-        : '${config.path} already names this project\'s keys; new keys '
-              'would not be trusted by the hosts already built. Bring the '
-              'existing keys to this machine with `flutter_patcher keys '
+        : '${config.path} already names this project\'s patch key; hosts '
+              'built with it would not accept files signed by a new one. '
+              'Bring the key to this machine with `flutter_patcher keys '
               'import <bundle>`.',
   );
-  final bundle = KeyBundle.generate();
-  final stored = await saveKeyStore(bundle, bundle.anchors);
-  await config.writeTrust(bundle.anchors);
+  final stored = await saveKeyStore(bundle);
+  await config.writeTrust(bundle.publicKey);
   return {
     'status': 'keys_created',
     'key_store': stored,
     'config': config.path,
-    'public_keys': _publicKeys(bundle),
+    'public_key': bundle.publicKey,
     'notice':
-        'Commit ${ProjectConfig.file}. Back up the private keys now with '
-        '`flutter_patcher keys export --out <file>`: a lost root or patch key '
-        'cannot be replaced for hosts already shipped.',
+        'Hosts built from now on accept only patch files signed by this key. '
+        'Copy it to other machines with `flutter_patcher keys export`.',
   };
 }
 
@@ -151,31 +131,18 @@ Future<String?> _export(String project, ArgResults args) async {
     'USAGE_ERROR',
     'Use keys export --out <new file>, or keys export --base64.',
   );
-  final anchors = (await ProjectConfig.load(project)).requireAnchors();
-  var bundle = await loadKeyStore(anchors);
+  final bundle = await loadKeyStore(await _patchKey(project));
   require(
     bundle != null,
     'KEYS_NOT_FOUND',
-    'The key store of this machine has no keys for this project.',
+    'The key store of this machine does not hold this project\'s patch key.',
   );
-  if (args['without-root'] == true) {
-    require(
-      bundle!.seeds.keys.any((role) => role != KeyRole.root),
-      'KEYS_NOT_FOUND',
-      'The key store holds only the root key of this project.',
-    );
-    bundle = bundle.without(KeyRole.root);
-  }
   if (out == null) return base64Encode(utf8.encode(bundle!.encode()));
   await writeNewKeyFile(out, bundle!.encode());
   return null;
 }
 
-Future<Map<String, Object?>> _import(
-  String project,
-  String source,
-  bool rotate,
-) async {
+Future<Map<String, Object?>> _import(String project, String source) async {
   final KeyBundle bundle;
   if (source == '-') {
     bundle = KeyBundle.decode(await stdin.transform(utf8.decoder).join());
@@ -191,74 +158,51 @@ Future<Map<String, Object?>> _import(
     bundle = KeyBundle.decode(await File(source).readAsString());
   }
   final config = await ProjectConfig.load(project);
-  final anchors = config.anchors;
-  final roles = [for (final role in bundle.seeds.keys) role.name];
-  if (anchors == null) {
-    require(
-      !rotate,
-      'KEYS_NOT_CONFIGURED',
-      'Only a project with keys can rotate its publisher key.',
-    );
-    final stored = await saveKeyStore(bundle, bundle.anchors);
-    await config.writeTrust(bundle.anchors);
+  if (config.patchKey == null) {
+    final stored = await saveKeyStore(bundle);
+    await config.writeTrust(bundle.publicKey);
     return {
       'status': 'keys_imported',
-      'roles': roles,
       'key_store': stored,
       'config': config.path,
-      'notice': 'Commit ${ProjectConfig.file}.',
-    };
-  }
-  if (!rotate) {
-    require(
-      bundle.matches(anchors),
-      'KEYS_MISMATCH',
-      'These keys are not the ones ${config.path} names.',
-    );
-    return {
-      'status': 'keys_imported',
-      'roles': roles,
-      'key_store': await saveKeyStore(bundle, anchors),
+      'public_key': bundle.publicKey,
     };
   }
   require(
-    bundle.seeds[KeyRole.publisher] != null,
-    'KEYS_BUNDLE_INVALID',
-    'A rotation imports a publisher key.',
+    bundle.publicKey == config.patchKey,
+    'KEYS_MISMATCH',
+    'This is not the patch key ${config.path} names.',
   );
-  final rotated = anchors.withPublisher(bundle.publicKey(KeyRole.publisher));
-  require(
-    rotated.publisher != anchors.publisher,
-    'KEYS_ALREADY_CONFIGURED',
-    'This is already the project\'s publisher key.',
-  );
-  final stored = await saveKeyStore(bundle, rotated, replace: true);
-  await config.writePublisher(rotated.publisher);
   return {
-    'status': 'keys_rotated',
-    'key_store': stored,
-    'config': config.path,
-    'publisher': rotated.publisher,
-    'notice': 'Commit ${ProjectConfig.file}.',
+    'status': 'keys_imported',
+    'key_store': await saveKeyStore(bundle),
+    'public_key': bundle.publicKey,
   };
 }
 
 Future<Map<String, Object?>> _status(String project, String? keyFile) async {
   final config = await ProjectConfig.load(project);
-  final ring = Keyring.forProject(config, keyFile: keyFile);
-  final sources = await ring.describe();
+  final key = config.patchKey;
   return {
     'config': config.path,
-    'keys': {
-      for (final role in KeyRole.values)
-        role.name: {
-          'public_key': ring.anchors.of(role),
-          'private_key': sources[role],
-        },
-    },
+    'public_key': key,
+    'private_key': key == null
+        ? 'none'
+        : await Keyring(
+            key,
+            keyFile: keyFile,
+            command: config.signingCommand,
+          ).describe(),
   };
 }
 
-Map<String, String> _publicKeys(KeyBundle bundle) => {
-  for (final role in bundle.seeds.keys) role.name: bundle.publicKey(role),
-};
+Future<String> _patchKey(String project) async {
+  final config = await ProjectConfig.load(project);
+  require(
+    config.patchKey != null,
+    'KEYS_NOT_CONFIGURED',
+    '${config.path} names no patch key; run `flutter_patcher keys init`, or '
+        '`flutter_patcher keys import` with the project\'s key bundle.',
+  );
+  return config.patchKey!;
+}

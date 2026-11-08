@@ -21,7 +21,6 @@ import 'runtime_package.dart';
 import 'outputs.dart';
 import 'host_policy.dart';
 import 'ios.dart';
-import '../publish/protocol.dart';
 import 'virtual_paths.dart';
 
 import 'dart:convert';

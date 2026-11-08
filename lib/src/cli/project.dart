@@ -1,10 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 import 'core.dart';
-import 'keys/bundle.dart';
 
 /// A project's `flutter_patcher.yaml`: what the commands use when no flag
 /// gives it, so the usual workflow needs no flags. It holds nothing secret
@@ -21,16 +21,15 @@ class ProjectConfig {
   /// Written by `keys init` when the project has no configuration yet.
   static const template = '''
 # flutter_patcher project settings. Commands read them when no flag is given.
-# Nothing here is secret.
+# Every setting is optional, and nothing here is secret.
 
-# The HTTPS address devices download patches from. build writes it into the
-# app, and publish reads what is live there before numbering a patch.
-# Default: http://127.0.0.1:8686, where serve offers patches while developing.
+# Written into the app as the address FlutterPatcher.checkUpdate() uses when
+# it is given none. Default: http://127.0.0.1:8686, where serve offers patches
+# while developing.
 # url: https://cdn.example.com/my-app
 
-# Where publish puts patches and the manifests devices read: file:// or s3://.
-# Upload it to url, or serve it there. Default: .flutter_patcher/updates in the
-# project, which serve offers while developing.
+# Where publish writes patch files: file:// or s3://. Default:
+# .flutter_patcher/updates in the project, which serve offers.
 # store: s3://my-bucket/patches
 
 # Where host baselines are kept. Every patch of a host needs its baseline:
@@ -39,8 +38,7 @@ class ProjectConfig {
 
 # Sign with an external command (a KMS, Vault, a password manager) instead of
 # the key store or FLUTTER_PATCHER_KEYS. It reads the bytes to sign on stdin
-# and prints a base64 Ed25519 signature; FLUTTER_PATCHER_SIGN_ROLE names the
-# key (root, publisher or patch).
+# and prints a base64 Ed25519 signature; FLUTTER_PATCHER_SIGN_ROLE is patch.
 # signing:
 #   command: my-signer --key "fp-\$FLUTTER_PATCHER_SIGN_ROLE"
 ''';
@@ -90,12 +88,14 @@ class ProjectConfig {
           map is Map &&
           map.keys.every(keys.contains) &&
           map.values.every((v) => v is String);
+      // flutter_patcher 1.0 also wrote root and publisher keys; only the
+      // patch key is used.
       require(
         values['trust'] == null ||
             (strings(values['trust'], {'root', 'publisher', 'patch'}) &&
-                (values['trust'] as Map).length == 3),
+                _isPublicKey((values['trust'] as Map)['patch'])),
         'CONFIG_INVALID',
-        '$file: trust holds the root, publisher and patch public keys.',
+        '$file: trust.patch is the base64 Ed25519 public key of the patch key.',
       );
       require(
         values['signing'] == null || strings(values['signing'], {'command'}),
@@ -126,40 +126,22 @@ class ProjectConfig {
 
   bool get baselinesInProject => this['baseline_store'] == null;
 
-  /// The public keys this project's hosts trust, or null before keys init.
-  TrustAnchors? get anchors {
-    final trust = _values['trust'] as Map?;
-    return trust == null
-        ? null
-        : TrustAnchors(
-            root: trust['root'] as String,
-            publisher: trust['publisher'] as String,
-            patch: trust['patch'] as String,
-          );
-  }
-
-  TrustAnchors requireAnchors() {
-    final value = anchors;
-    require(
-      value != null,
-      'KEYS_NOT_CONFIGURED',
-      '$file has no trust keys; run `flutter_patcher keys init`, or '
-          '`flutter_patcher keys import` with the project\'s key bundle.',
-    );
-    return value!;
-  }
+  /// The patch public key hosts of this project trust, or null: hosts it
+  /// builds then accept unsigned patch files.
+  String? get patchKey => (_values['trust'] as Map?)?['patch'] as String?;
 
   /// The external signing command, when one is configured.
   String? get signingCommand =>
       (_values['signing'] as Map?)?['command'] as String?;
 
-  /// Records [anchors] as this project's trust keys, creating the file from
-  /// [template] if needed. The rest of an existing file is kept as written.
-  Future<void> writeTrust(TrustAnchors anchors) async {
+  /// Records [patchKey] as the key hosts built from now on trust, creating
+  /// the file from [template] if needed. The rest of an existing file is
+  /// kept as written.
+  Future<void> writeTrust(String patchKey) async {
     require(
-      this.anchors == null,
+      this.patchKey == null,
       'KEYS_ALREADY_CONFIGURED',
-      '${ProjectConfig.file} already names this project\'s trust keys.',
+      '${ProjectConfig.file} already names this project\'s patch key.',
     );
     final current = File(path);
     final text = await current.exists()
@@ -168,26 +150,12 @@ class ProjectConfig {
     final separator = text.isEmpty || text.endsWith('\n') ? '' : '\n';
     await _write(
       '$text$separator\n'
-      '# The public keys every host of this project trusts. Written by\n'
-      '# `flutter_patcher keys`; hosts already shipped keep the keys they\n'
-      '# were built with.\n'
+      '# The public key hosts built from now on trust: they accept only patch\n'
+      '# files signed by it. Written by `flutter_patcher keys`; hosts already\n'
+      '# shipped keep the key they were built with.\n'
       'trust:\n'
-      '  root: ${anchors.root}\n'
-      '  publisher: ${anchors.publisher}\n'
-      '  patch: ${anchors.patch}\n',
+      '  patch: $patchKey\n',
     );
-  }
-
-  /// Replaces the publisher key after a rotation.
-  Future<void> writePublisher(String publisher) async {
-    final old = requireAnchors().publisher;
-    final text = await File(path).readAsString();
-    require(
-      RegExp(RegExp.escape(old)).allMatches(text).length == 1,
-      'CONFIG_INVALID',
-      'Cannot find the publisher key in $file to replace it.',
-    );
-    await _write(text.replaceFirst(old, publisher));
   }
 
   Future<void> _write(String text) async {
@@ -195,5 +163,15 @@ class ProjectConfig {
     final staging = File(temporaryName(path));
     await staging.writeAsString(text, flush: true);
     await staging.renameRetry(path);
+  }
+}
+
+bool _isPublicKey(Object? value) {
+  if (value is! String) return false;
+  try {
+    final raw = base64Decode(value);
+    return raw.length == 32 && base64Encode(raw) == value;
+  } on FormatException {
+    return false;
   }
 }

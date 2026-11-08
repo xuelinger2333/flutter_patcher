@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -16,8 +15,8 @@ import 'host_tools.dart';
 Matcher fails(String code) =>
     throwsA(isA<Failure>().having((f) => f.code, 'code', code));
 
-/// A signing command for tests: signs stdin with the seed of
-/// FLUTTER_PATCHER_SIGN_ROLE from TEST_SEEDS, or misbehaves on TEST_MODE.
+/// A signing command for tests: signs stdin with TEST_SEED, or misbehaves
+/// on TEST_MODE, and records what it was given in TEST_RECORD.
 const _signScript = r'''
 import 'dart:convert';
 import 'dart:io';
@@ -44,12 +43,11 @@ Future<void> main() async {
       await Future<void>.delayed(const Duration(seconds: 20));
   }
   final message = await stdin.fold<List<int>>([], (a, b) => a..addAll(b));
-  final seeds = jsonDecode(env['TEST_SEEDS']!) as Map;
-  final seed = base64Decode(seeds[env['FLUTTER_PATCHER_SIGN_ROLE']] as String);
-  stdout.write(base64Encode(ed25519Sign(seed, message)));
+  stdout.write(base64Encode(ed25519Sign(base64Decode(env['TEST_SEED']!), message)));
 }
 ''';
 
+/// The patch key, the one key: plan/1.1-direct-patching.md §4.5.
 void main() {
   late Directory temp;
   late String store;
@@ -63,340 +61,254 @@ void main() {
   bool verifies(String public, List<int> signature) =>
       ed25519Verify(base64Decode(public), signature, message);
 
-  group('KeyBundle', () {
+  group('a key bundle', () {
     test('round-trips as JSON and as base64 JSON', () {
       final bundle = KeyBundle.generate();
       final text = bundle.encode();
-      expect(KeyBundle.decode(text).encode(), text);
-      expect(KeyBundle.decode(base64Encode(utf8.encode(text))).encode(), text);
-      expect(KeyBundle.decode('\n$text\n').encode(), text);
-      expect(bundle.anchors.root, bundle.publicKey(KeyRole.root));
-      expect(bundle.matches(bundle.anchors), true);
+      expect(jsonDecode(text), {
+        'format': 'flutter_patcher.keys.v1',
+        'keys': {'patch': base64Encode(bundle.seed)},
+      });
+      expect(KeyBundle.decode(text).publicKey, bundle.publicKey);
+      expect(
+        KeyBundle.decode(base64Encode(utf8.encode(text))).publicKey,
+        bundle.publicKey,
+      );
     });
 
-    test('encodes canonically, roles in a fixed order', () {
-      final seed = Uint8List(32);
-      final a = KeyBundle({KeyRole.patch: seed, KeyRole.root: seed});
-      final b = KeyBundle({KeyRole.root: seed, KeyRole.patch: seed});
-      expect(a.encode(), b.encode());
-      expect(a.encode(), startsWith('{"format":"flutter_patcher.keys.v1"'));
+    test('from flutter_patcher 1.0 yields its patch key', () {
+      final patch = base64Encode(ed25519GenerateSeed());
+      final legacy = jsonEncode({
+        'format': 'flutter_patcher.keys.v1',
+        'keys': {
+          'root': base64Encode(ed25519GenerateSeed()),
+          'publisher': base64Encode(ed25519GenerateSeed()),
+          'patch': patch,
+        },
+      });
+      expect(base64Encode(KeyBundle.decode(legacy).seed), patch);
     });
 
-    test('rejects anything else', () {
-      final seed = base64Encode(Uint8List(32));
+    test('without a patch key, or anything else, is invalid', () {
       for (final text in [
-        '',
-        'not base64 or json',
-        '[]',
-        '{"format":"flutter_patcher.keys.v2","keys":{"root":"$seed"}}',
-        '{"format":"flutter_patcher.keys.v1","keys":{}}',
-        '{"format":"flutter_patcher.keys.v1","keys":{"admin":"$seed"}}',
-        '{"format":"flutter_patcher.keys.v1","keys":{"root":"AAAA"}}',
-        '{"format":"flutter_patcher.keys.v1","keys":{"root":"$seed"},"x":1}',
-        '{"format":"flutter_patcher.keys.v1","keys":{"root":"$seed","root":"$seed"}}',
+        jsonEncode({
+          'format': 'flutter_patcher.keys.v1',
+          'keys': {'publisher': base64Encode(ed25519GenerateSeed())},
+        }),
+        jsonEncode({
+          'format': 'flutter_patcher.keys.v1',
+          'keys': {'patch': base64Encode(ed25519GenerateSeed()), 'other': 'x'},
+        }),
+        jsonEncode({
+          'format': 'other',
+          'keys': {'patch': base64Encode(ed25519GenerateSeed())},
+        }),
+        '{"format":"flutter_patcher.keys.v1","keys":{"patch":"AAAA"}}',
+        'garbage',
       ]) {
+        expect(() => KeyBundle.decode(text), fails('KEYS_BUNDLE_INVALID'));
+      }
+    });
+
+    test('reads the pre-1.0 key directory', () async {
+      final seed = base64Encode(ed25519GenerateSeed());
+      File(p.join(temp.path, 'old', 'patch', 'private-key.base64'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('$seed\n');
+      expect(
+        base64Encode(
+          (await KeyBundle.readDirectory(p.join(temp.path, 'old'))).seed,
+        ),
+        seed,
+      );
+    });
+  });
+
+  group('the key store', () {
+    test('saves privately, finds by public key, and is idempotent', () async {
+      final bundle = KeyBundle.generate();
+      final path = await saveKeyStore(bundle, root: store);
+      expect(p.isWithin(store, path), isTrue);
+      expect(await saveKeyStore(bundle, root: store), path);
+      expect(
+        (await loadKeyStore(bundle.publicKey, root: store))!.publicKey,
+        bundle.publicKey,
+      );
+      expect(
+        await loadKeyStore(KeyBundle.generate().publicKey, root: store),
+        isNull,
+      );
+      if (!Platform.isWindows) {
         expect(
-          () => KeyBundle.decode(text),
-          fails('KEYS_BUNDLE_INVALID'),
-          reason: text,
+          (await Process.run('stat', [
+            '-c',
+            '%a',
+            path,
+          ])).stdout.toString().trim(),
+          anyOf('600', isEmpty),
         );
       }
     });
 
-    test('a partial bundle has no anchors', () {
-      final partial = KeyBundle.generate().without(KeyRole.root);
-      expect(() => partial.anchors, fails('KEYS_BUNDLE_INVALID'));
+    test('finds the patch key in a flutter_patcher 1.0 directory', () async {
+      final patch = ed25519GenerateSeed();
+      final legacy = File(p.join(store, '0123456789abcdef', 'keys.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'format': 'flutter_patcher.keys.v1',
+            'keys': {
+              'root': base64Encode(ed25519GenerateSeed()),
+              'patch': base64Encode(patch),
+            },
+          }),
+        );
+      final bundle = KeyBundle(patch);
+      expect(
+        (await loadKeyStore(bundle.publicKey, root: store))!.publicKey,
+        bundle.publicKey,
+      );
+      // Saving it again keeps the directory it is in.
+      expect(await saveKeyStore(bundle, root: store), legacy.path);
     });
 
-    test('reads the pre-1.0 key directory', () async {
-      final bundle = KeyBundle.generate();
-      for (final role in KeyRole.values) {
-        final dir = Directory(p.join(temp.path, 'legacy', role.name))
-          ..createSync(recursive: true);
-        File(p.join(dir.path, 'private-key.base64'))
-            .writeAsStringSync('${base64Encode(bundle.seeds[role]!)}\n');
-      }
-      final read = await KeyBundle.readDirectory(p.join(temp.path, 'legacy'));
-      expect(read.encode(), bundle.encode());
+    test('passes over 1.0 bundles without a patch key', () async {
+      File(p.join(store, 'aaaaaaaaaaaaaaaa', 'keys.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'format': 'flutter_patcher.keys.v1',
+            'keys': {'publisher': base64Encode(ed25519GenerateSeed())},
+          }),
+        );
+      expect(
+        await loadKeyStore(KeyBundle.generate().publicKey, root: store),
+        isNull,
+      );
+    });
+
+    test('names a broken bundle it meets', () async {
+      final broken = File(p.join(store, 'bbbbbbbbbbbbbbbb', 'keys.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('garbage');
       await expectLater(
-        KeyBundle.readDirectory(p.join(temp.path, 'none')),
-        fails('KEYS_BUNDLE_INVALID'),
+        loadKeyStore(KeyBundle.generate().publicKey, root: store),
+        throwsA(
+          isA<Failure>()
+              .having((f) => f.code, 'code', 'KEYS_BUNDLE_INVALID')
+              .having((f) => f.message, 'message', contains(broken.path)),
+        ),
       );
     });
   });
 
-  group('TrustAnchors', () {
-    test('come from a host policy', () {
-      final anchors = KeyBundle.generate().anchors;
-      final policy = TrustAnchors.ofPolicy({
-        'root_key': anchors.root,
-        'fptc_key': anchors.patch,
-        'keys': 'backup:${anchors.root},release:${anchors.publisher}',
-      });
-      expect(policy.publisher, anchors.publisher);
-      expect(policy.id, anchors.id);
-      expect(anchors.id, hasLength(16));
-    });
-
-    test('reject keys that are not Ed25519 public keys', () {
-      final key = KeyBundle.generate().anchors.root;
-      expect(
-        () => TrustAnchors(root: key, publisher: 'x', patch: key),
-        fails('KEYS_NOT_CONFIGURED'),
-      );
-    });
-  });
-
-  group('key store', () {
-    test('saves privately, loads, and is idempotent', () async {
-      final bundle = KeyBundle.generate();
-      final path = await saveKeyStore(bundle, bundle.anchors, root: store);
-      expect(p.basename(p.dirname(path)), bundle.anchors.id);
-      expect(
-        (await loadKeyStore(bundle.anchors, root: store))!.encode(),
-        bundle.encode(),
-      );
-      expect(await saveKeyStore(bundle, bundle.anchors, root: store), path);
-      if (Platform.isWindows) {
-        final acl =
-            Process.runSync('icacls', [p.dirname(path)]).stdout as String;
-        expect(acl, contains(Platform.environment['USERNAME']!));
-        expect(acl, isNot(contains('BUILTIN\\Users')));
-        expect(acl, isNot(contains('Everyone')));
-      } else {
-        expect(File(path).statSync().mode & 0x1ff, 0x180); // 0600
-        expect(Directory(p.dirname(path)).statSync().mode & 0x1ff, 0x1c0);
-      }
-      expect(Directory(p.dirname(path)).listSync(), hasLength(1));
-    });
-
-    test('is completed, never overwritten with other keys', () async {
-      final bundle = KeyBundle.generate();
-      final partial = bundle.without(KeyRole.patch);
-      await saveKeyStore(partial, bundle.anchors, root: store);
-      await saveKeyStore(bundle, bundle.anchors, root: store);
-      expect(
-        (await loadKeyStore(bundle.anchors, root: store))!.encode(),
-        bundle.encode(),
-      );
-      // A partial import keeps what the store already has.
-      await saveKeyStore(partial, bundle.anchors, root: store);
-      expect(
-        (await loadKeyStore(bundle.anchors, root: store))!.encode(),
-        bundle.encode(),
-      );
-
-      final other = KeyBundle({
-        ...bundle.seeds,
-        KeyRole.patch: KeyBundle.generate().seeds[KeyRole.patch]!,
-      });
-      await expectLater(
-        saveKeyStore(other, bundle.anchors, root: store),
-        fails('KEYS_MISMATCH'),
-      );
-      await expectLater(
-        saveKeyStore(other, bundle.anchors, root: store, replace: true),
-        fails('KEYS_MISMATCH'),
-      );
-    });
-
-    test('replace gives it a new publisher key only', () async {
-      final bundle = KeyBundle.generate();
-      await saveKeyStore(bundle, bundle.anchors, root: store);
-      final rotated = KeyBundle({
-        ...bundle.seeds,
-        KeyRole.publisher: KeyBundle.generate().seeds[KeyRole.publisher]!,
-      });
-      await expectLater(
-        saveKeyStore(rotated, rotated.anchors, root: store),
-        fails('KEYS_MISMATCH'),
-      );
-      await saveKeyStore(rotated, rotated.anchors, root: store, replace: true);
-      expect(
-        (await loadKeyStore(rotated.anchors, root: store))!.encode(),
-        rotated.encode(),
-      );
-      // The old anchors no longer match what is stored.
-      await expectLater(
-        loadKeyStore(bundle.anchors, root: store),
-        fails('KEYS_MISMATCH'),
-      );
-    });
-
-    test('stores a bundle without its root key under the project', () async {
-      final bundle = KeyBundle.generate();
-      final partial = bundle.without(KeyRole.root);
-      await saveKeyStore(partial, bundle.anchors, root: store);
-      expect(
-        (await loadKeyStore(bundle.anchors, root: store))!.encode(),
-        partial.encode(),
-      );
-      await expectLater(
-        saveKeyStore(partial, KeyBundle.generate().anchors, root: store),
-        fails('KEYS_MISMATCH'),
-      );
-    });
-  });
-
-  group('Keyring', () {
+  group('the keyring', () {
     late KeyBundle bundle;
     setUp(() => bundle = KeyBundle.generate());
-
     Keyring keyring({
       String? keyFile,
       String? command,
-      Map<String, String> env = const {},
+      Map<String, String>? env,
     }) => Keyring(
-      bundle.anchors,
+      bundle.publicKey,
       keyFile: keyFile,
       command: command,
       keyStore: store,
-      environment: {...Platform.environment, ...env}
-        ..remove(Keyring.environmentVariable)
-        ..addAll(env),
+      environment: env ?? const {},
     );
 
     test('finds nothing without a source and names what it tried', () async {
       await expectLater(
-        keyring().signer(KeyRole.patch),
+        keyring().signer(),
         throwsA(
           isA<Failure>()
               .having((f) => f.code, 'code', 'KEYS_NOT_FOUND')
               .having((f) => f.message, 'message', contains('the key store')),
         ),
       );
+      expect(await keyring().describe(), 'none');
     });
 
     test('signs from the key store', () async {
-      await saveKeyStore(bundle, bundle.anchors, root: store);
-      for (final role in KeyRole.values) {
-        final signer = await keyring().signer(role);
-        expect(signer.source, 'key store');
-        expect(
-          verifies(bundle.anchors.of(role), await signer.sign(message)),
-          true,
-        );
-      }
+      await saveKeyStore(bundle, root: store);
+      final signer = await keyring().signer();
+      expect(signer.source, 'key store');
+      expect(verifies(bundle.publicKey, await signer.sign(message)), isTrue);
     });
 
     test('prefers --key-file, then the environment, then the store', () async {
-      await saveKeyStore(bundle, bundle.anchors, root: store);
-      final file = File(p.join(temp.path, 'keys.json'))
-        ..writeAsStringSync(bundle.without(KeyRole.root).encode());
-      final env = {
-        Keyring.environmentVariable: base64Encode(
-          utf8.encode(bundle.without(KeyRole.patch).encode()),
-        ),
-      };
-      final ring = keyring(keyFile: file.path, env: env);
-      expect((await ring.signer(KeyRole.patch)).source, '--key-file');
-      expect((await ring.signer(KeyRole.publisher)).source, '--key-file');
+      await saveKeyStore(bundle, root: store);
+      final file = p.join(temp.path, 'bundle.json');
+      File(file).writeAsStringSync(bundle.encode());
+      final env = {Keyring.environmentVariable: bundle.encode()};
       expect(
-        (await ring.signer(KeyRole.root)).source,
+        (await keyring(keyFile: file, env: env).signer()).source,
+        '--key-file',
+      );
+      expect(
+        (await keyring(env: env).signer()).source,
         Keyring.environmentVariable,
       );
-      expect(
-        (await keyring(env: env).signer(KeyRole.patch)).source,
-        'key store',
-      );
-      expect(await ring.describe(), {
-        KeyRole.root: Keyring.environmentVariable,
-        KeyRole.publisher: '--key-file',
-        KeyRole.patch: '--key-file',
-      });
+      expect(await keyring(env: env).describe(), Keyring.environmentVariable);
     });
 
-    test(
-      'a source with another key fails instead of falling through',
-      () async {
-        await saveKeyStore(bundle, bundle.anchors, root: store);
-        final stranger = KeyBundle.generate();
-        final env = {Keyring.environmentVariable: stranger.encode()};
-        await expectLater(
-          keyring(env: env).signer(KeyRole.publisher),
-          fails('KEYS_MISMATCH'),
-        );
-        expect(
-          (await keyring(env: env).describe())[KeyRole.publisher],
-          contains('other key'),
-        );
-      },
-    );
+    test('another key is a mismatch, never skipped', () async {
+      final env = {Keyring.environmentVariable: KeyBundle.generate().encode()};
+      await saveKeyStore(bundle, root: store);
+      await expectLater(keyring(env: env).signer(), fails('KEYS_MISMATCH'));
+      expect(await keyring(env: env).describe(), contains('other key'));
+    });
 
     test('a missing --key-file is an error', () async {
       await expectLater(
-        keyring(keyFile: p.join(temp.path, 'absent.json'))
-            .signer(KeyRole.patch),
+        keyring(keyFile: p.join(temp.path, 'none.json')).signer(),
         fails('KEYS_NOT_FOUND'),
-      );
-    });
-
-    test('a bad environment bundle is an error', () async {
-      await expectLater(
-        keyring(env: {Keyring.environmentVariable: 'garbage'})
-            .signer(KeyRole.patch),
-        fails('KEYS_BUNDLE_INVALID'),
       );
     });
 
     group('signing.command', () {
       late String command;
-      late Map<String, String> seeds;
       setUp(() {
         final script = File(p.join(temp.path, 'sign.dart'))
           ..writeAsStringSync(_signScript);
         final packages = p.absolute('.dart_tool', 'package_config.json');
         command = '"$dartVm" --packages="$packages" "${script.path}"';
-        seeds = {
-          for (final role in KeyRole.values)
-            role.name: base64Encode(bundle.seeds[role]!),
-        };
       });
 
-      test('signs every role without the key bundle reaching it', () async {
+      test('signs as patch without the key bundle reaching it', () async {
         final record = p.join(temp.path, 'record.json');
-        final ring = keyring(
+        final signer = await keyring(
           command: command,
           env: {
-            'TEST_SEEDS': jsonEncode(seeds),
+            'TEST_SEED': base64Encode(bundle.seed),
             'TEST_RECORD': record,
-            Keyring.environmentVariable: KeyBundle.generate()
-                .without(KeyRole.patch)
-                .encode(),
+            ...Platform.environment,
           },
-        );
-        final signer = await ring.signer(KeyRole.patch);
+        ).signer();
         expect(signer.source, 'signing.command');
-        expect(
-          verifies(bundle.anchors.patch, await signer.sign(message)),
-          true,
-        );
+        expect(verifies(bundle.publicKey, await signer.sign(message)), isTrue);
         final seen = jsonDecode(File(record).readAsStringSync()) as Map;
         expect(seen['role'], 'patch');
-        expect(seen['public'], bundle.anchors.patch);
+        expect(seen['public'], bundle.publicKey);
         expect(seen['bundle'], isNull);
       }, timeout: const Timeout(Duration(minutes: 2)));
 
       test('a signature for another key fails closed', () async {
-        final wrong = KeyBundle.generate();
-        final ring = keyring(
+        final signer = await keyring(
           command: command,
           env: {
-            'TEST_SEEDS': jsonEncode({
-              for (final role in KeyRole.values)
-                role.name: base64Encode(wrong.seeds[role]!),
-            }),
+            ...Platform.environment,
+            'TEST_SEED': base64Encode(ed25519GenerateSeed()),
           },
-        );
-        final signer = await ring.signer(KeyRole.publisher);
+        ).signer();
         await expectLater(signer.sign(message), fails('SIGNER_COMMAND_FAILED'));
       }, timeout: const Timeout(Duration(minutes: 2)));
 
       test('reports a failing command with its output', () async {
         final signer = await keyring(
           command: command,
-          env: {'TEST_MODE': 'fail'},
-        ).signer(KeyRole.patch);
+          env: {...Platform.environment, 'TEST_MODE': 'fail'},
+        ).signer();
         await expectLater(
           signer.sign(message),
           throwsA(
@@ -410,16 +322,15 @@ void main() {
       test('rejects output that is not a signature', () async {
         final signer = await keyring(
           command: command,
-          env: {'TEST_MODE': 'garbage'},
-        ).signer(KeyRole.patch);
+          env: {...Platform.environment, 'TEST_MODE': 'garbage'},
+        ).signer();
         await expectLater(signer.sign(message), fails('SIGNER_COMMAND_FAILED'));
       }, timeout: const Timeout(Duration(minutes: 2)));
 
       test('gives up after its timeout', () async {
         final signer = CommandSigner(
-          KeyRole.patch,
           command,
-          bundle.anchors.patch,
+          bundle.publicKey,
           environment: {...Platform.environment, 'TEST_MODE': 'sleep'},
           timeout: const Duration(seconds: 5),
         );

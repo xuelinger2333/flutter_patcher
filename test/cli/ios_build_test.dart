@@ -18,9 +18,8 @@ void main() {
   setUp(() async => temp = await Directory.systemTemp.createTemp('ios-build-'));
   tearDown(() => temp.delete(recursive: true));
 
-  final key = base64Encode(List.filled(32, 1));
   HostPolicy policy(String abi) => HostPolicy({
-    'schema': '1',
+    'schema': '2',
     'application_id': 'com.example.app',
     'version_code': '42',
     'channel': 'stable',
@@ -28,8 +27,6 @@ void main() {
     'abi': abi,
     'strategy': 'bytecode',
     'fptc_key': base.testPublicKey,
-    'root_key': key,
-    'keys': 'one:$key',
   });
 
   test(

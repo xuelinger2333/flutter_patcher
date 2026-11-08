@@ -39,7 +39,7 @@ void main() {
     }
   });
   test(
-    'build derives its policy from the project; a request needs --production',
+    'build derives its policy from the project and needs no keys',
     () async {
       final temp = await Directory.systemTemp.createTemp('cli-policy-');
       final pubspec = File('${temp.path}/pubspec.yaml')
@@ -62,16 +62,14 @@ void main() {
       final named = await build(['--application-id', 'com.example.app']);
       pubspec.writeAsStringSync('name: app\nversion: 1.0.0\n');
       final unnumbered = await build();
-      final publish = await cli(['publish', '--request', pubspec.path]);
       await temp.delete(recursive: true);
       for (final result in [derived, named]) {
         expect(result.exitCode, 2);
-        // The policy came from the project; only its keys are missing.
-        expect(result.stderr, contains('KEYS_NOT_CONFIGURED'));
+        // The policy came from the project and needs no key; the next
+        // check is the entry point this empty project lacks.
+        expect(result.stderr, contains('Target must be a Dart entry'));
       }
       expect(unnumbered.stderr, contains('build number'));
-      expect(publish.exitCode, 2);
-      expect(publish.stderr, contains('PUBLISH_CONFIG_INVALID'));
     },
     skip: HostIdentity.verified.contains(HostIdentity.current().key)
         ? false

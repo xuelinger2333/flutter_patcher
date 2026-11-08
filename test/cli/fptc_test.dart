@@ -9,7 +9,6 @@ import 'package:test/test.dart';
 import 'package:flutter_patcher/src/bootstrap/patch_archive.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/crypto/ed25519.dart';
-import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 import 'package:flutter_patcher/src/cli/patch/package.dart';
 import 'package:flutter_patcher/src/cli/publish/seal.dart';
 import 'package:flutter_patcher/src/patch_file.dart';
@@ -23,7 +22,7 @@ void main() {
   final seed = base64Encode(
     List.generate(32, (i) => i + 1),
   ); // a test seed, never a real key
-  final signer = testSigner(seed, KeyRole.patch);
+  final signer = testSigner(seed);
   final fingerprint = 'ab' * 32;
 
   late PatchDraft draft;
@@ -100,13 +99,6 @@ void main() {
           ),
         );
       }
-    });
-
-    test('refuses a key of another role', () async {
-      await expectLater(
-        sealPatch(draft, signer: testSigner(seed), seq: 7),
-        throwsA(isA<Failure>().having((f) => f.code, 'code', 'KEYS_MISMATCH')),
-      );
     });
   });
 

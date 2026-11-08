@@ -9,14 +9,9 @@ import 'package:flutter_patcher/src/cli/baseline/manifest.dart';
 import 'package:flutter_patcher/src/cli/baseline/repository.dart';
 import 'package:flutter_patcher/src/cli/baseline/split.dart';
 import 'package:flutter_patcher/src/cli/build/host_policy.dart';
-import 'package:flutter_patcher/src/cli/patch/package.dart';
-import 'package:flutter_patcher/src/cli/publish/pipeline.dart';
-import 'package:flutter_patcher/src/cli/publish/seal.dart';
-import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 
 import 'baseline_test.dart' as base;
 import 'release_fixture.dart';
-import 'signers.dart';
 
 void main() {
   final f = ReleaseFixture();
@@ -24,7 +19,7 @@ void main() {
   tearDown(f.tearDown);
   final key = base64Encode(List.filled(32, 1));
   HostPolicy policy({Map<String, String> change = const {}}) => HostPolicy({
-    'schema': '1',
+    'schema': '2',
     'application_id': 'com.example.app',
     'version_code': '42',
     'channel': 'stable',
@@ -32,8 +27,6 @@ void main() {
     'abi': 'arm64-v8a',
     'strategy': 'so',
     'fptc_key': base.testPublicKey,
-    'root_key': key,
-    'keys': 'one:$key',
     ...change,
   });
   Future<Map<String, dynamic>> saveSo({
@@ -99,59 +92,6 @@ void main() {
       expect((await saveSo())['release_status'], 'existing');
       await File(p.join(f.input, 'libapp.so')).writeAsString('other binary');
       await expectLater(saveSo(), fails('BASELINE_RELEASE_CONFLICT'));
-    },
-  );
-
-  test(
-    'publication accepts only SO packages pinned to the SO release',
-    () async {
-      final fp = (await saveSo())['fingerprint'] as String;
-      Map<String, String> fields(String strategy) => {
-        'application_id': 'com.example.app',
-        'version_code': '42',
-        'flavor': 'prod',
-        'abi': 'arm64-v8a',
-        'fingerprint': fp,
-        'strategy': strategy,
-      };
-      await expectLater(
-        resolvePublication(
-          f.store,
-          fields('bytecode'),
-          p.join(f.temp.path, 'b'),
-        ),
-        fails('PUBLISH_TARGET_MISMATCH'),
-      );
-      final release = await resolvePublication(
-        f.store,
-        fields('so'),
-        p.join(f.temp.path, 's'),
-      );
-      final work = (await f.temp.createTemp('seal-')).path;
-      final libapp = File(p.join(work, 'libapp.so'))..writeAsBytesSync([1]);
-      final patch = await sealPatch(
-        await packPatch(
-          kind: 'libapp',
-          code: libapp.path,
-          metadata: {
-            'fingerprint': fp,
-            'module_id': 123,
-            'target': release.target,
-          },
-        ),
-        seq: 1,
-        signer: testSigner(base.testSeed, KeyRole.patch),
-      );
-      checkPatchTarget(patch, 'so', release.identity, release.target);
-      expect(
-        () => checkPatchTarget(
-          patch,
-          'bytecode',
-          release.identity,
-          release.target,
-        ),
-        throwsA(isA<Failure>()),
-      );
     },
   );
 

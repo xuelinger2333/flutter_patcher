@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -8,6 +7,8 @@ import 'package:path/path.dart' as p;
 import '../core.dart';
 import '../project.dart';
 import '../publish/command.dart';
+import '../publish/store.dart';
+import '../../patch_file.dart';
 
 ArgParser serveOptions() => ArgParser()
   ..addFlag('help', abbr: 'h', negatable: false)
@@ -24,9 +25,9 @@ ArgParser serveOptions() => ArgParser()
   );
 
 /// Hands patches to development devices: publishes each new patch output of
-/// the project to its store, serves the store on 127.0.0.1 and maps that port
-/// onto connected Android devices with adb reverse. Devices still verify every
-/// manifest and patch; only the transport is local.
+/// the project to its store, serves the store's patch files on 127.0.0.1 and
+/// maps that port onto connected Android devices with adb reverse. Devices
+/// still verify every file; only the transport is local.
 Future<int> serveCommand(ArgResults args) async {
   final project = p.absolute(
     args['project'] as String? ?? Directory.current.path,
@@ -61,11 +62,10 @@ Future<int> serveCommand(ArgResults args) async {
   final url = 'http://127.0.0.1:$port';
   stderr.writeln(
     'Serving $root at $url\n'
-    'Apps built without url in ${ProjectConfig.file} check here: '
-    'FlutterPatcher.checkUpdate()\n'
+    'Apps check here with FlutterPatcher.checkUpdate(url: \'$url\'), or '
+    'checkUpdate() when built without url in ${ProjectConfig.file}.\n'
     'iOS or another network: expose $url over HTTPS, for example with '
-    '`cloudflared tunnel --url $url`, and pass that address: '
-    'checkUpdate(url: ...).\n'
+    '`cloudflared tunnel --url $url`, and pass that address.\n'
     'After a change run `dart run flutter_patcher patch android` (or ios); '
     'Ctrl+C stops.',
   );
@@ -74,11 +74,11 @@ Future<int> serveCommand(ArgResults args) async {
     if (!stop.isCompleted) stop.complete();
   });
   final reversed = <String>{}, offered = <String>{};
-  final heads = <String, String>{};
+  final offers = <String, int>{};
   while (!stop.isCompleted) {
     await _reverse(port, reversed);
     await _offerLatest(project, offered);
-    await _announce(root, heads);
+    await _announce(root, offers);
     await Future.any([
       stop.future,
       Future<void>.delayed(const Duration(seconds: 2)),
@@ -89,29 +89,44 @@ Future<int> serveCommand(ArgResults args) async {
   return 0;
 }
 
-/// Devices read only signed manifests and the patches they name.
+/// Devices read only patch files, whole or the first bytes a check asks for.
 Future<void> _respond(HttpRequest request, String root) async {
   final response = request.response;
   try {
     final name = request.uri.path.substring(1);
     final file = File(p.join(root, name));
+    var named = true;
+    try {
+      publicationName(name);
+    } on Failure {
+      named = false;
+    }
     if (request.method != 'GET' ||
         request.uri.hasQuery ||
-        !(RegExp(r'^manifests/[a-f0-9]{64}\.json$').hasMatch(name) ||
-            RegExp(r'^objects/[a-f0-9]{32}/[a-f0-9]{64}\.fptc$')
-                .hasMatch(name)) ||
+        !named ||
         !await file.exists()) {
       response.statusCode = HttpStatus.notFound;
     } else {
-      response.headers.contentType = name.endsWith('.json')
-          ? ContentType.json
-          : ContentType.binary;
-      response.contentLength = await file.length();
-      await response.addStream(file.openRead());
+      final length = await file.length();
+      final range = RegExp(r'^bytes=0-(\d+)$')
+          .firstMatch(request.headers.value(HttpHeaders.rangeHeader) ?? '');
+      final end = range == null
+          ? length - 1
+          : (int.parse(range[1]!)).clamp(0, length - 1);
+      response.headers.contentType = ContentType.binary;
+      if (range != null) {
+        response.statusCode = HttpStatus.partialContent;
+        response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes 0-$end/$length',
+        );
+      }
+      response.contentLength = end + 1;
+      await response.addStream(file.openRead(0, end + 1));
       stderr.writeln(
-        name.endsWith('.json')
+        range != null
             ? 'A device checked for updates'
-            : 'A device downloaded the patch',
+            : 'A device downloaded $name',
       );
     }
     await response.close();
@@ -135,12 +150,11 @@ Future<void> _offerLatest(String project, Set<String> offered) async {
         '--yes',
       ]),
       onlyNew: true,
-      live: false,
     );
     if (result['status'] == 'published_before') {
       stderr.writeln(
         'Not offering the latest patch output again: it was published as '
-        'patch ${result['patch_seq']}. To offer it again, run '
+        '${result['seq']}. To offer it again, run '
         '`dart run flutter_patcher publish --patch $latest`.',
       );
     }
@@ -149,32 +163,31 @@ Future<void> _offerLatest(String project, Set<String> offered) async {
   }
 }
 
-/// Says what devices are offered whenever a release's signed head manifest
+/// Says what devices are offered whenever a patch file in the store
 /// changes, whoever published it.
-Future<void> _announce(String root, Map<String, String> heads) async {
-  final manifests = Directory(p.join(root, 'manifests'));
-  if (!await manifests.exists()) return;
-  await for (final file in manifests.list()) {
-    if (file is! File || !file.path.endsWith('.json')) continue;
-    final Map fields;
+Future<void> _announce(String root, Map<String, int> offers) async {
+  await for (final file in Directory(root).list()) {
+    final name = p.basename(file.path);
+    if (file is! File || !name.endsWith('.fptc')) continue;
+    final PatchHeader header;
     try {
-      final envelope = jsonDecode(await file.readAsString()) as Map;
-      fields = jsonDecode(
-        utf8.decode(base64Decode(envelope['payload'] as String)),
-      ) as Map;
+      final handle = await file.open();
+      try {
+        header = PatchHeader.parse(await handle.read(patchHeaderSize));
+      } finally {
+        await handle.close();
+      }
     } catch (_) {
       continue; // Being replaced; the next pass reads it.
     }
-    final name = p.basename(file.path), revision = '${fields['revision']}';
-    final known = heads[name];
-    if (known == revision) continue;
-    heads[name] = revision;
-    final release = 'versionCode ${fields['version_code']} ${fields['abi']}';
+    final known = offers[name];
+    if (known == header.seq) continue;
+    offers[name] = header.seq;
     stderr.writeln(
-      fields['action'] == 'withdraw'
-          ? 'Withdrawn through patch ${fields['withdraw_through_seq']} '
-                '($release): devices that apply it run the installed version'
-          : 'Offering patch ${fields['patch_seq']} ($release)'
+      header.withdrawal
+          ? 'Withdrawn as ${header.seq} ($name): devices that apply it run '
+                'the installed version'
+          : 'Offering patch ${header.seq} ($name)'
                 '${known == null ? '' : '; restart the app after it applies'}',
     );
   }

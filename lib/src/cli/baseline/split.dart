@@ -6,7 +6,6 @@ import 'package:path/path.dart' as p;
 
 import '../core.dart';
 import '../build/host_policy.dart';
-import '../publish/protocol.dart';
 import 'manifest.dart';
 
 /// Schema 5 stores a baseline as two objects. The compile object holds what

@@ -5,10 +5,8 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/baseline/archive.dart';
-import 'package:flutter_patcher/src/cli/baseline/manifest.dart';
 import 'package:flutter_patcher/src/cli/baseline/repository.dart';
 import 'package:flutter_patcher/src/cli/baseline/store.dart';
-import 'package:flutter_patcher/src/cli/publish/pipeline.dart';
 
 import 'baseline_test.dart' as base;
 import 'release_fixture.dart';
@@ -272,7 +270,7 @@ void main() {
 
   group('legacy releases', () {
     for (final schema in [2, 3]) {
-      test('schema $schema resolves for patch and publish unchanged', () async {
+      test('schema $schema resolves for patch unchanged', () async {
         final metadata = schema == 2
             ? base.buildMetadata()
             : await policyBuild();
@@ -284,29 +282,6 @@ void main() {
         expect(resolved.releaseRoot, resolved.compileRoot);
         expect(resolved.receipt['public_key'], base.testPublicKey);
         expect(resolved.target!['version_code'], '42');
-        final fields = {
-          'application_id': 'com.example.app',
-          'version_code': '42',
-          'flavor': 'prod',
-          'abi': 'arm64-v8a',
-          'fingerprint': fp,
-          'strategy': 'bytecode',
-        };
-        final identity = await publicationBaseline(
-          store,
-          fields,
-          p.join(temp.path, 'publish'),
-        );
-        final root = p.join(temp.path, 'publish', 'baseline-cache', fp);
-        // The shape is part of pending operations' intent digest.
-        expect(
-          jsonEncode(identity),
-          jsonEncode({
-            'receipt': await baselineObject(p.join(root, 'build_receipt.json')),
-            'baseline': await verifyBaseline(root),
-            'fingerprint': fp,
-          }),
-        );
       });
     }
 

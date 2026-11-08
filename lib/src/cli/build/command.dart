@@ -100,6 +100,13 @@ Future<int> buildCommand(ArgResults args) async {
         'it, so set baseline_store in ${ProjectConfig.file} to a durable store.',
       );
     }
+    if (!policy.signed) {
+      stderr.writeln(
+        'WARNING: UNSIGNED: this host accepts patch files that are not '
+        'signed, so whoever can hand the app a file can run code in it. To '
+        'sign, run `flutter_patcher keys init` and build again.',
+      );
+    }
     if (config.urlIsLocal) {
       stderr.writeln(
         'WARNING: URL_LOCAL: this host looks for patches at ${config.url}, '

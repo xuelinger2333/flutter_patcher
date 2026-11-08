@@ -102,35 +102,28 @@ void main() {
     );
   });
 
-  test('signMessage reproduces the shared protocol vectors', () {
+  test('signMessage reproduces the signatures of the shared FPTC vectors', () {
     final vectors = jsonDecode(
-      File('test/protocol/manifest-v1.json').readAsStringSync(),
-    ) as List;
+      File('test/protocol/fptc-v1.json').readAsStringSync(),
+    ) as Map;
     final seed = base64Encode(hexBytes(rfcVectors[0].seed));
     final public = base64Encode(hexBytes(rfcVectors[0].public));
     var checked = 0;
-    for (final vector in vectors.cast<Map>()) {
-      if (vector['tamper'] == true ||
-          vector['public_key'] != rfcVectors[0].public) {
-        continue;
-      }
-      final message = hexBytes(vector['signing_hex'] as String);
-      final expected = hexBytes(vector['signature'] as String);
-      if (!ed25519Verify(
-        hexBytes(vector['public_key'] as String),
-        expected,
-        message,
-      )) {
-        continue; // tampered vectors carry a deliberately broken signature
-      }
+    for (final vector in (vectors['files'] as List).cast<Map>()) {
+      if (vector['valid'] != true || vector['host_key'] != public) continue;
+      final file = base64Decode(vector['file'] as String);
       expect(
-        signMessage(message, seed, public),
-        expected,
-        reason: vector['name'],
+        signMessage(
+          [...file.sublist(0, 82), ...file.sublist(146)],
+          seed,
+          public,
+        ),
+        file.sublist(82, 146),
+        reason: vector['name'] as String,
       );
       checked++;
     }
-    expect(checked, greaterThan(20));
+    expect(checked, greaterThanOrEqualTo(3));
   });
 
   test(

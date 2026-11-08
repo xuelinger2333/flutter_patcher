@@ -14,7 +14,6 @@ import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/patch/sources.dart';
 import 'package:flutter_patcher/src/cli/patch/package.dart';
 import 'package:flutter_patcher/src/cli/publish/seal.dart';
-import 'package:flutter_patcher/src/cli/keys/bundle.dart';
 import 'package:flutter_patcher/src/cli/sdk/package_inputs.dart';
 
 void main() {
@@ -133,10 +132,7 @@ void main() {
     () async {
       final root = (await Directory.systemTemp.createTemp('patch-sign-')).path;
       final commands = Commands(root);
-      final signer = testSigner(
-        base64Encode(List.filled(32, 1)),
-        KeyRole.patch,
-      );
+      final signer = testSigner(base64Encode(List.filled(32, 1)));
       final module = File(p.join(root, 'module.bc'));
       await module.writeAsString(
         'explicit synthetic bytecode for envelope contract only',
