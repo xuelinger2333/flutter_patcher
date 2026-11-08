@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -15,9 +14,8 @@ class PayloadDownloadException implements Exception {
 }
 
 /// HTTPS, or HTTP to this device itself, where `flutter_patcher serve` is
-/// reached through adb reverse: signatures, not transport, authenticate
-/// updates. Redirects and ambient credentials are deliberately unsupported
-/// so a response cannot forward a signed download elsewhere.
+/// reached through adb reverse. Redirects and ambient credentials are
+/// deliberately unsupported so a response cannot send a download elsewhere.
 Uri updateUri(String url) {
   final uri = Uri.parse(url);
   final local =
@@ -28,45 +26,44 @@ Uri updateUri(String url) {
       uri.userInfo.isNotEmpty ||
       uri.hasFragment) {
     throw const FormatException(
-      'Signed updates require HTTPS without URL credentials',
+      'Patch downloads require HTTPS without URL credentials',
     );
   }
   return uri;
 }
 
-/// Retain signed wire bytes, or null when nothing is published there yet.
-Future<String?> getSignedWire(
+/// The first 146 bytes of the patch file at [url], or null when there is
+/// none (404). Asks for just that range; a server that sends the whole file
+/// is read no further.
+Future<Uint8List?> readPatchHeader(
   String url, {
   Duration timeout = const Duration(seconds: 30),
 }) async {
   final uri = updateUri(url);
   final client = HttpClient()..connectionTimeout = timeout;
-  Future<String?> read() async {
+  Future<Uint8List?> read() async {
     final request = await client.getUrl(uri);
     request.followRedirects = false;
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-145');
     final response = await request.close();
     if (response.statusCode == HttpStatus.notFound) {
       await response.drain<void>();
       return null;
     }
-    if (response.statusCode != 200 || response.contentLength > 24000) {
-      throw const FormatException('Signed update response rejected');
+    if (response.statusCode != 200 && response.statusCode != 206) {
+      throw HttpException('Patch check got HTTP ${response.statusCode}');
     }
     final bytes = BytesBuilder(copy: false);
     await for (final chunk in response) {
-      if (bytes.length + chunk.length > 24000) {
-        throw const FormatException('Signed update response too large');
-      }
       bytes.add(chunk);
+      if (bytes.length >= 146) break;
     }
-    return utf8.decode(bytes.takeBytes());
+    if (bytes.length < 146) throw const FormatException('Not a patch file');
+    return Uint8List.sublistView(bytes.takeBytes(), 0, 146);
   }
 
   try {
     return await read().timeout(timeout);
-  } catch (_) {
-    throw const FormatException('Signed update download failed');
   } finally {
     client.close(force: true);
   }
@@ -77,9 +74,8 @@ File _payloadFile() => File(
   '${DateTime.now().microsecondsSinceEpoch}.fptc',
 );
 
-/// Downloads a signed payload of [size] bytes to a new temporary file for
-/// native verification, which deletes it. Never more than [size] bytes, and
-/// within two minutes.
+/// Downloads the patch file of [size] bytes to a new temporary file for
+/// native verification. Never more than [size] bytes, and within two minutes.
 Future<String> downloadPayload(
   String url,
   int size,
@@ -128,7 +124,7 @@ Future<String> downloadPayload(
   }
 }
 
-/// A payload the app obtained itself, written for native verification.
+/// A patch file the app obtained itself, written for native verification.
 Future<String> writePayload(List<int> bytes) async {
   final file = _payloadFile();
   await file.writeAsBytes(bytes, flush: true);
@@ -139,7 +135,7 @@ Future<void> deletePayload(String path) async {
   try {
     await File(path).delete();
   } on FileSystemException {
-    // Native verification already removed it.
+    // Already gone.
   }
 }
 

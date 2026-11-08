@@ -8,7 +8,7 @@ import org.json.JSONObject
 /**
  * What differs between strategies: how a verified envelope is kept on disk
  * and what a boot hands to the Dart bootstrap. Everything else a candidate
- * goes through (authorization, sequence, blacklist, boot attempts, rollback,
+ * goes through (verification, sequence, blacklist, boot attempts, rollback,
  * cleanup) lives once, in [PatchHost].
  */
 internal interface CandidateFormat {
@@ -57,8 +57,8 @@ internal object BytecodeFormat : CandidateFormat {
 
     /**
      * A verified envelope's header pins its payload by digest, so the digest
-     * of the header kept at install pins the whole file the authorization
-     * named without hashing it again. Older candidates compare the file's.
+     * of the header kept at install pins the whole installed file without
+     * hashing it again. Older candidates compare the file's.
      */
     private fun header(bytes: ByteArray) = PatchEnvelope.digest(bytes, 0, PatchEnvelope.HEADER)
     private fun identifies(bytes: ByteArray, meta: JSONObject) = meta.optString("header_sha256").let {

@@ -57,7 +57,6 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
     let attempt = args["attempt"] as? String
-    let wire = args["wire"] as? String ?? ""
     let fingerprint = args["fingerprint"] as? String ?? "", publicKey = args["publicKeyBase64"] as? String ?? ""
     func typed(_ payload: [String: Any]?) -> [String: Any]? {
       guard var payload = payload else { return nil }
@@ -112,21 +111,16 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
       }
     case "hostStrategy":
       bytecodeCall(result) { try HostTrustConfig.load()?.strategy }
-    case "checkSignedManifest":
-      authenticatedCall(result) { [bytecode] in try bytecode.inspect(wire) }
-    case "applySignedManifest":
-      authenticatedCall(result) { [bytecode] in
-        try bytecode.applyManifest(wire, payload: args["payload"] as? String, progress: self.emitProgress)
-      }
-    case "hostScope":
-      bytecodeCall(result) { try HostTrustConfig.load()?.scope }
     case "hostUrl":
       bytecodeCall(result) { try HostTrustConfig.load()?.url }
-    case "updatePublicationTrust":
-      authenticatedCall(result) { [bytecode] in
-        try bytecode.updateTrust(wire)
-        return ["ok": true]
-      }
+    case "patchTarget":
+      patchCall(result) { [bytecode] in try bytecode.target() }
+    case "inspectPatch":
+      let header = (args["header"] as? FlutterStandardTypedData)?.data ?? Data()
+      patchCall(result) { [bytecode] in try bytecode.inspect(header) }
+    case "applyPatchFile":
+      let path = args["path"] as? String ?? ""
+      patchCall(result) { [bytecode] in try bytecode.applyFile(path, progress: self.emitProgress) }
     case "rollback":
       worker.async { [bytecode] in
         do {
@@ -180,15 +174,14 @@ public class FlutterPatcherPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
     }
   }
 
-  /// A rejection reaches Dart as a code only, never as a native message.
-  private func authenticatedCall(_ result: @escaping FlutterResult, _ operation: @escaping () throws -> Any?) {
+  private func patchCall(_ result: @escaping FlutterResult, _ operation: @escaping () throws -> Any?) {
     worker.async {
       do {
         let value = try operation()
         DispatchQueue.main.async { result(value) }
       } catch {
         DispatchQueue.main.async {
-          result(FlutterError(code: "AUTH_UPDATE_REJECTED", message: "Authenticated update rejected", details: nil))
+          result(FlutterError(code: "PATCH_REJECTED", message: "\(error)", details: nil))
         }
       }
     }

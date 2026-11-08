@@ -27,7 +27,9 @@ import io.flutter.plugin.common.MethodChannel.Result
  * - backgroundPayload           — 后台引擎的 isolate 取同一份补丁，不开始启动尝试
  * - reportBootSuccess(attempt)  — 生成的入口在首帧确认本次补丁启动成功（原生首帧监听也会确认）
  * - reportDartBootError(Map)    — 引导阶段 Dart 未捕获异常上报，等同一次真崩溃
- * - checkSignedManifest / applySignedManifest / updatePublicationTrust — 签名清单
+ * - patchTarget() -> Map? — 宿主身份与已接受的最大序号，供 App 自己获取补丁文件
+ * - inspectPatch(header) -> Map — 只看文件头判断是否为新的补丁或撤回
+ * - applyPatchFile(path) -> Map — 校验并安装一个补丁文件，或执行撤回
  * - rollback()
  * - currentVersion() -> String?
  * - lastBootDiagnostic() -> Map? — 上次冷启动补丁加载诊断（见 BootDiagnosticStore）
@@ -129,19 +131,12 @@ class FlutterPatcherPlugin :
                     call.argument<String>("message"), call.argument<Boolean>("quarantine") == true)
                 null
             }
-            "applySignedManifest" -> authenticatedCall(result) {
-                authenticated().applyManifest(call.argument<String>("wire") ?: "",
-                    call.argument<String>("payload"), ::emitProgress)
-            }
             "hostStrategy" -> hostCall(result) { HostTrustConfig.load(appContext)?.strategy }
-            "hostScope" -> hostCall(result) { HostTrustConfig.load(appContext)?.scope }
             "hostUrl" -> hostCall(result) { HostTrustConfig.load(appContext)?.url }
-            "checkSignedManifest" -> authenticatedCall(result) {
-                authenticated().inspect(call.argument<String>("wire") ?: "")
-            }
-            "updatePublicationTrust" -> authenticatedCall(result) {
-                authenticated().updateTrust(call.argument<String>("wire") ?: "")
-                mapOf("ok" to true)
+            "patchTarget" -> patchCall(result) { host?.target() }
+            "inspectPatch" -> patchCall(result) { patchable().inspect(call.argument<ByteArray>("header")!!) }
+            "applyPatchFile" -> patchCall(result) {
+                patchable().applyFile(call.argument<String>("path")!!, ::emitProgress)
             }
             "rollback" -> handleRollback(result)
             "currentVersion" -> hostCall(result) { host?.currentVersion() }
@@ -166,16 +161,16 @@ class FlutterPatcherPlugin :
 
     // ==================== handlers ====================
 
-    private fun authenticated(): PatchHost = host ?: error("Host has no authenticated policy")
+    private fun patchable(): PatchHost = host ?: error("This app was not built with flutter_patcher")
 
-    private fun authenticatedCall(result: Result, operation: () -> Any?) {
+    private fun patchCall(result: Result, operation: () -> Any?) {
         Thread {
             try {
                 val value = operation()
                 main.post { result.success(value) }
-            } catch (_: Exception) {
-                // A rejection reaches Dart as a code only, never as a native message.
-                main.post { result.error("AUTH_UPDATE_REJECTED", "Authenticated update rejected", null) }
+            } catch (error: Exception) {
+                Log.e(TAG, "Patch call failed", error)
+                main.post { result.error("PATCH_REJECTED", error.message, null) }
             }
         }.start()
     }

@@ -62,8 +62,15 @@ enum Platform {
 }
 
 enum Storage {
+  /// Replaces Application Support/flutter_patcher in tests.
+  static var debugRoot: URL?
+
   /// Application Support/flutter_patcher, excluded from iCloud and device backups.
   static func root() throws -> URL {
+    if let root = debugRoot {
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      return root
+    }
     let base = try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
     var directory = base.appendingPathComponent("flutter_patcher", isDirectory: true)

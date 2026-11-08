@@ -1,13 +1,22 @@
 import Foundation
 
-/// FPTC v1: never allocate from the unauthenticated payload length.
+/// FPTC v1, the whole patch file: never allocate from the unauthenticated
+/// payload length. A file with no payload is a withdrawal.
 enum BytecodeEnvelope {
   static let maxBytes = 320 * 1024 * 1024
-  /// Header fields and Ed25519 signature before the signed payload.
+  /// Header fields and Ed25519 signature before the payload.
   static let header = 146
 
+  /// What a header claims, before anything is verified.
+  struct Header: Equatable {
+    let fingerprint: String
+    let seq: Int64
+    let length: UInt64
+    var withdrawal: Bool { length == 0 }
+  }
+
   /// A verified header pins its payload by digest, so the digest of the
-  /// header kept at install pins the whole file the authorization named.
+  /// header kept at install pins the whole installed file.
   static func headerDigest(_ bytes: Data) -> String { sha256Hex(bytes.prefix(header)) }
 
   /// True when verified [bytes] are the file [meta] names; older candidates compare the file's digest.
@@ -26,22 +35,36 @@ enum BytecodeEnvelope {
     bytes.subdata(in: bytes.startIndex + from..<bytes.startIndex + to)
   }
 
-  static func verify(_ bytes: Data, fingerprint: String, rawKey: Data) throws -> Int64 {
-    try require((146...maxBytes).contains(bytes.count), "Envelope size")
-    try require(uint(bytes, 42, 8) == UInt64(bytes.count - 146), "Envelope length")
+  /// Reads the first [header] bytes of [bytes]: magic, version and a nonzero sequence.
+  static func readHeader(_ bytes: Data) throws -> Header {
+    try require(bytes.count >= header, "Envelope size")
     try require(uint(bytes, 0, 4) == 0x4650_5443, "Envelope magic")
     try require(uint(bytes, 4, 2) == 1, "Envelope version")
-    try require(hex(slice(bytes, 6, 38)) == fingerprint, "Envelope fingerprint")
-    let body = slice(bytes, 146, bytes.count)
-    try require(sha256Hex(body) == hex(slice(bytes, 50, 82)), "Envelope hash")
-    try require(rawKey.count == 32, "Raw Ed25519 public key required")
-    // Pure Ed25519 signs the header followed by the ZIP, not a prehash.
-    try require(
-      Ed25519.verify(key: rawKey, signature: slice(bytes, 82, 146), message: slice(bytes, 0, 82) + body),
-      "Envelope signature")
     let seq = Int64(uint(bytes, 38, 4))
     try require(seq > 0, "Patch sequence")
-    return seq
+    let length = uint(bytes, 42, 8)
+    try require(length <= UInt64(maxBytes - header), "Envelope length")
+    return Header(fingerprint: hex(slice(bytes, 6, 38)), seq: seq, length: length)
+  }
+
+  /// The whole file of [fingerprint]'s host: its header, length and digest,
+  /// and when the host trusts [rawKey], the Ed25519 signature over the
+  /// header followed by the payload. Returns its sequence.
+  static func verify(_ bytes: Data, fingerprint: String, rawKey: Data?) throws -> Int64 {
+    try require((header...maxBytes).contains(bytes.count), "Envelope size")
+    let read = try readHeader(bytes)
+    try require(read.length == UInt64(bytes.count - header), "Envelope length")
+    try require(read.fingerprint == fingerprint, "Envelope fingerprint")
+    let body = slice(bytes, header, bytes.count)
+    try require(sha256Hex(body) == hex(slice(bytes, 50, 82)), "Envelope hash")
+    if let rawKey = rawKey {
+      try require(rawKey.count == 32, "Raw Ed25519 public key required")
+      // Pure Ed25519 signs the header followed by the ZIP, not a prehash.
+      try require(
+        Ed25519.verify(key: rawKey, signature: slice(bytes, 82, header), message: slice(bytes, 0, 82) + body),
+        "Envelope signature")
+    }
+    return read.seq
   }
 }
 
@@ -76,98 +99,13 @@ final class BytecodeAttempt {
   }
 }
 
-/// Authorization transactions; the caller holds the manager lock except while downloading.
-final class AuthenticatedUpdates {
-  /// Must equal the pubspec version (checked by test/channel_contract_test.dart).
-  static let pluginVersion = "1.0.0"
-
-  let host: HostTrustConfig
-  private let store: ManifestStateStore
-
-  init(host: HostTrustConfig) throws {
-    try HostTrustConfig.requireOwner()
-    self.host = host
-    store = try ManifestStateStore(host: host)
-  }
-
-  private func decide(_ wire: String, _ state: ManifestStateStore.State) throws -> PublishManifest.Decision {
-    try PublishManifest.verify(
-      wire, trustedKeys: try store.keys(state), scope: host.scope, pluginVersion: Self.pluginVersion,
-      state: state.manifest)
-  }
-
-  func accept(_ wire: String) throws -> PublishManifest.Decision {
-    var state = try store.read()
-    let decision = try decide(wire, state)
-    state.manifest = decision.next
-    try store.write(state)
-    return decision
-  }
-
-  /// Verifies [wire] against the accepted state without persisting it.
-  func verify(_ wire: String) throws -> PublishManifest.Decision { try decide(wire, try store.read()) }
-
-  /// `fresh` when accepting [wire] would change the accepted state.
-  func inspect(_ wire: String) throws -> [String: Any] {
-    let state = try store.read()
-    let decision = try decide(wire, state)
-    return [
-      "action": decision.action, "fresh": decision.next != state.manifest,
-      "patch_seq": decision.fields["patch_seq"] ?? NSNull(),
-    ]
-  }
-
-  func updateTrust(_ wire: String) throws {
-    var state = try store.read()
-    let update = try TrustUpdate.verify(
-      wire, root: host.root, scope: host.scope, revision: state.trustRevision, previousHash: state.trustHash)
-    state.trustWire = wire
-    state.trustRevision = update.revision
-    state.trustHash = update.hash
-    try store.write(state)
-  }
-
-  func checkCommit(_ wire: String) throws -> PublishManifest.Decision {
-    let state = try store.read()
-    let decision = try decide(wire, state)
-    try require(
-      decision.action == "publish" && decision.next == state.manifest
-        && Int64(decision.fields["patch_seq"]!)! > state.manifest.withdrawnThrough,
-      "Authorization superseded")
-    return decision
-  }
-
-  func checkBoot(_ meta: CandidateStore.Meta) throws {
-    let state = try store.read()
-    guard let authorization = meta["authorization"] as? String else { throw PatcherError("Candidate authorization") }
-    let decision = try PublishManifest.verify(
-      authorization, trustedKeys: try store.keys(state), scope: host.scope, pluginVersion: Self.pluginVersion,
-      state: PublishManifest.State())
-    let seq = Int64(decision.fields["patch_seq"] ?? "") ?? -1
-    try require(
-      decision.action == "publish" && decision.next.revision <= state.manifest.revision
-        && decision.next.highSeq <= state.manifest.highSeq
-        && (decision.next.revision != state.manifest.revision
-          || decision.next.manifestHash == state.manifest.manifestHash)
-        && seq > state.manifest.withdrawnThrough && seq == int64(meta["seq"])
-        && decision.fields["sha256"] == meta["sha256"] as? String,
-      "Candidate authorization withdrawn")
-  }
-
-  /// The payload Dart downloaded to [path]: the signed size and digest, then deleted.
-  static func payload(_ fields: [String: String], path: String) throws -> Data {
-    defer { try? FileManager.default.removeItem(atPath: path) }
-    let expected = Int(fields["size"]!)!
-    let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int
-    try require(size == expected, "Payload size")
-    let bytes = try Data(contentsOf: URL(fileURLWithPath: path))
-    try require(bytes.count == expected && sha256Hex(bytes) == fields["sha256"], "Payload digest/size")
-    return bytes
-  }
-}
 typealias Progress = (_ phase: String, _ received: Int64, _ total: Int64) -> Void
 
-/// Bytecode candidates of an authenticated host. All state changes hold [lock].
+/// Bytecode candidates of a patchable host: every rule a patch file is held
+/// to, the same as Android's PatchHost. A file is accepted when it is this
+/// host's ([BytecodeEnvelope.verify]) and numbered above every file accepted
+/// before; a withdrawal is a file with no payload, after which no patch is
+/// active. All state changes hold [lock].
 final class BytecodePatchManager {
   private static let lock = NSRecursiveLock()
   private static var processClaimed = false
@@ -181,13 +119,22 @@ final class BytecodePatchManager {
     defer { Self.lock.unlock() }
     return attempt?.unsettled == true
   }
-  private var fingerprint: String?
-  private var key: Data?
+  private let bundle: Bundle
+  private var claimed = false
   private var offered: String?
   private var attempt: BytecodeAttempt?
   private var offeredMeta: CandidateStore.Meta?
   private var storeValue: CandidateStore?
-  private var authValue: AuthenticatedUpdates??
+  private var hostValue: HostTrustConfig??
+
+  /// [host] stands in for the policy in [bundle]'s Info.plist.
+  init(host: HostTrustConfig? = nil, bundle: Bundle = .main) {
+    self.bundle = bundle
+    if let host = host { hostValue = .some(host) }
+  }
+
+  /// Lets a test start what the next process would see.
+  static func debugNewProcess() { lock.lock(); processClaimed = false; lock.unlock() }
 
   private func locked<T>(_ body: () throws -> T) rethrows -> T {
     Self.lock.lock()
@@ -197,17 +144,25 @@ final class BytecodePatchManager {
 
   private func store() throws -> CandidateStore {
     if let store = storeValue { return store }
+    // 1.0 kept signed-manifest state here; nothing reads it any more.
+    let legacy = try Storage.root().appendingPathComponent("auth", isDirectory: true)
+    if FileManager.default.fileExists(atPath: legacy.path) { try FileManager.default.removeItem(at: legacy) }
     let store = try CandidateStore(strategy: "bytecode")
     storeValue = store
     return store
   }
 
-  /// nil on a host without a bytecode policy.
-  private func authenticated() throws -> AuthenticatedUpdates? {
-    if let auth = authValue { return auth }
-    let auth = try HostTrustConfig.load().map { try AuthenticatedUpdates(host: $0) }
-    authValue = .some(auth)
-    return auth
+  /// nil on an app without a bytecode host policy.
+  private func host() throws -> HostTrustConfig? {
+    if let host = hostValue { return host }
+    let host = try HostTrustConfig.load(bundle)
+    hostValue = .some(host)
+    return host
+  }
+
+  private func patchable() throws -> HostTrustConfig {
+    guard let host = try host() else { throw PatcherError("This app was not built with flutter_patcher") }
+    return host
   }
 
   func announceBootstrap() { locked { bootstrapped = true } }
@@ -215,11 +170,10 @@ final class BytecodePatchManager {
   func bootPayload(fingerprint fp: String, publicKey: String) throws -> [String: Any]? {
     try locked {
       let started = DispatchTime.now().uptimeNanoseconds
-      let (auth, raw) = try bootstrap(fp, publicKey)
-      if fingerprint != nil || Self.processClaimed { return nil }
+      let host = try bootstrap(fp, publicKey)
+      if claimed || Self.processClaimed { return nil }
       Self.processClaimed = true
-      fingerprint = fp
-      key = raw
+      claimed = true
       let store = try store()
       try store.recoverAttempt()
       guard let meta = try store.activeFor(fp) else {
@@ -227,8 +181,7 @@ final class BytecodePatchManager {
         return nil
       }
       do {
-        try auth.checkBoot(meta)
-        var reply = try offer(store, meta, fp, raw)
+        var reply = try offer(store, meta, host)
         let token = UUID().uuidString
         offered = token
         attempt = BytecodeAttempt(token)
@@ -248,18 +201,17 @@ final class BytecodePatchManager {
   /// The offer for an isolate a background engine starts, for any number of
   /// engines, starting no attempt and changing no boot state: the code this
   /// process booted, so one process never runs two versions; a failed boot
-  /// runs as built. Before this process boots, the active, authorized
-  /// candidate. nil runs the entry point as built.
+  /// runs as built. Before this process boots, the active candidate. nil runs
+  /// the entry point as built.
   func backgroundPayload(fingerprint fp: String, publicKey: String) throws -> [String: Any]? {
     try locked {
-      let (auth, raw) = try bootstrap(fp, publicKey)
+      let host = try bootstrap(fp, publicKey)
       let store = try store()
-      let claimed = fingerprint != nil || Self.processClaimed
+      let claimed = self.claimed || Self.processClaimed
       guard let meta = claimed ? (attempt?.failed == true ? nil : offeredMeta) : try store.activeFor(fp)
       else { return nil }
       do {
-        try auth.checkBoot(meta)
-        return try offer(store, meta, fp, raw).merging(["transportVersion": 1]) { $1 }
+        return try offer(store, meta, host).merging(["transportVersion": 1]) { $1 }
       } catch {
         // The candidate is the app isolate's to judge; this engine runs as built.
         NSLog("[FlutterPatcher] Background payload rejected: \(error)")
@@ -268,24 +220,23 @@ final class BytecodePatchManager {
     }
   }
 
-  private func bootstrap(_ fp: String, _ publicKey: String) throws -> (AuthenticatedUpdates, Data) {
-    guard let auth = try authenticated() else { throw PatcherError("Bytecode requires a host policy") }
-    let raw = Data(base64Encoded: publicKey)
-    try require(fp == auth.host.scope["fingerprint"] && raw == auth.host.fptcKey,
-      "Bootstrap differs from immutable host")
-    return (auth, raw!)
+  private func bootstrap(_ fp: String, _ publicKey: String) throws -> HostTrustConfig {
+    guard let host = try host() else { throw PatcherError("Bytecode requires a host policy") }
+    let key = host.fptcKey.map { $0.base64EncodedString() } ?? "-"
+    try require(fp == host.fingerprint && publicKey == key, "Bootstrap differs from immutable host")
+    return host
   }
 
-  /// [meta]'s stored envelope, verified, as offer fields; this exact snapshot goes to Dart.
-  private func offer(_ store: CandidateStore, _ meta: CandidateStore.Meta, _ fp: String, _ raw: Data) throws
+  /// [meta]'s stored file, verified, as offer fields; this exact snapshot goes to Dart.
+  private func offer(_ store: CandidateStore, _ meta: CandidateStore.Meta, _ host: HostTrustConfig) throws
     -> [String: Any]
   {
     let bytes = try Storage.read(store.fileURL(meta), limit: BytecodeEnvelope.maxBytes)
-    let seq = try BytecodeEnvelope.verify(bytes, fingerprint: fp, rawKey: raw)
+    let seq = try BytecodeEnvelope.verify(bytes, fingerprint: host.fingerprint, rawKey: host.fptcKey)
     try require(seq == int64(meta["seq"]) && BytecodeEnvelope.identifies(bytes, meta), "Stored candidate changed")
     // The bootstrap reads the same ranges and skips only the CRCs and
     // digests checked here; see parseAuthenticatedPatchBytes.
-    return ["envelopeBytes": bytes, "entries": try PatchArchive.readBytecode(bytes, fingerprint: fp, seq: seq)]
+    return ["envelopeBytes": bytes, "entries": try PatchArchive.readBytecode(bytes, fingerprint: host.fingerprint, seq: seq)]
   }
 
   func markBooting(_ token: String?, foreground: Bool = true) throws -> Bool {
@@ -293,9 +244,8 @@ final class BytecodePatchManager {
       guard let token = token, token == offered, attempt?.running != true, attempt?.failed != true,
             let meta = offeredMeta
       else { return false }
-      do { try authenticated()?.checkBoot(meta) } catch { return false }
       let store = try store()
-      // A rollback or a newly installed candidate invalidates a prepared offer.
+      // A rollback, withdrawal or newly installed candidate invalidates a prepared offer.
       guard store.active().map({ store.id($0) == store.id(meta) }) == true else { return false }
       try store.markLoading(meta, foreground: foreground)
       let started = attempt?.start(token) == true
@@ -339,88 +289,99 @@ final class BytecodePatchManager {
     }
   }
 
-  /// Applies [wire] with the payload Dart downloaded to [payload]; a withdrawal has none.
-  func applyManifest(_ wire: String, payload: String?, progress: Progress) throws -> [String: Any] {
-    guard let auth = try locked({ try authenticated() }) else { throw PatcherError("Host has no authenticated policy") }
-    let decision = try locked { try auth.verify(wire) }
-    if decision.action == "withdraw" {
-      try locked {
-        _ = try auth.accept(wire)
-        try invalidateUnauthorized(auth)
-      }
-      return ["action": "withdraw", "ok": true]
+  /// Who this host is, for an app that fetches its own patch files.
+  func target() throws -> [String: Any]? {
+    try locked {
+      guard let host = try host() else { return nil }
+      return ["scope": host.scope, "signed": host.fptcKey != nil, "acceptedSeq": try store().high(host.fingerprint)]
     }
-    // Accept only an intact payload, so a failed download stays retryable.
-    guard let payload = payload else { throw PatcherError("Payload required") }
-    let bytes = try AuthenticatedUpdates.payload(decision.fields, path: payload)
-    return try locked {
-      _ = try auth.accept(wire)
-      let fields = try auth.checkCommit(wire).fields
-      var result = try install(fields, bytes: bytes, wire: wire, progress: progress)
-      result["action"] = "publish"
+  }
+
+  /// Whether a file starting with [header] would be accepted, judged from its
+  /// first [BytecodeEnvelope.header] bytes: nothing about its payload or
+  /// signature is known yet, so installing it still verifies everything.
+  func inspect(_ header: Data) throws -> [String: Any] {
+    try locked {
+      let host = try patchable()
+      let read: BytecodeEnvelope.Header
+      do { read = try BytecodeEnvelope.readHeader(header) } catch {
+        return ["fresh": false, "action": NSNull(), "seq": NSNull(), "reason": "\(error)"]
+      }
+      var reason: String?
+      if read.fingerprint != host.fingerprint {
+        reason = "Patch file of another host"
+      } else if read.seq <= (try store().high(host.fingerprint)) {
+        reason = "Not newer than the accepted patch"
+      }
+      return [
+        "fresh": reason == nil, "action": read.withdrawal ? "withdraw" : "publish", "seq": read.seq,
+        "reason": reason ?? NSNull(),
+      ]
+    }
+  }
+
+  /// Installs or applies the patch file at [path]; the caller owns the file.
+  func applyFile(_ path: String, progress: Progress) throws -> [String: Any] {
+    let bytes: Data
+    do { bytes = try Storage.read(URL(fileURLWithPath: path), limit: BytecodeEnvelope.maxBytes) } catch {
+      return Self.failure("IO_ERROR", "\(error)")
+    }
+    return try apply(bytes, progress: progress)
+  }
+
+  /// Installs the patch file [bytes], or applies the withdrawal they are.
+  func apply(_ bytes: Data, progress: Progress) throws -> [String: Any] {
+    try locked {
+      let host = try patchable()
+      try HostTrustConfig.requireOwner(bundle)
+      let total = Int64(bytes.count)
+      progress("verifying", total, total)
+      let seq: Int64
+      do { seq = try BytecodeEnvelope.verify(bytes, fingerprint: host.fingerprint, rawKey: host.fptcKey) } catch {
+        return Self.failure("SIGNATURE_INVALID", "\(error)")
+      }
+      let withdrawal = bytes.count == BytecodeEnvelope.header
+      var result = try withdrawal ? withdraw(host, seq) : install(host, bytes, seq, progress)
+      result["action"] = withdrawal ? "withdraw" : "publish"
       return result
     }
-  }
-
-  func inspect(_ wire: String) throws -> [String: Any] {
-    try locked {
-      guard let auth = try authenticated() else { throw PatcherError("Host has no authenticated policy") }
-      return try auth.inspect(wire)
-    }
-  }
-
-  func updateTrust(_ wire: String) throws {
-    try locked {
-      guard let auth = try authenticated() else { throw PatcherError("Host has no authenticated policy") }
-      try auth.updateTrust(wire)
-      try invalidateUnauthorized(auth)
-    }
-  }
-
-  private func invalidateUnauthorized(_ auth: AuthenticatedUpdates) throws {
-    guard let candidate = try store().active() else { return }
-    if (try? auth.checkBoot(candidate)) == nil { try rollback() }
   }
 
   private static func failure(_ code: String, _ message: String) -> [String: Any] {
     ["ok": false, "error": code, "message": message]
   }
 
-  /// Installs downloaded [bytes] that the signed manifest [wire] authorizes.
-  private func install(_ fields: [String: String], bytes: Data, wire: String, progress: Progress) throws
+  private static let success: [String: Any] = ["ok": true, "error": NSNull(), "message": NSNull()]
+
+  private func withdraw(_ host: HostTrustConfig, _ seq: Int64) throws -> [String: Any] {
+    let store = try store()
+    if seq <= store.high(host.fingerprint) {
+      return Self.failure("INVALID_ARGS", "Withdrawal is not newer than the accepted patch")
+    }
+    try store.withdraw(host.fingerprint, seq)
+    offered = nil
+    attempt = nil
+    frameToken = nil
+    return Self.success
+  }
+
+  private func install(_ host: HostTrustConfig, _ bytes: Data, _ seq: Int64, _ progress: Progress) throws
     -> [String: Any]
   {
-    guard let fingerprint = fingerprint, let key = key else {
-      return Self.failure("SIGNATURE_INVALID", "A bootstrapped host is required")
-    }
+    let store = try store()
+    var meta = store.candidate(fingerprint: host.fingerprint, seq: seq, sha256: sha256Hex(bytes))
+    meta["header_sha256"] = BytecodeEnvelope.headerDigest(bytes)
+    if store.isBlacklisted(meta) { return Self.failure("BLACKLISTED", "Bytecode candidate is blacklisted") }
+    if !store.isNewer(meta) { return Self.failure("INVALID_ARGS", "Patch is not newer than the accepted patch") }
     let total = Int64(bytes.count)
-    progress("verifying", total, total)
-    let seq: Int64
-    do { seq = try BytecodeEnvelope.verify(bytes, fingerprint: fingerprint, rawKey: key) } catch {
-      return Self.failure("SIGNATURE_INVALID", "\(error)")
-    }
-    let hash = sha256Hex(bytes)
-    do {
-      try require(fields["sha256"] == hash && Int64(fields["patch_seq"] ?? "") == seq, "Manifest differs from payload")
-      let store = try store()
-      var meta = store.candidate(
-        fingerprint: fingerprint, seq: seq, sha256: hash, version: fields["patch_seq"]!, authorization: wire)
-      meta["header_sha256"] = BytecodeEnvelope.headerDigest(bytes)
-      if store.isBlacklisted(meta) { return Self.failure("BLACKLISTED", "Bytecode candidate is blacklisted") }
-      try store.requireNewer(meta)
-      progress("finalizing", total, total)
-      try store.save(meta, bytes: bytes)
-      return ["ok": true, "error": NSNull(), "message": NSNull()]
-    } catch let error as PatcherError {
-      return Self.failure("INVALID_ARGS", error.description)
-    } catch {
-      return Self.failure("IO_ERROR", "\(error)")
-    }
+    progress("finalizing", total, total)
+    do { try store.save(meta, bytes: bytes) } catch { return Self.failure("IO_ERROR", "\(error)") }
+    return Self.success
   }
 
   func rollback() throws {
     try locked {
-      if try authenticated() != nil { try HostTrustConfig.requireOwner() }
+      if try host() != nil { try HostTrustConfig.requireOwner(bundle) }
       try store().clearActive()
       offered = nil
       attempt = nil
@@ -434,7 +395,7 @@ final class BytecodePatchManager {
 
   func clearBlacklist() throws {
     try locked {
-      if try authenticated() != nil { try HostTrustConfig.requireOwner() }
+      if try host() != nil { try HostTrustConfig.requireOwner(bundle) }
       try store().clearBlacklist()
     }
   }

@@ -73,82 +73,7 @@ enum BootDiagnosticStore {
   }
 }
 
-/// Accepted publication state for one host build. Corrupt state fails closed.
-final class ManifestStateStore {
-  struct State: Equatable {
-    var manifest = PublishManifest.State()
-    var trustWire = ""
-    var trustRevision: Int64 = 0
-    var trustHash = ""
-  }
-
-  private let host: HostTrustConfig
-  private let directory: URL
-  private var file: URL { directory.appendingPathComponent("state.json") }
-  private var initialized: URL { directory.appendingPathComponent("initialized") }
-
-  init(host: HostTrustConfig) throws {
-    self.host = host
-    directory = try Storage.root().appendingPathComponent("auth/\(host.scope["fingerprint"]!)", isDirectory: true)
-  }
-
-  func read() throws -> State {
-    let manager = FileManager.default
-    try manager.createDirectory(at: directory, withIntermediateDirectories: true)
-    if !manager.fileExists(atPath: initialized.path) {
-      // Commit the initial state first. A kill before the marker exists may
-      // only repeat initialization while no authorization has been accepted.
-      if !manager.fileExists(atPath: file.path) { try write(State()) }
-      try Storage.durableWrite(Data(), to: initialized)
-    }
-    let outer = try JSONText.object(String(decoding: try Storage.read(file, limit: 65536), as: UTF8.self))
-    guard let text = outer["state"] as? String, outer["sha256"] as? String == sha256Hex(Data(text.utf8))
-    else { throw PatcherError("Authorization state corrupt") }
-    let data = try JSONText.object(text)
-    try require(int64(data["schema"]) == 1 && data["policy"] as? String == host.policyHash,
-      "Authorization state identity")
-    guard let revision = int64(data["revision"]), let manifestHash = data["manifestHash"] as? String,
-          let highSeq = int64(data["highSeq"]), let patchHash = data["patchHash"] as? String,
-          let withdrawn = int64(data["withdrawnThrough"]), let trustWire = data["trustWire"] as? String,
-          let trustRevision = int64(data["trustRevision"]), let trustHash = data["trustHash"] as? String
-    else { throw PatcherError("Authorization state fields") }
-    let state = State(
-      manifest: PublishManifest.State(
-        revision: revision, manifestHash: manifestHash, highSeq: highSeq, patchHash: patchHash,
-        withdrawnThrough: withdrawn),
-      trustWire: trustWire, trustRevision: trustRevision, trustHash: trustHash)
-    try require(revision >= 0 && highSeq >= withdrawn && withdrawn >= 0 && trustRevision >= 0,
-      "Authorization state ranges")
-    _ = try keys(state) // Persisted trust is never used without root re-verification.
-    return state
-  }
-
-  func keys(_ state: State) throws -> [String: Data] {
-    if state.trustRevision == 0 {
-      try require(state.trustWire.isEmpty && state.trustHash.isEmpty, "Trust state corrupt")
-      return host.initialKeys
-    }
-    let trust = try TrustUpdate.verify(
-      state.trustWire, root: host.root, scope: host.scope, revision: state.trustRevision,
-      previousHash: state.trustHash)
-    try require(trust.revision == state.trustRevision && trust.hash == state.trustHash, "Trust state mismatch")
-    return trust.keys
-  }
-
-  func write(_ state: State) throws {
-    let m = state.manifest
-    let inner: [String: Any] = [
-      "schema": 1, "policy": host.policyHash, "revision": m.revision, "manifestHash": m.manifestHash,
-      "highSeq": m.highSeq, "patchHash": m.patchHash, "withdrawnThrough": m.withdrawnThrough,
-      "trustWire": state.trustWire, "trustRevision": state.trustRevision, "trustHash": state.trustHash,
-    ]
-    let text = String(decoding: try JSONSerialization.data(withJSONObject: inner, options: [.sortedKeys]), as: UTF8.self)
-    let outer: [String: Any] = ["state": text, "sha256": sha256Hex(Data(text.utf8))]
-    try Storage.durableWrite(try JSONSerialization.data(withJSONObject: outer, options: [.sortedKeys]), to: file)
-  }
-}
-
-/// Durable state of signed FPTC candidates: content-addressed files, the
+/// Durable state of FPTC candidates: content-addressed files, the
 /// active candidate, the boot attempt, crash counts, blacklist and sequence
 /// high-water marks. Only the active candidate keeps its file, as on
 /// Android. Callers serialize access.
@@ -196,21 +121,32 @@ final class CandidateStore {
     return isBlacklisted(meta) ? nil : meta
   }
 
-  func candidate(fingerprint: String, seq: Int64, sha256: String, version: String, authorization: String) -> Meta {
-    [
-      "fingerprint": fingerprint, "seq": seq, "sha256": sha256, "version": version,
-      "versionCode": Platform.versionCode(), "authorization": authorization,
-    ]
+  func candidate(fingerprint: String, seq: Int64, sha256: String) -> Meta {
+    ["fingerprint": fingerprint, "seq": seq, "sha256": sha256, "version": String(seq), "versionCode": Platform.versionCode()]
   }
 
   func isBlacklisted(_ meta: Meta) -> Bool { state["bad:\(id(meta))"] as? Bool ?? false }
 
+  /// The largest sequence accepted for [fingerprint], patch or withdrawal; 0 before any.
+  func high(_ fingerprint: String) -> Int64 { int64(state["high:\(fingerprint)"]) ?? 0 }
+
+  /// Whether [meta] may become active: the active candidate again, or newer than any accepted.
+  func isNewer(_ meta: Meta) -> Bool {
+    active().map { id($0) == id(meta) } == true || int64(meta["seq"]) ?? 0 > high(meta["fingerprint"] as? String ?? "")
+  }
+
   func requireNewer(_ meta: Meta) throws {
-    let fingerprint = meta["fingerprint"] as? String ?? ""
-    try require(
-      active().map { id($0) == id(meta) } == true
-        || int64(meta["seq"]) ?? 0 > int64(state["high:\(fingerprint)"]) ?? 0,
-      "Patch sequence must exceed accepted high-water mark")
+    try require(isNewer(meta), "Patch sequence must exceed accepted high-water mark")
+  }
+
+  /// A withdrawal numbered [seq]: no patch is active, and only later files are accepted.
+  func withdraw(_ fingerprint: String, _ seq: Int64) throws {
+    try require(seq > high(fingerprint), "Withdrawal sequence must exceed accepted high-water mark")
+    try commit {
+      Self.clearingAttempt(&$0)
+      $0.removeValue(forKey: "active")
+      $0["high:\(fingerprint)"] = seq
+    }
   }
 
   /// Makes [meta] active, keeping [bytes] as its envelope file.

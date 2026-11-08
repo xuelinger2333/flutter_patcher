@@ -26,7 +26,7 @@ class CandidateFormatContractTest {
     private val fp = "ab".repeat(32)
     private val pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
     private val host = HostTrustConfig(mapOf("fingerprint" to fp, "strategy" to "so"),
-        pair.public.encoded.takeLast(32).toByteArray(), ByteArray(32), emptyMap(), "0".repeat(64))
+        pair.public.encoded.takeLast(32).toByteArray(), "0".repeat(64))
 
     private fun row(path: String, bytes: ByteArray) = JSONObject()
         .put("path", path).put("length", bytes.size).put("sha256", PatchEnvelope.digest(bytes))

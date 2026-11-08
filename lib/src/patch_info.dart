@@ -1,13 +1,14 @@
+import 'patch_file.dart';
+
 /// An available update, as returned by `FlutterPatcher.checkUpdate`.
 ///
-/// Pass it unchanged to `FlutterPatcher.applyPatch`: it carries the signed
-/// manifest that native code authenticates. A hand-built [PatchInfo] has no
-/// manifest and is rejected.
+/// Pass it unchanged to `FlutterPatcher.applyPatch`: it names the patch file
+/// to download. A hand-built [PatchInfo] without one is rejected.
 class PatchInfo {
-  /// Patch sequence of the publication, or `withdraw`.
+  /// Sequence of the patch file: of a patch, or of a withdrawal.
   final String version;
 
-  /// Update-check data; `signed_manifest` holds the exact signed wire.
+  /// Update-check data: the file's `url`, `size`, `seq` and `action`.
   final Map<String, dynamic> raw;
 
   const PatchInfo({required this.version, this.raw = const {}});
@@ -182,4 +183,70 @@ class PatchCheckResult {
 
   factory PatchCheckResult.none() =>
       const PatchCheckResult(hasUpdate: false, patch: null);
+}
+
+/// Who a host is, from `FlutterPatcher.patchTarget`: what an app that
+/// fetches patch files itself sends its server to pick the right file.
+class PatchTarget {
+  const PatchTarget._(this.scope, this.signed, this.acceptedSeq);
+
+  /// The build this host is: `application_id`, `version_code`, `flavor`,
+  /// `channel`, `abi`, `strategy` and `fingerprint`.
+  final Map<String, String> scope;
+
+  /// Whether the host accepts only files signed by its patch key.
+  final bool signed;
+
+  /// The largest sequence the host accepted, of a patch or a withdrawal; 0
+  /// before any. Only files numbered above it can be applied.
+  final int acceptedSeq;
+
+  /// The name `flutter_patcher patch` and `publish` give this host's files.
+  String get fileName => patchFileName(scope);
+  String get versionCode => scope['version_code']!;
+  String get flavor => scope['flavor']!;
+  String get channel => scope['channel']!;
+  String get abi => scope['abi']!;
+  String get strategy => scope['strategy']!;
+  String get fingerprint => scope['fingerprint']!;
+
+  factory PatchTarget.fromNative(Map<dynamic, dynamic> raw) => PatchTarget._(
+    Map<String, String>.from(raw['scope'] as Map),
+    raw['signed'] as bool,
+    raw['acceptedSeq'] as int,
+  );
+
+  @override
+  String toString() => 'PatchTarget($fileName, acceptedSeq=$acceptedSeq)';
+}
+
+/// What `FlutterPatcher.inspectPatch` learned from a patch file's header.
+class PatchInspection {
+  const PatchInspection._(this.fresh, this.action, this.seq, this.reason);
+
+  /// Whether applying the file would change this host: a newer patch or
+  /// withdrawal of this host.
+  final bool fresh;
+
+  /// `publish` for a patch, `withdraw` for a withdrawal; null when the
+  /// header is not a patch file's.
+  final String? action;
+
+  /// The file's sequence; null when the header is not a patch file's.
+  final int? seq;
+
+  /// Why the file is not [fresh].
+  final String? reason;
+
+  factory PatchInspection.fromNative(Map<dynamic, dynamic> raw) =>
+      PatchInspection._(
+        raw['fresh'] as bool,
+        raw['action'] as String?,
+        raw['seq'] as int?,
+        raw['reason'] as String?,
+      );
+
+  @override
+  String toString() =>
+      'PatchInspection(fresh=$fresh, action=$action, seq=$seq, reason=$reason)';
 }

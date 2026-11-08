@@ -10,20 +10,24 @@ import org.json.JSONObject
 internal typealias ProgressCallback = (phase: String, received: Long, total: Long) -> Unit
 
 /**
- * The patch side of an authenticated host, whichever its strategy: every
- * rule a candidate is held to lives here once, and [format] only decides how
- * a verified envelope is kept and what a boot offers. The store keeps only
- * the active candidate's files. All state changes are serialized; one
- * instance serves a process (see [of]).
+ * The patch side of a patchable host, whichever its strategy: every rule a
+ * patch file is held to lives here once, and [format] only decides how a
+ * verified file is kept and what a boot offers. The store keeps only the
+ * active candidate's files. All state changes are serialized; one instance
+ * serves a process (see [of]).
  *
- * A boot is one attempt bound to a token. [select] picks the active,
- * authorized candidate once per process; [bootPayload] offers it to the Dart
- * bootstrap, [markBooting] starts it, and the first frame ([success]) or a
- * Dart failure ([error]) settles it. A crash leaves it to the next start.
- * A background engine's isolate gets the same code ([backgroundPayload])
- * outside any attempt.
+ * A file is accepted when it is this host's ([PatchEnvelope.verify]) and
+ * numbered above every file accepted before; a withdrawal is a file with no
+ * payload, after which no patch is active.
+ *
+ * A boot is one attempt bound to a token. [select] picks the active
+ * candidate once per process; [bootPayload] offers it to the Dart bootstrap,
+ * [markBooting] starts it, and the first frame ([success]) or a Dart failure
+ * ([error]) settles it. A crash leaves it to the next start. A background
+ * engine's isolate gets the same code ([backgroundPayload]) outside any
+ * attempt.
  */
-internal class PatchHost private constructor(
+internal class PatchHost internal constructor(
     private val context: Context,
     private val host: HostTrustConfig,
     private val format: CandidateFormat,
@@ -46,12 +50,16 @@ internal class PatchHost private constructor(
     }
 
     private val lock = Any()
-    private val auth = AuthenticatedUpdates(context, host)
     private val store = CandidateStore(context, format.strategy, format::owned)
-    private val fingerprint = host.scope.getValue("fingerprint")
+    private val fingerprint = host.fingerprint
     private val label = if (format.strategy == "so") "SO" else "Bytecode"
     private var claimed = false
     private var attempt: Attempt? = null
+
+    init {
+        // 1.0 kept signed-manifest state here; nothing reads it any more.
+        File(context.noBackupFilesDir, "flutter_patcher_auth").takeIf { it.exists() }?.deleteRecursively()
+    }
 
     /** The started attempt the next first frame settles, if any. */
     @Volatile var frameToken: String? = null
@@ -94,15 +102,12 @@ internal class PatchHost private constructor(
      * engines, starting no attempt and changing no boot state: the code this
      * process booted, so one process never runs two versions; a failed boot
      * runs as built. Before this process boots, and only for code that loads
-     * after the engine, the active, authorized candidate. Null runs the entry
-     * point as built.
+     * after the engine, the active candidate. Null runs the entry point as built.
      */
     fun backgroundPayload(fp: String, publicKey: String): Map<String, Any?>? = synchronized(lock) {
         requireBootstrap(fp, publicKey)
         val meta = if (claimed || format.loadsBeforeEngine) attempt?.takeIf { !it.boot.failed }?.meta
-            else store.activeFor(fingerprint)?.takeIf {
-                try { auth.checkBoot(it); true } catch (_: Exception) { false }
-            }
+            else store.activeFor(fingerprint)
         meta ?: return@synchronized null
         try {
             mapOf("transportVersion" to 1) + format.offer(store.root, meta, host)
@@ -117,8 +122,7 @@ internal class PatchHost private constructor(
         val boot = attempt ?: return@synchronized false
         if (token != boot.boot.token || !boot.offered || boot.boot.running || boot.boot.failed) return@synchronized false
         if (boot.code == null) {
-            // A rollback or a newly installed candidate invalidates a prepared offer.
-            try { auth.checkBoot(boot.meta) } catch (_: Exception) { return@synchronized false }
+            // A rollback, withdrawal or newly installed candidate invalidates a prepared offer.
             if (store.active()?.let { store.id(it) } != store.id(boot.meta)) return@synchronized false
             store.markLoading(boot.meta)
         }
@@ -147,26 +151,49 @@ internal class PatchHost private constructor(
         store.clearAttempt()
     }
 
-    /** Applies [wire] with the payload Dart downloaded to [payload]; a withdrawal has none. */
-    fun applyManifest(wire: String, payload: String?, progress: ProgressCallback): Map<String, Any?> {
-        val decision = synchronized(lock) { auth.verify(wire) }
-        if (decision.action == "withdraw") {
-            synchronized(lock) { auth.accept(wire); invalidateUnauthorized() }
-            return mapOf("action" to "withdraw", "ok" to true)
-        }
-        // Accept only an intact payload, so a failed download stays retryable.
-        val bytes = AuthenticatedUpdates.payload(decision.fields, requireNotNull(payload) { "Payload required" })
-        return synchronized(lock) {
-            auth.accept(wire)
-            install(auth.checkCommit(wire).fields, bytes, wire, progress).toMap() + mapOf("action" to "publish")
-        }
+    /** Who this host is, for an app that fetches its own patch files. */
+    fun target(): Map<String, Any?> = synchronized(lock) {
+        mapOf("scope" to host.scope, "signed" to (host.fptcKey != null), "acceptedSeq" to store.high(fingerprint))
     }
 
-    fun inspect(wire: String): Map<String, Any?> = synchronized(lock) { auth.inspect(wire) }
+    /**
+     * Whether a file starting with [header] would be accepted, judged from its
+     * first [PatchEnvelope.HEADER] bytes: nothing about its payload or
+     * signature is known yet, so installing it still verifies everything.
+     */
+    fun inspect(header: ByteArray): Map<String, Any?> = synchronized(lock) {
+        val read = try { PatchEnvelope.header(header) } catch (e: IllegalArgumentException) {
+            return@synchronized mapOf("fresh" to false, "reason" to (e.message ?: "Not a patch file"))
+        }
+        val action = if (read.withdrawal) "withdraw" else "publish"
+        val reason = when {
+            read.fingerprint != fingerprint -> "Patch file of another host"
+            read.seq <= store.high(fingerprint) -> "Not newer than the accepted patch"
+            else -> null
+        }
+        mapOf("fresh" to (reason == null), "action" to action, "seq" to read.seq, "reason" to reason)
+    }
 
-    fun updateTrust(wire: String) = synchronized(lock) {
-        auth.updateTrust(wire)
-        invalidateUnauthorized()
+    /** Installs or applies the patch file at [path]; the caller owns the file. */
+    fun applyFile(path: String, progress: ProgressCallback): Map<String, Any?> {
+        val bytes = try { CandidateStore.readBounded(File(path)) }
+            catch (e: java.io.IOException) { return ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message).toMap() }
+        return apply(bytes, progress)
+    }
+
+    /** Installs the patch file [bytes], or applies the withdrawal they are. */
+    fun apply(bytes: ByteArray, progress: ProgressCallback): Map<String, Any?> = synchronized(lock) {
+        HostTrustConfig.requireOwner(context)
+        progress("verifying", bytes.size.toLong(), bytes.size.toLong())
+        val seq = try { PatchEnvelope.verify(bytes, fingerprint, host.fptcKey) }
+            catch (e: IllegalArgumentException) {
+                return@synchronized ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, e.message).toMap()
+            }
+        val withdrawal = bytes.size == PatchEnvelope.HEADER
+        val result = try {
+            if (withdrawal) withdraw(seq) else install(bytes, seq, progress)
+        } catch (e: java.io.IOException) { ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message) }
+        result.toMap() + mapOf("action" to if (withdrawal) "withdraw" else "publish")
     }
 
     fun rollback() = synchronized(lock) {
@@ -184,11 +211,12 @@ internal class PatchHost private constructor(
     }
 
     private fun requireBootstrap(fp: String, publicKey: String) =
-        require(fp == fingerprint && Base64.decode(publicKey, Base64.DEFAULT).contentEquals(host.fptcKey)) {
+        require(fp == fingerprint && (host.fptcKey?.contentEquals(Base64.decode(publicKey, Base64.DEFAULT))
+            ?: (publicKey == "-"))) {
             "Bootstrap differs from immutable host"
         }
 
-    /** This process's attempt: the active, authorized candidate, checked; once. */
+    /** This process's attempt: the active candidate, checked; once. */
     private fun select(): Attempt? {
         if (claimed) return null
         claimed = true
@@ -199,7 +227,6 @@ internal class PatchHost private constructor(
             return null
         }
         return try {
-            auth.checkBoot(meta)
             Attempt(meta, format.code(store.root, meta)).also { attempt = it }
         } catch (error: Exception) {
             store.recordFailure(meta, error.message ?: "Candidate rejected")
@@ -207,29 +234,26 @@ internal class PatchHost private constructor(
         }
     }
 
-    private fun invalidateUnauthorized() {
-        val candidate = store.active() ?: return
-        val authorized = try { auth.checkBoot(candidate); true } catch (_: Exception) { false }
-        if (!authorized) rollback()
+    private fun withdraw(seq: Long): ApplyResult {
+        if (seq <= store.high(fingerprint)) {
+            return ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, "Withdrawal is not newer than the accepted patch")
+        }
+        store.withdraw(fingerprint, seq)
+        attempt = null
+        frameToken = null
+        return ApplyResult.SUCCESS
     }
 
-    /** Installs downloaded [bytes] that the signed manifest [wire] authorizes. */
-    private fun install(fields: Map<String, String>, bytes: ByteArray, wire: String, progress: ProgressCallback): ApplyResult {
-        progress("verifying", bytes.size.toLong(), bytes.size.toLong())
-        val seq = try { PatchEnvelope.verify(bytes, fingerprint, host.fptcKey) }
-            catch (e: Exception) { return ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, e.message) }
-        return try {
-            val hash = PatchEnvelope.digest(bytes)
-            require(fields["sha256"] == hash && fields["patch_seq"]?.toLong() == seq) { "Manifest differs from payload" }
-            val meta = store.candidate(fingerprint, seq, hash, fields.getValue("patch_seq"), wire)
-            if (store.isBlacklisted(meta)) return ApplyResult.failure(ApplyErrorCode.BLACKLISTED, "$label candidate is blacklisted")
-            store.requireNewer(meta)
-            progress("finalizing", bytes.size.toLong(), bytes.size.toLong())
-            check(store.root.isDirectory || store.root.mkdirs()) { "Cannot create ${store.root.name}" }
-            format.install(store.root, meta, bytes, seq)
-            store.save(meta)
-            ApplyResult.SUCCESS
-        } catch (e: java.io.IOException) { ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message) }
-          catch (e: Exception) { ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, e.message) }
+    private fun install(bytes: ByteArray, seq: Long, progress: ProgressCallback): ApplyResult {
+        val meta = store.candidate(fingerprint, seq, PatchEnvelope.digest(bytes))
+        if (store.isBlacklisted(meta)) return ApplyResult.failure(ApplyErrorCode.BLACKLISTED, "$label candidate is blacklisted")
+        if (!store.isNewer(meta)) {
+            return ApplyResult.failure(ApplyErrorCode.INVALID_ARGS, "Patch is not newer than the accepted patch")
+        }
+        progress("finalizing", bytes.size.toLong(), bytes.size.toLong())
+        check(store.root.isDirectory || store.root.mkdirs()) { "Cannot create ${store.root.name}" }
+        format.install(store.root, meta, bytes, seq)
+        store.save(meta)
+        return ApplyResult.SUCCESS
     }
 }

@@ -10,11 +10,10 @@
     "reportDartBootError": {"args": {"attempt": "String?", "message": "String", "quarantine": "bool?"}, "returns": "null"},
     "saveConfig": {"args": {"maxCrashCount": "int", "loaderFieldCandidates": "List<String>", "loaderFallbackHeuristic": "bool"}, "returns": "null"},
     "hostStrategy": {"args": {}, "returns": "String? (so | bytecode)"},
-    "hostScope": {"args": {}, "returns": "Map<String, String>? {application_id, channel, flavor, version_code, abi, fingerprint, strategy}"},
     "hostUrl": {"args": {}, "returns": "String? (the url build wrote into the host)"},
-    "checkSignedManifest": {"args": {"wire": "String"}, "returns": "Map {action: String, fresh: bool, patch_seq: String?}"},
-    "applySignedManifest": {"args": {"wire": "String", "payload": "String? (path of the downloaded patch; null for a withdrawal)"}, "returns": "Map {action: String, ok: bool, error: String?, message: String?}"},
-    "updatePublicationTrust": {"args": {"wire": "String"}, "returns": "Map {ok: true}"},
+    "patchTarget": {"args": {}, "returns": "Map? {scope: Map<String, String> {application_id, channel, flavor, version_code, abi, fingerprint, strategy}, signed: bool, acceptedSeq: int}"},
+    "inspectPatch": {"args": {"header": "Uint8List (the first 146 bytes of a patch file)"}, "returns": "Map {fresh: bool, action: String? (publish | withdraw), seq: int?, reason: String?}"},
+    "applyPatchFile": {"args": {"path": "String (a patch file; left in place)"}, "returns": "Map {ok: bool, error: String?, message: String?, action: String? (publish | withdraw)}"},
     "rollback": {"args": {}, "returns": "null"},
     "currentVersion": {"args": {}, "returns": "String?"},
     "lastBootDiagnostic": {"args": {}, "returns": "Map?"},
@@ -23,7 +22,7 @@
     "blacklist": {"args": {}, "returns": "List<Map>"},
     "clearBlacklist": {"args": {}, "returns": "null"}
   },
-  "channel_errors": ["AUTH_UPDATE_REJECTED", "BYTECODE_REJECTED", "ROLLBACK_FAILED"],
+  "channel_errors": ["BYTECODE_REJECTED", "PATCH_REJECTED", "ROLLBACK_FAILED"],
   "apply_errors": ["INVALID_ARGS", "BLACKLISTED", "NETWORK", "SIGNATURE_INVALID", "IO_ERROR", "UNKNOWN"],
   "boot_statuses": ["NO_PATCH", "PATCHED", "DROPPED_VERSION_CODE_MISMATCH", "DROPPED_CIRCUIT_BREAKER", "HOOK_INSTALL_FAILED", "BYTECODE_BOOT_FAILED", "SO_BOOT_FAILED", "UNKNOWN"],
   "progress_phases": ["downloading", "verifying", "finalizing"]

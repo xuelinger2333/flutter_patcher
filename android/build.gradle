@@ -89,9 +89,15 @@ android {
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.json:json:20240303")
         testImplementation("org.mockito:mockito-core:5.0.0")
+        // PatchHost rules run against a real Context, files and SharedPreferences.
+        testImplementation("org.robolectric:robolectric:4.14.1")
+        testImplementation("junit:junit:4.13.2")
+        testImplementation("androidx.test:core:1.6.1")
+        testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.11.4")
     }
 
     testOptions {
+        unitTests.includeAndroidResources = true
         unitTests.all {
             useJUnitPlatform()
             jvmArgs "-Dnet.bytebuddy.experimental=true"

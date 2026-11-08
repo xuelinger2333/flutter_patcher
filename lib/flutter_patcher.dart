@@ -7,26 +7,28 @@ import 'package:flutter/widgets.dart';
 import 'src/blacklist.dart';
 import 'src/boot_diagnostic.dart';
 import 'src/io_stub.dart' if (dart.library.io) 'src/io.dart' as platform_io;
+import 'src/patch_file.dart';
 import 'src/patch_info.dart';
 import 'src/patcher_channel.dart';
-import 'src/publication_scope.dart';
-import 'src/signed_manifest.dart';
 
 export 'src/blacklist.dart';
 export 'src/boot_diagnostic.dart';
 export 'src/patch_info.dart';
-export 'src/signed_manifest.dart';
 
 /// Flutter hot-update entrypoint for Android and iOS.
 ///
-/// `flutter_patcher` installs signed patches on hosts built with
-/// `flutter_patcher build android|ios`, and loads them on the next cold start. SO and bytecode hosts share this API; iOS hosts are bytecode only.
+/// `flutter_patcher` installs patch files on hosts built with
+/// `flutter_patcher build android|ios`, and loads them on the next cold start.
+/// SO and bytecode hosts share this API; iOS hosts are bytecode only.
 ///
 /// Main APIs:
 ///
 /// - [init]: configure crash protection and first-frame boot verification.
-/// - [checkUpdate]: fetch and verify a signed publish manifest.
-/// - [applyPatch]: download, verify, and install the update it found.
+/// - [applyPatchBytes] / [applyPatchFile]: install a patch file the app
+///   obtained in any way, such as from its own server; [patchTarget] names
+///   the file this host needs.
+/// - [checkUpdate] and [applyPatch]: a built-in downloader for patch files
+///   placed at a URL.
 /// - [rollback]: delete the current patch.
 ///
 /// Patches are never swapped into the current process. A successful apply takes
@@ -44,18 +46,6 @@ class FlutterPatcher {
   static Future<String?> _hostStrategy() =>
       _strategy ??= PatcherChannel.channel.invokeMethod<String>('hostStrategy');
 
-  static Future<Map<String, String>>? _scope;
-
-  /// The scope this host was built for; [checkUpdate] derives its manifest
-  /// name from it.
-  static Future<Map<String, String>> _hostScope() => _scope ??= PatcherChannel
-      .channel
-      .invokeMapMethod<String, String>('hostScope')
-      .then(
-        (scope) =>
-            scope ?? (throw PatcherException('This host has no host policy')),
-      );
-
   static Future<String?>? _url;
 
   /// Where `build` was told this host downloads patches: `url` in
@@ -63,77 +53,96 @@ class FlutterPatcher {
   static Future<String?> _hostUrl() =>
       _url ??= PatcherChannel.channel.invokeMethod<String>('hostUrl');
 
-  /// Fetch an untrusted envelope, preserving its exact signed representation.
-  /// Authentication and replay checks occur only in [applySignedManifest].
-  static Future<SignedManifest> fetchSignedManifest(String url) async =>
-      SignedManifest.parse(
-        await platform_io.getSignedWire(url) ??
-            (throw const FormatException('No signed manifest published')),
-      );
+  /// Lets tests on a desktop host call the API as on a device.
+  @visibleForTesting
+  static bool debugAssumeSupported = false;
 
-  /// Authenticate, download and commit a publication, or persist a withdrawal.
-  /// Requires a host built with `flutter_patcher build`.
-  ///
-  /// A publication needs its patch: [payload] when the app fetched it itself,
-  /// for example from its own server, or else [baseUrl], the store URL the
-  /// manifest's relative patch path is resolved against. Native code checks
-  /// the patch against the signed manifest either way.
-  static Future<SignedUpdateResult> applySignedManifest(
-    SignedManifest manifest, {
-    String? baseUrl,
-    List<int>? payload,
-  }) async {
-    String? file;
-    final fields = manifest.fields;
-    if (fields['action'] == 'publish') {
-      if (payload != null) {
-        file = await platform_io.writePayload(payload);
-      } else {
-        if (baseUrl == null) {
-          throw ArgumentError('Pass baseUrl or payload for a publication');
-        }
-        final size = int.parse(fields['size']!);
-        _downloads.add(
-          PatchApplyProgress(
-            phase: PatchApplyPhase.downloading,
-            totalBytes: size,
-          ),
-        );
-        file = await platform_io.downloadPayload(
-          '${baseUrl.replaceFirst(RegExp(r'/+$'), '')}/${fields['path']}',
-          size,
-          (received) => _downloads.add(
-            PatchApplyProgress(
-              phase: PatchApplyPhase.downloading,
-              bytesReceived: received,
-              totalBytes: size,
-            ),
-          ),
-        );
-      }
-    }
-    try {
-      final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
-        'applySignedManifest',
-        {'wire': manifest.wire, 'payload': file},
+  /// Throws when this app was not built with `flutter_patcher build`.
+  static Future<void> _requireHost() async {
+    if (await _hostStrategy() == null) {
+      throw PatcherException(
+        'This app was not built with flutter_patcher; '
+        'build it with dart run flutter_patcher build android|ios',
       );
-      if (raw == null) throw StateError('Missing authenticated update result');
-      return SignedUpdateResult(
-        raw['action'] as String,
-        PatchApplyResult.fromNative(raw),
-      );
-    } finally {
-      if (file != null) await platform_io.deletePayload(file);
     }
   }
 
-  /// Apply an independent root-signed key-set update. The carrier is untrusted;
-  /// native checks its domain, scope, root signature and durable trust revision.
-  static Future<void> updatePublicationTrust(SignedManifest document) async {
-    await PatcherChannel.channel.invokeMethod<Object?>(
-      'updatePublicationTrust',
-      {'wire': document.wire},
+  /// Who this host is: the patch [PatchTarget.fileName] it installs, its
+  /// build and the sequence it accepted last. An app that fetches patch
+  /// files itself sends these to its server to pick the right file.
+  ///
+  /// Throws [PatcherException] on an app not built with flutter_patcher.
+  static Future<PatchTarget> get patchTarget async {
+    if (_unsupportedGuard('patchTarget')) {
+      throw PatcherException('patchTarget requires Android or iOS');
+    }
+    final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
+      'patchTarget',
     );
+    if (raw == null) {
+      await _requireHost();
+      throw PatcherException('This host has no host policy');
+    }
+    return PatchTarget.fromNative(raw);
+  }
+
+  /// Whether a patch file starting with [header], its first 146 bytes or
+  /// more, is new to this host, before downloading the rest. Installing the
+  /// file still verifies all of it.
+  static Future<PatchInspection> inspectPatch(List<int> header) async {
+    if (_unsupportedGuard('inspectPatch')) {
+      throw PatcherException('inspectPatch requires Android or iOS');
+    }
+    final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
+      'inspectPatch',
+      {
+        'header': Uint8List.fromList(
+          header.length > patchHeaderSize
+              ? header.sublist(0, patchHeaderSize)
+              : header,
+        ),
+      },
+    );
+    return PatchInspection.fromNative(raw!);
+  }
+
+  /// Installs the patch file [bytes], or applies the withdrawal it is, for
+  /// the next cold start. Native code verifies the whole file: that it is
+  /// this host's, intact, signed when the host trusts a key, and numbered
+  /// above every file the host accepted.
+  static Future<PatchApplyResult> applyPatchBytes(List<int> bytes) async {
+    if (_unsupportedGuard('applyPatchBytes')) {
+      return PatchApplyResult.failure(
+        PatchApplyError.unknown,
+        'not supported on ${platform_io.operatingSystem}',
+      );
+    }
+    final path = await platform_io.writePayload(bytes);
+    try {
+      return await applyPatchFile(path);
+    } finally {
+      await platform_io.deletePayload(path);
+    }
+  }
+
+  /// Installs the patch file at [path] as [applyPatchBytes] does. The file
+  /// stays where it is.
+  static Future<PatchApplyResult> applyPatchFile(String path) async {
+    if (_unsupportedGuard('applyPatchFile')) {
+      return PatchApplyResult.failure(
+        PatchApplyError.unknown,
+        'not supported on ${platform_io.operatingSystem}',
+      );
+    }
+    try {
+      final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
+        'applyPatchFile',
+        {'path': path},
+      );
+      return PatchApplyResult.fromNative(raw);
+    } on PlatformException catch (e) {
+      return PatchApplyResult.failure(PatchApplyError.unknown, e.message);
+    }
   }
 
   static bool _inited = false;
@@ -147,7 +156,7 @@ class FlutterPatcher {
   static bool _dartHookActive = true;
 
   static bool _unsupportedGuard(String method) {
-    if (platform_io.isSupported) return false;
+    if (platform_io.isSupported || debugAssumeSupported) return false;
     if (!_unsupportedWarned) {
       _unsupportedWarned = true;
       debugPrint(
@@ -239,22 +248,22 @@ class FlutterPatcher {
     _BootVerifier.start();
   }
 
-  /// Checks the store `flutter_patcher publish` writes, served at [url]. By
-  /// default that is the address `build` wrote into the app: `url` in
-  /// `flutter_patcher.yaml`, or `http://127.0.0.1:8686`, where
-  /// `flutter_patcher serve` offers patches while developing. Pass [url] to
-  /// check elsewhere, such as an HTTPS tunnel to `serve` for an iPhone.
+  /// Checks for a patch file at [url]: `GET <url>/<fileName>`, where
+  /// `fileName` is this host's [PatchTarget.fileName] and the file is what
+  /// `flutter_patcher patch` or `publish` wrote. By default [url] is the
+  /// address `build` wrote into the app: `url` in `flutter_patcher.yaml`, or
+  /// `http://127.0.0.1:8686`, where `flutter_patcher serve` offers patches
+  /// while developing.
   ///
-  /// The host reads its own `manifests/<scope>.json` there and verifies it
-  /// natively without persisting it. Only a manifest that would change the
-  /// accepted state is an update; pass its [PatchInfo] to [applyPatch].
-  /// Nothing published yet is no update.
+  /// Only the first 146 bytes are read; a file is an update when it is new
+  /// to this host (see [inspectPatch]). No file there is no update. Pass the
+  /// [PatchInfo] to [applyPatch].
   ///
-  /// To deliver manifests and patches some other way, pass them to
-  /// [applySignedManifest] instead.
+  /// This is one way to deliver patch files; an app that fetches them
+  /// itself passes them to [applyPatchBytes] instead.
   ///
-  /// Throws [PatcherException] on a host built without a host policy, or
-  /// when no address is given and the app has none.
+  /// Throws [PatcherException] on a host built without a host policy, when
+  /// no address is given and the app has none, and when the check fails.
   static Future<PatchCheckResult> checkUpdate({
     String? url,
     Duration timeout = const Duration(seconds: 10),
@@ -264,12 +273,7 @@ class FlutterPatcher {
     }
 
     try {
-      if (await _hostStrategy() == null) {
-        throw PatcherException(
-          'This app was not built with flutter_patcher; '
-          'build it with dart run flutter_patcher build android|ios',
-        );
-      }
+      await _requireHost();
       final address =
           url ??
           await _hostUrl() ??
@@ -277,7 +281,25 @@ class FlutterPatcher {
             'This app has no update address; rebuild it with this version '
             'of flutter_patcher, or pass url to checkUpdate',
           ));
-      return await _checkSigned(address, timeout);
+      final target = await patchTarget;
+      final file =
+          '${address.replaceFirst(RegExp(r'/+$'), '')}/${target.fileName}';
+      final header = await platform_io.readPatchHeader(file, timeout: timeout);
+      if (header == null) return PatchCheckResult.none();
+      final inspection = await inspectPatch(header);
+      if (!inspection.fresh) return PatchCheckResult.none();
+      return PatchCheckResult(
+        hasUpdate: true,
+        patch: PatchInfo(
+          version: '${inspection.seq}',
+          raw: {
+            'url': file,
+            'seq': inspection.seq,
+            'action': inspection.action,
+            'size': PatchHeader.parse(header).fileLength,
+          },
+        ),
+      );
     } on PatcherException {
       rethrow;
     } catch (e, s) {
@@ -286,39 +308,9 @@ class FlutterPatcher {
     }
   }
 
-  static Future<PatchCheckResult> _checkSigned(
-    String url,
-    Duration timeout,
-  ) async {
-    final base = url.replaceFirst(RegExp(r'/+$'), '');
-    final wire = await platform_io.getSignedWire(
-      '$base/manifests/${scopeOf(await _hostScope())}.json',
-      timeout: timeout,
-    );
-    if (wire == null) return PatchCheckResult.none();
-    final manifest = SignedManifest.parse(wire);
-    final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
-      'checkSignedManifest',
-      {'wire': manifest.wire},
-    );
-    if (raw == null || raw['fresh'] != true) return PatchCheckResult.none();
-    return PatchCheckResult(
-      hasUpdate: true,
-      patch: PatchInfo(
-        version: raw['patch_seq'] as String? ?? raw['action'] as String,
-        raw: {
-          'signed_manifest': manifest.wire,
-          'action': raw['action'],
-          'base_url': base,
-        },
-      ),
-    );
-  }
-
-  /// Applies the update [checkUpdate] returned: downloads the patch the signed
-  /// manifest names, then native code re-verifies the manifest, checks the
-  /// patch's digest, signature, host fingerprint and sequence, and commits it
-  /// for the next cold start. A withdrawal removes the installed patch instead.
+  /// Applies the update [checkUpdate] returned: downloads the patch file,
+  /// then native code verifies and installs it for the next cold start, as
+  /// [applyPatchBytes] does. A withdrawal removes the installed patch.
   ///
   /// Returns a [PatchApplyResult]. `ok=true` means the patch is installed and
   /// will take effect on the next cold start.
@@ -332,30 +324,44 @@ class FlutterPatcher {
         'not supported on ${platform_io.operatingSystem}',
       );
     }
+    final url = patchInfo.raw['url'], size = patchInfo.raw['size'];
+    if (url is! String || size is! int) {
+      return PatchApplyResult.failure(
+        PatchApplyError.invalidArgs,
+        'Pass the PatchInfo returned by checkUpdate',
+      );
+    }
     StreamSubscription<PatchApplyProgress>? sub;
     if (onProgress != null) {
       sub = applyProgress.listen(onProgress);
     }
+    String? path;
     try {
-      final wire = patchInfo.raw['signed_manifest'];
-      if (wire is! String) {
-        return PatchApplyResult.failure(
-          PatchApplyError.invalidArgs,
-          'Pass the PatchInfo returned by checkUpdate',
-        );
-      }
-      return (await applySignedManifest(
-        SignedManifest.parse(wire),
-        baseUrl: patchInfo.raw['base_url'] as String?,
-      )).result;
+      _downloads.add(
+        PatchApplyProgress(
+          phase: PatchApplyPhase.downloading,
+          totalBytes: size,
+        ),
+      );
+      path = await platform_io.downloadPayload(
+        url,
+        size,
+        (received) => _downloads.add(
+          PatchApplyProgress(
+            phase: PatchApplyPhase.downloading,
+            bytesReceived: received,
+            totalBytes: size,
+          ),
+        ),
+      );
+      return await applyPatchFile(path);
     } on platform_io.PayloadDownloadException catch (e) {
       return PatchApplyResult.failure(PatchApplyError.network, e.toString());
-    } on PlatformException catch (e) {
-      return PatchApplyResult.failure(PatchApplyError.unknown, e.message);
     } catch (e, s) {
       _log('applyPatch failed: $e', s);
       return PatchApplyResult.failure(PatchApplyError.unknown, e.toString());
     } finally {
+      if (path != null) await platform_io.deletePayload(path);
       await sub?.cancel();
     }
   }
@@ -491,7 +497,8 @@ class FlutterPatcher {
   }
 }
 
-/// Plugin-wide exception. Wraps network/parsing errors from [FlutterPatcher.checkUpdate].
+/// Plugin-wide exception. Wraps network and parsing errors from
+/// [FlutterPatcher.checkUpdate] and calls on an app that cannot be patched.
 class PatcherException implements Exception {
   final String message;
   PatcherException(this.message);

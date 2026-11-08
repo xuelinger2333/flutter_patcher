@@ -4,26 +4,18 @@ import 'package:flutter_patcher/src/cli/version.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test(
-    'the CLI, the iOS plugin and its podspec report the package version',
-    () {
-      final pubspec = File('pubspec.yaml').readAsStringSync();
-      expect(
-        RegExp(r'^version:\s*(\S+)', multiLine: true).firstMatch(pubspec)![1],
-        packageVersion,
-      );
-      // Android reads pubspec.yaml at build time; iOS carries its own copies.
-      expect(
-        File('ios/flutter_patcher/Sources/flutter_patcher/Bytecode.swift')
-            .readAsStringSync(),
-        contains('static let pluginVersion = "$pluginVersion"'),
-      );
-      expect(
-        File('ios/flutter_patcher.podspec').readAsStringSync(),
-        contains("s.version          = '$pluginVersion'"),
-      );
-    },
-  );
+  test('the CLI and the podspec report the package version', () {
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    expect(
+      RegExp(r'^version:\s*(\S+)', multiLine: true).firstMatch(pubspec)![1],
+      packageVersion,
+    );
+    // Android reads pubspec.yaml at build time; the podspec carries a copy.
+    expect(
+      File('ios/flutter_patcher.podspec').readAsStringSync(),
+      contains("s.version          = '$pluginVersion'"),
+    );
+  });
 
   test('.pubignore leaves out no package source', () {
     // An unanchored `build/` once dropped lib/src/cli/build/ from 1.0.0.

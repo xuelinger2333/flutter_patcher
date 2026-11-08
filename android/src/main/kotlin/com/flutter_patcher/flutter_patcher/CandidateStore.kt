@@ -10,7 +10,7 @@ import java.util.UUID
 import org.json.JSONObject
 
 /**
- * Durable state of signed FPTC candidates for one strategy: content-addressed
+ * Durable state of FPTC candidates for one strategy: content-addressed
  * files, the active candidate, the boot attempt, crash counts, blacklist and
  * sequence high-water marks. Only the active candidate keeps its files
  * ([owned] names them), as on iOS. Callers serialize access.
@@ -28,12 +28,10 @@ internal class CandidateStore(
     }
 
     /**
-     * Auto Backup restores shared_prefs and files/ but never noBackupFilesDir,
-     * where the authorization state lives, so a restored candidate (reinstall,
-     * new device) would fail its authorization check and be blacklisted. A
-     * marker beside that state ties candidate state to this installation;
-     * state from another one is dropped, as on a fresh install. iOS excludes
-     * its whole store from backup instead.
+     * Auto Backup restores shared_prefs and files/ but never noBackupFilesDir.
+     * A marker there ties candidate state to this installation; state from
+     * another one (reinstall, new device) is dropped, as on a fresh install.
+     * iOS excludes its whole store from backup instead.
      */
     private fun dropRestoredState() {
         val marker = File(context.noBackupFilesDir, "flutter_patcher_install_$strategy")
@@ -77,19 +75,27 @@ internal class CandidateStore(
         return if (prefs.getBoolean("bad:${id(meta)}", false)) null else meta
     }
 
-    fun candidate(fingerprint: String, seq: Long, sha256: String, version: String, authorization: String?): JSONObject =
+    fun candidate(fingerprint: String, seq: Long, sha256: String): JSONObject =
         JSONObject().put("fingerprint", fingerprint).put("seq", seq).put("sha256", sha256)
-            .put("version", version).put("versionCode", PatcherConfig.currentVersionCode(context))
-            .apply { if (authorization != null) put("authorization", authorization) }
+            .put("version", seq.toString()).put("versionCode", PatcherConfig.currentVersionCode(context))
 
     fun isBlacklisted(meta: JSONObject) = prefs.getBoolean("bad:${id(meta)}", false)
 
-    fun requireNewer(meta: JSONObject) {
-        val old = active()
-        require((old != null && id(old) == id(meta)) ||
-            meta.getLong("seq") > prefs.getLong("high:${meta.getString("fingerprint")}", 0)) {
-            "Patch sequence must exceed accepted high-water mark"
-        }
+    /** The largest sequence accepted for [fingerprint], patch or withdrawal; 0 before any. */
+    fun high(fingerprint: String) = prefs.getLong("high:$fingerprint", 0)
+
+    /** Whether [meta] may become active: the active candidate again, or newer than any accepted. */
+    fun isNewer(meta: JSONObject) = active()?.let { id(it) == id(meta) } == true ||
+        meta.getLong("seq") > high(meta.getString("fingerprint"))
+
+    fun requireNewer(meta: JSONObject) = require(isNewer(meta)) {
+        "Patch sequence must exceed accepted high-water mark"
+    }
+
+    /** A withdrawal numbered [seq]: no patch is active, and only later files are accepted. */
+    fun withdraw(fingerprint: String, seq: Long) {
+        require(seq > high(fingerprint)) { "Withdrawal sequence must exceed accepted high-water mark" }
+        commit(clearingAttempt(prefs.edit().remove("active")).putLong("high:$fingerprint", seq))
     }
 
     /** Makes [meta] active; its files are already in [root]. */
