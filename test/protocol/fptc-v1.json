@@ -1,0 +1,182 @@
+{
+  "files": [
+    {
+      "name": "signed patch, signed host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGAAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBa+DlYXNs9hWQ3hFhWx22sVJU7S2ldb8quRyAX/wS9hYJJjz4yqyCi9MGcNk/crZlsua714XkKMt+CGwmktlPQpGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": true,
+      "seq": 1793520000,
+      "action": "publish"
+    },
+    {
+      "name": "unsigned patch, unsigned host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGAAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": true,
+      "seq": 1793520000,
+      "action": "publish"
+    },
+    {
+      "name": "signed patch, unsigned host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGAAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBa+DlYXNs9hWQ3hFhWx22sVJU7S2ldb8quRyAX/wS9hYJJjz4yqyCi9MGcNk/crZlsua714XkKMt+CGwmktlPQpGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": true,
+      "seq": 1793520000,
+      "action": "publish"
+    },
+    {
+      "name": "signed withdrawal, signed host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGBAAAAAAAAAADjsMRCmPwcFJr79MiZb7kkJ65B5GSbk0yklZkbeFK4VUBnGA6QgOCkrcLnSmL+KlEHdtossMyC9RsmjToVNeIS6KEkgL+A+1ZZxOnaQ0Ck0soxn+1EvRrOXDT6RawMCA0=",
+      "valid": true,
+      "seq": 1793520001,
+      "action": "withdraw"
+    },
+    {
+      "name": "unsigned withdrawal, unsigned host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGBAAAAAAAAAADjsMRCmPwcFJr79MiZb7kkJ65B5GSbk0yklZkbeFK4VQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "valid": true,
+      "seq": 1793520001,
+      "action": "withdraw"
+    },
+    {
+      "name": "largest sequence",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6v/////AAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBd2yC7192auWvnqWpfZ7Pa+Xn/hAQb2m6JoMMQmgUx1aDxFH0M3lagAv2dL9i/T9kVzgbK9n4JuDtV7880CifgtGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": true,
+      "seq": 4294967295,
+      "action": "publish"
+    },
+    {
+      "name": "unsigned patch, signed host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAABAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "signature"
+    },
+    {
+      "name": "another key, signed host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAABAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBT4rYYqYki7Ww6xTrSZBxXONuNFnmLA+wslk2T1E2ZKXkDhiHDARzuoBMnv6w8UI2mN3aNoo2ZX2PBXEOo7exQpGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "signature"
+    },
+    {
+      "name": "signature byte flipped",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGAAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBa+DlYXNs9hWQ3hFhWx22sVJU7W2ldb8quRyAX/wS9hYJJjz4yqyCi9MGcNk/crZlsua714XkKMt+CGwmktlPQpGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "signature"
+    },
+    {
+      "name": "payload changed, digest updated, signed host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGAAAAAAAAAABaR58ORcqIUANFqtJFcYmVVgOQPoZQSh3shlZbipc1D+a+DlYXNs9hWQ3hFhWx22sVJU7S2ldb8quRyAX/wS9hYJJjz4yqyCi9MGcNk/crZlsua714XkKMt+CGwmktlPQpGUFRDIHYxIHZlY3RvciBwYXlsb2Fl",
+      "valid": false,
+      "reason": "signature"
+    },
+    {
+      "name": "payload changed, unsigned host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGAAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBa+DlYXNs9hWQ3hFhWx22sVJU7S2ldb8quRyAX/wS9hYJJjz4yqyCi9MGcNk/crZlsua714XkKMt+CGwmktlPQpHUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "digest"
+    },
+    {
+      "name": "digest byte flipped, unsigned host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6tq5vGAAAAAAAAAABZQLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBa+DlYXNs9hWQ3hFhWx22sVJU7S2ldb8quRyAX/wS9hYJJjz4yqyCi9MGcNk/crZlsua714XkKMt+CGwmktlPQpGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "digest"
+    },
+    {
+      "name": "magic",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBURAABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAABAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "magic"
+    },
+    {
+      "name": "version 2",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwACq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAABAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "version"
+    },
+    {
+      "name": "another host",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc0AAAABAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "fingerprint"
+    },
+    {
+      "name": "sequence 0",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAAAAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "sequence"
+    },
+    {
+      "name": "length larger than the file",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAABAAAAAAAAABdRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2Fk",
+      "valid": false,
+      "reason": "length"
+    },
+    {
+      "name": "bytes after the payload",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAABAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGUFRDIHYxIHZlY3RvciBwYXlsb2FkAA==",
+      "valid": false,
+      "reason": "length"
+    },
+    {
+      "name": "header cut short",
+      "fingerprint": "abababababababababababababababababababababababababababababababab",
+      "host_key": null,
+      "file": "RlBUQwABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6sAAAABAAAAAAAAABZRLfs4/RLlxIlOlyTF5H8y2f9cW2vbU08xQTQmhZupBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "valid": false,
+      "reason": "length"
+    }
+  ],
+  "file_names": [
+    {
+      "scope": {
+        "version_code": "7",
+        "flavor": "default",
+        "channel": "production",
+        "abi": "arm64-v8a"
+      },
+      "file_name": "7-default-production-arm64-v8a.fptc"
+    },
+    {
+      "scope": {
+        "version_code": "2100000000",
+        "flavor": "paid_Pro-1",
+        "channel": "beta",
+        "abi": "ios-arm64"
+      },
+      "file_name": "2100000000-paid_Pro-1-beta-ios-arm64.fptc"
+    }
+  ]
+}
