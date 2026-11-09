@@ -238,13 +238,13 @@ def verify(args, out):
             ('patch 1 again as 5', check(5), {'update': True, 'ok': True}),
             ('rolled back to patch 1', launch, {**patched, 'version': '5'}),
         ]
-        for name, action, expected in plan:
+        for step, action, expected in plan:
             actual = action()
             ok = all(actual.get(k) == v for k, v in expected.items())
-            steps.append(dict(step=name, passed=ok, actual=actual))
-            print(('PASS ' if ok else 'FAIL ') + name + ' ' + json.dumps(actual), flush=True)
+            steps.append(dict(step=step, passed=ok, actual=actual))
+            print(('PASS ' if ok else 'FAIL ') + step + ' ' + json.dumps(actual), flush=True)
             if not ok:
-                failed.append(name)
+                failed.append(step)
                 break
     finally:
         server.kill()
