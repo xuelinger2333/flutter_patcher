@@ -156,10 +156,16 @@ class _StatusCardState extends State<StatusCard> {
                       child: Row(
                         children: [
                           Text(label, style: text.bodyMedium),
-                          const Spacer(),
-                          Text(
-                            value,
-                            style: text.bodyMedium?.copyWith(color: secondary),
+                          const SizedBox(width: 16),
+                          // A long value, such as a patch file name, wraps.
+                          Expanded(
+                            child: Text(
+                              value,
+                              textAlign: TextAlign.end,
+                              style: text.bodyMedium?.copyWith(
+                                color: secondary,
+                              ),
+                            ),
                           ),
                         ],
                       ),
