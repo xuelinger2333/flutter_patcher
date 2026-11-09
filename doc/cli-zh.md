@@ -21,7 +21,7 @@ dart run flutter_patcher patch android
 dart run flutter_patcher serve          # 保持运行；每次改动后再执行一次 patch
 ```
 
-**验证**：`serve` 输出 `Offering patch <序号> (<文件名>)`，App 应用补丁后输出 `A device downloaded <文件名>`。
+**验证**：`serve` 输出 `Offering patch <序号> (<文件名>, unsigned)`（或 `signed`），App 应用补丁后输出 `A device downloaded <文件名>`。`serve` 只是调试工具，见 [serve](#serve)。
 
 ### 自己把补丁文件交给 App
 
@@ -29,9 +29,13 @@ dart run flutter_patcher serve          # 保持运行；每次改动后再执�
 dart run flutter_patcher patch android
 ```
 
-**验证**：输出的 JSON 中 `file` 是补丁文件的路径，例如 `.dart_tool/flutter_patcher/patches/<目录>/7-default-production-arm64-v8a.fptc`。用任何方式把这个文件交给 App，再传给 `FlutterPatcher.applyPatchBytes` 或 `applyPatchFile`，见 [API 参考](api-reference-zh.md)。`file` 为 `null` 表示宿主开启了签名而本机没有补丁私钥：请在有私钥的机器上运行 `publish`。
+**验证**：输出的 JSON 中 `file` 是补丁文件的路径，例如 `.dart_tool/flutter_patcher/patches/<目录>/7-default-production-arm64-v8a.fptc`。用任何方式把这个文件交给 App，再传给 `FlutterPatcher.applyPatchBytes` 或 `applyPatchFile`，见 [API 参考](api-reference-zh.md)。`file` 为 `null` 表示宿主开启了签名而本机没有补丁私钥：在本机 `keys import` 私钥后重新 patch，或在有私钥的机器上运行 `publish --patch <输出目录>`。
+
+自行分发只需要 `build` 和 `patch`。使用内置下载器时，把文件放在 `<url>/<文件名>`；该服务需要满足的条件见[存储要求](#存储要求)。
 
 ### 向生产环境发布补丁
+
+`publish` 是可选的：它把文件写入存储（`file://` 或 `s3://`），按发布时间编号，并防止用旧文件替换新文件。
 
 ```bash
 dart run flutter_patcher patch android
@@ -53,11 +57,12 @@ dart run flutter_patcher publish --yes
 ### 撤回补丁，或回到之前的补丁
 
 ```bash
-dart run flutter_patcher publish --withdraw                                         # 回到安装包自带的版本
+dart run flutter_patcher patch android --withdraw                                   # 回到安装包自带的版本；像补丁一样分发它的文件
+dart run flutter_patcher publish --withdraw                                         # 同上，写入存储
 dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<目录>   # 回到之前的某个补丁
 ```
 
-**验证**：前者输出 `"action":"withdraw"`；后者输出的 `seq` 大于问题补丁的序号。重新上传旧的 `.fptc` 文件不会生效：设备只接受更大的 `seq`。
+**验证**：第一条输出 `"status":"withdrawal_created"` 和它的 `file`；第二条输出 `"action":"withdraw"`；第三条输出的 `seq` 大于问题补丁的序号。重新上传旧的 `.fptc` 文件不会生效：设备只接受更大的 `seq`。
 
 ### 为更早的线上版本打补丁
 
@@ -102,7 +107,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 
 ## 补丁文件
 
-`patch`、`publish` 和 `serve` 只写一种文件：FPTC v1。同一个宿主的文件名始终相同：`<version_code>-<flavor>-<channel>-<abi>.fptc`，例如 `7-default-production-arm64-v8a.fptc`；App 中对应 `PatchTarget.fileName`。
+`patch` 和 `publish` 只写一种文件：FPTC v1，`serve` 按原样提供它。同一个宿主的文件名始终相同：`<version_code>-<flavor>-<channel>-<abi>.fptc`，例如 `7-default-production-arm64-v8a.fptc`；App 中对应 `PatchTarget.fileName`。
 
 | 偏移 | 字节数 | 字段 |
 |---|---|---|
@@ -142,12 +147,12 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 | `.flutter_patcher/baselines/` | 默认的基线存储 | **是**，或改用持久存储：宿主的每个补丁都需要它的基线 |
 | `.flutter_patcher/updates/` | 默认的发布存储 | 否 |
 | `.dart_tool/flutter_patcher/releases/` | `build` 的输出 | 否 |
-| `.dart_tool/flutter_patcher/patches/` | `patch` 的输出 | 否 |
+| `.dart_tool/flutter_patcher/patches/` | `patch` 的输出；`serve` 提供每个宿主最新的一个 | 否 |
 | `~/.flutter_patcher/`（`keys/` 除外） | 下载的引擎和工具、准备好的 Flutter SDK 副本、基线缓存 | 否，可以重新下载 |
 
 ## keys
 
-签名是可选的。每个项目最多有一对 Ed25519 密钥，即补丁密钥。公钥保存在 `flutter_patcher.yaml`（`trust.patch`）中，私钥从不放在项目里。`build` 不需要私钥；宿主带补丁密钥时，`patch`、`publish` 和 `serve` 会签名。
+签名是可选的。每个项目最多有一对 Ed25519 密钥，即补丁密钥。公钥保存在 `flutter_patcher.yaml`（`trust.patch`）中，私钥从不放在项目里。`build` 不需要私钥；宿主带补丁密钥时，`patch` 和 `publish` 会签名。
 
 ### keys init
 
@@ -190,7 +195,7 @@ dart run flutter_patcher keys status
 
 ### 私钥从哪里来
 
-`patch`、`publish` 和 `serve` 按以下顺序查找补丁私钥，使用第一个存在的来源：
+`patch` 和 `publish` 按以下顺序查找补丁私钥，使用第一个存在的来源：
 
 1. `--key-file <文件>`（仅 `publish`）：一个密钥包文件；
 2. 环境变量 `FLUTTER_PATCHER_KEYS`：`keys export --base64` 输出的密钥包；
@@ -242,17 +247,19 @@ dart run flutter_patcher build ios        # 仅限 Apple Silicon Mac
 
 ## patch
 
-将当前源码与一个已构建版本的基线对比，生成补丁，并封装成该宿主的补丁文件。
+将当前源码与一个已构建版本的基线对比，生成补丁，并封装成该宿主的补丁文件。加 `--withdraw` 时改为写出该宿主的撤回文件。
 
 ```bash
 dart run flutter_patcher patch android
 dart run flutter_patcher patch ios
+dart run flutter_patcher patch android --withdraw
 ```
 
 | 选项 | 说明 | 默认值 |
 |---|---|---|
 | `--version-code <数字>` | 为哪个版本生成补丁 | `pubspec.yaml` 中 `version` 的构建号 |
 | `--flavor <名称>` | 该版本的 flavor | `default` |
+| `--withdraw` | 不生成补丁，改为写出该宿主的撤回文件：应用它的设备删除补丁，下次冷启动起运行安装包自带的版本。只需要基线，不做任何编译 | |
 | `--assets <资源键>` | 只覆盖指定的资源（可重复） | 自动选出有变化的资源 |
 | `--target <文件>` | 入口文件 | `lib/main.dart` |
 | `--out <目录>` | 输出目录，必须是新目录 | `.dart_tool/flutter_patcher/patches/<时间戳>/` |
@@ -260,16 +267,19 @@ dart run flutter_patcher patch ios
 
 - 策略、渠道和补丁密钥都从基线读取。
 - 输出目录中有 `patch.draft`（封装前的补丁）、`patch.json`（报告）和补丁文件 `<version_code>-<flavor>-<channel>-<abi>.fptc`。报告中的 `changed` 列出改动的内容，`warnings` 列出需要注意的问题，`patch_key` 是宿主的补丁公钥或 `-`。
-- 输出的 JSON 还包含 `file`（补丁文件路径）、`seq`（封装时的 Unix 秒数）、`sealed_at`（该时间的 UTC 表示）和 `signed`。
-- 宿主开启了签名、而本机没有任何来源提供私钥时：`patch` 仍然成功，`"file":null` 并附带 `notice`。请在有私钥的机器上运行 `publish --patch <输出目录>`，或在本机 `keys import` 私钥。
-- `patch` 不写发布存储；写发布存储的是 `publish` 和 `serve`。
+- 输出的 JSON 还包含 `file`（补丁文件的完整路径）、`seq`（封装时的 Unix 秒数）、`sealed_at`（该时间的 UTC 表示）和 `signed`。
+- 使用 `--withdraw` 时，输出目录中有 `patch.json`（`"status":"withdrawal_created"`）和同名的撤回文件 `<version_code>-<flavor>-<channel>-<abi>.fptc`；输出的 JSON 同样包含 `file`、`seq` 和 `signed`。
+- 宿主开启了签名、而本机没有任何来源提供私钥时：`patch` 仍然成功，`"file":null` 并附带 `notice`。在本机 `keys import` 私钥后重新 patch，或在有私钥的机器上运行 `publish --patch <输出目录>`。
+- `patch` 不写发布存储；只有 `publish` 写。
 - 基线属于用 flutter_patcher 1.0 构建的宿主时报 `PATCH_BASELINE_INCOMPATIBLE`：请用 flutter_patcher 1.0.0+1 为该宿主打补丁。
 - 不能热更的改动会导致命令失败，规则见[工作原理](architecture-zh.md)。
 - 修好 bug 后再生成补丁，**不要修改 `pubspec.yaml` 的构建号**，否则 `patch` 会去找一个不存在的版本；或者用 `--version-code` 明确指定。
 
 ## publish
 
-用新的 `seq` 重新封装一个 `patch` 输出（宿主带补丁密钥时签名），以 `<fileName>.fptc` 写入发布存储；只有新文件更新时才替换存储中已有的文件。
+可选的发布命令。用发布时编号的 `seq` 重新封装一个 `patch` 输出，因此文件按发布的先后排序，再以 `<fileName>.fptc` 写入发布存储；只有新文件更新时才替换存储中已有的文件。
+
+签名和不签名的宿主走同一个流程，是否签名由宿主的基线决定。签名的宿主需要从 `--key-file`、`FLUTTER_PATCHER_KEYS`、`signing.command` 或密钥库取得私钥（见[私钥从哪里来](#私钥从哪里来)）；取不到时，`publish` 在写入任何内容之前报 `KEYS_NOT_FOUND`。
 
 ```bash
 dart run flutter_patcher publish
@@ -278,7 +288,7 @@ dart run flutter_patcher publish
 | 选项 | 说明 | 默认值 |
 |---|---|---|
 | `--patch <目录>` | 要发布的 `patch` 输出目录 | `.dart_tool/flutter_patcher/patches/` 下最新的输出 |
-| `--withdraw` | 改为写入该输出所属宿主的撤回文件：应用它的设备删除补丁，下次冷启动起运行安装包自带的版本 | |
+| `--withdraw` | 改为写入该输出所属宿主的撤回文件：应用它的设备删除补丁，下次冷启动起运行安装包自带的版本。`patch --withdraw` 的输出不加此选项也按撤回发布 | |
 | `--yes`, `-y` | 不询问，直接发布 | 先预览再询问；非交互环境下只预览 |
 | `--seq <数字>` | 文件的序号，范围 1–4294967295，必须大于存储中现有文件的 `seq` | 当前 Unix 秒数 |
 | `--key-file <文件>` | 优先使用这个密钥包签名 | |
@@ -291,7 +301,7 @@ dart run flutter_patcher publish
 |---|---|
 | `already_published` | 存储中已经是该宿主的同一份草稿（使用 `--withdraw` 时：已经是撤回文件）。不写入任何内容；`seq` 为存储中的序号 |
 | `preview` | 没有 `--yes` 且没有终端可以询问，或回答不是 `y`。不写入任何内容，退出码为 `0` |
-| `published` | 已写入文件，并在补丁输出目录中写入 `published.json`（`seq`、`action`） |
+| `published` | 已写入文件 |
 
 - 存储中同名文件的 `seq` 不小于新序号时报 `PUBLISH_SEQUENCE_CONFLICT`：检查本机时钟，或用 `--seq` 指定一个大于存储中序号的值。
 - 读取之后、写入之前存储中的文件被改动时报 `PUBLISH_CONFLICT`；重新运行 `publish` 即可。
@@ -303,7 +313,7 @@ dart run flutter_patcher publish
 
 ## serve
 
-开发用的补丁服务。
+开发用的调试工具。它按原样提供 `patch` 为每个宿主写出的最新文件，补丁或撤回文件都可以。
 
 ```bash
 dart run flutter_patcher serve
@@ -314,11 +324,12 @@ dart run flutter_patcher serve
 | `--port <端口>` | 本机端口，也是 `adb reverse` 映射到手机上的端口。未填 `url` 构建的 App 检查 `8686`，可用 `adb reverse tcp:8686 tcp:<端口>` 转过去 | `8686` |
 | `--project <目录>` | 项目目录 | 当前目录 |
 
-- 把最新的 `patch` 输出发布到项目的发布存储一次，效果同 `publish --yes`，不需要手动运行 `publish`。已有 `published.json` 的输出不会再次发布（会打印它的 `seq`，以及重新提供它的 `publish --patch` 命令），所以重启 `serve` 不会让已撤回或已被替换的补丁重新出现。发布失败时打印 `Not offered: <错误码>: <说明>`。
-- 存储中的补丁文件发生变化时（包括你手动 `publish` 的文件），打印 `Offering patch <序号> (<文件名>)` 或 `Withdrawn as <序号> (<文件名>)`。
-- 只监听 `127.0.0.1`，只提供存储中的 `GET /<fileName>.fptc`；带 `Range: bytes=0-<n>` 的请求返回 `206`，其他请求一律 `404`。
+- 对每个宿主，提供 `.dart_tool/flutter_patcher/patches/` 下它最新一个输出中的文件；用 `patch --out` 写到别处的输出不会提供。`serve` 运行期间，每次新的 `patch` 约 2 秒内生效。
+- 不发布、不写发布存储、不重新编号、不签名，`flutter_patcher.yaml` 中的 `store` 是什么都能用。设备像校验其他文件一样校验这些文件。
+- 某个宿主的最新输出变化时，打印 `Offering patch <序号> (<文件名>, signed|unsigned)` 或 `Offering a withdrawal of <文件名> (signed|unsigned, <序号>)`。
+- 某个宿主的最新输出没有文件时（签名的宿主，而本机没有它的私钥），打印 `Not offering <文件名>: ...`，不为该宿主提供任何文件，也不会退回提供更早的文件。请 `keys import` 后重新 patch。
+- 只监听 `127.0.0.1`，只提供 `GET /<fileName>.fptc`；带 `Range: bytes=0-<n>` 的请求返回 `206`，其他请求一律 `404`。
 - 每 2 秒检查一次已连接的 Android 设备，并对新设备执行 `adb reverse`。
-- 只支持 `file://` 发布存储（否则报 `SERVE_CONFIG_INVALID`）；如果 `flutter_patcher.yaml` 配置了 `s3://` 的 `store`，开发时请先去掉。
 - iOS 设备访问不到电脑的 `127.0.0.1`：请通过 HTTPS 暴露该端口（例如 `cloudflared tunnel --url http://127.0.0.1:8686`），并把这个地址传给 `checkUpdate(url: …)`。
 - 按 Ctrl+C 停止。
 
@@ -359,11 +370,11 @@ dart run flutter_patcher doctor
 | `s3://` | 需要支持条件写入（`put-object --if-match`、`--if-none-match`）的 AWS CLI，以及该前缀下读取和写入对象的权限，外加 `s3:ListBucket`：没有它时，不存在的文件会被当作拒绝访问，`publish` 报 `PUBLISH_STORE_UNAVAILABLE`。路径必须是存储桶下的专用前缀，每段只含字母、数字、`_` 和 `-`，例如 `s3://my-bucket/my-app` |
 | `file://` | 本地目录或网络挂载盘 |
 
-只有 `publish` 和 `serve` 使用发布存储。它的根目录下每个宿主一个文件：`<version_code>-<flavor>-<channel>-<abi>.fptc`；`file://` 存储中还有 `.publish.lock`，不需要对外提供。flutter_patcher 1.0 写入的内容（`manifests/`、`objects/`、`catalog.json`）既不读取也不改动，继续为 1.0 宿主服务。
+只有 `publish` 使用发布存储。它的根目录下每个宿主一个文件：`<version_code>-<flavor>-<channel>-<abi>.fptc`；`file://` 存储中还有 `.publish.lock`，不需要对外提供。flutter_patcher 1.0 写入的内容（`manifests/`、`objects/`、`catalog.json`）既不读取也不改动，继续为 1.0 宿主服务。
 
-`checkUpdate` 下载所用的 HTTPS 服务或 CDN：
+`checkUpdate` 下载所用的 HTTPS 服务或 CDN（无论文件是 `publish` 还是你自己放上去的）：
 
-- 对 `GET <url>/<fileName>` 返回该文件（`200`，或针对请求范围的 `206`），没有文件时返回 `404`；其他状态码都会让 `checkUpdate` 抛出异常，例如私有 S3 和 R2 存储桶对不存在的对象返回的 `403`；
+- 对 `GET <url>/<fileName>` 返回该文件（`200`，或针对请求范围的 `206`；不要求支持范围请求），没有文件时返回 `404`；其他状态码都会让 `checkUpdate` 抛出异常，例如私有 S3 和 R2 存储桶对不存在的对象返回的 `403`；
 - 直接返回内容，不使用 `3xx` 重定向，客户端不跟随重定向；
 - 返回的 `Content-Length` 等于文件大小，或使用 `Content-Encoding: gzip` 压缩；
 - 在 2 分钟内传完整个文件，中途不能有 15 秒没有数据；

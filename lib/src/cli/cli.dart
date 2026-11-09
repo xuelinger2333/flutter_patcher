@@ -83,6 +83,13 @@ ArgParser environmentOptions() => ArgParser()
 
 ArgParser parser() {
   final patch = environmentOptions()
+    ..addFlag(
+      'withdraw',
+      negatable: false,
+      help:
+          'Write a withdrawal of the host instead of a patch: devices that '
+          'apply it drop their patch and run the installed version.',
+    )
     ..addOption('project')
     ..addOption('target', defaultsTo: 'lib/main.dart')
     ..addOption('out')
@@ -172,7 +179,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--seq <n>] [--yes]\nflutter_patcher serve [--port <port>]\n\n${args.commands['doctor']!.usage}',
+        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [--withdraw] [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--seq <n>] [--yes] [options]\nflutter_patcher serve [--port <port>] [--project <dir>]\n\n${args.commands['doctor']!.usage}',
       );
       return 0;
     }

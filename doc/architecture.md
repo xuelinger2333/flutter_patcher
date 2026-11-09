@@ -16,7 +16,7 @@ This document explains why flutter_patcher works, why you can trust it, and wher
                                                           verifies, installs; loads at the next cold start
 ```
 
-- **Your computer**: `dart run flutter_patcher` builds the host app and its baseline, then turns each change into one patch file, `<version_code>-<flavor>-<channel>-<abi>.fptc`. `publish` writes that file to a store (a directory or S3); `serve` does it for you while developing. The **baseline store**, which keeps the build record of every released version, is used only by the CLI.
+- **Your computer**: `dart run flutter_patcher` builds the host app and its baseline, then turns each change into one patch file, `<version_code>-<flavor>-<channel>-<abi>.fptc`. Deliver that file any way you like; the optional `publish` writes it to a store (a directory or S3), and `serve` hands the newest one to development devices. The **baseline store**, which keeps the build record of every released version, is used only by the CLI.
 - **Wherever the app gets files**: the plugin does not fetch patches. Your app gets the file in any way it likes and hands it to `applyPatchBytes` or `applyPatchFile`. `checkUpdate` and `applyPatch` are an optional built-in downloader for files placed at a URL.
 - **Device**: native code checks every part of the file, installs it, and loads it on the next cold start.
 

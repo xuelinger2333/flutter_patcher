@@ -70,7 +70,7 @@ On an SO host whose `libapp.so` has already loaded, a patch whose rest then fail
 
 The blacklist is per device: the file is still wherever your app gets it, and devices that have not tried it can still install it. When monitoring shows `droppedCircuitBreaker`:
 
-1. Stop the bad patch: publish a withdrawal with `publish --withdraw`, so devices go back to the installed version, or publish an earlier good patch output again with `publish --patch <its output directory>`, which seals it with a new sequence. If your app gets files another way, hand it the file this writes to the store. See [Production Deployment Guide](production-playbook.md).
+1. Stop the bad patch: deliver a withdrawal, made with `patch android --withdraw` (or `ios`) or written to the store with `publish --withdraw`, so devices go back to the installed version; or publish an earlier good patch output again with `publish --patch <its output directory>`, which seals it with a new sequence. If your app gets files another way, hand it the file this writes. See [Production Deployment Guide](production-playbook.md).
 2. Fix the problem and publish a new patch.
 
 Do not publish the bad patch's output again: with a new sequence it is a different file to the blacklist, and devices install it again.
@@ -80,7 +80,7 @@ Do not publish the bad patch's output again: with a new sequence it is a differe
 | Situation | Result |
 |---|---|
 | The user upgrades the app | Patches for the old version stop applying; diagnostic `droppedVersionCodeMismatch` |
-| The device applies a withdrawal numbered above the patch (`publish --withdraw`) | The patch is removed; the running process keeps its code, and the next cold start runs the installed version |
+| The device applies a withdrawal numbered above the patch (`patch --withdraw` or `publish --withdraw`) | The patch is removed; the running process keeps its code, and the next cold start runs the installed version |
 | The app calls `rollback()` | The patch is removed but not blacklisted. The device keeps the highest sequence it accepted, so it cannot install that file again; publish a newer one instead |
 | The user clears app data or reinstalls | The patch and local records are gone |
 

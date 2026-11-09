@@ -5,9 +5,8 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 
 import '../core.dart';
+import '../patch/outputs.dart';
 import '../project.dart';
-import '../publish/command.dart';
-import '../publish/store.dart';
 import '../../patch_file.dart';
 
 ArgParser serveOptions() => ArgParser()
@@ -24,21 +23,14 @@ ArgParser serveOptions() => ArgParser()
         'devices.',
   );
 
-/// Hands patches to development devices: publishes each new patch output of
-/// the project to its store, serves the store's patch files on 127.0.0.1 and
-/// maps that port onto connected Android devices with adb reverse. Devices
-/// still verify every file; only the transport is local.
+/// A debugging aid: hands development devices the newest file `patch` wrote
+/// for each host, a patch or a withdrawal, as it is. It serves them on
+/// 127.0.0.1 and maps that port onto connected Android devices with adb
+/// reverse. It never signs, numbers, stores or publishes anything: devices
+/// verify each file as they verify any other.
 Future<int> serveCommand(ArgResults args) async {
   final project = p.absolute(
     args['project'] as String? ?? Directory.current.path,
-  );
-  final config = await ProjectConfig.load(project);
-  final store = Uri.parse(config.store);
-  require(
-    store.scheme == 'file',
-    'SERVE_CONFIG_INVALID',
-    'serve offers a file:// store, not ${config.store}; remove store from '
-        '${ProjectConfig.file} while developing.',
   );
   final port = int.tryParse(args['port'] as String);
   require(
@@ -46,9 +38,6 @@ Future<int> serveCommand(ArgResults args) async {
     'USAGE_ERROR',
     'Invalid --port',
   );
-  final root = store.toFilePath();
-  await rejectLinks(root);
-  await Directory(root).create(recursive: true);
   final HttpServer server;
   try {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, port!);
@@ -58,10 +47,11 @@ Future<int> serveCommand(ArgResults args) async {
       'Port $port is in use on this computer; choose another with --port.',
     );
   }
-  server.listen((request) => _respond(request, root));
+  var files = await latestFiles(project);
+  server.listen((request) => _respond(request, files));
   final url = 'http://127.0.0.1:$port';
   stderr.writeln(
-    'Serving $root at $url\n'
+    'Serving the patch files in ${patchOutputsRoot(project)} at $url\n'
     'Apps check here with FlutterPatcher.checkUpdate(url: \'$url\'), or '
     'checkUpdate() when built without url in ${ProjectConfig.file}.\n'
     'iOS or another network: expose $url over HTTPS, for example with '
@@ -73,12 +63,12 @@ Future<int> serveCommand(ArgResults args) async {
   final signal = ProcessSignal.sigint.watch().listen((_) {
     if (!stop.isCompleted) stop.complete();
   });
-  final reversed = <String>{}, offered = <String>{};
-  final offers = <String, int>{};
+  final reversed = <String>{};
+  final announced = <String, HostFile>{};
   while (!stop.isCompleted) {
     await _reverse(port, reversed);
-    await _offerLatest(project, offered);
-    await _announce(root, offers);
+    files = await latestFiles(project);
+    await _announce(files, announced);
     await Future.any([
       stop.future,
       Future<void>.delayed(const Duration(seconds: 2)),
@@ -90,23 +80,18 @@ Future<int> serveCommand(ArgResults args) async {
 }
 
 /// Devices read only patch files, whole or the first bytes a check asks for.
-Future<void> _respond(HttpRequest request, String root) async {
+Future<void> _respond(HttpRequest request, Map<String, HostFile> files) async {
   final response = request.response;
   try {
     final name = request.uri.path.substring(1);
-    final file = File(p.join(root, name));
-    var named = true;
-    try {
-      publicationName(name);
-    } on Failure {
-      named = false;
-    }
+    final path = files[name]?.file;
     if (request.method != 'GET' ||
         request.uri.hasQuery ||
-        !named ||
-        !await file.exists()) {
+        path == null ||
+        !await File(path).exists()) {
       response.statusCode = HttpStatus.notFound;
     } else {
+      final file = File(path);
       final length = await file.length();
       final range = RegExp(r'^bytes=0-(\d+)$')
           .firstMatch(request.headers.value(HttpHeaders.rangeHeader) ?? '');
@@ -135,60 +120,45 @@ Future<void> _respond(HttpRequest request, String root) async {
   }
 }
 
-/// Publishes the newest finished patch output once, unless it was published
-/// before: a restart must not bring back a patch since withdrawn or replaced.
-Future<void> _offerLatest(String project, Set<String> offered) async {
-  final latest = await latestPatchOutput(project);
-  if (latest == null || !offered.add(latest)) return;
-  try {
-    final result = await publication(
-      publishOptions().parse([
-        '--project',
-        project,
-        '--patch',
-        latest,
-        '--yes',
-      ]),
-      onlyNew: true,
-    );
-    if (result['status'] == 'published_before') {
+/// Says what devices are offered whenever the newest output of a host
+/// changes.
+Future<void> _announce(
+  Map<String, HostFile> files,
+  Map<String, HostFile> announced,
+) async {
+  for (final MapEntry(key: name, value: host) in files.entries) {
+    final before = announced[name];
+    if (before?.output == host.output) continue;
+    announced[name] = host;
+    final path = host.file;
+    if (path == null) {
       stderr.writeln(
-        'Not offering the latest patch output again: it was published as '
-        '${result['seq']}. To offer it again, run '
-        '`dart run flutter_patcher publish --patch $latest`.',
+        'Not offering $name: ${host.output} has no patch file. Its host '
+        'accepts only files signed by its patch key, which this machine does '
+        'not have; run `dart run flutter_patcher keys import` and patch '
+        'again.',
       );
+      continue;
     }
-  } on Failure catch (error) {
-    stderr.writeln('Not offered: ${error.code}: ${error.message}');
-  }
-}
-
-/// Says what devices are offered whenever a patch file in the store
-/// changes, whoever published it.
-Future<void> _announce(String root, Map<String, int> offers) async {
-  await for (final file in Directory(root).list()) {
-    final name = p.basename(file.path);
-    if (file is! File || !name.endsWith('.fptc')) continue;
     final PatchHeader header;
     try {
-      final handle = await file.open();
+      final handle = await File(path).open();
       try {
         header = PatchHeader.parse(await handle.read(patchHeaderSize));
       } finally {
         await handle.close();
       }
-    } catch (_) {
-      continue; // Being replaced; the next pass reads it.
+    } catch (error) {
+      stderr.writeln('Not offering $name: $path: $error');
+      continue;
     }
-    final known = offers[name];
-    if (known == header.seq) continue;
-    offers[name] = header.seq;
+    final signed = host.signed ? 'signed' : 'unsigned';
     stderr.writeln(
       header.withdrawal
-          ? 'Withdrawn as ${header.seq} ($name): devices that apply it run '
-                'the installed version'
-          : 'Offering patch ${header.seq} ($name)'
-                '${known == null ? '' : '; restart the app after it applies'}',
+          ? 'Offering a withdrawal of $name ($signed, ${header.seq}): devices '
+                'that apply it run the installed version'
+          : 'Offering patch ${header.seq} ($name, $signed)'
+                '${before == null ? '' : '; restart the app after it applies'}',
     );
   }
 }

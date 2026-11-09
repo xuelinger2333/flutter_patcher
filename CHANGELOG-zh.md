@@ -6,7 +6,8 @@
 
 1.1.0 让补丁变成一个文件。`patch` 写出 `<version_code>-<flavor>-<channel>-<abi>.fptc`；App 用任何方式拿到
 这个文件交给插件，插件校验后安装，下次冷启动生效。签名变为可选，插件也不再自行获取任何内容：`checkUpdate`
-和 `applyPatch` 保留为可选的下载器。已上线的 1.0.0 宿主不受影响，见下文"从 1.0 升级"。
+和 `applyPatch` 保留为可选的下载器。自行分发只需要 `build` 和 `patch`；`serve` 是开发辅助工具，`publish`
+是可选的发布命令。已上线的 1.0.0 宿主不受影响，见下文"从 1.0 升级"。
 
 ### Removed
 
@@ -34,9 +35,17 @@
   的一方就能在 App 中执行代码；内置下载器只接受 HTTPS，以及指向设备本机的明文 HTTP。
 - 宿主策略改为 schema 2：`application_id`、`version_code`、`flavor`、`channel`、`abi`、`strategy` 和
   `fptc_key`（补丁公钥；不签名的宿主为 `-`）。
-- `publish` 重新封装补丁输出，把 `<fileName>.fptc` 写在存储的根目录下。只有序号更大时才替换那里的文件
-  （否则报 `PUBLISH_SEQUENCE_CONFLICT`）；同一个补丁报 `already_published`；发布过程中文件被改动时报
-  `PUBLISH_CONFLICT`。`publish --withdraw` 写入撤回文件。`publish` 不再读取 `url`。
+- `publish` 是可选的发布命令。它用发布时编号的序号重新封装补丁输出，把 `<fileName>.fptc` 写在存储的根目录下
+  （`file://`，默认 `.flutter_patcher/updates`，或 `s3://`）。只有序号更大时才替换那里的文件（否则报
+  `PUBLISH_SEQUENCE_CONFLICT`）；同一个补丁报 `already_published`；发布过程中文件被改动时报
+  `PUBLISH_CONFLICT`；非交互环境下没有 `--yes` 时只预览。签名和不签名的宿主走同一个流程，是否签名由宿主
+  决定；签名宿主取不到私钥时，在写入任何内容之前报 `KEYS_NOT_FOUND`。`publish --withdraw` 写入撤回文件，
+  发布 `patch --withdraw` 的输出也是如此。`publish` 不再读取 `url`。
+- `serve` 只是开发调试工具。它在 `127.0.0.1:8686`（USB 连接的 Android 设备通过 `adb reverse`）按原样提供
+  `patch` 为每个宿主写出的最新文件，补丁或撤回文件都可以，并在约 2 秒内发现每次新的 `patch`。它不再发布、
+  不写存储、不重新编号、不签名，`flutter_patcher.yaml` 中的 `store` 是什么都能用。某个宿主的最新输出没有
+  文件时（签名的宿主，而本机没有它的私钥），它会说明原因，不为该宿主提供任何文件；请 `keys import` 后重新
+  patch。
 - `checkUpdate()` 只读取 `<url>/<fileName>` 的前 146 字节（`Range` 请求）；那里没有文件（404）即为没有
   更新。既没有传入也没有构建时写入的 `url` 时，抛出 `PatcherException`。
 - 序号改为 Unix 秒：文件以封装时的时间编号。`currentVersion`、`PatchInfo.version`、
@@ -58,8 +67,10 @@
 - `FlutterPatcher.inspectPatch(header)`：根据文件的前 146 字节判断它对本宿主是否是新的。
 - `FlutterPatcher.applyPatchBytes(bytes)` 和 `applyPatchFile(path)`：安装 App 以任何方式拿到的补丁文件，
   或应用撤回。
-- `patch` 同时把补丁文件写入输出目录，并输出 `file` 和 `seq`。签名宿主而本机没有私钥时，`file` 为 null，
-  由 `publish` 封装。
+- `patch` 同时把补丁文件写入输出目录，并输出 `file`（完整路径）、`seq` 和 `signed`。签名宿主而本机没有私钥
+  时，`file` 为 null，由 `publish` 封装，或 `keys import` 私钥后重新 patch。
+- `patch android|ios --withdraw` 以同一个文件名写出该宿主的撤回文件：应用它的设备删除补丁，运行安装包自带的
+  版本。它只需要基线，不做任何编译。
 - `publish --seq <n>` 指定文件序号；默认为当前的 Unix 时间（秒），并且必须大于存储中现有文件的序号。
 - `serve` 支持 `checkUpdate` 发出的 `Range` 请求。
 

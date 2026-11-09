@@ -16,7 +16,7 @@
                                                               校验、安装；下次冷启动加载
 ```
 
-- **开发机**：`dart run flutter_patcher` 构建宿主和基线，再把每次改动生成为一个补丁文件 `<version_code>-<flavor>-<channel>-<abi>.fptc`。`publish` 把它写入存储（本地目录或 S3）；开发时由 `serve` 代劳。**基线存储**保存每个已发布版本的构建记录，只有 CLI 使用。
+- **开发机**：`dart run flutter_patcher` 构建宿主和基线，再把每次改动生成为一个补丁文件 `<version_code>-<flavor>-<channel>-<abi>.fptc`。这个文件可以用任何方式分发；可选的 `publish` 把它写入存储（本地目录或 S3），开发时由 `serve` 把最新的文件提供给调试设备。**基线存储**保存每个已发布版本的构建记录，只有 CLI 使用。
 - **App 获取文件的地方**：插件不负责获取补丁。App 用任何方式拿到文件，交给 `applyPatchBytes` 或 `applyPatchFile` 即可。`checkUpdate` 和 `applyPatch` 只是一个可选的内置下载器，用于放在某个 URL 下的文件。
 - **设备**：原生代码逐项校验文件后安装，下次冷启动时加载。
 

@@ -25,7 +25,7 @@ A patch is one file, `<version_code>-<flavor>-<channel>-<abi>.fptc`, such as `7-
    url: https://cdn.example.com/my-app
    ```
 
-   `build` writes it into the app; `checkUpdate()` then requests `https://cdn.example.com/my-app/<file name>`.
+   `build` writes it into the app; `checkUpdate()` then requests `https://cdn.example.com/my-app/<file name>`. The file name is the one `patch` wrote, and `(await FlutterPatcher.patchTarget).fileName` on the device.
 
 2. The host must meet these requirements:
 
@@ -83,7 +83,7 @@ Signing needs the private key on the machine that seals the file. `patch` and `p
 3. `signing.command` in `flutter_patcher.yaml`, an external signer such as a KMS (it reads the bytes on stdin and prints a base64 Ed25519 signature; `FLUTTER_PATCHER_SIGN_ROLE` is `patch`)
 4. The key store, `~/.flutter_patcher/keys/`
 
-Move the key with `keys export --out <file>` and `keys import <file>`; `keys status` shows which source would sign. Without the key on a machine, `patch` there writes only the draft (`"file": null`, with a notice), and `publish --patch <output>` on a machine with the key seals and signs it.
+Move the key with `keys export --out <file>` and `keys import <file>`; `keys status` shows which source would sign. Without the key on a machine, `patch` there writes only the draft (`"file": null`, with a notice): `keys import` the key and patch again, or run `publish --patch <output>` on a machine with the key, which seals and signs it.
 
 **To stop signing**: remove the `trust:` entry from `flutter_patcher.yaml`; hosts built from then on accept unsigned files. Signed hosts already shipped are unaffected: patching them still needs the original private key, so keep it for as long as they may need patches.
 
@@ -99,7 +99,7 @@ Submit the generated `app-release.apk` (or `app-release.ipa`) to the store as us
 
 **Check**: it prints `"status":"build_archived"`; `WARNING: URL_LOCAL` is gone once `url` is set, `WARNING: BASELINE_STORE_LOCAL` once `baseline_store` is set, and `WARNING: UNSIGNED` once signing is on.
 
-## 5. Make and Publish a Patch
+## 5. Make and Deliver a Patch
 
 1. Fix the code. Do not change `version` in `pubspec.yaml`.
 2. Make the patch:
@@ -108,19 +108,23 @@ Submit the generated `app-release.apk` (or `app-release.ipa`) to the store as us
    dart run flutter_patcher patch android    # patch ios runs on any supported host; no Mac needed
    ```
 
-3. Publish it to the store:
+   It prints `file`, the full path of the patch file, numbered with the current Unix time in seconds and signed when the host is signed.
+
+3. Put that file where the app gets it, under its own name: at `<url>/<file name>` for `checkUpdate`, or in your own delivery. Nothing else is required.
+
+4. Optional: let `publish` write it to a store instead:
 
    ```bash
    dart run flutter_patcher publish
    ```
 
-   `publish` takes the newest patch output (or `--patch <dir>`), seals it again with a new sequence, the current Unix time in seconds (or `--seq N`), signs it when the host is signed, and writes `<file name>.fptc` to the store. It shows a summary and waits for `y`; in CI or other unattended runs add `--yes`. Without `--yes` and without a terminal it only previews (`"status":"preview"`) and writes nothing.
+   `publish` takes the newest patch output (or `--patch <dir>`), seals it again with a sequence numbered at publish time, the current Unix time in seconds (or `--seq N`), so files are ordered by the order you publish them, signs it when the host is signed, and writes `<file name>.fptc` to the store. It shows a summary and waits for `y`; in CI or other unattended runs add `--yes`. Without `--yes` and without a terminal it only previews (`"status":"preview"`) and writes nothing.
 
-4. Put the file where the app gets it. The store is `.flutter_patcher/updates/` by default: upload `.flutter_patcher/updates/<file name>.fptc` to `url` (`publish` prints this reminder when `url` is set). With `store: s3://my-bucket/my-app` in `flutter_patcher.yaml`, `publish` writes to the bucket itself, through the AWS CLI (`FLUTTER_PATCHER_S3_ENDPOINT` for S3-compatible storage such as R2); serve that prefix publicly at `url`. Apps with their own delivery take the file from the store or from the patch output.
+   The store is `.flutter_patcher/updates/` by default: upload `.flutter_patcher/updates/<file name>.fptc` to `url` (`publish` prints this reminder when `url` is set). With `store: s3://my-bucket/my-app` in `flutter_patcher.yaml`, `publish` writes to the bucket itself, through the AWS CLI (`FLUTTER_PATCHER_S3_ENDPOINT` for S3-compatible storage such as R2); serve that prefix publicly at `url`. Apps with their own delivery take the file from the store or from the patch output.
 
 **Check**:
 
-- `publish` prints `"status":"published"`, the `file` name and the `seq`.
+- `patch` prints `"status":"patch_created"` and `file`; `publish`, when used, prints `"status":"published"`, the `file` name and the `seq`.
 - `curl -sI <url>/<file name>` returns `200`.
 - An app of this build takes the patch at its next check and runs it from the next cold start; `FlutterPatcher.currentVersion` then returns the `seq`.
 
@@ -131,24 +135,24 @@ Submit the generated `app-release.apk` (or `app-release.ipa`) to the store as us
 | `PUBLISH_CONFLICT` | The file in the store changed while publishing, for example another machine published. Run `publish` again |
 | `KEYS_NOT_FOUND` | The host is signed and this machine has no private key for it; see [step 3](#3-optional-enable-signing) |
 
-Each build has its own file, so patches for several live builds coexist. To patch an older live release, check out its code and pass its build number: `patch android --version-code <build number>`, then publish as above.
+Each build has its own file, so patches for several live builds coexist. To patch an older live release, check out its code and pass its build number: `patch android --version-code <build number>`, then deliver it as above.
 
 ## Withdrawing and Rolling Back
 
 | Goal | Do |
 |---|---|
-| Withdraw: devices go back to the version in the installed app | `publish --withdraw` (add `--patch <dir>` for another build than the newest patch's). It writes a withdrawal file, a file without payload, with a new sequence. A device that applies it drops its patch; the next cold start runs the installed version |
-| Go back to an earlier good patch | `publish --patch .dart_tool/flutter_patcher/patches/<its output>`: the old patch is sealed again with a new, higher sequence and reaches devices as a regular update |
+| Withdraw: devices go back to the version in the installed app | `patch android --withdraw` (or `ios`; add `--version-code <n>` for an older build), then deliver the file it prints like a patch. Or `publish --withdraw` (add `--patch <dir>` for another build than the newest patch's), which writes it to the store. Either way it is a withdrawal file, a file without payload, with a new sequence. A device that applies it drops its patch; the next cold start runs the installed version |
+| Go back to an earlier good patch | `publish --patch .dart_tool/flutter_patcher/patches/<its output>`: the old patch is sealed again with a new, higher sequence and reaches devices as a regular update. Or check out that code and run `patch` again |
 | Stop distributing | Stop offering the file (delete it from the host or from your API's answers). Devices that installed the patch keep it; this is not a withdrawal |
 | One device | Call `FlutterPatcher.rollback()` in the app: it deletes the patch on that device and does not blacklist it |
 
-Upload the new file as in step 5 after each `publish`. Uploading an old `.fptc` again does nothing: its sequence is not above the one devices already accepted. If an earlier patch output was deleted, check out that code and run `patch` again.
+Deliver the new file as in step 5 after each `patch --withdraw` or `publish`. Uploading an old `.fptc` again does nothing: its sequence is not above the one devices already accepted. If an earlier patch output was deleted, check out that code and run `patch` again.
 
 **How devices decide**: a device installs a file only if it belongs to this build, is intact, is signed when the host is signed, and is numbered above every file it accepted before. Patches and withdrawals take effect at the next cold start.
 
 **Check**:
 
-- Withdrawal: the CLI prints `"action":"withdraw"`. After a cold start, `FlutterPatcher.currentVersion` is `null` and `lastBootDiagnostic` is `noPatch`.
+- Withdrawal: `patch --withdraw` prints `"status":"withdrawal_created"`, `publish --withdraw` prints `"action":"withdraw"`. After a cold start, `FlutterPatcher.currentVersion` is `null` and `lastBootDiagnostic` is `noPatch`.
 - Earlier patch: the CLI prints a `seq` above the bad patch's. After a cold start, `currentVersion` is that sequence and the earlier code runs.
 
 ## Staged Rollout

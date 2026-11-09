@@ -124,7 +124,7 @@ When the change includes something a patch cannot carry, such as native code, th
    dart run flutter_patcher serve
    ```
 
-   `serve` publishes the newest patch to the project's store, `.flutter_patcher/updates/`, serves the `.fptc` files there at `http://127.0.0.1:8686`, and maps that port onto the phone with `adb reverse`.
+   `serve` serves the newest file `patch` wrote, exactly as written, at `http://127.0.0.1:8686`, and maps that port onto the phone with `adb reverse`. It is a debugging aid only: it publishes, numbers and signs nothing.
 
 2. Open the app on the phone; if it is open, swipe it away from recent apps and open it again. It runs `checkForPatch()` as it starts.
 
@@ -134,7 +134,7 @@ When the change includes something a patch cannot carry, such as native code, th
 
   ```text
   Android device <serial> reaches this computer at 127.0.0.1:8686
-  Offering patch <seq> (1-default-production-arm64-v8a.fptc)
+  Offering patch <seq> (1-default-production-arm64-v8a.fptc, unsigned)
   A device checked for updates
   A device downloaded 1-default-production-arm64-v8a.fptc
   ```
@@ -149,9 +149,26 @@ When the change includes something a patch cannot carry, such as native code, th
 
 **Check**: the screen shows the text you changed in Step 3.
 
-For every later change: keep `serve` running, run `patch android`, and repeat Steps 4 and 5. `serve` prints `Offering patch <seq> ...` with a higher sequence each time; a device installs only a file numbered above every file it accepted before.
+For every later change: keep `serve` running, run `patch android`, and repeat Steps 4 and 5. `serve` picks up the new file within about 2 seconds and prints `Offering patch <seq> ...` with a higher sequence each time; a device installs only a file numbered above every file it accepted before.
 
-## Fetching the file yourself
+## Going back to the installed version
+
+```bash
+dart run flutter_patcher patch android --withdraw
+```
+
+This writes a withdrawal of the build from Step 2 under the same file name; it needs only the baseline, nothing is compiled. `serve` prints `Offering a withdrawal of <file> ...`. Open the app so it applies it, then cold start it: it runs the installed version again. `FlutterPatcher.rollback()` does the same on one phone only.
+
+## Self-hosted delivery
+
+`build` and `patch` are all you need to ship patches yourself; `serve` is only for development. Put the file `patch` wrote anywhere, such as your own server, a CDN or any other channel, and either:
+
+- let the built-in downloader fetch it: `checkUpdate(url: …)`, or `checkUpdate()` with `url` set in `flutter_patcher.yaml` before `build`. The file must be at `<url>/<file name>`, where the file name is `(await FlutterPatcher.patchTarget).fileName`. The address must be HTTPS, except the device itself (`127.0.0.1`, `[::1]`, `localhost`); `404` means no update; redirects are not followed; range support is not required;
+- or fetch it yourself and pass it to `applyPatchBytes` / `applyPatchFile`, as below.
+
+When `patch` prints `"file":null`, the host is signed and this machine lacks its patch key: run `keys import` and patch again.
+
+### Fetching the file yourself
 
 The plugin does not have to download anything. An app that gets patch files from its own API, a push message, a file picker or its assets passes the bytes to `applyPatchBytes` (or a path to `applyPatchFile`). `patchTarget` says which file this build needs. A sketch with the `http` package:
 

@@ -85,7 +85,13 @@ dart run flutter_patcher patch android   # 写出 <version_code>-<flavor>-<chann
 dart run flutter_patcher serve           # 开发阶段：通过 USB 在 127.0.0.1:8686 提供补丁
 ```
 
-补丁就是一个 `.fptc` 文件。上线时，`publish` 把它写入你的存储，再由你放到 App 能拿到的地方：给 `checkUpdate` 用的 `url`（HTTPS），或者 App 自己获取的任何位置，拿到后交给 `FlutterPatcher.applyPatchBytes`。
+补丁就是一个 `.fptc` 文件；`patch` 在 `file` 中输出它的路径。`serve` 只是开发阶段的调试工具。任何分发方式都可以：把文件放在 HTTPS 服务的 `<url>/<文件名>` 供 `checkUpdate` 使用，或者从你自己的服务器、CDN 或任何渠道拿到它，再交给插件：
+
+```dart
+await FlutterPatcher.applyPatchBytes(bytes);   // 或 FlutterPatcher.applyPatchFile(path)
+```
+
+`(await FlutterPatcher.patchTarget).fileName` 是这个宿主接收的文件名。要回到安装包自带的版本，`patch android --withdraw` 以同一个文件名写出撤回文件：应用它的设备重新运行安装包自带的版本。`publish` 把文件写入存储、按发布先后编号，是可选的。
 
 起步不需要密钥，也不需要 `flutter_patcher.yaml`。签名是可选的，推荐开启：在要上线的那次构建之前执行 `dart run flutter_patcher keys init`。
 

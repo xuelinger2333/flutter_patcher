@@ -109,7 +109,7 @@ Every install goes through the same native check, whichever API hands over the f
 
 - `acceptedSeq` is kept per host build. A new build of the app (a new fingerprint) starts at 0 and drops the previous build's patch.
 - An unsigned host ignores the signature field and also accepts signed files.
-- `rollback()` deletes the installed patch and keeps `acceptedSeq`, so the same file cannot be installed again; publish the output again (`publish --patch <dir>`) for a new `seq`.
+- `rollback()` deletes the installed patch and keeps `acceptedSeq`, so the same file cannot be installed again; run `patch` again, or publish the output again (`publish --patch <dir>`), for a new `seq`.
 - At each cold start the installed file is verified again before it loads.
 
 ## Patch files
@@ -224,7 +224,7 @@ Downloads the file `checkUpdate` found to a temporary file and installs it as `a
 
 | Value | Meaning | What to do |
 |---|---|---|
-| `invalidArgs` | The file's `seq` is not above `acceptedSeq`: an older patch or withdrawal, or the same patch after `rollback`. With `applyPatch`, also a `PatchInfo` that `checkUpdate` did not return | Publish the patch output again (`publish --patch <dir>`) for a new `seq` |
+| `invalidArgs` | The file's `seq` is not above `acceptedSeq`: an older patch or withdrawal, or the same patch after `rollback`. With `applyPatch`, also a `PatchInfo` that `checkUpdate` did not return | Run `patch` again, or publish the patch output again (`publish --patch <dir>`), for a new `seq` |
 | `blacklisted` | This patch made a start fail and is blacklisted on this device | Publish a fixed patch |
 | `network` | `applyPatch` could not download the file | Retry later |
 | `signatureInvalid` | Not this host's file (another build, flavor, channel or ABI), damaged or truncated, or not signed by the host's patch key | Do not retry; deliver the file named `patchTarget.fileName` of this build, signed by its key |

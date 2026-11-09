@@ -55,7 +55,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 ### `patch` 成功但 `"file":null`
 
-宿主带补丁密钥（`trust.patch`）构建，而本机没有任何来源提供它的私钥。草稿已在输出目录中。请在有私钥的机器上运行 `publish --patch <输出目录>`，或用 `keys import <密钥包>` 把私钥带到本机后运行 `publish`。`keys status` 会显示私钥将从哪里来。
+宿主带补丁密钥（`trust.patch`）构建，而本机没有任何来源提供它的私钥。草稿已在输出目录中。请用 `keys import <密钥包>` 把私钥带到本机后重新运行 `patch`，或在有私钥的机器上运行 `publish --patch <输出目录>`。`keys status` 会显示私钥将从哪里来。
 
 ### `HOST_UNSUPPORTED`：当前主机不支持该操作
 
@@ -65,10 +65,10 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 ### 客户端调用 `checkUpdate` 始终检测不到更新
 
-- `checkUpdate` 请求的是 `<url>/<fileName>`：把 `FlutterPatcher.patchTarget.fileName` 与存储中的文件名对比，把 `url` 与文件实际所在的地址对比。调用时没有传 `url` 时，用的是构建时 `flutter_patcher.yaml` 中的 `url`（修改后需重新构建）。
+- `checkUpdate` 请求的是 `<url>/<fileName>`：把 `(await FlutterPatcher.patchTarget).fileName` 与你提供的文件名对比，把 `url` 与文件实际所在的地址对比。调用时没有传 `url` 时，用的是构建时 `flutter_patcher.yaml` 中的 `url`（修改后需重新构建）。
 - 填了 `url` 时，设备读取的不是 `file://` 发布存储本身：每次 `publish` 后请把文件上传到 `<url>/<fileName>`。
-- 文件必须比 `patchTarget.acceptedSeq` 新。时钟偏慢的电脑封装的文件、重新上传的旧文件都不算新；请重新 `publish`（必要时用大于 `acceptedSeq` 的 `--seq`）。
-- 文件必须属于设备上安装的构建（`patchTarget.versionCode`、`flavor`、`channel`、`abi`、`fingerprint`）。用户从应用商店升级 App 后，需要为新构建单独生成并发布补丁。
+- 文件必须比 `patchTarget.acceptedSeq` 新。时钟偏慢的电脑封装的文件、重新上传的旧文件都不算新；请重新执行 `patch`，或重新 `publish`（必要时用大于 `acceptedSeq` 的 `--seq`）。
+- 文件必须属于设备上安装的构建（`patchTarget.versionCode`、`flavor`、`channel`、`abi`、`fingerprint`）。用户从应用商店升级 App 后，需要为新构建单独生成并分发补丁。
 - CDN 可能仍在返回之前的文件；请缩短 `.fptc` 文件的缓存时间。
 - 该地址必须通过 HTTPS 直接返回内容，不使用 `3xx` 重定向，文件不存在时返回 `404`。
 - 想知道设备如何看待这个文件，可以自己取它的前 146 字节传给 `FlutterPatcher.inspectPatch`：`reason` 会说明它为什么不是新的。
@@ -100,12 +100,12 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `DOCTOR_FAILED` | `doctor` 遇到意外错误 | 查看 `message` |
 | `INTERFACE_INPUT_MISSING`<br>`INTERFACE_GENERATION_FAILED`<br>`INTERFACE_INDEX_FAILED`<br>`INTERFACE_VALIDATION_FAILED`<br>`INTERFACE_NOT_CONVERGED`<br>`INTERFACE_NO_PROGRESS` | 维护者命令 `interface` 未能生成或校验宿主接口 | 只有适配新 Flutter 版本的维护者会运行它；查看 `message` |
 
-### 2. 密钥与签名（`keys`、`patch`、`publish`、`serve`）
+### 2. 密钥与签名（`keys`、`patch`、`publish`）
 
 | 错误码 | 含义 | 处理方法 |
 |---|---|---|
 | `KEYS_NOT_CONFIGURED` | 在 `flutter_patcher.yaml` 没有 `trust.patch` 的项目中运行 `keys export` | 运行 `keys init`，或 `keys import` 项目的密钥包 |
-| `KEYS_NOT_FOUND` | 签名宿主的文件必须签名，但没有任何来源提供私钥（`publish`、`serve`）；`--key-file` 或 `keys import` 指定的文件不存在；或 `keys export` 在本机密钥库中找不到密钥 | 运行 `keys import <文件>`、设置 `FLUTTER_PATCHER_KEYS` 或配置 `signing.command`；`keys status` 会显示本机有什么 |
+| `KEYS_NOT_FOUND` | 签名宿主的文件必须签名，但没有任何来源提供私钥（`publish`）；`--key-file` 或 `keys import` 指定的文件不存在；或 `keys export` 在本机密钥库中找不到密钥 | 运行 `keys import <文件>`、设置 `FLUTTER_PATCHER_KEYS` 或配置 `signing.command`；`keys status` 会显示本机有什么 |
 | `KEYS_MISMATCH` | 第一个密钥来源中的密钥不是宿主的 `trust.patch`；`keys import` 的密钥不是 `flutter_patcher.yaml` 记录的那把；或已保存密钥的签名校验不通过 | 使用项目自己的密钥。宿主只接受构建时的那把密钥；换新密钥需要新的宿主 |
 | `KEYS_ALREADY_CONFIGURED` | 项目已有补丁密钥，或项目中还有 `flutter_patcher_keys/` 目录时运行 `keys init` | 用 `keys import <密钥包>` 把现有密钥带到本机；旧目录用 `keys import flutter_patcher_keys` |
 | `KEYS_BUNDLE_INVALID` | 文件不是密钥包、不含补丁密钥，或目录中没有 `patch/private-key.base64`；`~/.flutter_patcher/keys/` 中的文件损坏时也会报此错误（`message` 中给出文件名） | 使用 `keys export` 写出的文件，或含补丁密钥的 1.0 密钥包 |
@@ -190,10 +190,9 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `PUBLISH_STORE_UNAVAILABLE` | AWS CLI 不存在或执行失败、存储不支持条件写入，或角色缺少 `s3:ListBucket`（此时不存在的文件会被当作拒绝访问） | 检查 AWS CLI 版本、凭据、权限和 `FLUTTER_PATCHER_S3_ENDPOINT` |
 | `PUBLISH_STORE_INVALID` | `s3://` 存储地址无效（S3 前缀必须位于存储桶根目录之下，且只含字母、数字、`_` 和 `-`）、存储中的文件超过 320 MiB，或 S3 响应中没有 ETag | 按 `message` 修正 `store`；替换过大的文件 |
 | `PUBLISH_FAILED` | 未预期的发布失败，包括存储中与该宿主同名的文件不是 FPTC v1 文件 | 删除或替换存储中的那个文件；其他情况检查存储并查看 `message` |
-| `SERVE_CONFIG_INVALID` | `serve` 只支持 `file://` 发布存储 | 本地开发时去掉 `flutter_patcher.yaml` 中的远端 `store` |
 | `SERVE_PORT_BUSY` | 另一个程序占用了 `serve` 使用的端口 | 停止该程序，或运行 `serve --port <端口>`，并用 `adb reverse tcp:8686 tcp:<端口>` 把手机的 `8686` 映射过去 |
 
-发布某个输出失败时 `serve` 不会退出：它打印 `Not offered: <错误码>: <说明>`（错误码为上表之一），并继续提供存储中已有的文件。
+某个宿主最新的 `patch` 输出没有文件时（签名的宿主，而本机没有它的私钥），`serve` 打印 `Not offering <文件名>: ...`，不为该宿主提供任何文件：请 `keys import` 后重新 patch。它不会退回提供更早的文件。
 
 ### 7. 警告
 

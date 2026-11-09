@@ -56,7 +56,7 @@
 
 ### 怎么回退或撤回补丁？
 
-- **回到安装包自带的版本**：`dart run flutter_patcher publish --withdraw` 以同一个文件名写入撤回文件；应用它的设备在下次冷启动时不再运行补丁。
+- **回到安装包自带的版本**：`dart run flutter_patcher patch android --withdraw`（或 `ios`）以同一个文件名写出撤回文件；像补丁一样分发它，或改用 `publish --withdraw` 写入存储。应用它的设备在下次冷启动时不再运行补丁。
 - **回到之前的某个补丁**：`dart run flutter_patcher publish --patch <那个补丁的输出目录>`，以新序号重新封装。
 - **单台设备**：`FlutterPatcher.rollback()`。
 
@@ -68,7 +68,7 @@
 
 ### 需要自己的后端吗？
 
-不需要。补丁文件是静态文件：`publish` 把 `<fileName>.fptc` 写在存储的根目录下，任何支持 HTTPS 的静态托管都能提供它，例如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN。`.fptc` 文件要设置较短的缓存时间：每次发布都会替换同名文件。见[生产部署](production-playbook-zh.md)。
+不需要。补丁文件是静态文件：`patch` 把 `<fileName>.fptc` 写在输出目录中（使用 `publish` 时还写在存储的根目录下），任何支持 HTTPS 的静态托管都能提供它，例如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN。`.fptc` 文件要设置较短的缓存时间：每个新补丁都会替换同名文件。见[生产部署](production-playbook-zh.md)。
 
 ### 我的 1.0 宿主会怎样？
 

@@ -25,7 +25,7 @@
    url: https://cdn.example.com/my-app
    ```
 
-   `build` 把它写进 App；之后 `checkUpdate()` 请求 `https://cdn.example.com/my-app/<文件名>`。
+   `build` 把它写进 App；之后 `checkUpdate()` 请求 `https://cdn.example.com/my-app/<文件名>`。文件名就是 `patch` 写出的文件名，在设备上即 `(await FlutterPatcher.patchTarget).fileName`。
 
 2. 托管方必须满足：
 
@@ -83,7 +83,7 @@ dart run flutter_patcher keys init
 3. `flutter_patcher.yaml` 中的 `signing.command`，即外部签名程序，例如 KMS（从 stdin 读取待签名字节，输出 base64 的 Ed25519 签名；`FLUTTER_PATCHER_SIGN_ROLE` 为 `patch`）
 4. 本机密钥库 `~/.flutter_patcher/keys/`
 
-用 `keys export --out <文件>` 和 `keys import <文件>` 在机器间转移密钥；`keys status` 显示会由哪个来源签名。机器上没有私钥时，`patch` 只写出草稿（`"file": null`，并附提示），再在有私钥的机器上执行 `publish --patch <输出目录>` 完成封装与签名。
+用 `keys export --out <文件>` 和 `keys import <文件>` 在机器间转移密钥；`keys status` 显示会由哪个来源签名。机器上没有私钥时，`patch` 只写出草稿（`"file": null`，并附提示）：`keys import` 私钥后重新 patch，或在有私钥的机器上执行 `publish --patch <输出目录>` 完成封装与签名。
 
 **关闭签名时**：从 `flutter_patcher.yaml` 中删除 `trust:` 一项，此后构建的宿主不再要求签名。已上线的签名宿主不受影响：给它们打补丁仍然需要原来的私钥，请一直保管到这些宿主不再需要补丁为止。
 
@@ -99,7 +99,7 @@ dart run flutter_patcher build android    # build ios 必须在 Apple Silicon Ma
 
 **验证**：输出 `"status":"build_archived"`；设置 `url` 后不再出现 `WARNING: URL_LOCAL`，设置 `baseline_store` 后不再出现 `WARNING: BASELINE_STORE_LOCAL`，开启签名后不再出现 `WARNING: UNSIGNED`。
 
-## 5. 生成并发布补丁
+## 5. 生成并分发补丁
 
 1. 修改代码。不要改 `pubspec.yaml` 中的 `version`。
 2. 生成补丁：
@@ -108,19 +108,23 @@ dart run flutter_patcher build android    # build ios 必须在 Apple Silicon Ma
    dart run flutter_patcher patch android    # patch ios 可在任一支持的主机上运行，不需要 Mac
    ```
 
-3. 发布到存储：
+   它在 `file` 中输出补丁文件的完整路径；文件以当前 Unix 秒数编号，宿主签名时一并签名。
+
+3. 把这个文件按原文件名放到 App 获取的地方：供 `checkUpdate` 使用的 `<url>/<文件名>`，或你自己的分发渠道。除此之外不需要别的。
+
+4. 可选：改由 `publish` 写入存储：
 
    ```bash
    dart run flutter_patcher publish
    ```
 
-   `publish` 取最新的补丁输出（或 `--patch <目录>`），用新的序号重新封装（默认是当前 Unix 秒数，也可用 `--seq N` 指定），宿主签名时一并签名，然后把 `<文件名>.fptc` 写入存储。它会先显示摘要并等待输入 `y`；在 CI 等无人值守的环境中加 `--yes`。没有 `--yes` 又没有终端时只做预览（`"status":"preview"`），不写入任何内容。
+   `publish` 取最新的补丁输出（或 `--patch <目录>`），用发布时编号的序号重新封装（默认是当前 Unix 秒数，也可用 `--seq N` 指定），因此文件按发布的先后排序；宿主签名时一并签名，然后把 `<文件名>.fptc` 写入存储。它会先显示摘要并等待输入 `y`；在 CI 等无人值守的环境中加 `--yes`。没有 `--yes` 又没有终端时只做预览（`"status":"preview"`），不写入任何内容。
 
-4. 把文件放到 App 获取的地方。存储默认是 `.flutter_patcher/updates/`：把 `.flutter_patcher/updates/<文件名>.fptc` 上传到 `url`（设置了 `url` 时 `publish` 会给出这条提示）。在 `flutter_patcher.yaml` 中设置 `store: s3://my-bucket/my-app` 后，`publish` 通过 AWS CLI 直接写入存储桶（S3 兼容存储如 R2 用 `FLUTTER_PATCHER_S3_ENDPOINT` 指定地址）；再把这个前缀以 `url` 公开提供。自己下发的 App 从存储或补丁输出目录中取文件即可。
+   存储默认是 `.flutter_patcher/updates/`：把 `.flutter_patcher/updates/<文件名>.fptc` 上传到 `url`（设置了 `url` 时 `publish` 会给出这条提示）。在 `flutter_patcher.yaml` 中设置 `store: s3://my-bucket/my-app` 后，`publish` 通过 AWS CLI 直接写入存储桶（S3 兼容存储如 R2 用 `FLUTTER_PATCHER_S3_ENDPOINT` 指定地址）；再把这个前缀以 `url` 公开提供。自己下发的 App 从存储或补丁输出目录中取文件即可。
 
 **验证**：
 
-- `publish` 输出 `"status":"published"`、文件名 `file` 和序号 `seq`。
+- `patch` 输出 `"status":"patch_created"` 和 `file`；使用 `publish` 时，它输出 `"status":"published"`、文件名 `file` 和序号 `seq`。
 - `curl -sI <url>/<文件名>` 返回 `200`。
 - 这次构建的 App 在下次检查时拿到补丁，下次冷启动起运行它；此时 `FlutterPatcher.currentVersion` 返回这个 `seq`。
 
@@ -131,24 +135,24 @@ dart run flutter_patcher build android    # build ios 必须在 Apple Silicon Ma
 | `PUBLISH_CONFLICT` | 发布过程中存储里的文件变了，例如另一台机器刚发布过。重新执行 `publish` |
 | `KEYS_NOT_FOUND` | 宿主是签名的，而这台机器上没有对应的私钥，见[第 3 步](#3-可选开启签名) |
 
-每个构建有自己的文件，多个线上版本的补丁可以并存。要给较早的线上版本打补丁，检出该版本的代码，并传入它的构建号：`patch android --version-code <构建号>`，再按上面的方法发布。
+每个构建有自己的文件，多个线上版本的补丁可以并存。要给较早的线上版本打补丁，检出该版本的代码，并传入它的构建号：`patch android --version-code <构建号>`，再按上面的方法分发。
 
 ## 撤回与回退
 
 | 目标 | 做法 |
 |---|---|
-| 撤回：设备回到安装包自带的版本 | `publish --withdraw`（针对最新补丁以外的构建时加 `--patch <目录>`）。它写出一个带新序号、不含 payload 的撤回文件。应用了它的设备删除补丁，下次冷启动运行安装包自带的版本 |
-| 回到之前的好补丁 | `publish --patch .dart_tool/flutter_patcher/patches/<它的输出目录>`：旧补丁用新的、更大的序号重新封装，作为普通更新下发到设备 |
+| 撤回：设备回到安装包自带的版本 | `patch android --withdraw`（或 `ios`；针对较早的构建时加 `--version-code <数字>`），再像补丁一样分发它输出的文件。也可以用 `publish --withdraw`（针对最新补丁以外的构建时加 `--patch <目录>`）写入存储。两种方式写出的都是带新序号、不含 payload 的撤回文件。应用了它的设备删除补丁，下次冷启动运行安装包自带的版本 |
+| 回到之前的好补丁 | `publish --patch .dart_tool/flutter_patcher/patches/<它的输出目录>`：旧补丁用新的、更大的序号重新封装，作为普通更新下发到设备。也可以检出那时的代码重新执行 `patch` |
 | 停止分发 | 不再提供文件（从托管处删除，或你的接口不再返回）。已安装补丁的设备不受影响；这不是撤回 |
 | 单台设备 | 在 App 中调用 `FlutterPatcher.rollback()`：删除这台设备上的补丁，不拉黑 |
 
-每次 `publish` 之后，按第 5 步上传新文件。重新上传旧的 `.fptc` 不会生效：它的序号不高于设备已经接受的序号。之前的补丁输出被删除时，检出那时的代码重新执行 `patch` 即可。
+每次 `patch --withdraw` 或 `publish` 之后，按第 5 步分发新文件。重新上传旧的 `.fptc` 不会生效：它的序号不高于设备已经接受的序号。之前的补丁输出被删除时，检出那时的代码重新执行 `patch` 即可。
 
 **设备如何判断**：设备只安装属于本构建、内容完整、（宿主签名时）签名有效、且序号高于此前接受过的所有文件的文件。补丁和撤回都在下次冷启动生效。
 
 **验证**：
 
-- 撤回：CLI 输出 `"action":"withdraw"`。冷启动后，`FlutterPatcher.currentVersion` 为 `null`，`lastBootDiagnostic` 为 `noPatch`。
+- 撤回：`patch --withdraw` 输出 `"status":"withdrawal_created"`，`publish --withdraw` 输出 `"action":"withdraw"`。冷启动后，`FlutterPatcher.currentVersion` 为 `null`，`lastBootDiagnostic` 为 `noPatch`。
 - 回到之前的补丁：CLI 输出的 `seq` 高于问题补丁。冷启动后，`currentVersion` 为这个序号，运行的是之前的代码。
 
 ## 灰度发布

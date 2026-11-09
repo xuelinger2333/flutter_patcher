@@ -106,7 +106,6 @@ For an S3-compatible service other than AWS, set `FLUTTER_PATCHER_S3_ENDPOINT` t
 
 - The prefix is required (not the bucket root), and each of its segments uses only letters, digits, `_` and `-`.
 - `publish` reads the file there first and writes only when it is unchanged since: two publishes at once fail one of them with `PUBLISH_CONFLICT`; publish it again.
-- `serve` offers only a `file://` store; remove `store` while developing.
 
 ## Serving Patch Files from Your Own API
 

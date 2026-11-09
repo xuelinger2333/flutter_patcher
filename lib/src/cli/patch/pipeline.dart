@@ -235,8 +235,9 @@ class PatchPipeline {
   /// Builds [req]'s patch of the [resolved] release.
   Future<Map<String, Object?>> patch(
     PatchRequest req,
-    ResolvedRelease resolved,
-  ) async {
+    ResolvedRelease resolved, {
+    Sealer? seal,
+  }) async {
     await req.validate();
     for (final protected in [sdk.root, managed]) {
       require(
@@ -378,23 +379,11 @@ class PatchPipeline {
       await workspace.verifyOriginals();
       await baselines.recheck(resolved, sdkRoot: sdk.root);
       final so = resolved.strategy == 'so';
-      final policy = HostPolicy.parse(
-        await File(
-          p.join(
-            so ? resolved.releaseRoot : resolved.compileRoot,
-            'host_policy.json',
-          ),
-        ).readAsString(),
-      );
-      final output = await writeOutput(req, draft, {
+      final policy = await hostPolicyOf(resolved);
+      final output = await writeOutput(req, draft, seal, {
         'status': 'patch_created',
-        // What publish signs this patch for.
-        'scope': {
-          for (final key in scopeKeys)
-            key: key == 'fingerprint'
-                ? resolved.fingerprint
-                : policy.fields[key],
-        },
+        // The host this patch is for, which names its file.
+        'scope': hostScope(policy, resolved.fingerprint),
         // The host's patch key, or `-`: whether this patch must be signed.
         'patch_key': policy.patchKey,
         'platform': req.platform,
@@ -472,16 +461,19 @@ class PatchPipeline {
     trace('source scan');
   }
 
-  /// Writes the draft and report into the request's new output directory.
+  /// Writes the draft and report into the request's new output directory,
+  /// with what [seal] adds.
   Future<Map<String, Object?>> writeOutput(
     PatchRequest req,
     PatchDraft draft,
+    Sealer? seal,
     Map<String, Object?> report,
   ) async {
     final pending = temporaryName(p.absolute(req.output));
     await Directory(pending).create(recursive: true);
     await draft.write(pending);
     await writeObject(p.join(pending, 'patch.json'), report);
+    final sealed = seal == null ? const {} : await seal(pending, report);
     await rejectLinks(req.output);
     require(
       await FileSystemEntity.type(req.output, followLinks: false) ==
@@ -490,6 +482,33 @@ class PatchPipeline {
       'Output appeared during compilation',
     );
     await Directory(pending).renameRetry(p.absolute(req.output));
-    return {...report, 'output': p.absolute(req.output)};
+    return {...report, 'output': p.absolute(req.output), ...sealed};
   }
 }
+
+/// Adds the file devices take to a finished output in [dir] before it
+/// appears, returning what to report. The patch layer never signs; its
+/// caller may.
+typedef Sealer = Future<Map<String, Object?>> Function(
+  String dir,
+  Map<String, Object?> report,
+);
+
+/// The policy [resolved]'s host was built with.
+Future<HostPolicy> hostPolicyOf(ResolvedRelease resolved) async =>
+    HostPolicy.parse(
+      await File(
+        p.join(
+          resolved.strategy == 'so'
+              ? resolved.releaseRoot
+              : resolved.compileRoot,
+          'host_policy.json',
+        ),
+      ).readAsString(),
+    );
+
+/// The host of [policy] built as [fingerprint], which names its files.
+Map<String, String> hostScope(HostPolicy policy, String fingerprint) => {
+  for (final key in scopeKeys)
+    key: key == 'fingerprint' ? fingerprint : policy.fields[key]!,
+};

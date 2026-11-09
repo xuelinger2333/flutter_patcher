@@ -128,7 +128,7 @@ adb install <output>/app-release.apk
    dart run flutter_patcher serve
    ```
 
-   `serve` 把最新的补丁发布到项目的存储 `.flutter_patcher/updates/`，在 `http://127.0.0.1:8686` 提供其中的 `.fptc` 文件，并用 `adb reverse` 把这个端口映射到手机上。
+   `serve` 在 `http://127.0.0.1:8686` 按原样提供 `patch` 最新写出的文件，并用 `adb reverse` 把这个端口映射到手机上。它只是调试工具：不发布、不编号、不签名。
 
 2. 在手机上打开 App；如果已经打开，先从最近任务中划掉再重新打开。App 启动时会执行 `checkForPatch()`。
 
@@ -138,7 +138,7 @@ adb install <output>/app-release.apk
 
   ```text
   Android device <serial> reaches this computer at 127.0.0.1:8686
-  Offering patch <seq> (1-default-production-arm64-v8a.fptc)
+  Offering patch <seq> (1-default-production-arm64-v8a.fptc, unsigned)
   A device checked for updates
   A device downloaded 1-default-production-arm64-v8a.fptc
   ```
@@ -153,9 +153,26 @@ adb install <output>/app-release.apk
 
 **验证**：界面上显示第 3 步改过的文字。
 
-之后每次修改代码：保持 `serve` 运行，执行 `patch android`，再重复第 4、5 步。`serve` 每次输出的 `Offering patch <seq> ...` 序号都更大；设备只安装序号高于它此前接受过的所有文件的补丁。
+之后每次修改代码：保持 `serve` 运行，执行 `patch android`，再重复第 4、5 步。`serve` 约 2 秒内发现新文件，每次输出的 `Offering patch <seq> ...` 序号都更大；设备只安装序号高于它此前接受过的所有文件的补丁。
 
-## 自己获取补丁文件
+## 回到安装包自带的版本
+
+```bash
+dart run flutter_patcher patch android --withdraw
+```
+
+这条命令以同一个文件名写出第 2 步那次构建的撤回文件；它只需要基线，不做任何编译。`serve` 输出 `Offering a withdrawal of <文件名> ...`。打开 App 让它应用撤回，再冷启动：App 重新运行安装包自带的版本。`FlutterPatcher.rollback()` 的效果相同，但只作用于这一台手机。
+
+## 自行分发
+
+自己分发补丁只需要 `build` 和 `patch`；`serve` 只用于开发。把 `patch` 写出的文件放在任何地方，例如你自己的服务器、CDN 或其他渠道，然后二选一：
+
+- 由内置下载器获取：`checkUpdate(url: …)`，或在 `build` 之前于 `flutter_patcher.yaml` 中设置 `url` 后调用 `checkUpdate()`。文件必须位于 `<url>/<文件名>`，文件名即 `(await FlutterPatcher.patchTarget).fileName`。地址必须是 HTTPS，指向设备本机（`127.0.0.1`、`[::1]`、`localhost`）时除外；`404` 表示没有更新；不跟随重定向；不要求支持范围请求；
+- 或者自己获取，再交给 `applyPatchBytes` / `applyPatchFile`，见下文。
+
+`patch` 输出 `"file":null` 时，表示宿主开启了签名而本机没有它的补丁私钥：执行 `keys import` 后重新 patch。
+
+### 自己获取补丁文件
 
 插件不一定要负责下载。App 从自家接口、推送消息、文件选择或自身资源中拿到补丁文件后，把字节交给 `applyPatchBytes`（或把路径交给 `applyPatchFile`）即可。`patchTarget` 说明这次构建需要哪个文件。下面是一个使用 `http` 包的示例：
 

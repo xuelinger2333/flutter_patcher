@@ -109,7 +109,7 @@ static Future<void> init({
 
 - `acceptedSeq` 按宿主构建分别记录。App 的新构建（新的指纹）从 0 开始，并丢弃上一个构建的补丁。
 - 不签名的宿主忽略签名区，也接受签过名的文件。
-- `rollback()` 删除已安装的补丁，但保留 `acceptedSeq`，所以同一个文件不能再次安装；请重新发布该输出（`publish --patch <目录>`）取得新的 `seq`。
+- `rollback()` 删除已安装的补丁，但保留 `acceptedSeq`，所以同一个文件不能再次安装；请重新执行 `patch`，或重新发布该输出（`publish --patch <目录>`），取得新的 `seq`。
 - 每次冷启动加载前，都会重新校验已安装的文件。
 
 ## 补丁文件
@@ -224,7 +224,7 @@ static Future<PatchApplyResult> applyPatch(
 
 | 取值 | 含义 | 处理方式 |
 |---|---|---|
-| `invalidArgs` | 文件的 `seq` 不大于 `acceptedSeq`：旧的补丁或撤回，或 `rollback` 之后的同一个补丁。用 `applyPatch` 时，也可能是传入的 `PatchInfo` 不是 `checkUpdate` 返回的 | 重新发布该补丁输出（`publish --patch <目录>`）取得新的 `seq` |
+| `invalidArgs` | 文件的 `seq` 不大于 `acceptedSeq`：旧的补丁或撤回，或 `rollback` 之后的同一个补丁。用 `applyPatch` 时，也可能是传入的 `PatchInfo` 不是 `checkUpdate` 返回的 | 重新执行 `patch`，或重新发布该补丁输出（`publish --patch <目录>`），取得新的 `seq` |
 | `blacklisted` | 这个补丁曾导致启动失败，已在本机拉黑 | 发布修复后的补丁 |
 | `network` | `applyPatch` 下载文件失败 | 稍后重试 |
 | `signatureInvalid` | 不是本宿主的文件（其他构建、flavor、渠道或 ABI）、文件损坏或不完整，或不是宿主补丁密钥签名的 | 不要重试；下发本构建 `patchTarget.fileName` 对应、由其密钥签名的文件 |

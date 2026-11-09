@@ -7,8 +7,9 @@
 way it likes and hands it to the plugin, which verifies it and installs it for
 the next cold start. Signing is optional, and the plugin no longer fetches
 anything itself: `checkUpdate` and `applyPatch` remain as an optional
-downloader. Hosts shipped with 1.0.0 are not affected; see "Upgrading from
-1.0" below.
+downloader. `build` and `patch` are all a self-hosted delivery needs; `serve`
+is a development aid and `publish` an optional release command. Hosts shipped
+with 1.0.0 are not affected; see "Upgrading from 1.0" below.
 
 ### Removed
 
@@ -50,12 +51,26 @@ the CLI reports an unknown command or option.
 - The host policy is schema 2: `application_id`, `version_code`, `flavor`,
   `channel`, `abi`, `strategy` and `fptc_key` (the patch public key, or `-`
   for an unsigned host).
-- `publish` seals the patch output again and writes `<fileName>.fptc` at the
-  root of the store. It replaces the file there only with a higher sequence
+- `publish` is the optional release command. It seals the patch output again
+  with a sequence numbered at publish time and writes `<fileName>.fptc` at the
+  root of the store (`file://`, by default `.flutter_patcher/updates`, or
+  `s3://`). It replaces the file there only with a higher sequence
   (`PUBLISH_SEQUENCE_CONFLICT` otherwise), reports `already_published` for the
-  same patch, and fails with `PUBLISH_CONFLICT` when the file changed while
-  publishing. `publish --withdraw` writes a withdrawal file. `publish` no
-  longer reads `url`.
+  same patch, fails with `PUBLISH_CONFLICT` when the file changed while
+  publishing, and only previews without `--yes` when not interactive. Signed
+  and unsigned hosts go through the same flow; the host decides whether it
+  signs, and a signed host without a private key fails with `KEYS_NOT_FOUND`
+  before anything is written. `publish --withdraw` writes a withdrawal file,
+  and so does publishing an output of `patch --withdraw`. `publish` no longer
+  reads `url`.
+- `serve` is a development debugging aid only. On `127.0.0.1:8686` (through
+  `adb reverse` on USB Android devices) it serves the newest file `patch`
+  wrote for each host, a patch or a withdrawal, exactly as written, and picks
+  up each new `patch` run within about 2 seconds. It no longer publishes,
+  writes the store, renumbers or signs anything, and works whatever `store`
+  `flutter_patcher.yaml` names. When a host's newest output has no file (a
+  signed host whose key is not on this machine), it says so and serves
+  nothing for that host; run `keys import` and patch again.
 - `checkUpdate()` reads only the first 146 bytes of `<url>/<fileName>` (a
   `Range` request); no file there (404) means no update. Without `url` given
   or built in, it throws `PatcherException`.
@@ -89,8 +104,12 @@ the CLI reports an unknown command or option.
 - `FlutterPatcher.applyPatchBytes(bytes)` and `applyPatchFile(path)`: install
   a patch file, or apply a withdrawal, that the app got in any way.
 - `patch` also writes the patch file into its output directory and reports
-  `file` and `seq`. On a signed host whose private key this machine lacks,
-  `file` is null and `publish` seals it.
+  `file` (its full path), `seq` and `signed`. On a signed host whose private
+  key this machine lacks, `file` is null and `publish` seals it, or
+  `keys import` the key and patch again.
+- `patch android|ios --withdraw` writes a withdrawal file of the host under
+  the same name: devices that apply it drop their patch and run the installed
+  version. It needs only the baseline; nothing is compiled.
 - `publish --seq <n>` numbers the file; by default it is the current Unix time
   in seconds, and it must be above the sequence of the file in the store.
 - `serve` answers `Range` requests, as `checkUpdate` sends.

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import '../core.dart';
 import '../keys/keyring.dart';
+import '../patch/outputs.dart';
 import '../patch/package.dart';
 import '../project.dart';
 import '../run_work.dart';
@@ -61,15 +62,10 @@ Future<int> publishCommand(ArgResults args) async {
   return 0;
 }
 
-/// Seals a patch output's draft, or a withdrawal of its host, as the patch
-/// file devices take and writes it to the project's store as
-/// `<fileName>.fptc`, replacing the file there only with a newer one. With
-/// [onlyNew] an output published before is left alone, so serve never
-/// brings back a patch since withdrawn or replaced.
-Future<Map<String, dynamic>> publication(
-  ArgResults args, {
-  bool onlyNew = false,
-}) async {
+/// Seals a patch output's draft, or a withdrawal of its host, numbered now,
+/// as the patch file devices take and writes it to the project's store as
+/// `<fileName>.fptc`, replacing the file there only with a newer one.
+Future<Map<String, dynamic>> publication(ArgResults args) async {
   requireSupportedHost();
   require(
     args.rest.isEmpty,
@@ -78,7 +74,6 @@ Future<Map<String, dynamic>> publication(
   );
   final receipt = args['receipt'] as String?;
   if (receipt != null) await _requireNew(receipt);
-  final withdraw = args['withdraw'] == true;
   final project = p.absolute(
     args['project'] as String? ?? Directory.current.path,
   );
@@ -93,20 +88,16 @@ Future<Map<String, dynamic>> publication(
   final report = await readObject(p.join(directory!, 'patch.json'));
   final scope = report['scope'], patchKey = report['patch_key'];
   require(
-    report['status'] == 'patch_created' && scope is Map && patchKey is String,
+    outputStatuses.contains(report['status']) &&
+        scope is Map &&
+        patchKey is String,
     'PATCH_BASELINE_INCOMPATIBLE',
     '$directory is not a patch output of this flutter_patcher; patch again.',
   );
+  final withdraw =
+      args['withdraw'] == true || report['status'] == 'withdrawal_created';
   final host = Map<String, String>.from(scope as Map);
   final name = patchFileName(host);
-  final marker = File(p.join(directory, 'published.json'));
-  if (onlyNew && await marker.exists()) {
-    return {
-      'status': 'published_before',
-      'file': name,
-      ...await readObject(marker.path),
-    };
-  }
   final seq = args['seq'] == null
       ? DateTime.now().millisecondsSinceEpoch ~/ 1000
       : int.tryParse(args['seq'] as String) ?? 0;
@@ -185,7 +176,6 @@ Future<Map<String, dynamic>> publication(
       'PUBLISH_CONFLICT',
       '$name changed in the store while publishing; publish again.',
     );
-    await writeObject(marker.path, {'seq': seq, 'action': summary['action']});
     result = {...summary, 'status': 'published', 'seq': seq};
   } finally {
     await RunWork.finish(work);
@@ -211,23 +201,6 @@ Future<void> _requireNew(String path) async {
     'PUBLISH_CONFIG_INVALID',
     'Receipt target already exists',
   );
-}
-
-/// The newest finished output `patch` wrote to [project]. Outputs are named
-/// by creation time; one still being written has a `.pending-` suffix.
-Future<String?> latestPatchOutput(String project) async {
-  final patches = Directory(
-    p.join(project, '.dart_tool', 'flutter_patcher', 'patches'),
-  );
-  if (!await patches.exists()) return null;
-  final runs = await patches
-      .list()
-      .where(
-        (e) => e is Directory && RegExp(r'^\d+$').hasMatch(p.basename(e.path)),
-      )
-      .map((e) => e.path)
-      .toList();
-  return runs.isEmpty ? null : (runs..sort()).last;
 }
 
 /// Publishing changes what devices install: unless --yes says so, ask

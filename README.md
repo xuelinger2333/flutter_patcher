@@ -81,7 +81,13 @@ dart run flutter_patcher patch android   # Writes <version_code>-<flavor>-<chann
 dart run flutter_patcher serve           # Development: offers it at 127.0.0.1:8686 over USB
 ```
 
-The patch is one `.fptc` file. In production, `publish` writes it to your store, and you put it where the app gets it: at `url` over HTTPS for `checkUpdate`, or anywhere your app fetches it from and passes it to `FlutterPatcher.applyPatchBytes`.
+The patch is one `.fptc` file; `patch` prints its path as `file`. `serve` is only a development aid. Any delivery works: put the file at `<url>/<file name>` on an HTTPS host for `checkUpdate`, or get it from your own server, CDN or any channel and pass it on:
+
+```dart
+await FlutterPatcher.applyPatchBytes(bytes);   // or FlutterPatcher.applyPatchFile(path)
+```
+
+`(await FlutterPatcher.patchTarget).fileName` names the file this host takes. To go back, `patch android --withdraw` writes a withdrawal under the same name: devices that apply it run the installed version again. `publish`, which writes files to a store numbered in publish order, is optional.
 
 No keys or `flutter_patcher.yaml` are needed to start. Signing is optional and recommended: run `dart run flutter_patcher keys init` before the build you ship.
 

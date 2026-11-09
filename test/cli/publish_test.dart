@@ -76,13 +76,8 @@ void main() {
     return dir;
   }
 
-  Future<Map<String, dynamic>> publish(
-    List<String> args, {
-    bool onlyNew = false,
-  }) => publication(
-    publishOptions().parse(['--project', project, ...args]),
-    onlyNew: onlyNew,
-  );
+  Future<Map<String, dynamic>> publish(List<String> args) =>
+      publication(publishOptions().parse(['--project', project, ...args]));
 
   Uint8List stored() => File(p.join(store, name)).readAsBytesSync();
 
@@ -188,17 +183,23 @@ void main() {
     expect(stored().sublist(146), (await sealPatchOf(a, 40)).sublist(146));
   });
 
-  test(
-    'an output published before is left alone when only new ones count',
-    () async {
-      final dir = await output();
-      await publish(['--patch', dir, '--yes', '--seq', '10']);
-      await publish(['--patch', dir, '--withdraw', '--yes', '--seq', '20']);
-      final again = await publish(['--patch', dir, '--yes'], onlyNew: true);
-      expect(again['status'], 'published_before');
-      expect(PatchHeader.parse(stored()).withdrawal, isTrue);
-    },
-  );
+  test('a withdrawal output publishes a withdrawal of its host', () async {
+    await publish(['--patch', await output(), '--yes', '--seq', '10']);
+    final withdrawal = p.join(
+      project,
+      '.dart_tool/flutter_patcher/patches',
+      '${1000 + outputs++}',
+    );
+    await writeObject(p.join(withdrawal, 'patch.json'), {
+      'status': 'withdrawal_created',
+      'scope': scope,
+      'patch_key': '-',
+    });
+    final result = await publish(['--yes', '--seq', '20']);
+    expect([result['status'], result['action']], ['published', 'withdraw']);
+    final header = PatchHeader.parse(stored());
+    expect([header.withdrawal, header.seq], [true, 20]);
+  });
 
   group('a signed host', () {
     late KeyBundle bundle;

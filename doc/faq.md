@@ -56,7 +56,7 @@ Yes. The plugin does not fetch patches. Get the file however you like (your own 
 
 ### How do I roll back or withdraw a patch?
 
-- **Back to the installed version**: `dart run flutter_patcher publish --withdraw` writes a withdrawal file under the same name; devices that apply it drop their patch at the next cold start.
+- **Back to the installed version**: `dart run flutter_patcher patch android --withdraw` (or `ios`) writes a withdrawal file under the same name; deliver it like a patch, or use `publish --withdraw`, which writes it to the store. Devices that apply it drop their patch at the next cold start.
 - **Back to an earlier patch**: `dart run flutter_patcher publish --patch <that patch's output directory>` seals it again with a new sequence.
 - **One device**: `FlutterPatcher.rollback()`.
 
@@ -68,7 +68,7 @@ The device turns the patch off, runs its installed version from the next cold st
 
 ### Do I need my own backend?
 
-No. Patch files are static files: `publish` writes `<fileName>.fptc` at the root of its store, and any HTTPS static hosting can serve it, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. Give `.fptc` files a short cache time: each publish replaces the file under the same name. See the [Production Deployment Guide](production-playbook.md).
+No. Patch files are static files: `patch` writes `<fileName>.fptc` into its output directory (and `publish`, if you use it, at the root of its store), and any HTTPS static hosting can serve it, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. Give `.fptc` files a short cache time: each new patch replaces the file under the same name. See the [Production Deployment Guide](production-playbook.md).
 
 ### What happens to my 1.0 hosts?
 

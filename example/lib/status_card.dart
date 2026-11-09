@@ -62,6 +62,7 @@ class _StatusCardState extends State<StatusCard> {
     final rows = [
       ('Installed patch', await FlutterPatcher.currentVersion ?? 'none'),
       ('versionCode', '${await FlutterPatcher.appVersionCode ?? '-'}'),
+      ('Patch file', await _patchFile()),
       ('ABI', await FlutterPatcher.deviceAbi),
       if (boot?.message case final message? when message.isNotEmpty)
         ('Detail', message),
@@ -71,6 +72,16 @@ class _StatusCardState extends State<StatusCard> {
       _boot = boot;
       _rows = rows;
     });
+  }
+
+  /// The name of the files this host takes; none on an app that
+  /// flutter_patcher did not build.
+  static Future<String> _patchFile() async {
+    try {
+      return (await FlutterPatcher.patchTarget).fileName;
+    } on PatcherException {
+      return '-';
+    }
   }
 
   @override

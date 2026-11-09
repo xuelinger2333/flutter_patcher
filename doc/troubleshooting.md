@@ -56,7 +56,7 @@ The store's file for this host has a `seq` not below the one `publish` would wri
 
 ### `patch` succeeds with `"file":null`
 
-The host was built with a patch key (`trust.patch`) and no source on this machine holds its private key. The draft is in the output directory. Run `publish --patch <output>` on a machine that has the key, or bring the key here with `keys import <bundle>` and run `publish`. `keys status` shows where the key would come from.
+The host was built with a patch key (`trust.patch`) and no source on this machine holds its private key. The draft is in the output directory. Bring the key here with `keys import <bundle>` and run `patch` again, or run `publish --patch <output>` on a machine that has the key. `keys status` shows where the key would come from.
 
 ### `HOST_UNSUPPORTED`: Unsupported host OS or architecture
 
@@ -66,10 +66,10 @@ The host was built with a patch key (`trust.patch`) and no source on this machin
 
 ### `checkUpdate` on the device never finds an update
 
-- `checkUpdate` requests `<url>/<fileName>`: compare `FlutterPatcher.patchTarget.fileName` with the file in your store, and `url` with where it is served. Without `url` in the call, it is `url` from `flutter_patcher.yaml` when the app was built (rebuild after changing it).
+- `checkUpdate` requests `<url>/<fileName>`: compare `(await FlutterPatcher.patchTarget).fileName` with the name of the file you serve, and `url` with where it is served. Without `url` in the call, it is `url` from `flutter_patcher.yaml` when the app was built (rebuild after changing it).
 - A `file://` store with `url` set is not what devices read: upload the file to `<url>/<fileName>` after each `publish`.
-- The file must be newer than `patchTarget.acceptedSeq`. A file sealed on a computer whose clock is behind, or an old file uploaded again, is not; `publish` it again (with `--seq` above `acceptedSeq` if needed).
-- The file must be for the build installed on the device (`patchTarget.versionCode`, `flavor`, `channel`, `abi`, `fingerprint`). After users update the app from the store, make and publish a patch for the new build.
+- The file must be newer than `patchTarget.acceptedSeq`. A file sealed on a computer whose clock is behind, or an old file uploaded again, is not; run `patch` again, or `publish` it again (with `--seq` above `acceptedSeq` if needed).
+- The file must be for the build installed on the device (`patchTarget.versionCode`, `flavor`, `channel`, `abi`, `fingerprint`). After users update the app from the store, make and deliver a patch for the new build.
 - A CDN may still serve the previous file; shorten its cache lifetime for `.fptc` files.
 - The endpoint must answer directly over HTTPS, without `3xx` redirects, and `404` for a missing file.
 - To see what the device thinks of the file, fetch its first 146 bytes yourself and pass them to `FlutterPatcher.inspectPatch`: `reason` says why it is not new.
@@ -101,12 +101,12 @@ The host was built with a patch key (`trust.patch`) and no source on this machin
 | `DOCTOR_FAILED` | `doctor` encountered an unexpected error | Check `message` for details |
 | `INTERFACE_INPUT_MISSING`<br>`INTERFACE_GENERATION_FAILED`<br>`INTERFACE_INDEX_FAILED`<br>`INTERFACE_VALIDATION_FAILED`<br>`INTERFACE_NOT_CONVERGED`<br>`INTERFACE_NO_PROGRESS` | The maintainer command `interface` could not generate or validate a host interface | Only maintainers adapting a new Flutter version run it; check `message` |
 
-### 2. Keys and Signing (`keys`, `patch`, `publish`, `serve`)
+### 2. Keys and Signing (`keys`, `patch`, `publish`)
 
 | Error Code | Meaning | Resolution |
 |---|---|---|
 | `KEYS_NOT_CONFIGURED` | `keys export` in a project whose `flutter_patcher.yaml` has no `trust.patch` | Run `keys init`, or `keys import` the project's key bundle |
-| `KEYS_NOT_FOUND` | A signed host's file must be signed and no source holds the private key (`publish`, `serve`); the `--key-file` or `keys import` file does not exist; or `keys export` finds no key in this machine's key store | Run `keys import <file>`, set `FLUTTER_PATCHER_KEYS`, or configure `signing.command`; `keys status` shows what this machine has |
+| `KEYS_NOT_FOUND` | A signed host's file must be signed and no source holds the private key (`publish`); the `--key-file` or `keys import` file does not exist; or `keys export` finds no key in this machine's key store | Run `keys import <file>`, set `FLUTTER_PATCHER_KEYS`, or configure `signing.command`; `keys status` shows what this machine has |
 | `KEYS_MISMATCH` | The first key source holds a key other than the host's `trust.patch`, `keys import` got another key than `flutter_patcher.yaml` names, or a stored key's signature does not verify | Use the project's key. A host accepts only the key it was built with; a new key needs new hosts |
 | `KEYS_ALREADY_CONFIGURED` | `keys init` in a project that already names a patch key, or still has a `flutter_patcher_keys/` directory | Bring the existing key to this machine with `keys import <bundle>`, or `keys import flutter_patcher_keys` for the old directory |
 | `KEYS_BUNDLE_INVALID` | The file is not a key bundle, holds no patch key, or the directory has no `patch/private-key.base64`; also a damaged file in `~/.flutter_patcher/keys/` (named in `message`) | Use a file written by `keys export`, or a 1.0 bundle that has a patch key |
@@ -191,10 +191,9 @@ The host was built with a patch key (`trust.patch`) and no source on this machin
 | `PUBLISH_STORE_UNAVAILABLE` | The AWS CLI is missing or failed, the store does not support conditional writes, or the role lacks `s3:ListBucket` (a missing file then reads as access denied) | Check the AWS CLI version, credentials, permissions and `FLUTTER_PATCHER_S3_ENDPOINT` |
 | `PUBLISH_STORE_INVALID` | Invalid `s3://` store (an S3 prefix must be below the bucket root and use only letters, digits, `_` and `-`), a stored file over 320 MiB, or an S3 response without an ETag | Fix the `store` setting as described in `message`; replace the oversized file |
 | `PUBLISH_FAILED` | Unexpected publication failure, including a store file of this host's name that is not an FPTC v1 file | Delete or replace that file in the store; otherwise check the store and `message` |
-| `SERVE_CONFIG_INVALID` | `serve` only supports a `file://` publication store | Remove the remote `store` setting from `flutter_patcher.yaml` during local development |
 | `SERVE_PORT_BUSY` | Another program listens on the port `serve` uses | Stop it, or run `serve --port <port>` and map the phone's `8686` to it with `adb reverse tcp:8686 tcp:<port>` |
 
-`serve` does not stop when publishing an output fails: it prints `Not offered: <code>: <message>` with one of the codes above, and keeps serving what the store holds.
+`serve` prints `Not offering <file>: ...` and serves nothing for that host when the host's newest `patch` output has no file (a signed host whose key is not on this machine): run `keys import` and patch again. It never falls back to an older file.
 
 ### 7. Warnings
 
