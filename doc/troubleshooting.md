@@ -19,9 +19,9 @@ The `message` field usually points directly to the root cause. This guide covers
 
 ### Changed a single line of Dart, but every file shows as modified (or fails with `PATCH_NATIVE_CHANGE`)
 
-**Cause**: Source files are compared byte-for-byte against the baseline. On Windows, Git converts line endings to `CRLF` by default. If your baseline was built with `LF` line endings (e.g., on Linux CI) and you run `patch` on a checkout with `CRLF` line endings, every file—including native source files—appears modified. (`build` and `doctor --project` emit warnings when `CRLF` is detected.)
+**Cause**: Source files are compared byte for byte against the baseline. Git for Windows converts line endings to `CRLF` by default, so a checkout with other line endings than the one the host was built from (for example, built on Linux CI with `LF`, patched on Windows with `CRLF`) makes every file look modified. When native files differ only in line endings, the `PATCH_NATIVE_CHANGE` message says so and names them.
 
-**Fix**: Add `* text=auto eol=lf` to `.gitattributes` in your repository root, re-checkout the working tree, and ensure both `build` and `patch` operate on consistent line endings.
+**Fix**: Check out the sources with the line endings the host was built from (git `core.autocrlf`), or add `* text=auto eol=lf` to `.gitattributes` and check out again, then patch.
 
 ### `BASELINE_NOT_FOUND`: Baseline snapshot missing
 
@@ -204,7 +204,6 @@ These print as `WARNING: <code>: <text>` and do not fail the command:
 | `UNSIGNED` | `build` made a host without a patch key: it accepts unsigned files, so whoever can hand the app a file can run code in it. To sign, run `keys init` and build again |
 | `URL_LOCAL` | `flutter_patcher.yaml` has no `url`, so `checkUpdate()` without `url` checks `serve`'s local address. Set `url` before building a release for the store, unless the app obtains patch files itself |
 | `BASELINE_STORE_LOCAL` | `build` keeps the baseline only inside the project, in `.flutter_patcher/`. Back that folder up, or set `baseline_store`; every patch of the host needs it |
-| `CRLF_DART_SOURCES` | `build` found Dart sources with `CRLF` line endings; patches must be built from a checkout with the same line endings (see above) |
 | `ARTIFACT_CHECK_SKIPPED` | The artifact index could not be downloaded, so the cached index was used |
 
 ---

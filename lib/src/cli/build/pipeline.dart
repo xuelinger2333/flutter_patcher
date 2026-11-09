@@ -163,9 +163,6 @@ class BuildPipeline {
         application: true,
       );
       final crlf = await crlfDartSources(project);
-      if (crlf.isNotEmpty) {
-        stderr.writeln('WARNING: CRLF_DART_SOURCES: ${crlfWarning(crlf)}');
-      }
       final pubspec = loadYaml(
         await File(p.join(project, 'pubspec.yaml')).readAsString(),
       ) as Map;
@@ -515,9 +512,6 @@ class BuildPipeline {
         application: true,
       );
       final crlf = await crlfDartSources(project);
-      if (crlf.isNotEmpty) {
-        stderr.writeln('WARNING: CRLF_DART_SOURCES: ${crlfWarning(crlf)}');
-      }
       final package =
           (loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
                   as Map)['name']

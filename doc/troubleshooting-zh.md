@@ -18,9 +18,9 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 
 ### 只改了一行 Dart 代码，却提示“所有文件都被修改”或报 `PATCH_NATIVE_CHANGE`
 
-**原因**：基线对比按字节比对源码。Windows 下 Git 默认会将换行符转换为 `CRLF`；若构建基线包与生成补丁时检出的换行符格式不一致，所有源码及原生文件都会被判定为已发生变更（`build` 和 `doctor --project` 检测到 `CRLF` 时也会输出警告）。
+**原因**：源码按字节与基线比对。Windows 版 Git 默认把换行转成 `CRLF`，检出的换行方式与构建宿主时不同（例如在 Linux CI 上用 `LF` 构建，在 Windows 上用 `CRLF` 打补丁）时，所有文件都会被判定为已修改。如果原生文件只是换行不同，`PATCH_NATIVE_CHANGE` 的提示会直接说明，并列出这些文件。
 
-**解决方法**：在 Git 仓库根目录的 `.gitattributes` 中添加 `* text=auto eol=lf`，重新检出代码，确保构建基线与生成补丁均统一使用 `LF` 换行符。
+**解决方法**：用与构建宿主时相同的换行设置（Git 的 `core.autocrlf`）检出代码；或在 `.gitattributes` 中添加 `* text=auto eol=lf` 后重新检出，再打补丁。
 
 ### `BASELINE_NOT_FOUND`：找不到基线
 
@@ -203,7 +203,6 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `UNSIGNED` | `build` 构建了不带补丁密钥的宿主：它接受不签名的文件，任何能把文件交给 App 的一方都能在 App 中执行代码。要开启签名，运行 `keys init` 后重新构建 |
 | `URL_LOCAL` | `flutter_patcher.yaml` 中没有 `url`，不传 `url` 的 `checkUpdate()` 检查的是 `serve` 的本机地址。构建上架版本前请填写 `url`，除非 App 自己获取补丁文件 |
 | `BASELINE_STORE_LOCAL` | `build` 只把基线保存在项目的 `.flutter_patcher/` 中。请备份这个文件夹，或配置 `baseline_store`；该宿主的每个补丁都需要它 |
-| `CRLF_DART_SOURCES` | `build` 发现 Dart 源码使用 `CRLF` 换行；生成补丁时必须使用换行一致的检出（见上文） |
 | `ARTIFACT_CHECK_SKIPPED` | 无法下载产物索引，使用了本机缓存的索引 |
 
 ---

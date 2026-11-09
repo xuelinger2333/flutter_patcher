@@ -15,7 +15,6 @@ import 'baseline/split.dart';
 import 'baseline/store.dart';
 import 'build/command.dart';
 import 'build/ios.dart' show iosExportMethods;
-import 'build/line_endings.dart';
 import 'patch_command.dart';
 import 'keys/command.dart';
 import 'keys/keyring.dart';
@@ -132,9 +131,7 @@ ArgParser parser() {
   final doctor = environmentOptions()
     ..addOption(
       'project',
-      help:
-          'Optional application directory whose Dart line endings are '
-          'checked.',
+      help: 'Optional application directory whose patch key is checked.',
     );
   final interfaces = environmentOptions()
     ..addOption('dill', help: 'Unannotated baseline app.dill.')
@@ -303,27 +300,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     final project = args.options.contains('project')
         ? args['project'] as String?
         : null;
-    if (project == null) {
-      pending(
-        'line_endings',
-        'No project supplied; Dart source line endings are not checked.',
-      );
-    } else {
-      current = 'line_endings';
-      require(
-        await Directory(project).exists(),
-        'CONFIG_INVALID',
-        'Project directory does not exist: $project',
-      );
-      final crlf = await crlfDartSources(p.absolute(project));
-      checks.add({
-        'id': 'line_endings',
-        'status': crlf.isEmpty ? 'passed' : 'warning',
-        'message': crlf.isEmpty
-            ? 'Project Dart sources use LF line endings'
-            : crlfWarning(crlf),
-      });
-    }
+
     await check('cache_path', () async {
       // Build passes cache paths inside comma-separated compiler options, and
       // deep Gradle trees under a long cache root overrun MAX_PATH on Windows.

@@ -97,7 +97,6 @@ void main() {
           .create(recursive: true)
           .then((f) => f.writeAsBytes(utf8.encode('void g() {}\r\n')));
       expect(await crlfDartSources(project), ['lib/src/b.dart']);
-      expect(crlfWarning(['lib/src/b.dart']), contains('PATCH_NATIVE_CHANGE'));
     },
   );
 

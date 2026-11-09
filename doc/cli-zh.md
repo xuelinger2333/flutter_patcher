@@ -241,7 +241,6 @@ dart run flutter_patcher build ios        # 仅限 Apple Silicon Mac
 - `flutter_patcher.yaml` 中没有 `trust.patch` 时，会打印 `WARNING: UNSIGNED`：任何能把文件交给 App 的一方都能在 App 中执行代码。要开启签名，运行 `keys init` 后重新构建；宿主的补丁密钥在构建时就已确定。
 - `flutter_patcher.yaml` 中没有 `url` 时，会打印 `WARNING: URL_LOCAL`：不传 `url` 的 `checkUpdate()` 检查的是 `serve` 的本机地址。
 - 基线存储为项目内的默认位置、且没有指定 `--baseline-store` 时，会打印 `WARNING: BASELINE_STORE_LOCAL`。
-- Dart 源码含 CRLF 换行时会打印 `WARNING: CRLF_DART_SOURCES`，原因见[错误码与排障](troubleshooting-zh.md)。
 
 **宿主策略文件**（`--host-policy`）：一个值全为字符串的 JSON 对象，字段恰好为 `schema`（`"2"`）、`strategy`（`bytecode` 或 `so`；iOS 只能是 `bytecode`）、`abi`（`arm64-v8a` 或 `ios-arm64`）、`application_id`、`version_code`、`flavor`、`channel` 和 `fptc_key`（补丁公钥的 base64，不签名的宿主为 `-`）。也接受 flutter_patcher 1.0 的策略（`"schema":"1"`）：保留其 `fptc_key`，丢弃 `root_key` 和 `keys`。其他内容报 `BUILD_CONFIG_INVALID`；`--flavor` 或 `--version-code` 与策略不一致时也报这个错误。
 
@@ -344,7 +343,7 @@ dart run flutter_patcher doctor
 | 选项 | 说明 |
 |---|---|
 | `--json` | 以 JSON 输出详细报告 |
-| `--project <目录>` | 同时检查项目 Dart 源码的换行符，并报告补丁私钥的来源 |
+| `--project <目录>` | 同时报告项目补丁私钥的来源 |
 | `--baseline-store <URI>` | 检查基线存储是否可以访问（写权限在构建时才检查） |
 | `--version-code <数字>` `--flavor <名称>` | 与 `--baseline-store` 一起使用，检查该版本的基线是否完整 |
 | `--apk <文件>` | 检查一个 APK 中的引擎是否与当前 Flutter 版本匹配 |

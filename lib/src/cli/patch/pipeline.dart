@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -141,6 +142,47 @@ bool compareInputs(
     facts.changed.add('dependency:$name');
   }
   return any;
+}
+
+/// The application's native files under [root] that differ from the
+/// release only in line endings, when that is every difference; else
+/// empty. A checkout with other `core.autocrlf` settings changes them all.
+Future<List<String>> lineEndingChanges(
+  String root,
+  Map current,
+  Map previous,
+  String app, {
+  String platform = 'android',
+}) async {
+  Map files(Map state) =>
+      ((_nativeBuildInputs(state[app], platform) as Map?)?['native_files']
+          as Map?) ??
+      const {};
+  final now = files(current), before = files(previous);
+  final keys = {...now.keys, ...before.keys};
+  final found = <String>[];
+  for (final key in keys) {
+    if (now[key] == before[key]) continue;
+    final file = File(p.join(root, key as String));
+    if (before[key] == null || now[key] == null || !await file.exists()) {
+      return const [];
+    }
+    final bytes = await file.readAsBytes();
+    String digest(List<int> data) => sha256.convert(data).toString();
+    final lf = <int>[
+      for (var i = 0; i < bytes.length; i++)
+        if (!(bytes[i] == 0x0d && i + 1 < bytes.length && bytes[i + 1] == 0x0a))
+          bytes[i],
+    ];
+    final crlf = <int>[
+      for (final b in lf) ...(b == 0x0a ? const [0x0d, 0x0a] : [b]),
+    ];
+    if (digest(lf) != before[key] && digest(crlf) != before[key]) {
+      return const [];
+    }
+    found.add(key);
+  }
+  return found..sort();
 }
 
 /// One patch run: the request, its release and what the run has learned.
@@ -300,13 +342,26 @@ class PatchPipeline {
         'PATCH_BASELINE_INCOMPATIBLE',
         'Baseline lacks dependency/native provenance; rebuild host',
       );
+      final newState = await packageInputs(
+        current.config,
+        application: current.app,
+      );
       final dependencyChanged = compareInputs(
-        await packageInputs(current.config, application: current.app),
+        newState,
         oldState as Map,
         current.app,
         current.facts,
         platform: req.platform,
       );
+      if (current.facts.appNativeChanged) {
+        current.facts.lineEndingChanges = await lineEndingChanges(
+          current.project,
+          newState,
+          oldState,
+          current.app,
+          platform: req.platform,
+        );
+      }
       trace('package inputs');
       await producer.inputs(dependencyChanged);
       current.rules.check(PatchStage.inputs, current.facts);

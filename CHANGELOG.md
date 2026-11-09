@@ -100,6 +100,11 @@ the CLI reports an unknown command or option.
 - `build` prints a short summary: `app` (the APK or IPA to install),
   `application_id`, `version_code`, `strategy`, `signed`, `fingerprint` and
   `report`, the full report in `build.json` beside the app.
+- `build` and `doctor --project` no longer warn about Dart sources with CRLF
+  line endings (`CRLF_DART_SOURCES`). Line endings matter only when a patch is
+  made from a checkout with other line endings than the host's; then
+  `PATCH_NATIVE_CHANGE` says that the native files differ only in line
+  endings and names them.
 - On its first start as a 1.1 host, a device deletes the signed-manifest state
   1.0 kept (`noBackupFilesDir/flutter_patcher_auth/` on Android, `auth/` in
   the plugin's directory on iOS).

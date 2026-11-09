@@ -36,6 +36,9 @@ class PatchFacts {
   /// The application's own native files changed since the release.
   bool appNativeChanged = false;
 
+  /// When every change to them is only CRLF against LF: those files.
+  List<String> lineEndingChanges = const [];
+
   /// Dependencies whose native capability or native files changed.
   final List<String> nativeDependencies = [];
 
@@ -132,7 +135,12 @@ final patchRules = <PatchRule>[
     PatchStage.inputs,
     (f) => [
       if (f.appNativeChanged)
-        'Application native sources changed; rebuild host',
+        f.lineEndingChanges.isEmpty
+            ? 'Application native sources changed; rebuild host'
+            : 'Application native files differ from the release only in '
+                  'line endings (CRLF/LF): ${_list(f.lineEndingChanges)}. '
+                  'Check out the sources with the line endings the host was '
+                  'built from (git core.autocrlf), then patch again.',
       for (final name in f.nativeDependencies)
         'Native plugin/build hook changed: $name',
       for (final name in f.changedPlugins)

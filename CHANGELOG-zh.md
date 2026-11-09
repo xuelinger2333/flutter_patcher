@@ -61,6 +61,7 @@
 - 安全：在签名宿主上安装恶意补丁，现在只需要补丁私钥。1.0 需要补丁和 publisher 两把私钥，但两者在同一个
   密钥包中、由同一条命令使用。补丁私钥丢失或泄露时，用它构建的宿主需要发布新版本，与 1.0 的补丁私钥相同；
   没有密钥轮换。
+- `build` 和 `doctor --project` 不再因 Dart 源码使用 CRLF 换行而警告（`CRLF_DART_SOURCES`）。换行方式只在打补丁时的检出与构建宿主时不同才有影响；这时 `PATCH_NATIVE_CHANGE` 会说明原生文件只是换行不同，并列出这些文件。
 - 设备第一次作为 1.1 宿主启动时，删除 1.0 保存的签名清单状态（Android 的
   `noBackupFilesDir/flutter_patcher_auth/`，iOS 插件目录下的 `auth/`）。
 - Android 插件自行声明网络权限（新建 Flutter 项目的 release 构建没有它），使用 `checkUpdate` 时 App 不必再手动添加。

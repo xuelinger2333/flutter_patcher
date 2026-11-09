@@ -241,7 +241,6 @@ dart run flutter_patcher build ios        # Apple Silicon Mac only
 - Without `trust.patch` in `flutter_patcher.yaml`, it prints `WARNING: UNSIGNED`: whoever can hand the app a file can run code in it. To sign, run `keys init` and build again; the host's patch key is fixed when it is built.
 - Without `url` in `flutter_patcher.yaml`, it prints `WARNING: URL_LOCAL`: `checkUpdate()` without `url` checks `serve`'s local address.
 - With the default in-project baseline store, and no `--baseline-store`, it prints `WARNING: BASELINE_STORE_LOCAL`.
-- Dart sources with CRLF line endings draw `WARNING: CRLF_DART_SOURCES`; see [Error Codes and Troubleshooting](troubleshooting.md) for why.
 
 **Host policy file** (`--host-policy`): a JSON object of strings with exactly `schema` (`"2"`), `strategy` (`bytecode` or `so`; iOS `bytecode`), `abi` (`arm64-v8a` or `ios-arm64`), `application_id`, `version_code`, `flavor`, `channel` and `fptc_key` (the base64 patch public key, or `-` for an unsigned host). A flutter_patcher 1.0 policy (`"schema":"1"`) is accepted too: its `fptc_key` is kept and its `root_key` and `keys` are dropped. Anything else fails with `BUILD_CONFIG_INVALID`, and so do `--flavor` or `--version-code` that differ from the policy.
 
@@ -344,7 +343,7 @@ dart run flutter_patcher doctor
 | Option | Description |
 |---|---|
 | `--json` | Print a detailed JSON report |
-| `--project <dir>` | Also check the project's Dart sources for CRLF line endings, and report where its private patch key comes from |
+| `--project <dir>` | Also report where the project's private patch key comes from |
 | `--baseline-store <uri>` | Check that the baseline store is reachable (write access is checked when building) |
 | `--version-code <n>` `--flavor <name>` | With `--baseline-store`: check that release's baseline is complete |
 | `--apk <file>` | Check that an APK's engine matches the selected Flutter version |
