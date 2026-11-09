@@ -1,18 +1,14 @@
-// Device fixture for patchable hosts (SO or bytecode). Test-only trust: the
-// CA is accepted by this app alone, via HttpOverrides and its native NSC on
-// Android; on iOS the device trusts the test CA (native downloads use it).
+// Device fixture for patchable hosts (SO or bytecode). Test-only trust on
+// Android: the CA is accepted by this app alone, via HttpOverrides and its
+// native NSC. iOS fetches from a publicly trusted origin and has no test CA.
 //
-// Control: Android serves 127.0.0.1:8767 (reached through adb forward). iOS
-// has no forward: the runner copies Documents/flutter_patcher_command.json
-// ({"id","path","body"}) into the app, launches it and reads
-// Documents/flutter_patcher_test.json back. Platform.environment is empty in an
-// iOS app, so the container comes from fixture_support (host-side FFI).
+// Control: the app serves 127.0.0.1:8767, reached through adb forward on
+// Android and iproxy (usbmuxd) on iOS.
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:fixture_support/fixture_support.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';
 
 const revision = 'original';
@@ -78,7 +74,7 @@ Future<Object?> handle(String path, Map body, String asset) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  HttpOverrides.global = _TestTrust();
+  if (testCa.isNotEmpty) HttpOverrides.global = _TestTrust();
   await FlutterPatcher.init();
   if (crash) throw StateError('crash patch');
   final asset = await rootBundle.loadString('assets/msg.txt');
@@ -87,33 +83,6 @@ Future<void> main() async {
       home: Scaffold(body: Center(child: Text('revision: $revision\n$asset'))),
     ),
   );
-  if (Platform.isIOS) {
-    final documents = '${iosHome()}/Documents';
-    // Evidence of how far a launch got when no result appears.
-    await File('$documents/flutter_patcher_started.json')
-        .writeAsString(jsonEncode({'revision': revision}));
-    final command = File('$documents/flutter_patcher_command.json');
-    if (!await command.exists()) return;
-    final request = jsonDecode(await command.readAsString()) as Map;
-    await command.delete();
-    if (request['path'] == '/status') {
-      // Let the first frame settle the boot attempt, as the Android runner does.
-      await Future<void>.delayed(const Duration(seconds: 6));
-    }
-    Object? out;
-    try {
-      out = await handle(
-        request['path'] as String,
-        request['body'] as Map? ?? const {},
-        asset,
-      );
-    } catch (e) {
-      out = {'http': HttpStatus.conflict, 'error': '$e'};
-    }
-    await File('$documents/flutter_patcher_test.json')
-        .writeAsString(jsonEncode({'id': request['id'], 'result': out}));
-    return;
-  }
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 8767);
   server.listen((request) async {
     request.response.headers.contentType = ContentType.json;

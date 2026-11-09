@@ -8,6 +8,6 @@ analyzer:
     - temp/**
     - build/**
     - android/**
-    # Compiled inside the generated acceptance app, beside its fixture_support.
+    # Compiled inside the generated acceptance app.
     - test/acceptance/app/**
     - ios/**

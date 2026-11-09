@@ -35,6 +35,40 @@ APK, origin and TLS files are fetched back; the key and the baseline store stay
 on the builder. `--prepare-only` stops before the device. After a device
 problem, rerun only the device steps with `--resume-built --out THAT_DIR`.
 
+## The same on an iPhone
+
+`--platform ios` runs the same steps for a bytecode host on an iPhone attached
+to a Mac with Xcode, Homebrew `libimobiledevice` (`iproxy`) and `cloudflared`.
+The files are served through a cloudflared quick tunnel (publicly trusted
+HTTPS) and the fixture is driven through `iproxy` and `xcrun devicectl`; no
+taps on the phone. Attach it once: unlocked, trusted, Developer Mode on,
+Auto-Lock Never, the team's developer trusted under Settings > General > VPN &
+Device Management. Each run reinstalls the fixture; keep another app of the
+team installed, as iOS may drop that trust with the team's last app.
+
+Code signing needs the login keychain, so prepare in the Mac's desktop
+Terminal (`TEAM`: a development team the iPhone is registered with;
+`BUNDLE_ID`: an ID that team may register; the first build creates the
+profile while the phone is attached):
+
+```sh
+python3 test/acceptance/device_acceptance.py --platform ios --signing signed --prepare-only \
+  --team TEAM --bundle-id BUNDLE_ID --flutter-sdk SDK --out RUNS/ios-signed
+python3 test/acceptance/device_acceptance.py --platform ios --signing unsigned --prepare-only \
+  --team TEAM --bundle-id BUNDLE_ID --flutter-sdk SDK --out RUNS/ios-unsigned
+```
+
+Then run the device steps from any session on the Mac, e.g. over SSH:
+
+```sh
+python3 test/acceptance/device_acceptance.py --platform ios --signing signed --resume-built \
+  --flutter-sdk SDK --cloudflared CLOUDFLARED --out RUNS/ios-signed
+```
+
+`--serial` picks one of several iPhones (devicectl identifier or UDID). The
+device log (`device.log`), tunnel, HTTP and `iproxy` logs go to the output
+directory.
+
 ## Other suites
 
 - `native_tests.py` builds the plugin's JVM tests in a disposable host (CI).
