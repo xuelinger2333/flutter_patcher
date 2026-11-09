@@ -6,11 +6,16 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 import '../core.dart';
+import '../crypto/ed25519.dart';
 import '../project.dart';
 
 /// Release ABI → platform. Each is a separate release slot; iOS hosts load
 /// bytecode only, because iOS code signing forbids replacing machine code.
 const platformOfAbi = {'arm64-v8a': 'android', 'ios-arm64': 'ios'};
+
+/// A flavor or channel. Patch file names join them with `-`, so they have
+/// none.
+const scopeNamePattern = '[A-Za-z0-9_]{1,64}';
 
 /// What names a host build: its policy fields and its compile fingerprint.
 const scopeKeys = {
@@ -59,8 +64,8 @@ class HostPolicy {
       'application_id',
     );
     check(
-      matches('channel', r'[A-Za-z0-9_]{1,64}') &&
-          matches('flavor', r'[A-Za-z0-9_]{1,64}'),
+      matches('channel', scopeNamePattern) &&
+          matches('flavor', scopeNamePattern),
       'flavor and channel take letters, digits and _ only',
     );
     check(
@@ -69,14 +74,7 @@ class HostPolicy {
       'version_code',
     );
     final key = fields['fptc_key']!;
-    if (key != '-') {
-      try {
-        final raw = base64Decode(key);
-        check(raw.length == 32 && base64Encode(raw) == key, 'fptc_key');
-      } on FormatException {
-        check(false, 'fptc_key');
-      }
-    }
+    check(key == '-' || rawEd25519Key(key) != null, 'fptc_key');
   }
 
   /// A stored policy, as `build` recorded it in a baseline.
@@ -122,6 +120,8 @@ class HostPolicy {
       'A host policy is a JSON object of strings.',
     );
     final fields = (value as Map).cast<String, String>();
+    // A developer's own 1.0 file still builds a 1.1 host; [parse] rejects
+    // schema 1 instead, a 1.0 host's policy, which only 1.0.0+1 patches.
     try {
       return HostPolicy(
         fields['schema'] == '1'
@@ -157,7 +157,7 @@ class HostPolicy {
     );
     for (final (option, value) in [('flavor', flavor), ('channel', channel)]) {
       require(
-        value == null || RegExp(r'^[A-Za-z0-9_]{1,64}$').hasMatch(value),
+        value == null || RegExp('^$scopeNamePattern\$').hasMatch(value),
         'BUILD_CONFIG_INVALID',
         '--$option takes 1 to 64 letters, digits and _, not $value: it '
             'names the host\'s patch files.',

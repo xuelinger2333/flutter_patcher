@@ -9,7 +9,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import org.json.JSONObject
 
-/** Host policy schema 2, plan/1.1-direct-patching.md §4.1. */
+/** Host policy schema 2. */
 class HostTrustConfigTest {
     private val key = Base64.getEncoder().encodeToString(ByteArray(32) { 3 })
     private val fields = mapOf("schema" to "2", "strategy" to "bytecode", "abi" to "arm64-v8a",
@@ -33,7 +33,6 @@ class HostTrustConfigTest {
         assertEquals("bytecode", host.strategy)
         assertEquals("7", host.scope["version_code"])
         assertEquals("https://cdn.example.com/p", host.url)
-        assertEquals(sha(canonical(fields)), host.policyHash)
     }
 
     @Test fun anUnsignedHostTrustsNoKey() {

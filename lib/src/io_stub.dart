@@ -26,6 +26,3 @@ Future<String> writePayload(List<int> bytes) =>
     throw UnsupportedError('Patch downloads require Android or iOS');
 
 Future<void> deletePayload(String path) async {}
-
-Future<Uint8List> readPatchFile(String path) =>
-    throw UnsupportedError('Bytecode patches require Android or iOS');

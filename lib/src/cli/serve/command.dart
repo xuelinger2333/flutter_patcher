@@ -47,7 +47,7 @@ Future<int> serveCommand(ArgResults args) async {
       'Port $port is in use on this computer; choose another with --port.',
     );
   }
-  var files = await latestFiles(project);
+  var files = const <String, HostFile>{};
   server.listen((request) => _respond(request, files));
   final url = 'http://127.0.0.1:$port';
   stderr.writeln(
@@ -66,8 +66,8 @@ Future<int> serveCommand(ArgResults args) async {
   final reversed = <String>{};
   final announced = <String, HostFile>{};
   while (!stop.isCompleted) {
-    await _reverse(port, reversed);
     files = await latestFiles(project);
+    await _reverse(port, reversed);
     await _announce(files, announced);
     await Future.any([
       stop.future,

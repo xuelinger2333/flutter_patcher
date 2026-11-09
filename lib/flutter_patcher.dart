@@ -76,6 +76,10 @@ class FlutterPatcher {
     if (_unsupportedGuard('patchTarget')) {
       throw PatcherException('patchTarget requires Android or iOS');
     }
+    return _patchTarget();
+  }
+
+  static Future<PatchTarget> _patchTarget() async {
     final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
       'patchTarget',
     );
@@ -94,6 +98,10 @@ class FlutterPatcher {
       throw PatcherException('inspectPatch requires Android or iOS');
     }
     await _requireHost();
+    return _inspectPatch(header);
+  }
+
+  static Future<PatchInspection> _inspectPatch(List<int> header) async {
     final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
       'inspectPatch',
       {
@@ -113,10 +121,7 @@ class FlutterPatcher {
   /// above every file the host accepted.
   static Future<PatchApplyResult> applyPatchBytes(List<int> bytes) async {
     if (_unsupportedGuard('applyPatchBytes')) {
-      return PatchApplyResult.failure(
-        PatchApplyError.unknown,
-        'not supported on ${platform_io.operatingSystem}',
-      );
+      return _unsupported();
     }
     final path = await platform_io.writePayload(bytes);
     try {
@@ -130,10 +135,7 @@ class FlutterPatcher {
   /// stays where it is.
   static Future<PatchApplyResult> applyPatchFile(String path) async {
     if (_unsupportedGuard('applyPatchFile')) {
-      return PatchApplyResult.failure(
-        PatchApplyError.unknown,
-        'not supported on ${platform_io.operatingSystem}',
-      );
+      return _unsupported();
     }
     try {
       final raw = await PatcherChannel.channel.invokeMapMethod<String, dynamic>(
@@ -155,6 +157,11 @@ class FlutterPatcher {
   /// flag keeps Dart-side blank-screen detection alive for [init]'s
   /// `verifyAfter` window.
   static bool _dartHookActive = true;
+
+  static PatchApplyResult _unsupported() => PatchApplyResult.failure(
+    PatchApplyError.unknown,
+    'not supported on ${platform_io.operatingSystem}',
+  );
 
   static bool _unsupportedGuard(String method) {
     if (platform_io.isSupported || debugAssumeSupported) return false;
@@ -282,12 +289,12 @@ class FlutterPatcher {
             'This app has no update address; rebuild it with this version '
             'of flutter_patcher, or pass url to checkUpdate',
           ));
-      final target = await patchTarget;
+      final target = await _patchTarget();
       final file =
           '${address.replaceFirst(RegExp(r'/+$'), '')}/${target.fileName}';
       final header = await platform_io.readPatchHeader(file, timeout: timeout);
       if (header == null) return PatchCheckResult.none();
-      final inspection = await inspectPatch(header);
+      final inspection = await _inspectPatch(header);
       if (!inspection.fresh) return PatchCheckResult.none();
       return PatchCheckResult(
         hasUpdate: true,
@@ -320,10 +327,7 @@ class FlutterPatcher {
     void Function(PatchApplyProgress)? onProgress,
   }) async {
     if (_unsupportedGuard('applyPatch')) {
-      return PatchApplyResult.failure(
-        PatchApplyError.unknown,
-        'not supported on ${platform_io.operatingSystem}',
-      );
+      return _unsupported();
     }
     final url = patchInfo.raw['url'], size = patchInfo.raw['size'];
     if (url is! String || size is! int) {

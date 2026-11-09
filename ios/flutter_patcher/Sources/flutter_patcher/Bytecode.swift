@@ -49,8 +49,8 @@ enum BytecodeEnvelope {
 
   /// The whole file of [fingerprint]'s host: its header, length and digest,
   /// and when the host trusts [rawKey], the Ed25519 signature over the
-  /// header followed by the payload. Returns its sequence.
-  static func verify(_ bytes: Data, fingerprint: String, rawKey: Data?) throws -> Int64 {
+  /// header followed by the payload. Returns its header.
+  static func verify(_ bytes: Data, fingerprint: String, rawKey: Data?) throws -> Header {
     try require((header...maxBytes).contains(bytes.count), "Envelope size")
     let read = try readHeader(bytes)
     try require(read.length == UInt64(bytes.count - header), "Envelope length")
@@ -64,7 +64,7 @@ enum BytecodeEnvelope {
         Ed25519.verify(key: rawKey, signature: slice(bytes, 82, header), message: slice(bytes, 0, 82) + body),
         "Envelope signature")
     }
-    return read.seq
+    return read
   }
 }
 
@@ -221,7 +221,7 @@ final class BytecodePatchManager {
   }
 
   private func bootstrap(_ fp: String, _ publicKey: String) throws -> HostTrustConfig {
-    guard let host = try host() else { throw PatcherError("Bytecode requires a host policy") }
+    let host = try patchable()
     let key = host.fptcKey.map { $0.base64EncodedString() } ?? "-"
     try require(fp == host.fingerprint && publicKey == key, "Bootstrap differs from immutable host")
     return host
@@ -232,7 +232,7 @@ final class BytecodePatchManager {
     -> [String: Any]
   {
     let bytes = try Storage.read(store.fileURL(meta), limit: BytecodeEnvelope.maxBytes)
-    let seq = try BytecodeEnvelope.verify(bytes, fingerprint: host.fingerprint, rawKey: host.fptcKey)
+    let seq = try BytecodeEnvelope.verify(bytes, fingerprint: host.fingerprint, rawKey: host.fptcKey).seq
     try require(seq == int64(meta["seq"]) && BytecodeEnvelope.identifies(bytes, meta), "Stored candidate changed")
     // The bootstrap reads the same ranges and skips only the CRCs and
     // digests checked here; see parseAuthenticatedPatchBytes.
@@ -336,13 +336,12 @@ final class BytecodePatchManager {
       try HostTrustConfig.requireOwner(bundle)
       let total = Int64(bytes.count)
       progress("verifying", total, total)
-      let seq: Int64
-      do { seq = try BytecodeEnvelope.verify(bytes, fingerprint: host.fingerprint, rawKey: host.fptcKey) } catch {
+      let header: BytecodeEnvelope.Header
+      do { header = try BytecodeEnvelope.verify(bytes, fingerprint: host.fingerprint, rawKey: host.fptcKey) } catch {
         return Self.failure("SIGNATURE_INVALID", "\(error)")
       }
-      let withdrawal = bytes.count == BytecodeEnvelope.header
-      var result = try withdrawal ? withdraw(host, seq) : install(host, bytes, seq, progress)
-      result["action"] = withdrawal ? "withdraw" : "publish"
+      var result = try header.withdrawal ? withdraw(host, header.seq) : install(host, bytes, header.seq, progress)
+      result["action"] = header.withdrawal ? "withdraw" : "publish"
       return result
     }
   }
@@ -359,9 +358,7 @@ final class BytecodePatchManager {
       return Self.failure("INVALID_ARGS", "Withdrawal is not newer than the accepted patch")
     }
     try store.withdraw(host.fingerprint, seq)
-    offered = nil
-    attempt = nil
-    frameToken = nil
+    dropOffer()
     return Self.success
   }
 
@@ -383,10 +380,15 @@ final class BytecodePatchManager {
     try locked {
       if try host() != nil { try HostTrustConfig.requireOwner(bundle) }
       try store().clearActive()
-      offered = nil
-      attempt = nil
-      frameToken = nil
+      dropOffer()
     }
+  }
+
+  /// No offer of this process stands after its patch is gone.
+  private func dropOffer() {
+    offered = nil
+    attempt = nil
+    frameToken = nil
   }
 
   func currentVersion() throws -> String? { try locked { try store().active()?["version"] as? String } }

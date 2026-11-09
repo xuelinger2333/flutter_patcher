@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The Dart API of plan/1.1-direct-patching.md §4.4, against a fake native
-/// side and a local HTTP server.
+/// The Dart API for FPTC v1 patch files, against a fake native side and a
+/// local HTTP server.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('flutter_patcher');

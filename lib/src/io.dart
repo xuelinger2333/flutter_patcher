@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'patch_file.dart';
+
 bool get isSupported => Platform.isAndroid || Platform.isIOS;
 
 String get operatingSystem => Platform.operatingSystem;
@@ -32,7 +34,7 @@ Uri updateUri(String url) {
   return uri;
 }
 
-/// The first 146 bytes of the patch file at [url], or null when there is
+/// The first [patchHeaderSize] bytes of the patch file at [url], or null when there is
 /// none (404). Asks for just that range; a server that sends the whole file
 /// is read no further.
 Future<Uint8List?> readPatchHeader(
@@ -44,7 +46,10 @@ Future<Uint8List?> readPatchHeader(
   Future<Uint8List?> read() async {
     final request = await client.getUrl(uri);
     request.followRedirects = false;
-    request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-145');
+    request.headers.set(
+      HttpHeaders.rangeHeader,
+      'bytes=0-${patchHeaderSize - 1}',
+    );
     final response = await request.close();
     if (response.statusCode == HttpStatus.notFound) {
       await response.drain<void>();
@@ -56,10 +61,12 @@ Future<Uint8List?> readPatchHeader(
     final bytes = BytesBuilder(copy: false);
     await for (final chunk in response) {
       bytes.add(chunk);
-      if (bytes.length >= 146) break;
+      if (bytes.length >= patchHeaderSize) break;
     }
-    if (bytes.length < 146) throw const FormatException('Not a patch file');
-    return Uint8List.sublistView(bytes.takeBytes(), 0, 146);
+    if (bytes.length < patchHeaderSize) {
+      throw const FormatException('Not a patch file');
+    }
+    return Uint8List.sublistView(bytes.takeBytes(), 0, patchHeaderSize);
   }
 
   try {
@@ -136,21 +143,5 @@ Future<void> deletePayload(String path) async {
     await File(path).delete();
   } on FileSystemException {
     // Already gone.
-  }
-}
-
-/// Bound allocation by the actual open file, never by its FPTC header.
-Future<Uint8List> readPatchFile(String path) async {
-  final file = await File(path).open();
-  try {
-    final length = await file.length();
-    if (length < 146 || length > 320 * 1024 * 1024) {
-      throw const FormatException('Patch size');
-    }
-    final bytes = await file.read(length);
-    if (bytes.length != length) throw const FormatException('Patch truncated');
-    return bytes;
-  } finally {
-    await file.close();
   }
 }

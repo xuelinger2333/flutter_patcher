@@ -5,6 +5,7 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 
 import '../core.dart';
+import '../crypto/ed25519.dart';
 import '../sdk/android.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/host.dart';
@@ -54,6 +55,11 @@ Future<int> buildCommand(ArgResults args) async {
     final key = args['public-key'] == null
         ? policy.fields['fptc_key']!
         : (await File(args['public-key'] as String).readAsString()).trim();
+    require(
+      key == '-' || rawEd25519Key(key) != null,
+      'BUILD_CONFIG_INVALID',
+      '--public-key must hold a raw Ed25519 public key in base64, or -.',
+    );
     final request = BuildRequest(
       project: project,
       output: p.absolute(

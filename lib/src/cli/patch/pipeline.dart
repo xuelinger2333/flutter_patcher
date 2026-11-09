@@ -55,7 +55,7 @@ class PatchRequest {
   Future<void> validate() async {
     require(
       (fingerprint == null || baselineHash.hasMatch(fingerprint!)) &&
-          RegExp(r'^[A-Za-z0-9_]{1,64}$').hasMatch(flavor) &&
+          RegExp('^$scopeNamePattern\$').hasMatch(flavor) &&
           moduleId > 0 &&
           moduleId <= (1 << 52) &&
           minBuild > 0,
@@ -278,7 +278,7 @@ class PatchPipeline {
   Future<Map<String, Object?>> patch(
     PatchRequest req,
     ResolvedRelease resolved, {
-    Sealer? seal,
+    required Sealer seal,
   }) async {
     await req.validate();
     for (final protected in [sdk.root, managed]) {
@@ -521,14 +521,14 @@ class PatchPipeline {
   Future<Map<String, Object?>> writeOutput(
     PatchRequest req,
     PatchDraft draft,
-    Sealer? seal,
+    Sealer seal,
     Map<String, Object?> report,
   ) async {
     final pending = temporaryName(p.absolute(req.output));
     await Directory(pending).create(recursive: true);
     await draft.write(pending);
     await writeObject(p.join(pending, 'patch.json'), report);
-    final sealed = seal == null ? const {} : await seal(pending, report);
+    final sealed = await seal(pending, report);
     await rejectLinks(req.output);
     require(
       await FileSystemEntity.type(req.output, followLinks: false) ==

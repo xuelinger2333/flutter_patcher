@@ -20,8 +20,8 @@ class FptcVectorsTest {
             val bytes = Base64.getDecoder().decode(row.getString("file"))
             val key = if (row.isNull("host_key")) null else Base64.getDecoder().decode(row.getString("host_key"))
             if (row.getBoolean("valid")) {
-                assertEquals(row.getLong("seq"), PatchEnvelope.verify(bytes, row.getString("fingerprint"), key), name)
-                val header = PatchEnvelope.header(bytes)
+                val header = PatchEnvelope.verify(bytes, row.getString("fingerprint"), key)
+                assertEquals(row.getLong("seq"), header.seq, name)
                 assertEquals(row.getString("action") == "withdraw", header.withdrawal, name)
             } else {
                 assertFailsWith<IllegalArgumentException>(name) {

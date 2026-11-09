@@ -144,24 +144,18 @@ Future<Map<String, Object?>> _import(String project, String source) async {
     bundle = KeyBundle.decode(await File(source).readAsString());
   }
   final config = await ProjectConfig.load(project);
-  if (config.patchKey == null) {
-    final stored = await saveKeyStore(bundle);
-    await config.writeTrust(bundle.publicKey);
-    return {
-      'status': 'keys_imported',
-      'key_store': stored,
-      'config': config.path,
-      'public_key': bundle.publicKey,
-    };
-  }
+  final configured = config.patchKey != null;
   require(
-    bundle.publicKey == config.patchKey,
+    !configured || bundle.publicKey == config.patchKey,
     'KEYS_MISMATCH',
     'This is not the patch key ${config.path} names.',
   );
+  final stored = await saveKeyStore(bundle);
+  if (!configured) await config.writeTrust(bundle.publicKey);
   return {
     'status': 'keys_imported',
-    'key_store': await saveKeyStore(bundle),
+    'key_store': stored,
+    if (!configured) 'config': config.path,
     'public_key': bundle.publicKey,
   };
 }

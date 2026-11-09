@@ -9,7 +9,8 @@ import 'workspace.dart';
 /// Source identity is byte-exact: a CRLF checkout (Git for Windows defaults to
 /// `core.autocrlf=true`) yields a different fingerprint than an LF checkout of
 /// the same commit, and a patch built from the other line endings sees every
-/// file as changed. The baseline records them; patch explains a difference.
+/// file as changed. The baseline records them; patch explains native files
+/// that differ from the release only in line endings.
 Future<List<String>> crlfDartSources(String root) async {
   final found = <String>[];
   Future<void> visit(Directory directory) async {

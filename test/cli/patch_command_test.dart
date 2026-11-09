@@ -18,7 +18,7 @@ Matcher fails(String code) =>
     throwsA(isA<Failure>().having((f) => f.code, 'code', code));
 
 /// What `patch` adds to its draft, the file devices take, and what
-/// `patch --withdraw` writes instead: plan/1.1-direct-patching.md §4.5.
+/// `patch --withdraw` writes instead.
 void main() {
   late Directory root;
   late String output;

@@ -47,7 +47,7 @@ Future<void> main() async {
 }
 ''';
 
-/// The patch key, the one key: plan/1.1-direct-patching.md §4.5.
+/// The patch key, the one key.
 void main() {
   late Directory temp;
   late String store;

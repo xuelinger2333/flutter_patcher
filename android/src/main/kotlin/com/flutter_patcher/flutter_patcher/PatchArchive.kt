@@ -10,7 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The payload of a signed patch envelope: a ZIP whose `patch_manifest.json`
+ * The payload of a patch file: a ZIP whose `patch_manifest.json`
  * lists its code and resources with their digests. What the manifest must
  * vouch for is checked once, here, for both strategies; only reading the ZIP
  * differs. An SO payload is unpacked at install; a bytecode payload is

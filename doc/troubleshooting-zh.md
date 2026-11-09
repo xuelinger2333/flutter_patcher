@@ -110,7 +110,6 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `KEYS_ALREADY_CONFIGURED` | 项目已有补丁密钥，或项目中还有 `flutter_patcher_keys/` 目录时运行 `keys init` | 用 `keys import <密钥包>` 把现有密钥带到本机；旧目录用 `keys import flutter_patcher_keys` |
 | `KEYS_BUNDLE_INVALID` | 文件不是密钥包、不含补丁密钥，或目录中没有 `patch/private-key.base64`；`~/.flutter_patcher/keys/` 中的文件损坏时也会报此错误（`message` 中给出文件名） | 使用 `keys export` 写出的文件，或含补丁密钥的 1.0 密钥包 |
 | `SIGNER_COMMAND_FAILED` | `signing.command` 无法启动、以非 0 退出、超过 60 秒、没有输出 base64 编码的 64 字节签名，或用了另一把密钥签名 | 用相同的环境手动运行该命令；确认服务中的密钥是纯 Ed25519，且就是补丁密钥 |
-| `PATCH_SIGN_FAILED` | 封装时签名自检失败 | 用 `keys status` 检查补丁私钥的来源 |
 | `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | 输出文件已存在，或无法创建密钥库目录 | 换一个新文件；检查 `~/.flutter_patcher/keys` 的权限 |
 | `KEYS_PERMISSIONS_FAILED` | 无法限制私钥文件的权限 | 确认文件系统支持标准的权限属性 |
 | `KEYS_IO_ERROR` | 读写密钥失败 | 检查目录权限后重试 |

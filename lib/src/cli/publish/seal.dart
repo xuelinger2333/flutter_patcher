@@ -5,7 +5,6 @@ import 'package:crypto/crypto.dart';
 import 'package:archive/archive.dart';
 
 import '../core.dart';
-import '../crypto/ed25519.dart';
 import '../keys/signer.dart';
 import '../patch/package.dart';
 
@@ -46,6 +45,22 @@ Future<Uint8List> sealWithdrawal(
   return _seal(fingerprint, seq, const [], signer);
 }
 
+/// Seals the file of the patch output [dir]: its draft, or when [withdrawal]
+/// a withdrawal of its host [fingerprint].
+Future<Uint8List> sealOutputFile(
+  String dir,
+  String fingerprint, {
+  required bool withdrawal,
+  Signer? signer,
+  required int seq,
+}) async => withdrawal
+    ? sealWithdrawal(fingerprint, signer: signer, seq: seq)
+    : sealPatch(await PatchDraft.read(dir), signer: signer, seq: seq);
+
+/// The sequence of a file sealed now, unless one is given: the current Unix
+/// time in seconds.
+int sequenceNow() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
 void checkSeq(int seq) => require(
   seq > 0 && seq <= 0xffffffff,
   'PUBLISH_SEQUENCE_CONFLICT',
@@ -67,14 +82,6 @@ Future<Uint8List> _seal(
   header.buffer.asUint8List().setRange(50, 82, sha256.convert(payload).bytes);
   final head = header.buffer.asUint8List();
   var signature = Uint8List(64);
-  if (signer != null) {
-    final signed = [...head, ...payload];
-    signature = await signer.sign(signed);
-    require(
-      ed25519Verify(base64Decode(signer.publicKey), signature, signed),
-      'PATCH_SIGN_FAILED',
-      'Signature self-check failed',
-    );
-  }
+  if (signer != null) signature = await signer.sign([...head, ...payload]);
   return Uint8List.fromList([...head, ...signature, ...payload]);
 }

@@ -73,7 +73,6 @@ class BuildRequest {
       'BUILD_CONFIG_INVALID',
       '--export-method applies to iOS builds: ${iosExportMethods.join(', ')}.',
     );
-    bootstrapSource('app', 'main.dart', '0' * 64, publicKey);
     require(
       hostPolicy.fields['fptc_key'] == publicKey &&
           hostPolicy.fields['flavor'] == (flavor ?? 'default') &&

@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import zlib
 
-// The device rules of plan/1.1-direct-patching.md §4.3 and the shared FPTC
+// The device rules for FPTC v1 patch files and the shared FPTC v1
 // vectors, run on macOS against the iOS plugin sources (test/ios/run.sh).
 
 var failures = 0
@@ -85,9 +85,8 @@ let scope = [
   "application_id": "com.example.app", "channel": "production", "flavor": "default", "version_code": "7",
   "abi": "ios-arm64", "fingerprint": fp, "strategy": "bytecode",
 ]
-let unsignedHost = HostTrustConfig(scope: scope, fptcKey: nil, policyHash: String(repeating: "0", count: 64), url: nil)
-let signedHost = HostTrustConfig(
-  scope: scope, fptcKey: signer.publicKey.rawRepresentation, policyHash: String(repeating: "0", count: 64), url: nil)
+let unsignedHost = HostTrustConfig(scope: scope, fptcKey: nil, url: nil)
+let signedHost = HostTrustConfig(scope: scope, fptcKey: signer.publicKey.rawRepresentation, url: nil)
 
 func process(_ host: HostTrustConfig = unsignedHost) -> BytecodePatchManager {
   BytecodePatchManager.debugNewProcess()
@@ -115,12 +114,12 @@ test("every vector is accepted or rejected as the format says") {
     let name = row["name"] as! String
     let bytes = Data(base64Encoded: row["file"] as! String)!
     let hostKey = (row["host_key"] as? String).map { Data(base64Encoded: $0)! }
-    let seq = try? BytecodeEnvelope.verify(bytes, fingerprint: row["fingerprint"] as! String, rawKey: hostKey)
+    let header = try? BytecodeEnvelope.verify(bytes, fingerprint: row["fingerprint"] as! String, rawKey: hostKey)
     if row["valid"] as! Bool {
-      check(seq == (row["seq"] as! NSNumber).int64Value, name)
-      check(try BytecodeEnvelope.readHeader(bytes).withdrawal == (row["action"] as! String == "withdraw"), name)
+      check(header?.seq == (row["seq"] as! NSNumber).int64Value, name)
+      check(header?.withdrawal == (row["action"] as! String == "withdraw"), name)
     } else {
-      check(seq == nil, name)
+      check(header == nil, name)
     }
   }
 }

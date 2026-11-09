@@ -143,7 +143,7 @@ void main() {
       );
     },
   );
-  test('bootstrap binds fingerprint and rejects malformed key', () {
+  test('bootstrap binds fingerprint', () {
     final source = bootstrapSource(
       'app',
       'main.dart',
@@ -152,10 +152,6 @@ void main() {
     );
     expect(source, contains('a' * 64));
     expect(source, contains('PatchBootstrap.run'));
-    expect(
-      () => bootstrapSource('app', 'main.dart', 'a' * 64, 'bad'),
-      throwsA(isA<Failure>()),
-    );
   });
   test('bootstrap declares the entry hook for both strategies', () {
     final key = base64Encode(List.filled(32, 1));

@@ -11,7 +11,7 @@ import 'package:flutter_patcher/src/cli/project.dart';
 Matcher fails(String code) =>
     throwsA(isA<Failure>().having((f) => f.code, 'code', code));
 
-/// Host policy schema 2, plan/1.1-direct-patching.md §4.1.
+/// Host policy schema 2.
 void main() {
   final key = base64Encode(List.filled(32, 3));
   final fields = {

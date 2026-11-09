@@ -77,7 +77,7 @@ internal object BytecodeFormat : CandidateFormat {
         val started = System.nanoTime()
         val bytes = CandidateStore.readBounded(File(root, name(meta)))
         val read = System.nanoTime()
-        val seq = PatchEnvelope.verify(bytes, meta.getString("fingerprint"), host.fptcKey)
+        val seq = PatchEnvelope.verify(bytes, meta.getString("fingerprint"), host.fptcKey).seq
         require(seq == meta.getLong("seq") && identifies(bytes, meta)) { "Stored candidate changed" }
         val verified = System.nanoTime()
         // The bootstrap reads the same ranges and skips only the CRCs and

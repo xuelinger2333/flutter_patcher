@@ -1,6 +1,6 @@
 // Writes test/protocol/fptc-v1.json, the FPTC v1 vectors shared by the CLI,
 // the Dart plugin, Android and iOS. Files are assembled here byte by byte
-// from the format in plan/1.1-direct-patching.md §4.2, not by the CLI's
+// from the FPTC v1 format, not by the CLI's
 // sealing code, so the CLI is tested against the format rather than itself.
 //
 //   dart run test/protocol/generate_fptc_vectors.dart

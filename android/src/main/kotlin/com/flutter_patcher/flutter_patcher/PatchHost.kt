@@ -185,15 +185,14 @@ internal class PatchHost internal constructor(
     fun apply(bytes: ByteArray, progress: ProgressCallback): Map<String, Any?> = synchronized(lock) {
         HostTrustConfig.requireOwner(context)
         progress("verifying", bytes.size.toLong(), bytes.size.toLong())
-        val seq = try { PatchEnvelope.verify(bytes, fingerprint, host.fptcKey) }
+        val header = try { PatchEnvelope.verify(bytes, fingerprint, host.fptcKey) }
             catch (e: IllegalArgumentException) {
                 return@synchronized ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, e.message).toMap()
             }
-        val withdrawal = bytes.size == PatchEnvelope.HEADER
         val result = try {
-            if (withdrawal) withdraw(seq) else install(bytes, seq, progress)
+            if (header.withdrawal) withdraw(header.seq) else install(bytes, header.seq, progress)
         } catch (e: java.io.IOException) { ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message) }
-        result.toMap() + mapOf("action" to if (withdrawal) "withdraw" else "publish")
+        result.toMap() + mapOf("action" to if (header.withdrawal) "withdraw" else "publish")
     }
 
     fun rollback() = synchronized(lock) {

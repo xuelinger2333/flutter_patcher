@@ -15,7 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The device rules of plan/1.1-direct-patching.md §4.3, against a real
+ * The device rules for FPTC v1 patch files, against a real
  * Context. A new [PatchHost] on the same Context is the next process.
  */
 @RunWith(RobolectricTestRunner::class)

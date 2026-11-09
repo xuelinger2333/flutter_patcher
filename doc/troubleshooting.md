@@ -111,7 +111,6 @@ The host was built with a patch key (`trust.patch`) and no source on this machin
 | `KEYS_ALREADY_CONFIGURED` | `keys init` in a project that already names a patch key, or still has a `flutter_patcher_keys/` directory | Bring the existing key to this machine with `keys import <bundle>`, or `keys import flutter_patcher_keys` for the old directory |
 | `KEYS_BUNDLE_INVALID` | The file is not a key bundle, holds no patch key, or the directory has no `patch/private-key.base64`; also a damaged file in `~/.flutter_patcher/keys/` (named in `message`) | Use a file written by `keys export`, or a 1.0 bundle that has a patch key |
 | `SIGNER_COMMAND_FAILED` | `signing.command` could not start, exited non-zero, took over 60 seconds, printed no base64 64-byte signature, or signed with another key | Run the command by hand with the same environment; check that the service's key is pure Ed25519 and is the patch key |
-| `PATCH_SIGN_FAILED` | A signature failed its self-check while sealing | Check where the patch key comes from with `keys status` |
 | `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | The output file already exists, or the key store directory cannot be created | Choose a new file; check the permissions of `~/.flutter_patcher/keys` |
 | `KEYS_PERMISSIONS_FAILED` | Failed to restrict file permissions on private keys | Verify that the filesystem supports standard permission attributes |
 | `KEYS_IO_ERROR` | Failed to read or write keys | Check directory permissions and retry |

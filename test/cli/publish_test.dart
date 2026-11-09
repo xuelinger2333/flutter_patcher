@@ -23,8 +23,7 @@ import 'host_tools.dart';
 Matcher fails(String code) =>
     throwsA(isA<Failure>().having((f) => f.code, 'code', code));
 
-/// `publish` and the patch files it writes, plan/1.1-direct-patching.md
-/// §4.5 and §6.
+/// `publish` and the patch files it writes.
 void main() {
   late Directory root;
   late String project, store;

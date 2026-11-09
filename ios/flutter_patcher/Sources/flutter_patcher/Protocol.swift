@@ -22,16 +22,14 @@ final class HostTrustConfig {
 
   let scope: [String: String]
   let fptcKey: Data?
-  let policyHash: String
   /// Where `build` was told devices download patches; outside the policy and its hash.
   let url: String?
   var strategy: String { scope["strategy"]! }
   var fingerprint: String { scope["fingerprint"]! }
 
-  init(scope: [String: String], fptcKey: Data?, policyHash: String, url: String?) {
+  init(scope: [String: String], fptcKey: Data?, url: String?) {
     self.scope = scope
     self.fptcKey = fptcKey
-    self.policyHash = policyHash
     self.url = url
   }
 
@@ -59,8 +57,7 @@ final class HostTrustConfig {
     let policy = try JSONText.strings(text)
     try require(text == canonical(policy), "Host policy canonical form")
     try require(Set(policy.keys) == policyKeys && policy["schema"] == "2", "Host policy fields")
-    let hash = sha256Hex(Data(text.utf8))
-    try require(hash == declared, "Host policy hash")
+    try require(sha256Hex(Data(text.utf8)) == declared, "Host policy hash")
     var scope = [String: String]()
     for key in scopeKeys { scope[key] = key == "fingerprint" ? fingerprint : policy[key]! }
     func matches(_ key: String, _ pattern: String) -> Bool { fullMatch(pattern, scope[key]!) }
@@ -79,7 +76,7 @@ final class HostTrustConfig {
     let url = wrapper["url"] as? String
     try require(wrapper["url"] == nil || url.map { $0.hasPrefix("https://") || $0.hasPrefix("http://") } == true,
       "Host URL")
-    return HostTrustConfig(scope: scope, fptcKey: key, policyHash: hash, url: url)
+    return HostTrustConfig(scope: scope, fptcKey: key, url: url)
   }
 
   /// Patches are managed by the app itself, never by an extension sharing the plugin.

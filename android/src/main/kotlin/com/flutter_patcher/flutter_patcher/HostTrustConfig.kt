@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.os.Build
-import java.security.MessageDigest
 import java.util.Base64
 import java.util.zip.ZipFile
 import org.json.JSONObject
@@ -15,7 +14,7 @@ import org.json.JSONObject
  * it trusts, if any ([fptcKey] null: patch files are not signed).
  */
 internal class HostTrustConfig internal constructor(val scope: Map<String, String>,
-    val fptcKey: ByteArray?, val policyHash: String, val url: String? = null) {
+    val fptcKey: ByteArray?, val url: String? = null) {
     val strategy: String get() = scope.getValue("strategy")
     val fingerprint: String get() = scope.getValue("fingerprint")
 
@@ -48,9 +47,9 @@ internal class HostTrustConfig internal constructor(val scope: Map<String, Strin
             }
             require(policyText == canonical(policy)) { "Host policy canonical form" }
             require(policy.keys == policyKeys && policy["schema"] == "2") { "Host policy fields" }
-            val hash = MessageDigest.getInstance("SHA-256").digest(policyText.toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
-            require(hash == wrapper.getString("policy_sha256")) { "Host policy hash" }
+            require(PatchEnvelope.digest(policyText.toByteArray(Charsets.UTF_8)) == wrapper.getString("policy_sha256")) {
+                "Host policy hash"
+            }
             val scope = scopeKeys.associateWith { if (it == "fingerprint") wrapper.getString(it) else policy.getValue(it) }
             fun matches(key: String, pattern: String) = Regex(pattern).matches(scope.getValue(key))
             require(matches("fingerprint", "[0-9a-f]{64}")) { "Fingerprint" }
@@ -67,7 +66,7 @@ internal class HostTrustConfig internal constructor(val scope: Map<String, Strin
             // Where `build` was told devices download patches; outside the policy and its hash.
             val url = if (wrapper.has("url")) wrapper.getString("url") else null
             require(url == null || url.startsWith("https://") || url.startsWith("http://")) { "Host URL" }
-            return HostTrustConfig(scope, key, hash, url)
+            return HostTrustConfig(scope, key, url)
         }
 
         private fun canonical(fields: Map<String, String>) = fields.toSortedMap().entries

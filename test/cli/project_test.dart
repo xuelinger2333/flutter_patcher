@@ -148,7 +148,7 @@ void main() {
     expect((await ProjectConfig.load(project.path)).patchKey, keys['patch']);
   });
 
-  test('a patch key is added to a file as written, once', () async {
+  test('a patch key is added to a file as written', () async {
     final file = File(p.join(project.path, ProjectConfig.file))
       ..writeAsStringSync('# mine\nstore: file:///tmp/p\n');
     await (await ProjectConfig.load(project.path)).writeTrust(keys['patch']!);
@@ -159,10 +159,6 @@ void main() {
     );
     expect(config['store'], 'file:///tmp/p');
     expect(config.patchKey, keys['patch']);
-    await expectLater(
-      config.writeTrust(keys['root']!),
-      failure('KEYS_ALREADY_CONFIGURED'),
-    );
   });
 
   test('url defaults to serve and accepts only an http(s) address', () async {

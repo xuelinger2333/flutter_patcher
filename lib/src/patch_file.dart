@@ -40,7 +40,7 @@ class PatchHeader {
   /// Reads the first [patchHeaderSize] bytes of [bytes].
   factory PatchHeader.parse(List<int> bytes) {
     if (bytes.length < patchHeaderSize) {
-      throw const FormatException('A patch header has 146 bytes');
+      throw const FormatException('A patch header has $patchHeaderSize bytes');
     }
     final view = ByteData.sublistView(
       Uint8List.fromList(bytes.sublist(0, patchHeaderSize)),

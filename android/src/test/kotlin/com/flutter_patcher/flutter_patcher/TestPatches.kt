@@ -12,7 +12,7 @@ import java.util.zip.ZipOutputStream
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Patch files assembled from the FPTC v1 format, as plan/1.1-direct-patching.md §4.2 defines it. */
+/** Patch files assembled from the FPTC v1 format. */
 internal object TestPatches {
     const val FP = "abababababababababababababababababababababababababababababababab"
 
@@ -22,7 +22,7 @@ internal object TestPatches {
     fun host(key: ByteArray?, strategy: String = "bytecode") = HostTrustConfig(
         mapOf("application_id" to "com.example.app", "channel" to "production", "flavor" to "default",
             "version_code" to "7", "abi" to "arm64-v8a", "fingerprint" to FP, "strategy" to strategy),
-        key, "0".repeat(64))
+        key)
 
     private fun row(path: String, bytes: ByteArray) = JSONObject()
         .put("path", path).put("length", bytes.size).put("sha256", PatchEnvelope.digest(bytes))

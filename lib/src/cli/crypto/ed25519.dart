@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -168,4 +169,16 @@ bool ed25519Verify(
       ) %
       _order;
   return _samePoint(_multiply(s, _base), _add(r, _multiply(k, a)));
+}
+
+/// The 32 bytes of a raw Ed25519 key (a public key or a seed) in canonical
+/// base64, or null when [value] is not one.
+Uint8List? rawEd25519Key(Object? value) {
+  if (value is! String) return null;
+  try {
+    final raw = base64Decode(value);
+    return raw.length == 32 && base64Encode(raw) == value ? raw : null;
+  } on FormatException {
+    return null;
+  }
 }

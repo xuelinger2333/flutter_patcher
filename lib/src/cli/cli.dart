@@ -300,7 +300,6 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     final project = args.options.contains('project')
         ? args['project'] as String?
         : null;
-
     await check('cache_path', () async {
       // Build passes cache paths inside comma-separated compiler options, and
       // deep Gradle trees under a long cache root overrun MAX_PATH on Windows.
@@ -512,9 +511,10 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
         'New host interface converged under bytecode validation; host/device execution not verified',
       );
     }
-    final patchKey = project == null
+    final config = project == null
         ? null
-        : (await ProjectConfig.load(p.absolute(project))).patchKey;
+        : await ProjectConfig.load(p.absolute(project));
+    final patchKey = config?.patchKey;
     if (patchKey == null) {
       pending(
         'project_keys',
@@ -525,11 +525,10 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
       );
     } else {
       await check('project_keys', () async {
-        final config = await ProjectConfig.load(p.absolute(project!));
         report['keys'] = {
           'patch': await Keyring(
             patchKey,
-            command: config.signingCommand,
+            command: config!.signingCommand,
           ).describe(),
         };
       }, 'Patch key configured; keys says where its private key comes from');

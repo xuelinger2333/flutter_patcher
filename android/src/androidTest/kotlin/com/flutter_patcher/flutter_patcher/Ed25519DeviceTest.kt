@@ -28,8 +28,8 @@ class Ed25519DeviceTest {
 
     @Test fun authenticEnvelopePassesRepeatedlyWithoutMutatingBytes() {
         val bytes = envelope(); val original = bytes.clone()
-        assertEquals(7L, PatchEnvelope.verify(bytes, fingerprint, key))
-        assertEquals(7L, PatchEnvelope.verify(bytes, fingerprint, key))
+        assertEquals(7L, PatchEnvelope.verify(bytes, fingerprint, key).seq)
+        assertEquals(7L, PatchEnvelope.verify(bytes, fingerprint, key).seq)
         assertArrayEquals(original, bytes)
     }
 

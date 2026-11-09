@@ -36,9 +36,9 @@ internal object PatchEnvelope {
     /**
      * The whole file of [fingerprint]'s host: its header, length and digest,
      * and when the host trusts [rawKey], the Ed25519 signature over the
-     * header followed by the payload. Returns its sequence.
+     * header followed by the payload. Returns its header.
      */
-    fun verify(bytes: ByteArray, fingerprint: String, rawKey: ByteArray?): Long {
+    fun verify(bytes: ByteArray, fingerprint: String, rawKey: ByteArray?): Header {
         require(bytes.size in HEADER..MAX_BYTES) { "Envelope size" }
         val header = header(bytes)
         require(header.length == bytes.size.toLong() - HEADER) { "Envelope length" }
@@ -55,6 +55,6 @@ internal object PatchEnvelope {
             }
             require(valid) { "Envelope signature" }
         }
-        return header.seq
+        return header
     }
 }

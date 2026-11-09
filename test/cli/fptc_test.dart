@@ -15,7 +15,7 @@ import 'package:flutter_patcher/src/patch_file.dart';
 
 import 'signers.dart';
 
-/// FPTC v1 as plan/1.1-direct-patching.md §4.2 defines it.
+/// FPTC v1.
 void main() {
   final vectors =
       jsonDecode(File('test/protocol/fptc-v1.json').readAsStringSync()) as Map;

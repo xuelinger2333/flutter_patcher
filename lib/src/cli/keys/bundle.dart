@@ -69,14 +69,8 @@ final class KeyBundle {
     }
   }
 
-  static Uint8List _seed(Object? value) {
-    if (value is! String) throw const FormatException();
-    final raw = base64Decode(value);
-    if (raw.length != 32 || base64Encode(raw) != value) {
-      throw const FormatException();
-    }
-    return raw;
-  }
+  static Uint8List _seed(Object? value) =>
+      rawEd25519Key(value) ?? (throw const FormatException());
 
   /// The pre-1.0 layout `keys init` wrote: `<dir>/patch/private-key.base64`.
   static Future<KeyBundle> readDirectory(String directory) async {

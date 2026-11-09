@@ -99,7 +99,7 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
   final host = Map<String, String>.from(scope as Map);
   final name = patchFileName(host);
   final seq = args['seq'] == null
-      ? DateTime.now().millisecondsSinceEpoch ~/ 1000
+      ? sequenceNow()
       : int.tryParse(args['seq'] as String) ?? 0;
   checkSeq(seq);
   final signer = patchKey == '-'
@@ -109,10 +109,13 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
           keyFile: args['key-file'] as String?,
           command: config.signingCommand,
         ).signer();
-  final draft = withdraw ? null : await PatchDraft.read(directory);
-  final bytes = draft == null
-      ? await sealWithdrawal(host['fingerprint']!, signer: signer, seq: seq)
-      : await sealPatch(draft, signer: signer, seq: seq);
+  final bytes = await sealOutputFile(
+    directory,
+    host['fingerprint']!,
+    withdrawal: withdraw,
+    signer: signer,
+    seq: seq,
+  );
   final cache = managedCache(null);
   await Directory(cache).create(recursive: true);
   final work = await RunWork.create(p.join(cache, 'publish'));
@@ -141,13 +144,13 @@ Future<Map<String, dynamic>> publication(ArgResults args) async {
     };
     if (current != null && current.fingerprint == host['fingerprint']) {
       // A sequence changes the payload too: compare the drafts it carries.
-      final same = draft == null
+      final same = withdraw
           ? current.withdrawal
           : !current.withdrawal &&
                 sha256
                         .convert(
                           (await sealPatch(
-                            draft,
+                            await PatchDraft.read(directory),
                             seq: current.seq,
                           )).sublist(patchHeaderSize),
                         )

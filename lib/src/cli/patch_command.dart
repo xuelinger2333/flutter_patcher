@@ -16,7 +16,7 @@ import 'project.dart';
 import 'publish/seal.dart';
 import '../patch_file.dart';
 import 'patch/outputs.dart';
-import 'patch/package.dart' show PatchDraft, newModuleId;
+import 'patch/package.dart' show newModuleId;
 import 'patch/pipeline.dart';
 
 /// `patch`: the patch layer makes a draft from the source and the host's
@@ -209,11 +209,14 @@ Future<Map<String, Object?>> sealOutput(
           'output where it is.',
     };
   }
-  final seq = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  final signer = await ring?.signer();
-  final bytes = report['status'] == 'withdrawal_created'
-      ? await sealWithdrawal(scope['fingerprint']!, signer: signer, seq: seq)
-      : await sealPatch(await PatchDraft.read(dir), signer: signer, seq: seq);
+  final seq = sequenceNow();
+  final bytes = await sealOutputFile(
+    dir,
+    scope['fingerprint']!,
+    withdrawal: report['status'] == 'withdrawal_created',
+    signer: await ring?.signer(),
+    seq: seq,
+  );
   final name = patchFileName(scope);
   await File(p.join(dir, name)).writeAsBytes(bytes, flush: true);
   return {

@@ -6,7 +6,9 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import '../baseline/store.dart' show serialized;
+import '../build/host_policy.dart' show scopeNamePattern;
 import '../core.dart';
+import '../../patch_file.dart';
 
 class StoredObject {
   final Uint8List bytes;
@@ -36,14 +38,12 @@ abstract class PublishStore {
 /// the store's root, beside anything flutter_patcher 1.0 left there.
 void publicationName(String name) => require(
   RegExp(
-    r'^[1-9][0-9]{0,9}(-[A-Za-z0-9_]{1,64}-[A-Za-z0-9_]{1,64})?-'
+    '^[1-9][0-9]{0,9}(-$scopeNamePattern-$scopeNamePattern)?-'
     r'(arm64-v8a|ios-arm64)\.fptc$',
   ).hasMatch(name),
   'PUBLISH_STORE_INVALID',
   'Invalid patch file name',
 );
-
-const publicationLimit = 320 * 1024 * 1024;
 
 class FilePublishStore implements PublishStore {
   FilePublishStore(String root) : root = p.normalize(p.absolute(root));
@@ -63,14 +63,15 @@ class FilePublishStore implements PublishStore {
           await lock.close();
         }
       });
-  Future<StoredObject?> _read(String name) async {
+  @override
+  Future<StoredObject?> read(String name) async {
     publicationName(name);
     final path = p.join(root, name);
     await rejectLinks(path);
     final file = File(path);
     if (!await file.exists()) return null;
     require(
-      await file.length() <= publicationLimit,
+      await file.length() <= patchMaxBytes,
       'PUBLISH_STORE_INVALID',
       'Object exceeds limit',
     );
@@ -79,14 +80,11 @@ class FilePublishStore implements PublishStore {
   }
 
   @override
-  Future<StoredObject?> read(String name) => _read(name);
-  @override
   Future<bool> write(String name, List<int> bytes, String? expected) =>
       _locked(() async {
-        final old = await _read(name);
+        final old = await read(name);
         if (old?.token != expected) return false;
         final file = File(p.join(root, name));
-        await Directory(p.dirname(file.path)).create(recursive: true);
         final staging = File(temporaryName(file.path));
         await staging.writeAsBytes(bytes, flush: true);
         await staging.renameRetry(file.path);
@@ -156,12 +154,11 @@ class S3PublishStore implements PublishStore {
     publicationName(name);
     await Directory(work).create(recursive: true);
     final destination = temporaryName(p.join(work, 'read'));
-    final max = publicationLimit;
     final result = await _call('get-object', [
       '--key',
       '$prefix$name',
       '--range',
-      'bytes=0-$max',
+      'bytes=0-$patchMaxBytes',
       destination,
     ]);
     if (result.exitCode != 0 &&
@@ -172,7 +169,7 @@ class S3PublishStore implements PublishStore {
     final file = File(destination);
     try {
       require(
-        await file.length() <= max,
+        await file.length() <= patchMaxBytes,
         'PUBLISH_STORE_INVALID',
         'Object exceeds limit',
       );
