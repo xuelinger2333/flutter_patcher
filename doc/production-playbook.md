@@ -85,6 +85,8 @@ Signing needs the private key on the machine that seals the file. `patch` and `p
 
 Move the key with `keys export --out <file>` and `keys import <file>`; `keys status` shows which source would sign. Without the key on a machine, `patch` there writes only the draft (`"file": null`, with a notice), and `publish --patch <output>` on a machine with the key seals and signs it.
 
+**To stop signing**: remove the `trust:` entry from `flutter_patcher.yaml`; hosts built from then on accept unsigned files. Signed hosts already shipped are unaffected: patching them still needs the original private key, so keep it for as long as they may need patches.
+
 **If the private key is lost**: hosts built with it can no longer be patched. Remove the `trust:` entry from `flutter_patcher.yaml`, run `keys init` again and ship a new store release built with the new key.
 
 ## 4. Build and Ship the Store Release

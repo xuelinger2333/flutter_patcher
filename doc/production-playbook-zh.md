@@ -85,6 +85,8 @@ dart run flutter_patcher keys init
 
 用 `keys export --out <文件>` 和 `keys import <文件>` 在机器间转移密钥；`keys status` 显示会由哪个来源签名。机器上没有私钥时，`patch` 只写出草稿（`"file": null`，并附提示），再在有私钥的机器上执行 `publish --patch <输出目录>` 完成封装与签名。
 
+**关闭签名时**：从 `flutter_patcher.yaml` 中删除 `trust:` 一项，此后构建的宿主不再要求签名。已上线的签名宿主不受影响：给它们打补丁仍然需要原来的私钥，请一直保管到这些宿主不再需要补丁为止。
+
 **私钥丢失时**：用它构建的宿主无法再打补丁。从 `flutter_patcher.yaml` 中删除 `trust:` 一项，重新执行 `keys init`，再发一版用新密钥构建的安装包。
 
 ## 4. 构建并提交商店版本
