@@ -40,7 +40,7 @@ It stops applying, and the boot diagnostic is `droppedVersionCodeMismatch`. Each
 
 ### Can I patch several live releases?
 
-Yes. Each release has its own baseline and its own patch file name, `<version_code>-<flavor>-<channel>-<abi>.fptc`. Go back to that release's source, fix it, and run `patch --version-code <its build number>`. See the [Production Deployment Guide](production-playbook.md).
+Yes. Each release has its own baseline and its own patch file name, which starts with its version code, such as `7-arm64-v8a.fptc`. Go back to that release's source, fix it, and run `patch --version-code <its build number>`. See the [Production Deployment Guide](production-playbook.md).
 
 ### Do I need keys?
 
@@ -68,7 +68,7 @@ The device turns the patch off, runs its installed version from the next cold st
 
 ### Do I need my own backend?
 
-No. Patch files are static files: `patch` writes `<fileName>.fptc` into its output directory (and `publish`, if you use it, at the root of its store), and any HTTPS static hosting can serve it, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. Give `.fptc` files a short cache time: each new patch replaces the file under the same name. See the [Production Deployment Guide](production-playbook.md).
+No. Patch files are static files: `patch` writes `<fileName>` into its output directory (and `publish`, if you use it, at the root of its store), and any HTTPS static hosting can serve it, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. Give `.fptc` files a short cache time: each new patch replaces the file under the same name. See the [Production Deployment Guide](production-playbook.md).
 
 ### What happens to my 1.0 hosts?
 

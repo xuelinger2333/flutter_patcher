@@ -9,10 +9,14 @@ const patchHeaderSize = 146;
 const patchMaxBytes = 320 * 1024 * 1024;
 
 /// The name a host's patch files go by: `patch` writes it, and a host
-/// computes it from the scope built into it.
+/// computes it from the scope built into it. The default flavor and channel
+/// are left out; otherwise both are named. Flavors and channels have no `-`,
+/// so no two hosts share a name.
 String patchFileName(Map<String, String> scope) =>
-    '${scope['version_code']}-${scope['flavor']}-${scope['channel']}-'
-    '${scope['abi']}.fptc';
+    scope['flavor'] == 'default' && scope['channel'] == 'production'
+    ? '${scope['version_code']}-${scope['abi']}.fptc'
+    : '${scope['version_code']}-${scope['flavor']}-${scope['channel']}-'
+          '${scope['abi']}.fptc';
 
 /// What an FPTC v1 header claims. Nothing here is verified: the host checks
 /// the fingerprint, digest and signature before it trusts any of it.

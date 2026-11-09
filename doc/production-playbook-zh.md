@@ -15,7 +15,7 @@
 
 ## 1. 确定 App 从哪里获取补丁文件
 
-一个补丁就是一个文件，名为 `<version_code>-<flavor>-<channel>-<abi>.fptc`，例如 `7-default-production-arm64-v8a.fptc`。每个构建（versionCode、flavor、channel、ABI）有自己的文件名，同一构建的所有补丁都用这个名字：新的补丁或撤回文件会替换原文件。
+一个补丁就是一个文件，例如 `7-arm64-v8a.fptc`；flavor 为 `paid`、渠道为 `beta` 时是 `7-paid-beta-arm64-v8a.fptc`（见[补丁文件](cli-zh.md#补丁文件)）。每个构建（versionCode、flavor、channel、ABI）有自己的文件名，同一构建的所有补丁都用这个名字：新的补丁或撤回文件会替换原文件。
 
 **使用内置下载器**：
 
@@ -38,12 +38,6 @@
    范围请求（Range）不是必需的：`checkUpdate` 请求前 146 字节，无论服务器返回多少，读到这些就停止。
 
 **自己下发**：由你的服务端根据 [`FlutterPatcher.patchTarget`](api-reference-zh.md) 给出的信息（`fileName`、`versionCode`、`flavor`、`channel`、`abi`、`acceptedSeq`）选择文件，App 把字节交给 `applyPatchBytes`。这时传输安全由 App 负责，见[3. 可选：开启签名](#3-可选开启签名)。
-
-无论哪种方式，都要确认 `android/app/src/main/AndroidManifest.xml` 声明了网络权限，release 构建需要它：
-
-```xml
-<uses-permission android:name="android.permission.INTERNET" />
-```
 
 ## 2. 保管基线
 

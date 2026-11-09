@@ -167,16 +167,43 @@
         "channel": "production",
         "abi": "arm64-v8a"
       },
-      "file_name": "7-default-production-arm64-v8a.fptc"
+      "file_name": "7-arm64-v8a.fptc"
+    },
+    {
+      "scope": {
+        "version_code": "7",
+        "flavor": "default",
+        "channel": "production",
+        "abi": "ios-arm64"
+      },
+      "file_name": "7-ios-arm64.fptc"
+    },
+    {
+      "scope": {
+        "version_code": "3",
+        "flavor": "default",
+        "channel": "beta",
+        "abi": "arm64-v8a"
+      },
+      "file_name": "3-default-beta-arm64-v8a.fptc"
+    },
+    {
+      "scope": {
+        "version_code": "3",
+        "flavor": "paid",
+        "channel": "production",
+        "abi": "arm64-v8a"
+      },
+      "file_name": "3-paid-production-arm64-v8a.fptc"
     },
     {
       "scope": {
         "version_code": "2100000000",
-        "flavor": "paid_Pro-1",
+        "flavor": "paid_Pro1",
         "channel": "beta",
         "abi": "ios-arm64"
       },
-      "file_name": "2100000000-paid_Pro-1-beta-ios-arm64.fptc"
+      "file_name": "2100000000-paid_Pro1-beta-ios-arm64.fptc"
     }
   ]
 }

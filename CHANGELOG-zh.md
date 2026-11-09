@@ -4,7 +4,7 @@
 
 ## 1.1.0
 
-1.1.0 让补丁变成一个文件。`patch` 写出 `<version_code>-<flavor>-<channel>-<abi>.fptc`；App 用任何方式拿到
+1.1.0 让补丁变成一个文件。`patch` 为每个宿主写出一个文件，例如 `1-arm64-v8a.fptc`；App 用任何方式拿到
 这个文件交给插件，插件校验后安装，下次冷启动生效。签名变为可选，插件也不再自行获取任何内容：`checkUpdate`
 和 `applyPatch` 保留为可选的下载器。自行分发只需要 `build` 和 `patch`；`serve` 是开发辅助工具，`publish`
 是可选的发布命令。已上线的 1.0.0 宿主不受影响，见下文"从 1.0 升级"。
@@ -35,7 +35,11 @@
   的一方就能在 App 中执行代码；内置下载器只接受 HTTPS，以及指向设备本机的明文 HTTP。
 - 宿主策略改为 schema 2：`application_id`、`version_code`、`flavor`、`channel`、`abi`、`strategy` 和
   `fptc_key`（补丁公钥；不签名的宿主为 `-`）。
-- `publish` 是可选的发布命令。它用发布时编号的序号重新封装补丁输出，把 `<fileName>.fptc` 写在存储的根目录下
+- 补丁文件在 flavor 和渠道为默认的 `default`、`production` 时命名为 `<version_code>-<abi>.fptc`，例如
+  `1-arm64-v8a.fptc`；否则为 `<version_code>-<flavor>-<channel>-<abi>.fptc`，例如
+  `3-paid-beta-arm64-v8a.fptc`。flavor 和渠道只含字母、数字和 `_`，因此不同宿主的文件名不会相同；`build`
+  拒绝其他字符。
+- `publish` 是可选的发布命令。它用发布时编号的序号重新封装补丁输出，把 `<fileName>` 写在存储的根目录下
   （`file://`，默认 `.flutter_patcher/updates`，或 `s3://`）。只有序号更大时才替换那里的文件（否则报
   `PUBLISH_SEQUENCE_CONFLICT`）；同一个补丁报 `already_published`；发布过程中文件被改动时报
   `PUBLISH_CONFLICT`；非交互环境下没有 `--yes` 时只预览。签名和不签名的宿主走同一个流程，是否签名由宿主
@@ -59,6 +63,8 @@
   没有密钥轮换。
 - 设备第一次作为 1.1 宿主启动时，删除 1.0 保存的签名清单状态（Android 的
   `noBackupFilesDir/flutter_patcher_auth/`，iOS 插件目录下的 `auth/`）。
+- Android 插件自行声明网络权限（新建 Flutter 项目的 release 构建没有它），使用 `checkUpdate` 时 App 不必再手动添加。
+- `build` 只输出一行简短摘要：`app`（要安装的 APK 或 IPA）、`application_id`、`version_code`、`strategy`、`signed`、`fingerprint` 和 `report`（App 旁边 `build.json` 中的完整报告）。
 
 ### Added
 

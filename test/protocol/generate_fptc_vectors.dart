@@ -208,27 +208,40 @@ void main() {
     ),
   ];
 
+  // The default flavor and channel are left out; otherwise both are named.
+  Map<String, Object> name(
+    String versionCode,
+    String flavor,
+    String channel,
+    String abi,
+    String fileName,
+  ) => {
+    'scope': {
+      'version_code': versionCode,
+      'flavor': flavor,
+      'channel': channel,
+      'abi': abi,
+    },
+    'file_name': fileName,
+  };
   final names = [
-    for (final scope in [
-      {
-        'version_code': '7',
-        'flavor': 'default',
-        'channel': 'production',
-        'abi': 'arm64-v8a',
-      },
-      {
-        'version_code': '2100000000',
-        'flavor': 'paid_Pro-1',
-        'channel': 'beta',
-        'abi': 'ios-arm64',
-      },
-    ])
-      {
-        'scope': scope,
-        'file_name':
-            '${scope['version_code']}-${scope['flavor']}-'
-            '${scope['channel']}-${scope['abi']}.fptc',
-      },
+    name('7', 'default', 'production', 'arm64-v8a', '7-arm64-v8a.fptc'),
+    name('7', 'default', 'production', 'ios-arm64', '7-ios-arm64.fptc'),
+    name('3', 'default', 'beta', 'arm64-v8a', '3-default-beta-arm64-v8a.fptc'),
+    name(
+      '3',
+      'paid',
+      'production',
+      'arm64-v8a',
+      '3-paid-production-arm64-v8a.fptc',
+    ),
+    name(
+      '2100000000',
+      'paid_Pro1',
+      'beta',
+      'ios-arm64',
+      '2100000000-paid_Pro1-beta-ios-arm64.fptc',
+    ),
   ];
 
   File('test/protocol/fptc-v1.json').writeAsStringSync(

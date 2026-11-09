@@ -38,7 +38,7 @@ void main() {
     'fingerprint': fingerprint,
     'strategy': 'bytecode',
   };
-  const name = '7-default-production-arm64-v8a.fptc';
+  const name = '7-arm64-v8a.fptc';
   var outputs = 0;
 
   setUp(() async {

@@ -20,7 +20,7 @@ void main() {
       );
       final a = S3PublishStore(uri, commands, '${root.path}/a');
       final b = S3PublishStore(uri, commands, '${root.path}/b');
-      const name = '7-default-production-arm64-v8a.fptc';
+      const name = '7-arm64-v8a.fptc';
       expect(await a.read(name), isNull);
       expect(await a.write(name, [1], null), isTrue);
       expect(await b.write(name, [9], null), isFalse);

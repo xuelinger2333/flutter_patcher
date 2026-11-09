@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 
 import 'package:flutter_patcher/src/cli/build/host_policy.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
+import 'package:flutter_patcher/src/cli/project.dart';
 
 Matcher fails(String code) =>
     throwsA(isA<Failure>().having((f) => f.code, 'code', code));
@@ -62,6 +64,8 @@ void main() {
       {'version_code': '07'},
       {'version_code': '2100000001'},
       {'flavor': 'a b'},
+      {'flavor': 'a-b'},
+      {'channel': 'b-c'},
       {'channel': 'c' * 65},
       {'application_id': 'example'},
     ]) {
@@ -77,6 +81,39 @@ void main() {
       HostPolicy({...fields, 'abi': 'ios-arm64'}).fields['abi'],
       'ios-arm64',
     );
+  });
+
+  test('a flavor or channel with anything but letters, digits and _ is a '
+      'usage error', () async {
+    final project = await Directory.systemTemp.createTemp('policy-of-');
+    addTearDown(() => project.delete(recursive: true));
+    final config = await ProjectConfig.load(project.path);
+    for (final (flavor, channel) in [('paid-pro', null), (null, 'beta-1')]) {
+      await expectLater(
+        HostPolicy.of(
+          project.path,
+          config,
+          platform: 'android',
+          applicationId: 'com.example.app',
+          versionCode: '1',
+          flavor: flavor,
+          channel: channel,
+        ),
+        throwsA(
+          isA<Failure>().having((f) => f.code, 'code', 'BUILD_CONFIG_INVALID'),
+        ),
+      );
+    }
+    final policy = await HostPolicy.of(
+      project.path,
+      config,
+      platform: 'android',
+      applicationId: 'com.example.app',
+      versionCode: '1',
+      flavor: 'paid_pro',
+      channel: 'beta1',
+    );
+    expect(policy.fields['flavor'], 'paid_pro');
   });
 
   test('a baseline of a flutter_patcher 1.0 host is not patched here', () {

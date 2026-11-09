@@ -59,9 +59,9 @@ class HostPolicy {
       'application_id',
     );
     check(
-      matches('channel', r'[A-Za-z0-9_-]{1,64}') &&
-          matches('flavor', r'[A-Za-z0-9_-]{1,64}'),
-      'channel/flavor',
+      matches('channel', r'[A-Za-z0-9_]{1,64}') &&
+          matches('flavor', r'[A-Za-z0-9_]{1,64}'),
+      'flavor and channel take letters, digits and _ only',
     );
     check(
       matches('version_code', r'[1-9][0-9]{0,9}') &&
@@ -155,6 +155,14 @@ class HostPolicy {
       'BUILD_CONFIG_INVALID',
       'An iOS host is a bytecode host.',
     );
+    for (final (option, value) in [('flavor', flavor), ('channel', channel)]) {
+      require(
+        value == null || RegExp(r'^[A-Za-z0-9_]{1,64}$').hasMatch(value),
+        'BUILD_CONFIG_INVALID',
+        '--$option takes 1 to 64 letters, digits and _, not $value: it '
+            'names the host\'s patch files.',
+      );
+    }
     applicationId ??= await _applicationId(project, platform);
     versionCode ??= await buildNumber(project);
     return HostPolicy({

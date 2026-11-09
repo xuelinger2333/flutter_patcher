@@ -158,7 +158,7 @@ test("only schema 2 with exactly its fields is accepted") {
   bad.append(schema1)
   bad += [
     with("schema", "3"), with("channel", nil), with("extra", "x"), with("fptc_key", "AAAA"),
-    with("abi", "arm64-v8a"), with("strategy", "so"), with("version_code", "07"), with("flavor", "a b"),
+    with("abi", "arm64-v8a"), with("strategy", "so"), with("version_code", "07"), with("flavor", "a b"), with("flavor", "a-b"), with("channel", "b-c"),
     with("application_id", "example"),
   ]
   for policy in bad { check((try? HostTrustConfig.parse(trust(policy))) == nil, "\(policy)") }

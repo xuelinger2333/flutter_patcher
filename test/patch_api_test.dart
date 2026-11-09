@@ -19,7 +19,7 @@ void main() {
         'abababababababababababababababababababababababababababababababab',
     'strategy': 'bytecode',
   };
-  const fileName = '7-default-production-arm64-v8a.fptc';
+  const fileName = '7-arm64-v8a.fptc';
 
   late HttpServer server;
   late String base;

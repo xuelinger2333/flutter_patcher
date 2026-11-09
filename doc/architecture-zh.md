@@ -16,7 +16,7 @@
                                                               校验、安装；下次冷启动加载
 ```
 
-- **开发机**：`dart run flutter_patcher` 构建宿主和基线，再把每次改动生成为一个补丁文件 `<version_code>-<flavor>-<channel>-<abi>.fptc`。这个文件可以用任何方式分发；可选的 `publish` 把它写入存储（本地目录或 S3），开发时由 `serve` 把最新的文件提供给调试设备。**基线存储**保存每个已发布版本的构建记录，只有 CLI 使用。
+- **开发机**：`dart run flutter_patcher` 构建宿主和基线，再把每次改动生成为一个补丁文件，例如 `1-arm64-v8a.fptc`。这个文件可以用任何方式分发；可选的 `publish` 把它写入存储（本地目录或 S3），开发时由 `serve` 把最新的文件提供给调试设备。**基线存储**保存每个已发布版本的构建记录，只有 CLI 使用。
 - **App 获取文件的地方**：插件不负责获取补丁。App 用任何方式拿到文件，交给 `applyPatchBytes` 或 `applyPatchFile` 即可。`checkUpdate` 和 `applyPatch` 只是一个可选的内置下载器，用于放在某个 URL 下的文件。
 - **设备**：原生代码逐项校验文件后安装，下次冷启动时加载。
 
@@ -76,7 +76,7 @@ iOS 不允许加载下载的机器码，因此只能使用字节码。Android �
 
 - payload 为空的文件是**撤回**：应用它的设备会删除当前补丁。
 - **序号**默认是封装文件时的 Unix 时间（秒），也可以用 `publish --seq` 指定。设备只接受序号大于所有已接受文件的文件。
-- **文件名**是 `<version_code>-<flavor>-<channel>-<abi>.fptc`，例如 `7-default-production-arm64-v8a.fptc`。`patch` 和 `publish` 按这个规则命名，设备上 `FlutterPatcher.patchTarget` 给出的 `fileName` 与之相同，App 或它的服务端据此挑选文件。
+- **文件名**在 flavor 和渠道为默认的 `default`、`production` 时是 `<version_code>-<abi>.fptc`，例如 `7-arm64-v8a.fptc`；否则是 `<version_code>-<flavor>-<channel>-<abi>.fptc`，例如 `7-paid-beta-arm64-v8a.fptc`。flavor 和渠道只含字母、数字和 `_`，因此不同宿主的文件名不会相同。`patch` 和 `publish` 按这个规则命名，设备上 `FlutterPatcher.patchTarget` 给出的 `fileName` 与之相同，App 或它的服务端据此挑选文件。
 - 文件最大 320 MiB。
 
 ## 安全模型

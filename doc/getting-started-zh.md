@@ -60,12 +60,6 @@ iOS 的差异见文末，命令的全部参数见 [CLI 参考](cli-zh.md)。
 
    `checkUpdate()` 请求 `<url>/<文件名>`，只读取前 146 字节（文件头），据此判断这个文件对本 App 是否是新的。`<url>` 是 `build` 写进 App 的地址：`flutter_patcher.yaml` 中的 `url`；没有配置时为 `http://127.0.0.1:8686`，也就是第 4 步中 `serve` 提供补丁的地址。显式传入效果相同：`checkUpdate(url: 'http://127.0.0.1:8686')`。
 
-3. 在 `android/app/src/main/AndroidManifest.xml` 的 `<manifest>` 下声明网络权限。`flutter create` 只在 debug 和 profile 构建中声明了它：
-
-   ```xml
-   <uses-permission android:name="android.permission.INTERNET"/>
-   ```
-
 **验证**：
 
 - `doctor` 最后一行以 `Toolchain ready.` 开头。首次运行会下载引擎，需要几分钟。
@@ -90,7 +84,7 @@ adb install <output>/app-release.apk
 
 **验证**：
 
-- `build` 输出的最后一行是 JSON，含 `"status":"build_archived"`；`output` 指向 `.dart_tool/flutter_patcher/releases/<时间戳>/`，其中有 `app-release.apk`。
+- `build` 输出的最后一行是一行简短的 JSON 摘要，含 `"status":"build_archived"`；`app` 是要安装的 APK，位于 `.dart_tool/flutter_patcher/releases/<时间戳>/`，`report` 是旁边的完整构建报告。
 - 同时会出现三条警告，试用阶段都属正常：
   - `WARNING: UNSIGNED`：这个 App 接受未签名的补丁文件。签名是可选的，见[生产部署：开启签名](production-playbook-zh.md#3-可选开启签名)。
   - `WARNING: URL_LOCAL`：App 检查的是 `serve` 的本机地址。
@@ -110,7 +104,7 @@ adb install <output>/app-release.apk
    dart run flutter_patcher patch android
    ```
 
-**验证**：输出的 JSON 含 `"status":"patch_created"`，`changed` 中列出 `package:<你的包名>/main.dart`，`file` 是补丁文件，例如 `.dart_tool/flutter_patcher/patches/<时间戳>/1-default-production-arm64-v8a.fptc`。文件名的规则是 `<version_code>-<flavor>-<channel>-<abi>.fptc`；`seq` 是它的序号，即生成时的 Unix 秒数。
+**验证**：输出的 JSON 含 `"status":"patch_created"`，`changed` 中列出 `package:<你的包名>/main.dart`，`file` 是补丁文件，例如 `.dart_tool/flutter_patcher/patches/<时间戳>/1-arm64-v8a.fptc`。文件名是 `<version_code>-<abi>.fptc`，flavor 或渠道不是默认值时还包含两者（见[补丁文件](cli-zh.md#补丁文件)）；`seq` 是它的序号，即生成时的 Unix 秒数。
 
 如果改动包含补丁无法携带的内容（例如原生代码），命令会失败并给出错误码，例如 `PATCH_NATIVE_CHANGE`，见[错误码与排障](troubleshooting-zh.md)。
 
@@ -138,9 +132,9 @@ adb install <output>/app-release.apk
 
   ```text
   Android device <serial> reaches this computer at 127.0.0.1:8686
-  Offering patch <seq> (1-default-production-arm64-v8a.fptc, unsigned)
+  Offering patch <seq> (1-arm64-v8a.fptc, unsigned)
   A device checked for updates
-  A device downloaded 1-default-production-arm64-v8a.fptc
+  A device downloaded 1-arm64-v8a.fptc
   ```
 
 - `adb logcat -s flutter` 中出现 `applyPatch: PatchApplyResult(ok)`。
@@ -206,7 +200,7 @@ Future<void> fetchPatch() async {
 | 构建 | `build ios` 只能在 Apple Silicon Mac 上运行，需要先在 Xcode 中配置好签名（Team 和 Bundle ID）。装到自己的手机上测试时加 `--export-method development`；默认的 `app-store` 需要发布证书。产物是输出目录中的 `app-release.ipa` |
 | 代码签名 | 在 Mac 的桌面终端中运行 `build ios`。通过 SSH 或在 CI 中运行时，需要先解锁钥匙串，否则签名失败并报 `errSecInternalComponent` |
 | 安装 | 例如在 Xcode 的 Devices and Simulators 窗口中添加 ipa。用免费开发者账号签名时，先在手机的“设置 → 通用 → VPN 与设备管理”中信任该开发者 |
-| 生成补丁 | `patch ios` 可在 Mac、Linux 或 Windows 上运行，只要这台电脑能读到 `build ios` 保存的基线。文件名形如 `1-default-production-ios-arm64.fptc` |
+| 生成补丁 | `patch ios` 可在 Mac、Linux 或 Windows 上运行，只要这台电脑能读到 `build ios` 保存的基线。文件名形如 `1-ios-arm64.fptc` |
 | 下发补丁 | iPhone 访问不到电脑的 `127.0.0.1`，而 `checkUpdate` 只对 `127.0.0.1`/`localhost` 允许明文 HTTP。可以用隧道把 `serve` 暴露为 HTTPS 地址，例如 `cloudflared tunnel --url http://127.0.0.1:8686`，再把得到的地址传给 `checkUpdate(url: 'https://…')`；也可以用其他方式把 `.fptc` 送到手机上，[自己安装](#自己获取补丁文件) |
 
 ## 下一步

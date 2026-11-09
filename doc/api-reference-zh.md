@@ -126,7 +126,7 @@ static Future<PatchTarget> get patchTarget
 
 | 成员 | 说明 |
 |---|---|
-| `fileName` | CLI 为本宿主生成的补丁文件名：`<version_code>-<flavor>-<channel>-<abi>.fptc` |
+| `fileName` | CLI 为本宿主生成的补丁文件名：flavor 和渠道为默认的 `default`、`production` 时是 `<version_code>-<abi>.fptc`，否则是 `<version_code>-<flavor>-<channel>-<abi>.fptc`，例如 `1-arm64-v8a.fptc`、`3-paid-beta-arm64-v8a.fptc`。flavor 和渠道只含字母、数字和 `_`，因此不同宿主的文件名不会相同 |
 | `versionCode`、`flavor`、`channel`、`abi`、`strategy` | 构建信息，即 `build` 写入宿主策略的值 |
 | `fingerprint` | 宿主构建的指纹；其他指纹的文件会被拒绝 |
 | `signed` | 宿主是否只接受其补丁密钥签名的文件 |

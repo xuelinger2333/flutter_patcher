@@ -64,7 +64,7 @@ Future<int> publishCommand(ArgResults args) async {
 
 /// Seals a patch output's draft, or a withdrawal of its host, numbered now,
 /// as the patch file devices take and writes it to the project's store as
-/// `<fileName>.fptc`, replacing the file there only with a newer one.
+/// `<fileName>`, replacing the file there only with a newer one.
 Future<Map<String, dynamic>> publication(ArgResults args) async {
   requireSupportedHost();
   require(

@@ -16,7 +16,7 @@ This document explains why flutter_patcher works, why you can trust it, and wher
                                                           verifies, installs; loads at the next cold start
 ```
 
-- **Your computer**: `dart run flutter_patcher` builds the host app and its baseline, then turns each change into one patch file, `<version_code>-<flavor>-<channel>-<abi>.fptc`. Deliver that file any way you like; the optional `publish` writes it to a store (a directory or S3), and `serve` hands the newest one to development devices. The **baseline store**, which keeps the build record of every released version, is used only by the CLI.
+- **Your computer**: `dart run flutter_patcher` builds the host app and its baseline, then turns each change into one patch file, such as `1-arm64-v8a.fptc`. Deliver that file any way you like; the optional `publish` writes it to a store (a directory or S3), and `serve` hands the newest one to development devices. The **baseline store**, which keeps the build record of every released version, is used only by the CLI.
 - **Wherever the app gets files**: the plugin does not fetch patches. Your app gets the file in any way it likes and hands it to `applyPatchBytes` or `applyPatchFile`. `checkUpdate` and `applyPatch` are an optional built-in downloader for files placed at a URL.
 - **Device**: native code checks every part of the file, installs it, and loads it on the next cold start.
 
@@ -76,7 +76,7 @@ A patch file (FPTC v1) is a 146-byte header followed by the payload, a ZIP of th
 
 - A file with an empty payload is a **withdrawal**: devices that apply it drop their patch.
 - The **sequence** is the Unix time in seconds when the file was sealed, unless `publish --seq` gives another. A device accepts only files numbered above every file it has accepted.
-- The **name** is `<version_code>-<flavor>-<channel>-<abi>.fptc`, for example `7-default-production-arm64-v8a.fptc`. `patch` and `publish` name files this way, and `FlutterPatcher.patchTarget` gives the same `fileName` on the device, so an app or its server can pick the right file.
+- The **name** is `<version_code>-<abi>.fptc` for the default flavor and channel (`default`, `production`), for example `7-arm64-v8a.fptc`, and `<version_code>-<flavor>-<channel>-<abi>.fptc` otherwise, for example `7-paid-beta-arm64-v8a.fptc`. Flavors and channels contain only letters, digits and `_`, so no two hosts share a name. `patch` and `publish` name files this way, and `FlutterPatcher.patchTarget` gives the same `fileName` on the device, so an app or its server can pick the right file.
 - A file is at most 320 MiB.
 
 ## Security model

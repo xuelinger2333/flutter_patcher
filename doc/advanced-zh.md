@@ -102,7 +102,7 @@ url: https://cdn.example.com/my-app
 
 使用 AWS 以外的 S3 兼容服务时，把 `FLUTTER_PATCHER_S3_ENDPOINT` 设为它的 endpoint 地址。
 
-**验证**：`publish` 之后，存储桶中有 `my-app/<fileName>.fptc`，例如 `my-app/7-default-production-arm64-v8a.fptc`，并且 `https://cdn.example.com/my-app/<fileName>.fptc` 能下载到它。
+**验证**：`publish` 之后，存储桶中有 `my-app/<fileName>`，例如 `my-app/7-arm64-v8a.fptc`，并且 `https://cdn.example.com/my-app/<fileName>` 能下载到它。
 
 - 必须使用前缀（不能是存储桶根目录），前缀的每一段只能包含字母、数字、`_` 和 `-`。
 - `publish` 先读取那里的文件，只在它此后未被改动时才写入：两次发布同时进行时，其中一次报 `PUBLISH_CONFLICT`，重新发布即可。
@@ -113,14 +113,14 @@ url: https://cdn.example.com/my-app
 
 **操作**：
 
-1. 在服务端保存 `publish` 写出的文件（存储根目录下的 `<fileName>.fptc`），或从 `patch` 的输出目录中取。
+1. 在服务端保存 `publish` 写出的文件（存储根目录下的 `<fileName>`），或从 `patch` 的输出目录中取。
 2. 在 App 中向服务端请求本宿主的文件，交给插件：
 
    ```dart
    final target = await FlutterPatcher.patchTarget;
    // 你自己的请求：把服务端挑选文件所需的信息发过去。
    final bytes = await myApi.fetchPatch(
-     file: target.fileName,           // 例如 7-default-production-arm64-v8a.fptc
+     file: target.fileName,           // 例如 7-arm64-v8a.fptc
      acceptedSeq: target.acceptedSeq, // 本机已接受的最大序号；从未接受过时为 0
    );
    if (bytes != null) {

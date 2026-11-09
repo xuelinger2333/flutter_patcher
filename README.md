@@ -77,7 +77,7 @@ Install or ship the app `build` produces. `build` also records the baseline that
 **3. Fix bugs & make a patch**
 
 ```bash
-dart run flutter_patcher patch android   # Writes <version_code>-<flavor>-<channel>-<abi>.fptc
+dart run flutter_patcher patch android   # Writes the patch file, e.g. 1-arm64-v8a.fptc
 dart run flutter_patcher serve           # Development: offers it at 127.0.0.1:8686 over USB
 ```
 

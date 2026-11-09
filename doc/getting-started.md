@@ -56,12 +56,6 @@ iOS differences are at the end; every command option is in the [CLI Reference](c
 
    `checkUpdate()` requests `<url>/<file name>` and reads only its first 146 bytes, the file header, to see whether the file is new to this app. `<url>` is the address `build` wrote into the app: `url` in `flutter_patcher.yaml`, or, while there is none, `http://127.0.0.1:8686`, where `serve` offers patches in Step 4. Passing it explicitly works the same: `checkUpdate(url: 'http://127.0.0.1:8686')`.
 
-3. Add the internet permission under `<manifest>` in `android/app/src/main/AndroidManifest.xml`. `flutter create` declares it only for debug and profile builds:
-
-   ```xml
-   <uses-permission android:name="android.permission.INTERNET"/>
-   ```
-
 **Check**:
 
 - The last line of `doctor` starts with `Toolchain ready.` The first run downloads the engine and takes a few minutes.
@@ -86,7 +80,7 @@ adb install <output>/app-release.apk
 
 **Check**:
 
-- The last line `build` prints is JSON with `"status":"build_archived"`; `output` points to `.dart_tool/flutter_patcher/releases/<timestamp>/`, which holds `app-release.apk`.
+- The last line `build` prints is a short JSON summary with `"status":"build_archived"`; `app` is the APK to install, in `.dart_tool/flutter_patcher/releases/<timestamp>/`, and `report` the full build report beside it.
 - Three warnings also appear, all expected while trying things out:
   - `WARNING: UNSIGNED`: the app accepts patch files that are not signed. Signing is optional; see [Production Deployment Guide: Enable signing](production-playbook.md#3-optional-enable-signing).
   - `WARNING: URL_LOCAL`: the app checks `serve`'s local address.
@@ -106,7 +100,7 @@ adb install <output>/app-release.apk
    dart run flutter_patcher patch android
    ```
 
-**Check**: the output JSON contains `"status":"patch_created"`, `changed` lists `package:<your package>/main.dart`, and `file` is the patch file, such as `.dart_tool/flutter_patcher/patches/<timestamp>/1-default-production-arm64-v8a.fptc`. Its name is `<version_code>-<flavor>-<channel>-<abi>.fptc`; `seq` is its sequence, the Unix time in seconds when it was made.
+**Check**: the output JSON contains `"status":"patch_created"`, `changed` lists `package:<your package>/main.dart`, and `file` is the patch file, such as `.dart_tool/flutter_patcher/patches/<timestamp>/1-arm64-v8a.fptc`. Its name is `<version_code>-<abi>.fptc`, and also names the flavor and channel when they are not the defaults (see [Patch files](cli.md#patch-files)); `seq` is its sequence, the Unix time in seconds when it was made.
 
 When the change includes something a patch cannot carry, such as native code, the command fails with an error code such as `PATCH_NATIVE_CHANGE`; see [Troubleshooting](troubleshooting.md).
 
@@ -134,9 +128,9 @@ When the change includes something a patch cannot carry, such as native code, th
 
   ```text
   Android device <serial> reaches this computer at 127.0.0.1:8686
-  Offering patch <seq> (1-default-production-arm64-v8a.fptc, unsigned)
+  Offering patch <seq> (1-arm64-v8a.fptc, unsigned)
   A device checked for updates
-  A device downloaded 1-default-production-arm64-v8a.fptc
+  A device downloaded 1-arm64-v8a.fptc
   ```
 
 - `adb logcat -s flutter` shows `applyPatch: PatchApplyResult(ok)`.
@@ -202,7 +196,7 @@ The file is the `.fptc` that `patch` or `publish` wrote. The device verifies it 
 | Build | `build ios` runs only on an Apple Silicon Mac, with signing (Team and Bundle ID) set up in Xcode. To install on your own phone, add `--export-method development`; the default, `app-store`, needs a distribution certificate. The output directory holds `app-release.ipa` |
 | Code signing | Run `build ios` in a terminal of the Mac's desktop session. Over SSH or in CI, unlock the keychain first, or signing fails with `errSecInternalComponent` |
 | Install | For example, add the ipa in Xcode's Devices and Simulators window. With a free developer account, first trust the developer on the phone under Settings → General → VPN & Device Management |
-| Make patches | `patch ios` runs on a Mac, Linux or Windows, on any computer that can read the baseline `build ios` saved. The file is named like `1-default-production-ios-arm64.fptc` |
+| Make patches | `patch ios` runs on a Mac, Linux or Windows, on any computer that can read the baseline `build ios` saved. The file is named like `1-ios-arm64.fptc` |
 | Deliver patches | An iPhone cannot reach the computer's `127.0.0.1`, and `checkUpdate` accepts plain HTTP only for `127.0.0.1`/`localhost`. Either expose `serve` over HTTPS with a tunnel, such as `cloudflared tunnel --url http://127.0.0.1:8686`, and pass that address: `checkUpdate(url: 'https://…')`; or get the `.fptc` onto the phone another way and [install it yourself](#fetching-the-file-yourself) |
 
 ## Next steps

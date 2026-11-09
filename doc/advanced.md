@@ -102,7 +102,7 @@ url: https://cdn.example.com/my-app
 
 For an S3-compatible service other than AWS, set `FLUTTER_PATCHER_S3_ENDPOINT` to its endpoint URL.
 
-**Check**: after `publish`, the bucket holds `my-app/<fileName>.fptc`, for example `my-app/7-default-production-arm64-v8a.fptc`, and `https://cdn.example.com/my-app/<fileName>.fptc` serves it.
+**Check**: after `publish`, the bucket holds `my-app/<fileName>`, for example `my-app/7-arm64-v8a.fptc`, and `https://cdn.example.com/my-app/<fileName>` serves it.
 
 - The prefix is required (not the bucket root), and each of its segments uses only letters, digits, `_` and `-`.
 - `publish` reads the file there first and writes only when it is unchanged since: two publishes at once fail one of them with `PUBLISH_CONFLICT`; publish it again.
@@ -113,14 +113,14 @@ For an S3-compatible service other than AWS, set `FLUTTER_PATCHER_S3_ENDPOINT` t
 
 **Do**:
 
-1. On the server, keep the files `publish` writes (`<fileName>.fptc` at the store root), or take each from a `patch` output directory.
+1. On the server, keep the files `publish` writes (`<fileName>` at the store root), or take each from a `patch` output directory.
 2. In the app, ask your server for this host's file and hand it to the plugin:
 
    ```dart
    final target = await FlutterPatcher.patchTarget;
    // Your own request: send what the server needs to pick a file.
    final bytes = await myApi.fetchPatch(
-     file: target.fileName,          // e.g. 7-default-production-arm64-v8a.fptc
+     file: target.fileName,          // e.g. 7-arm64-v8a.fptc
      acceptedSeq: target.acceptedSeq, // highest sequence this device took; 0 before any
    );
    if (bytes != null) {

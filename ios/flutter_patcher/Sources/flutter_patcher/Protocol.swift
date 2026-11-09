@@ -66,7 +66,7 @@ final class HostTrustConfig {
     func matches(_ key: String, _ pattern: String) -> Bool { fullMatch(pattern, scope[key]!) }
     try require(matches("fingerprint", "[0-9a-f]{64}"), "Fingerprint")
     try require(matches("application_id", "[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"), "Application")
-    try require(matches("channel", "[A-Za-z0-9_-]{1,64}") && matches("flavor", "[A-Za-z0-9_-]{1,64}"),
+    try require(matches("channel", "[A-Za-z0-9_]{1,64}") && matches("flavor", "[A-Za-z0-9_]{1,64}"),
       "Channel/flavor")
     try require(matches("version_code", "[1-9][0-9]{0,9}") && Int64(scope["version_code"]!)! <= 2_100_000_000,
       "Version code")

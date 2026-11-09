@@ -54,7 +54,7 @@ class PatchRequest {
   Future<void> validate() async {
     require(
       (fingerprint == null || baselineHash.hasMatch(fingerprint!)) &&
-          RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(flavor) &&
+          RegExp(r'^[A-Za-z0-9_]{1,64}$').hasMatch(flavor) &&
           moduleId > 0 &&
           moduleId <= (1 << 52) &&
           minBuild > 0,

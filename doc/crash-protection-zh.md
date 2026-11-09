@@ -34,7 +34,7 @@ await FlutterPatcher.init(
 **操作**：
 
 1. 在 `main()` 的第一行加上 `throw StateError('crash test');`，运行 `dart run flutter_patcher patch android`，然后删掉这一行。
-2. 打开 App，让它安装这个补丁：`serve` 输出 `A device downloaded <文件名>`，例如 `A device downloaded 1-default-production-arm64-v8a.fptc`。
+2. 打开 App，让它安装这个补丁：`serve` 输出 `A device downloaded <文件名>`，例如 `A device downloaded 1-arm64-v8a.fptc`。
 3. 划掉 App 再打开：这次启动运行补丁并失败，App 可能退出或白屏。
 4. 再打开一次 App。
 

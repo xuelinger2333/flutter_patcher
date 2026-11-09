@@ -40,7 +40,7 @@
 
 ### 能同时为多个线上版本打补丁吗？
 
-能。每个版本有各自的基线和各自的补丁文件名 `<version_code>-<flavor>-<channel>-<abi>.fptc`。切回该版本的源码，修复后运行 `patch --version-code <它的构建号>`。见[生产部署](production-playbook-zh.md)。
+能。每个版本有各自的基线和各自的补丁文件名，以它的构建号开头，例如 `7-arm64-v8a.fptc`。切回该版本的源码，修复后运行 `patch --version-code <它的构建号>`。见[生产部署](production-playbook-zh.md)。
 
 ### 需要密钥吗？
 
@@ -68,7 +68,7 @@
 
 ### 需要自己的后端吗？
 
-不需要。补丁文件是静态文件：`patch` 把 `<fileName>.fptc` 写在输出目录中（使用 `publish` 时还写在存储的根目录下），任何支持 HTTPS 的静态托管都能提供它，例如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN。`.fptc` 文件要设置较短的缓存时间：每个新补丁都会替换同名文件。见[生产部署](production-playbook-zh.md)。
+不需要。补丁文件是静态文件：`patch` 把 `<fileName>` 写在输出目录中（使用 `publish` 时还写在存储的根目录下），任何支持 HTTPS 的静态托管都能提供它，例如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN。`.fptc` 文件要设置较短的缓存时间：每个新补丁都会替换同名文件。见[生产部署](production-playbook-zh.md)。
 
 ### 我的 1.0 宿主会怎样？
 

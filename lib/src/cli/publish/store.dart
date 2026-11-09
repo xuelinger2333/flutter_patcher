@@ -32,11 +32,11 @@ abstract class PublishStore {
   Future<bool> write(String name, List<int> bytes, String? expected);
 }
 
-/// Patch files are the only objects publish writes: `<fileName>.fptc` at
+/// Patch files are the only objects publish writes: `<fileName>` at
 /// the store's root, beside anything flutter_patcher 1.0 left there.
 void publicationName(String name) => require(
   RegExp(
-    r'^[1-9][0-9]{0,9}-[A-Za-z0-9_-]{1,64}-[A-Za-z0-9_-]{1,64}-'
+    r'^[1-9][0-9]{0,9}(-[A-Za-z0-9_]{1,64}-[A-Za-z0-9_]{1,64})?-'
     r'(arm64-v8a|ios-arm64)\.fptc$',
   ).hasMatch(name),
   'PUBLISH_STORE_INVALID',

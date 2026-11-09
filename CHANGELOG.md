@@ -2,8 +2,8 @@
 
 ## 1.1.0
 
-1.1.0 makes a patch one file. `patch` writes
-`<version_code>-<flavor>-<channel>-<abi>.fptc`; the app gets that file in any
+1.1.0 makes a patch one file. `patch` writes one file per host, such as
+`1-arm64-v8a.fptc`; the app gets that file in any
 way it likes and hands it to the plugin, which verifies it and installs it for
 the next cold start. Signing is optional, and the plugin no longer fetches
 anything itself: `checkUpdate` and `applyPatch` remain as an optional
@@ -51,8 +51,14 @@ the CLI reports an unknown command or option.
 - The host policy is schema 2: `application_id`, `version_code`, `flavor`,
   `channel`, `abi`, `strategy` and `fptc_key` (the patch public key, or `-`
   for an unsigned host).
+- Patch files are named `<version_code>-<abi>.fptc` for the default flavor and
+  channel (`default`, `production`), such as `1-arm64-v8a.fptc`, and
+  `<version_code>-<flavor>-<channel>-<abi>.fptc` otherwise, such as
+  `3-paid-beta-arm64-v8a.fptc`. Flavors and channels contain only letters,
+  digits and `_`, so no two hosts share a name; `build` refuses other
+  characters.
 - `publish` is the optional release command. It seals the patch output again
-  with a sequence numbered at publish time and writes `<fileName>.fptc` at the
+  with a sequence numbered at publish time and writes `<fileName>` at the
   root of the store (`file://`, by default `.flutter_patcher/updates`, or
   `s3://`). It replaces the file there only with a higher sequence
   (`PUBLISH_SEQUENCE_CONFLICT` otherwise), reports `already_published` for the
@@ -89,6 +95,11 @@ the CLI reports an unknown command or option.
   lived in one key bundle and were used by the same command. Losing or leaking
   the patch key means the hosts built with it need a new release, as with the
   1.0 patch key; there is no key rotation.
+- The Android plugin declares the internet permission, which release builds
+  of a new Flutter app lack; the app no longer adds it for `checkUpdate`.
+- `build` prints a short summary: `app` (the APK or IPA to install),
+  `application_id`, `version_code`, `strategy`, `signed`, `fingerprint` and
+  `report`, the full report in `build.json` beside the app.
 - On its first start as a 1.1 host, a device deletes the signed-manifest state
   1.0 kept (`noBackupFilesDir/flutter_patcher_auth/` on Android, `auth/` in
   the plugin's directory on iOS).

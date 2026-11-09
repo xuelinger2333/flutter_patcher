@@ -29,7 +29,7 @@ dart run flutter_patcher serve          # leave running; patch again after each 
 dart run flutter_patcher patch android
 ```
 
-**Check**: the JSON names the patch file in `file`, such as `.dart_tool/flutter_patcher/patches/<dir>/7-default-production-arm64-v8a.fptc`. Give that file to the app in any way and pass it to `FlutterPatcher.applyPatchBytes` or `applyPatchFile`; see [API Reference](api-reference.md). When `file` is `null`, the host is signed and this machine lacks the patch key: `keys import` it here and patch again, or run `publish --patch <output>` where the key is.
+**Check**: the JSON names the patch file in `file`, such as `.dart_tool/flutter_patcher/patches/<dir>/7-arm64-v8a.fptc`. Give that file to the app in any way and pass it to `FlutterPatcher.applyPatchBytes` or `applyPatchFile`; see [API Reference](api-reference.md). When `file` is `null`, the host is signed and this machine lacks the patch key: `keys import` it here and patch again, or run `publish --patch <output>` where the key is.
 
 `build` and `patch` are all a self-hosted delivery needs. For the built-in downloader, put the file at `<url>/<file name>`; see [Storage requirements](#storage-requirements) for what that server must do.
 
@@ -107,7 +107,7 @@ They now fail as unknown commands or options (`USAGE_ERROR`).
 
 ## Patch files
 
-`patch` and `publish` write one kind of file, FPTC v1, and `serve` serves it as written. The host's file always has the same name, `<version_code>-<flavor>-<channel>-<abi>.fptc`, for example `7-default-production-arm64-v8a.fptc`; the app finds it as `PatchTarget.fileName`.
+`patch` and `publish` write one kind of file, FPTC v1, and `serve` serves it as written. The host's file always has the same name: `<version_code>-<abi>.fptc` for the default flavor and channel (`default`, `production`), for example `7-arm64-v8a.fptc`, and `<version_code>-<flavor>-<channel>-<abi>.fptc` otherwise, for example `7-paid-beta-arm64-v8a.fptc`. Flavors and channels contain only letters, digits and `_`, so no two hosts share a name. The app finds the name as `PatchTarget.fileName`.
 
 | Offset | Bytes | Field |
 |---|---|---|
@@ -225,8 +225,8 @@ dart run flutter_patcher build ios        # Apple Silicon Mac only
 | Option | Description | Default |
 |---|---|---|
 | `--strategy bytecode\|so` | Patch strategy, Android only; see [How It Works](architecture.md) | `bytecode` |
-| `--flavor <name>` | Flutter flavor | No flavor (recorded as `default`) |
-| `--channel <name>` | Channel, written to the host policy and the patch file name | `production` |
+| `--flavor <name>` | Flutter flavor; letters, digits and `_` only | No flavor (recorded as `default`) |
+| `--channel <name>` | Channel, written to the host policy and the patch file name; letters, digits and `_` only | `production` |
 | `--version-code <n>` | Version number | The build number of `version` in `pubspec.yaml` |
 | `--application-id <id>` | When the project does not declare exactly one application id | Read from the Gradle or Xcode project |
 | `--target <file>` | Entry file | `lib/main.dart` |
@@ -266,9 +266,9 @@ dart run flutter_patcher patch android --withdraw
 | `--baseline-store <uri>` | Read the baseline here instead of `baseline_store` in `flutter_patcher.yaml` | From `flutter_patcher.yaml` |
 
 - Strategy, channel and patch key come from the baseline.
-- The output directory holds `patch.draft` (the patch before sealing), `patch.json` (the report) and the patch file `<version_code>-<flavor>-<channel>-<abi>.fptc`. In the report, `changed` lists what changed, `warnings` lists what to look at, and `patch_key` is the host's patch key or `-`.
+- The output directory holds `patch.draft` (the patch before sealing), `patch.json` (the report) and the patch file, named as in [Patch files](#patch-files). In the report, `changed` lists what changed, `warnings` lists what to look at, and `patch_key` is the host's patch key or `-`.
 - The JSON adds `file` (the patch file's full path), `seq` (the Unix time it was sealed), `sealed_at` (that time in UTC) and `signed`.
-- With `--withdraw`, the output directory holds `patch.json` (`"status":"withdrawal_created"`) and the withdrawal file under the same name `<version_code>-<flavor>-<channel>-<abi>.fptc`; the JSON has the same `file`, `seq` and `signed`.
+- With `--withdraw`, the output directory holds `patch.json` (`"status":"withdrawal_created"`) and the withdrawal file under the same name; the JSON has the same `file`, `seq` and `signed`.
 - A signed host whose private key no source on this machine holds: `patch` still succeeds, with `"file":null` and a `notice`. `keys import` the key here and patch again, or run `publish --patch <output>` on a machine with the key.
 - `patch` does not write to the publication store; only `publish` does.
 - A baseline of a host built with flutter_patcher 1.0 fails with `PATCH_BASELINE_INCOMPATIBLE`: patch that host with flutter_patcher 1.0.0+1.
@@ -277,7 +277,7 @@ dart run flutter_patcher patch android --withdraw
 
 ## publish
 
-The optional release command. Seals a `patch` output again with a `seq` numbered at publish time, so files are ordered by the order you publish them, and writes it to the publication store as `<fileName>.fptc`, replacing the file there only with a newer one.
+The optional release command. Seals a `patch` output again with a `seq` numbered at publish time, so files are ordered by the order you publish them, and writes it to the publication store as `<fileName>`, replacing the file there only with a newer one.
 
 Signed and unsigned hosts go through the same flow; the host's baseline decides whether the file is signed. A signed host needs the private key from `--key-file`, `FLUTTER_PATCHER_KEYS`, `signing.command` or the key store ([Where the private key comes from](#where-the-private-key-comes-from)); without one, `publish` fails with `KEYS_NOT_FOUND` before writing anything.
 
@@ -328,7 +328,7 @@ dart run flutter_patcher serve
 - It does not publish, write the publication store, renumber or sign anything, and works whatever `store` `flutter_patcher.yaml` names. Devices verify the files as they verify any other.
 - Prints `Offering patch <seq> (<file>, signed|unsigned)` or `Offering a withdrawal of <file> (signed|unsigned, <seq>)` whenever the newest output of a host changes.
 - When a host's newest output has no file (a signed host whose key is not on this machine), it prints `Not offering <file>: ...` and serves nothing for that host, never an older file. Run `keys import` and patch again.
-- Listens on `127.0.0.1` only and serves only `GET /<fileName>.fptc`, with `Range: bytes=0-<n>` answered as `206`; anything else is `404`.
+- Listens on `127.0.0.1` only and serves only `GET /<fileName>`, with `Range: bytes=0-<n>` answered as `206`; anything else is `404`.
 - Every 2 seconds, runs `adb reverse` for newly connected Android devices.
 - iOS devices cannot reach `127.0.0.1` of the computer: expose the port over HTTPS (for example `cloudflared tunnel --url http://127.0.0.1:8686`) and pass that address to `checkUpdate(url: …)`.
 - Ctrl+C stops it.
@@ -370,7 +370,7 @@ Baselines are append-only, so several build machines can share one baseline stor
 | `s3://` | Requires an AWS CLI with conditional writes (`put-object --if-match`, `--if-none-match`) and permission to get and put objects under the prefix, plus `s3:ListBucket`: without it a missing file reads as access denied and `publish` fails with `PUBLISH_STORE_UNAVAILABLE`. The path must be a dedicated prefix under the bucket, each segment containing only letters, digits, `_` and `-`, for example `s3://my-bucket/my-app` |
 | `file://` | A local directory or a network mount |
 
-Only `publish` uses the publication store. It holds one file per host, `<version_code>-<flavor>-<channel>-<abi>.fptc`, at its root; a `file://` store also holds `.publish.lock`, which need not be served. What flutter_patcher 1.0 wrote there (`manifests/`, `objects/`, `catalog.json`) is neither read nor changed, and keeps serving 1.0 hosts.
+Only `publish` uses the publication store. It holds one file per host at its root, named as in [Patch files](#patch-files); a `file://` store also holds `.publish.lock`, which need not be served. What flutter_patcher 1.0 wrote there (`manifests/`, `objects/`, `catalog.json`) is neither read nor changed, and keeps serving 1.0 hosts.
 
 The HTTPS server or CDN that `checkUpdate` downloads from, whether `publish` or you put the file there:
 

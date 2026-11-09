@@ -56,6 +56,8 @@ class HostTrustConfigTest {
             fields + ("version_code" to "07"),
             fields + ("version_code" to "2100000001"),
             fields + ("flavor" to "a b"),
+            fields + ("flavor" to "a-b"),
+            fields + ("channel" to "b-c"),
             fields + ("application_id" to "example"),
         )
         for (policy in rejected) {

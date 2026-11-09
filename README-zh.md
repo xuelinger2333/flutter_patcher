@@ -81,7 +81,7 @@ dart run flutter_patcher build android   # 或 build ios（需在 Apple Silicon 
 **3. 修复 Bug，生成补丁**
 
 ```bash
-dart run flutter_patcher patch android   # 写出 <version_code>-<flavor>-<channel>-<abi>.fptc
+dart run flutter_patcher patch android   # 写出补丁文件，例如 1-arm64-v8a.fptc
 dart run flutter_patcher serve           # 开发阶段：通过 USB 在 127.0.0.1:8686 提供补丁
 ```
 

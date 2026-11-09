@@ -15,7 +15,7 @@ This guide takes the patch flow you verified locally (see [Getting Started](gett
 
 ## 1. Decide Where the App Gets Patch Files
 
-A patch is one file, `<version_code>-<flavor>-<channel>-<abi>.fptc`, such as `7-default-production-arm64-v8a.fptc`. Each build (version code, flavor, channel, ABI) has its own name, and the name stays the same for every patch of that build: a newer patch or a withdrawal replaces the file.
+A patch is one file, such as `7-arm64-v8a.fptc`, or `7-paid-beta-arm64-v8a.fptc` for flavor `paid` and channel `beta` (see [Patch files](cli.md#patch-files)). Each build (version code, flavor, channel, ABI) has its own name, and the name stays the same for every patch of that build: a newer patch or a withdrawal replaces the file.
 
 **With the built-in downloader**:
 
@@ -38,12 +38,6 @@ A patch is one file, `<version_code>-<flavor>-<channel>-<abi>.fptc`, such as `7-
    Range requests are optional: `checkUpdate` asks for the first 146 bytes and stops reading after them either way.
 
 **With your own delivery**: your server picks the file from what [`FlutterPatcher.patchTarget`](api-reference.md) reports (`fileName`, `versionCode`, `flavor`, `channel`, `abi`, `acceptedSeq`) and the app passes the bytes to `applyPatchBytes`. Transport security is then up to the app; see [3. Optional: Enable Signing](#3-optional-enable-signing).
-
-Either way, check that `android/app/src/main/AndroidManifest.xml` declares the internet permission; release builds need it:
-
-```xml
-<uses-permission android:name="android.permission.INTERNET" />
-```
 
 ## 2. Keep the Baselines
 

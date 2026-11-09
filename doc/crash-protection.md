@@ -30,7 +30,7 @@ A higher `maxCrashCount` tolerates an occasional failure, but a broken patch the
 **Do**:
 
 1. Add `throw StateError('crash test');` as the first line of `main()`, run `dart run flutter_patcher patch android`, then remove the line again.
-2. Open the app so it installs the patch: `serve` prints `A device downloaded <file name>`, for example `A device downloaded 1-default-production-arm64-v8a.fptc`.
+2. Open the app so it installs the patch: `serve` prints `A device downloaded <file name>`, for example `A device downloaded 1-arm64-v8a.fptc`.
 3. Swipe the app away and open it: this start runs the patch and fails. The app may close or show a blank screen.
 4. Open the app again.
 

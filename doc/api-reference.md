@@ -126,7 +126,7 @@ Who this host is. An app that fetches patch files itself sends these values to i
 
 | Member | Description |
 |---|---|
-| `fileName` | The name the CLI gives this host's patch files: `<version_code>-<flavor>-<channel>-<abi>.fptc` |
+| `fileName` | The name the CLI gives this host's patch files: `<version_code>-<abi>.fptc` for the default flavor and channel (`default`, `production`), otherwise `<version_code>-<flavor>-<channel>-<abi>.fptc`, such as `1-arm64-v8a.fptc` or `3-paid-beta-arm64-v8a.fptc`. Flavors and channels contain only letters, digits and `_`, so no two hosts share a name |
 | `versionCode`, `flavor`, `channel`, `abi`, `strategy` | The build, as `build` recorded it in the host policy |
 | `fingerprint` | The host build's fingerprint; a file of another fingerprint is rejected |
 | `signed` | Whether the host accepts only files signed by its patch key |

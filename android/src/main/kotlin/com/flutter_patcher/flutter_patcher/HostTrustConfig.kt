@@ -55,7 +55,7 @@ internal class HostTrustConfig internal constructor(val scope: Map<String, Strin
             fun matches(key: String, pattern: String) = Regex(pattern).matches(scope.getValue(key))
             require(matches("fingerprint", "[0-9a-f]{64}")) { "Fingerprint" }
             require(matches("application_id", "[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) { "Application" }
-            require(matches("channel", "[A-Za-z0-9_-]{1,64}") && matches("flavor", "[A-Za-z0-9_-]{1,64}")) { "Channel/flavor" }
+            require(matches("channel", "[A-Za-z0-9_]{1,64}") && matches("flavor", "[A-Za-z0-9_]{1,64}")) { "Channel/flavor" }
             require(matches("version_code", "[1-9][0-9]{0,9}") &&
                 scope.getValue("version_code").toLong() <= 2100000000) { "Version code" }
             require(scope["abi"] == "arm64-v8a" && scope["strategy"] in setOf("bytecode", "so")) { "ABI/strategy" }

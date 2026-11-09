@@ -170,7 +170,15 @@ Future<int> buildCommand(ArgResults args) async {
     final result = request.hostPolicy.fields['strategy'] == 'so'
         ? await pipeline.buildSo(request)
         : await pipeline.build(request);
-    stdout.writeln(jsonEncode({'command': 'build', ...result}));
+    stdout.writeln(
+      jsonEncode(
+        await buildSummary(
+          p.normalize(p.absolute(request.output)),
+          result,
+          policy,
+        ),
+      ),
+    );
     return 0;
   } catch (error) {
     final failure = error is Failure
@@ -191,4 +199,31 @@ Future<int> buildCommand(ArgResults args) async {
       await lock.close();
     }
   }
+}
+
+/// What build tells the terminal: the app to install and the host it is.
+/// The whole report is build.json beside the app in [output].
+Future<Map<String, Object?>> buildSummary(
+  String output,
+  Map<String, dynamic> result,
+  HostPolicy policy,
+) async {
+  final app = await Directory(output)
+      .list()
+      .map((e) => e.path)
+      .firstWhere(
+        (path) => path.endsWith('.apk') || path.endsWith('.ipa'),
+        orElse: () => '',
+      );
+  return {
+    'command': 'build',
+    'status': result['status'],
+    'app': app,
+    'application_id': policy.fields['application_id'],
+    'version_code': policy.fields['version_code'],
+    'strategy': policy.fields['strategy'],
+    'signed': policy.signed,
+    'fingerprint': result['fingerprint'],
+    'report': p.join(output, 'build.json'),
+  };
 }
