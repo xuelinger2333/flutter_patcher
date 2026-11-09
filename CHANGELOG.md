@@ -24,7 +24,7 @@ the CLI reports an unknown command or option.
   patch file, or `checkUpdate` and `applyPatch`.
 - CLI: `trust sign` and `trust publish`, which are no longer needed; `publish
   --production --request` (to clean up, delete files in the store directly);
-  `keys import --rotate`; `keys init --role root|publisher`.
+  `keys import --rotate`; `keys init --role`; `keys export --without-root`.
 - Error codes of the manifest protocol: `PUBLISH_BUSY`,
   `PUBLISH_CATALOG_FULL`, `PUBLISH_CATALOG_INVALID`, `PUBLISH_COMMIT_UNKNOWN`,
   `PUBLISH_DELETE_UNKNOWN`, `PUBLISH_MANIFEST_CONFLICT`,

@@ -18,7 +18,7 @@
   和 `updatePublicationTrust`。请改用 `applyPatchBytes` 或 `applyPatchFile` 处理补丁文件，或使用
   `checkUpdate` 和 `applyPatch`。
 - CLI：`trust sign` 和 `trust publish`（不再需要）；`publish --production --request`（清理时直接删除存储中
-  的文件）；`keys import --rotate`；`keys init --role root|publisher`。
+  的文件）；`keys import --rotate`；`keys init --role`；`keys export --without-root`。
 - 清单协议的错误码：`PUBLISH_BUSY`、`PUBLISH_CATALOG_FULL`、`PUBLISH_CATALOG_INVALID`、
   `PUBLISH_COMMIT_UNKNOWN`、`PUBLISH_DELETE_UNKNOWN`、`PUBLISH_MANIFEST_CONFLICT`、`PUBLISH_OBJECT_CHANGED`、
   `PUBLISH_PATCH_INVALID`、`PUBLISH_RETENTION_STALE`、`PUBLISH_TARGET_MISMATCH`、`PUBLISH_UPLOAD_FAILED`、

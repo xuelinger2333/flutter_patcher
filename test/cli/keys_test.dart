@@ -62,6 +62,8 @@ void main() {
       ['export'],
       ['export', '--base64', '--out', 'x'],
       ['init', '--role', 'patch'],
+      ['init', '--out', 'x', '--role', 'patch'],
+      ['export', '--base64', '--without-root'],
     ]) {
       final result = await cli(args, environment: env);
       expect(result.exitCode, 2, reason: '$args');
@@ -181,9 +183,8 @@ void main() {
         'key store',
       );
 
-      // --without-root still works for 1.0 scripts.
       final line = await cli(
-        ['export', '--base64', '--without-root'],
+        ['export', '--base64'],
         environment: first,
         project: app,
       );

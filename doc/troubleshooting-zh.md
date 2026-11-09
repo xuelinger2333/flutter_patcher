@@ -96,7 +96,7 @@ CLI 执行失败时会在标准错误输出错误码 `code` 与原因说明 `mes
 | `PUB_LOCKFILE_MISMATCH` | `pubspec.lock` 与 `pubspec.yaml` 不一致，或是用另一个包源解析的（例如一个终端设置了 `PUB_HOSTED_URL` 镜像，另一个没有） | 在执行构建的终端中，于项目目录运行 `flutter pub get` 后重试 |
 | `TOOL_FAILED` | 底层构建工具执行失败 | 查看 `message` 中附带的工具输出末尾 |
 | `CONFIG_INVALID` | `flutter_patcher.yaml` 无效（未知字段、值的格式不对、`trust` 中没有有效的 `patch` 公钥）、CLI 参数无效，或没有设置 `HOME`/`USERPROFILE` | 按 `message` 修正配置或参数 |
-| `USAGE_ERROR` | 命令用法错误，包括 1.1 中删除的命令和选项（`trust`、`publish --production`/`--request`、`keys import --rotate`、`keys init --role root\|publisher`） | 加 `--help` 查看正确用法；见 [CLI 参考：1.1 中删除的内容](cli-zh.md#11-中删除的内容) |
+| `USAGE_ERROR` | 命令用法错误，包括 1.1 中删除的命令和选项（`trust`、`publish --production`/`--request`、`keys import --rotate`、`keys init --role`、`keys export --without-root`） | 加 `--help` 查看正确用法；见 [CLI 参考：1.1 中删除的内容](cli-zh.md#11-中删除的内容) |
 | `DOCTOR_FAILED` | `doctor` 遇到意外错误 | 查看 `message` |
 | `INTERFACE_INPUT_MISSING`<br>`INTERFACE_GENERATION_FAILED`<br>`INTERFACE_INDEX_FAILED`<br>`INTERFACE_VALIDATION_FAILED`<br>`INTERFACE_NOT_CONVERGED`<br>`INTERFACE_NO_PROGRESS` | 维护者命令 `interface` 未能生成或校验宿主接口 | 只有适配新 Flutter 版本的维护者会运行它；查看 `message` |
 

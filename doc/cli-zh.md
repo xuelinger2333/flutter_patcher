@@ -101,7 +101,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 |---|---|
 | `trust sign`、`trust publish` | 无需替代：不再有 root 和 publisher 密钥 |
 | `publish --production --request <文件>` | 直接在存储中删除或替换 `.fptc` 文件 |
-| `keys init --role root\|publisher`、`keys import --rotate` | 无需替代：补丁密钥是唯一的密钥 |
+| `keys init --role`、`keys export --without-root`、`keys import --rotate` | 无需替代：补丁密钥是唯一的密钥 |
 
 现在使用它们会以未知命令或未知选项失败（`USAGE_ERROR`）。
 
@@ -164,7 +164,7 @@ dart run flutter_patcher keys init
 
 - `flutter_patcher.yaml` 已经有补丁密钥，或项目中还有 `flutter_patcher_keys/` 目录时拒绝执行，报 `KEYS_ALREADY_CONFIGURED`。在另一台机器上请用 `keys import`。
 - 只输出公钥，不输出私钥。请用 `keys export --out <文件>` 备份私钥。
-- `--out <文件>` 只把新密钥写到这个新文件，不改动密钥库和项目。`--role patch` 可以和 `--out` 一起使用，它是唯一的角色。
+- `--out <文件>` 只把新密钥写到这个新文件，不改动密钥库和项目。
 
 ### keys export 与 keys import
 
@@ -178,7 +178,6 @@ dart run flutter_patcher keys export --base64          # 一行文本，用作 C
 |---|---|
 | `export --out <文件>` | 把本机保存的该项目补丁私钥写到一个新文件（POSIX 上权限 600） |
 | `export --base64` | 改为输出一行 base64，用于 `FLUTTER_PATCHER_KEYS` |
-| `export --without-root` | 为兼容 1.0 的脚本而保留，不起作用 |
 | `import <文件>` | 把密钥包加入本机密钥库；`-` 表示从标准输入读取；传入目录时按 1.0 之前的 `flutter_patcher_keys/` 结构读取（`<目录>/patch/private-key.base64`） |
 
 - `export` 只读取本机密钥库，并要求 `flutter_patcher.yaml` 中有 `trust.patch`（否则报 `KEYS_NOT_CONFIGURED`）。

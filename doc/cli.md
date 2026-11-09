@@ -101,7 +101,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 |---|---|
 | `trust sign`, `trust publish` | Nothing: there is no root or publisher key any more |
 | `publish --production --request <file>` | Delete or replace the `.fptc` file in the store yourself |
-| `keys init --role root\|publisher`, `keys import --rotate` | Nothing: the patch key is the only key |
+| `keys init --role`, `keys export --without-root`, `keys import --rotate` | Nothing: the patch key is the only key |
 
 They now fail as unknown commands or options (`USAGE_ERROR`).
 
@@ -164,7 +164,7 @@ Creates the patch key. The private key goes to this machine's key store, `~/.flu
 
 - Refuses with `KEYS_ALREADY_CONFIGURED` when `flutter_patcher.yaml` already names a patch key, or the project still has a `flutter_patcher_keys/` directory. On another machine, use `keys import`.
 - Prints the public key, never the private key. Back it up with `keys export --out <file>`.
-- `--out <file>` writes a new key to that new file only, leaving the key store and the project alone. `--role patch` is accepted with `--out`; it is the only role.
+- `--out <file>` writes a new key to that new file only, leaving the key store and the project alone.
 
 ### keys export and keys import
 
@@ -178,7 +178,6 @@ dart run flutter_patcher keys export --base64          # one line for a CI secre
 |---|---|
 | `export --out <file>` | Write this machine's patch key of the project to a new file (mode 600 on POSIX) |
 | `export --base64` | Print it as one base64 line instead, for `FLUTTER_PATCHER_KEYS` |
-| `export --without-root` | Accepted for 1.0 scripts; does nothing |
 | `import <file>` | Add a key bundle to this machine's key store; `-` reads it from standard input; a directory reads the pre-1.0 `flutter_patcher_keys/` layout (`<dir>/patch/private-key.base64`) |
 
 - `export` reads only this machine's key store, and needs `trust.patch` in `flutter_patcher.yaml` (`KEYS_NOT_CONFIGURED`).

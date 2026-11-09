@@ -22,22 +22,12 @@ ArgParser keysOptions() => ArgParser()
         'init: write the new key to this new file only, leaving the key '
         'store and the project alone. export: the new file to write.',
   )
-  ..addOption(
-    'role',
-    allowed: ['patch'],
-    help: 'init --out: the key to generate; the patch key is the only one.',
-  )
   ..addFlag(
     'base64',
     negatable: false,
     help:
         'export: print the key bundle as one base64 line, for a CI secret '
         '(${Keyring.environmentVariable}).',
-  )
-  ..addFlag(
-    'without-root',
-    negatable: false,
-    help: 'export: accepted for flutter_patcher 1.0 scripts; bundles hold no root key.',
   )
   ..addOption('key-file', help: 'status: also consider this key bundle.');
 
@@ -62,11 +52,7 @@ Future<int> keysCommand(ArgResults args) async {
   final project = p.absolute(
     args['project'] as String? ?? Directory.current.path,
   );
-  require(
-    args['role'] == null || (action == 'init' && args['out'] != null),
-    'USAGE_ERROR',
-    '--role only names the key keys init --out generates.',
-  );
+
   final Map<String, Object?> report;
   switch (action) {
     case 'init':
