@@ -54,12 +54,20 @@ phone checks every file itself, however it arrived.
 
 ## iOS
 
-`dart run flutter_patcher build ios` runs on an Apple Silicon Mac with signing
-set up in Xcode, and `patch ios` makes its patches. An iPhone cannot reach
-the Mac's 127.0.0.1, so expose `serve` over HTTPS, for example with
-`cloudflared tunnel --url http://127.0.0.1:8686`, and enter that URL in the
-app's **Update address** field.
+On an Apple Silicon Mac with signing (Team and Bundle ID) set up in Xcode,
+build in a Terminal of the Mac's desktop session, where code signing can reach
+the keychain. `development` makes an app your registered iPhone installs; the
+default, `app-store`, needs a distribution certificate:
 
+```bash
+dart run flutter_patcher build ios --export-method development --out build/host
+```
+
+Install `build/host/app-release.ipa` on the iPhone (Xcode's Devices window, or
+`xcrun devicectl device install app`), and make patches with `patch ios`. An
+iPhone cannot reach the Mac's 127.0.0.1, so expose `serve` over HTTPS, for
+example with `cloudflared tunnel --url http://127.0.0.1:8686`, and enter that
+URL in the app's **Update address** field.
 ## Going to production
 
 Put the files `patch` writes on any HTTPS host with a short cache time, as
