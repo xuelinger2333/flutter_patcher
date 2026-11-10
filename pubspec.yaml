@@ -1,5 +1,5 @@
 name: flutter_patcher
-description: Self-hosted code push for Flutter on Android and iOS. Signed Dart code and asset patches that apply on the next cold start and roll back automatically.
+description: Open-source, self-hosted over-the-air (OTA) hotfix tool for Flutter (Android & iOS). Ship critical bug fixes from your own servers or CDN without waiting for app store reviews.
 version: 1.1.0
 homepage: https://github.com/xuelinger2333/flutter_patcher
 repository: https://github.com/xuelinger2333/flutter_patcher

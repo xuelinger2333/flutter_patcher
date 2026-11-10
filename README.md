@@ -1,4 +1,7 @@
-# flutter_patcher
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/assets/banner-dark.png">
+  <img src="doc/assets/banner-light.png" alt="flutter_patcher: open-source, self-hosted OTA hotfixes for Flutter">
+</picture>
 
 [![pub package](https://img.shields.io/pub/v/flutter_patcher.svg)](https://pub.dev/packages/flutter_patcher)
 [![ci](https://github.com/xuelinger2333/flutter_patcher/actions/workflows/ci.yml/badge.svg)](https://github.com/xuelinger2333/flutter_patcher/actions/workflows/ci.yml)
