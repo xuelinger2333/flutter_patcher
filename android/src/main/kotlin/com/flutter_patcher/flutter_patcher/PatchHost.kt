@@ -176,8 +176,13 @@ internal class PatchHost internal constructor(
 
     /** Installs or applies the patch file at [path]; the caller owns the file. */
     fun applyFile(path: String, progress: ProgressCallback): Map<String, Any?> {
-        val bytes = try { CandidateStore.readBounded(File(path)) }
+        val file = File(path)
+        if (file.length() > PatchEnvelope.MAX_BYTES) {
+            return ApplyResult.failure(ApplyErrorCode.SIGNATURE_INVALID, "Patch too large").toMap()
+        }
+        val bytes = try { CandidateStore.readBounded(file) }
             catch (e: java.io.IOException) { return ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message).toMap() }
+            catch (e: IllegalArgumentException) { return ApplyResult.failure(ApplyErrorCode.IO_ERROR, e.message).toMap() }
         return apply(bytes, progress)
     }
 

@@ -322,6 +322,8 @@ final class BytecodePatchManager {
 
   /// Installs or applies the patch file at [path]; the caller owns the file.
   func applyFile(_ path: String, progress: Progress) throws -> [String: Any] {
+    let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? NSNumber
+    if (size?.intValue ?? 0) > BytecodeEnvelope.maxBytes { return Self.failure("SIGNATURE_INVALID", "Patch too large") }
     let bytes: Data
     do { bytes = try Storage.read(URL(fileURLWithPath: path), limit: BytecodeEnvelope.maxBytes) } catch {
       return Self.failure("IO_ERROR", "\(error)")

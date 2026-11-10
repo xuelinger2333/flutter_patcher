@@ -301,6 +301,20 @@ test("a file is read from its path and left there") {
   check(FileManager.default.fileExists(atPath: path.path), "kept")
 }
 
+test("a file over the size limit is rejected as invalid") {
+  let path = scratch.appendingPathComponent("big.fptc")
+  FileManager.default.createFile(atPath: path.path, contents: nil)
+  let handle = try FileHandle(forWritingTo: path)
+  try handle.truncate(atOffset: UInt64(BytecodeEnvelope.maxBytes + 1))
+  try handle.close()
+  check(error(try process().applyFile(path.path, progress: noProgress)) == "SIGNATURE_INVALID", "too large")
+}
+
+test("a missing file is an io error") {
+  let path = scratch.appendingPathComponent("absent.fptc")
+  check(error(try process().applyFile(path.path, progress: noProgress)) == "IO_ERROR", "missing")
+}
+
 try? FileManager.default.removeItem(at: scratch)
 print("\(passed) passed, \(failures) failures")
 exit(failures == 0 ? 0 : 1)

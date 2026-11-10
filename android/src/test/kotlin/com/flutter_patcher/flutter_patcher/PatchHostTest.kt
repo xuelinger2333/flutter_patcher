@@ -172,4 +172,14 @@ class PatchHostTest {
         assertTrue(process().applyFile(file.path, noProgress).ok())
         assertTrue(file.exists())
     }
+
+    @Test fun aFileOverTheSizeLimitIsRejectedAsInvalid() {
+        val file = File(context.cacheDir, "big.fptc")
+        java.io.RandomAccessFile(file, "rw").use { it.setLength(PatchEnvelope.MAX_BYTES + 1L) }
+        assertEquals("SIGNATURE_INVALID", process().applyFile(file.path, noProgress)["error"])
+    }
+
+    @Test fun aMissingFileIsAnIoError() {
+        assertEquals("IO_ERROR", process().applyFile(File(context.cacheDir, "absent.fptc").path, noProgress)["error"])
+    }
 }
