@@ -148,6 +148,13 @@ void main() {
           .transform(const LineSplitter())
           .listen(log.add);
       await until(() => log.any((l) => l.startsWith('Serving')), 'started');
+      // serve answers before its first scan; the first announcement follows it.
+      await until(
+        () => log.any(
+          (l) => l.startsWith('Offering') || l.startsWith('Not offering'),
+        ),
+        'first scan',
+      );
     }
 
     Future<(int, List<int>)> get(String path, {bool header = false}) async {
