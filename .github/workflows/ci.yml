@@ -60,5 +60,6 @@ jobs:
           export PATH="$RUNNER_TEMP/ci-tests/bin:$PATH"
           python3 test/acceptance/linux_tests.py --repo "$PWD" --dart "$(command -v dart)" --out "$PWD/.dart_tool/flutter_patcher/ci-fast"
       - name: Native JVM regression
-        run: python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
+        # Robolectric 4.14 cannot read the classes of Java 25, the runner's default JDK.
+        run: JAVA_HOME="$JAVA_HOME_21_X64" python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
       - run: echo 'Fast tests only; run test/acceptance/device_acceptance.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"
