@@ -15,7 +15,8 @@ class BlacklistEntry {
   final String version;
 
   /// Why it was blacklisted, as a string so newer reasons stay readable.
-  /// Currently always `BOOT_CRASH`: its starts failed `maxCrashCount` times.
+  /// Currently always `BOOT_CRASH`: its starts failed `maxCrashCount` times,
+  /// or its code threw after it started.
   final String reason;
 
   /// When it was blacklisted.

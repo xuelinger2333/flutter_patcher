@@ -2,112 +2,397 @@
 
 **English** | [简体中文](cli-zh.md)
 
-The CLI ships with the plugin. Run it in a project that depends on `flutter_patcher`:
+> Look up every flutter_patcher command: its options, what it prints, its exit codes, its errors and warnings, and how it behaves in CI.
+
+You are running the CLI by hand or from a script and need the exact behavior of a command. This page is a reference: the first-run flow is in [Getting Started](getting-started.md), going live in the [Production Deployment Guide](production-playbook.md). The CLI ships with the plugin, so run it in a project that depends on `flutter_patcher`:
 
 ```bash
 dart run flutter_patcher <command> [options]
 ```
 
-This document lists every command and option. For the whole first-run flow see [Getting Started](getting-started.md); for going live see the [Production Deployment Guide](production-playbook.md).
-
-## Common workflows
-
-Each workflow runs in the project root. Options are explained per command further down.
-
-### Try a change on a phone over USB
-
-```bash
-dart run flutter_patcher patch android
-dart run flutter_patcher serve          # leave running; patch again after each change
-```
-
-**Check**: `serve` prints `Offering patch <seq> (<file>, unsigned)` (or `signed`), then `A device downloaded <file>` once the app applies it. `serve` is a debugging aid only; see [serve](#serve).
-
-### Hand a patch file to the app yourself
-
-```bash
-dart run flutter_patcher patch android
-```
-
-**Check**: the JSON names the patch file in `file`, such as `.dart_tool/flutter_patcher/patches/<dir>/7-arm64-v8a.fptc`. Give that file to the app in any way and pass it to `FlutterPatcher.applyPatchBytes` or `applyPatchFile`; see [API Reference](api-reference.md). When `file` is `null`, the host is signed and this machine lacks the patch key: `keys import` it here and patch again, or run `publish --patch <output>` where the key is.
-
-`build` and `patch` are all a self-hosted delivery needs. For the built-in downloader, put the file at `<url>/<file name>`; see [Storage requirements](#storage-requirements) for what that server must do.
-
-### Publish a patch to production
-
-`publish` is optional: it writes the file to a store (`file://` or `s3://`), numbered at publish time, and guards against replacing a newer file.
-
-```bash
-dart run flutter_patcher patch android
-dart run flutter_patcher publish        # preview, then confirm
-```
-
-**Check**: `publish` prints `"status":"published"` with the `file` and `seq` it wrote to the store. Storage setup: [Production Deployment Guide](production-playbook.md).
-
-### Publish from CI
-
-```bash
-export FLUTTER_PATCHER_KEYS="<secret: the output of keys export --base64>"
-dart run flutter_patcher patch android
-dart run flutter_patcher publish --yes
-```
-
-**Check**: as above, with `"signed":true`; `keys status` in the job prints `"private_key":"FLUTTER_PATCHER_KEYS"`. Unsigned hosts need no secret.
-
-### Withdraw a patch, or return to an earlier one
-
-```bash
-dart run flutter_patcher patch android --withdraw                                   # back to the installed version; deliver its file like a patch
-dart run flutter_patcher publish --withdraw                                         # the same, written to the store
-dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<dir>   # back to an earlier patch
-```
-
-**Check**: the first prints `"status":"withdrawal_created"` and its `file`; the second prints `"action":"withdraw"`; the third prints a `seq` above the bad patch's. Uploading an older `.fptc` file again does nothing: devices accept only a higher `seq`.
-
-### Patch an earlier live release
-
-```bash
-git checkout <that release's tag>
-# fix the code
-dart run flutter_patcher patch android --version-code <its build number>
-dart run flutter_patcher publish
-```
-
-**Check**: `patch` prints `"status":"patch_created"` and a `file` named `<its build number>-…`.
-
-### Make iOS patches on Linux or Windows
-
-```bash
-dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
-```
-
-`--baseline-store` is not needed when `baseline_store` in `flutter_patcher.yaml` already points to the store `build ios` used.
-
-**Check**: `patch` prints `"status":"patch_created"` with `"abi":"ios-arm64"`.
+| Command | What it does |
+|---|---|
+| [`init`](#init) | Sets up a project once: creates `flutter_patcher.yaml` and the patch key, signing off |
+| [`build`](#build) | Builds the app you release and records its baseline |
+| [`patch`](#patch) | Makes the patch file of a released build; with `--withdraw`, a withdrawal file |
+| [`publish`](#publish) | Optional: writes a patch file to a store, numbered at publish time |
+| [`serve`](#serve) | Development only: offers the newest patch files to phones connected to this computer |
+| [`keys`](#keys) | Moves the patch key to other computers and CI |
+| [`doctor`](#doctor) | Checks and prepares the toolchain |
 
 ## Conventions
 
-- **Project directory**: the current directory, or `--project`.
-- **Output**: on success, a command prints one line of JSON on standard output, except `serve` (status lines on standard error) and `doctor` (a checklist, or JSON with `--json`). On failure, `build`, `patch` and `baseline` print one line of JSON with `code` and `message` on standard error; the other commands print `CODE: message`. Failures exit with `2`, except a failed `doctor` check, which exits with `1`. Error codes are explained in [Error Codes and Troubleshooting](troubleshooting.md).
-- **Warnings** go to standard error as `WARNING: <code>: <text>` and do not fail the command.
-- **Flutter SDK** (`build`, `patch`, `doctor`): Flutter on your `PATH`, or `--flutter-sdk <path>`.
-- **Offline** (`build`, `patch`, `doctor`): `--offline` uses only verified local caches and no network; `patch --offline` also reads the baseline from the local cache only.
-- **Cache** (`build`, `patch`, `doctor`): `--cache-dir <dir>` uses another cache directory, which must be under `~/.flutter_patcher` or the project's `.dart_tool/flutter_patcher`. On Windows the cache path may be at most 80 characters; when `~/.flutter_patcher` is longer, choose a directory under the project's `.dart_tool/flutter_patcher`.
-- `-h` / `--help` shows a command's own help; `--version` shows the CLI version.
+### Output and exit codes
 
-## Removed in 1.1
+| Case | stdout | stderr | Exit code |
+|---|---|---|---|
+| Success | One line of JSON. Exceptions: `serve` prints nothing, `doctor` prints a checklist unless `--json` is given, `keys export --base64` prints the key bundle | Warnings and progress | `0` |
+| `build`, `patch` or `baseline` fails | Nothing | One line of JSON with `command`, `status` (`failed`), `code` and `message`; `patch` adds `details` for a rejected change | `2` |
+| Another command fails | Nothing | `CODE: message` | `2` |
+| A `doctor` check fails | The checklist, or the JSON report | `CODE: message` | `1` |
+| A command or option does not exist | Nothing | `USAGE_ERROR: message` | `2` |
 
-| Removed | Instead |
+- Warnings print on stderr as `WARNING: <CODE>: <text>` and do not change the exit code.
+- Branch on `code`, not on `message`: messages change between versions, codes do not. Every code is listed in [Troubleshooting](troubleshooting.md).
+
+### Non-interactive use
+
+- Only `publish` asks a question. Without a terminal and without `--yes` it writes nothing, prints `"status":"preview"` and exits with `0`, so pass `--yes` in CI.
+- No other command reads from the terminal. A missing value falls back to its default or fails with an error code; nothing waits for input.
+- Pass these explicitly in CI, because their defaults come from the checkout: `--version-code` when `pubspec.yaml` no longer holds the live release's build number, `--flavor` when the release has one, and `--application-id` when the project declares more than one application id.
+- A signed host needs its private key on the runner: set `FLUTTER_PATCHER_KEYS`; see [Keys in CI](advanced.md#keys-in-ci).
+
+### Options shared by commands
+
+| Option | Commands | Description | Default |
+|---|---|---|---|
+| `--project <dir>` | All except `baseline` | The project directory | The current directory |
+| `--flutter-sdk <path>` | `build`, `patch`, `doctor` | The Flutter SDK to use | Flutter on `PATH` |
+| `--offline` | `build`, `patch`, `doctor` | Uses only verified local caches and no network; `patch --offline` also reads the baseline from the local cache only | Off |
+| `--cache-dir <dir>` | `build`, `patch`, `doctor` | The cache directory; it must be under `~/.flutter_patcher` or the project's `.dart_tool/flutter_patcher` | `~/.flutter_patcher` |
+| `-h`, `--help` | All | Prints the command's options | |
+| `--version` | Top level | Prints `flutter_patcher <version>` | |
+
+On Windows the cache path may be at most 80 characters, because deeper build trees exceed the Windows path limit. When `~/.flutter_patcher` is longer, pass a `--cache-dir` under the project's `.dart_tool/flutter_patcher`.
+
+## Common workflows
+
+Run each in the project root.
+
+```bash
+# Set up a project once, after flutter pub add flutter_patcher
+dart run flutter_patcher init
+
+# Try a change on an Android phone over USB
+dart run flutter_patcher patch android
+dart run flutter_patcher serve                      # Keep it running; it picks up each new patch
+
+# Deliver a patch yourself: upload the file named in "file" to <url>/<fileName>, or hand it to your server
+dart run flutter_patcher patch android
+
+# Publish a patch to the store from CI
+export FLUTTER_PATCHER_KEYS="<secret: the output of keys export --base64>"
+dart run flutter_patcher patch android
+dart run flutter_patcher publish --yes
+
+# Return devices to the installed version
+dart run flutter_patcher patch android --withdraw   # Deliver this file like a patch
+dart run flutter_patcher publish --withdraw         # Or write the withdrawal file to the store
+
+# Return devices to an earlier patch
+dart run flutter_patcher publish --patch .dart_tool/flutter_patcher/patches/<dir>
+
+# Patch an earlier live release, from a checkout of its source
+dart run flutter_patcher patch android --version-code <its build number>
+
+# Make an iOS patch on Linux or Windows
+dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
+```
+
+What to check after each, and how to set up hosting, is in the [Production Deployment Guide](production-playbook.md).
+
+## init
+
+Prepares a project for flutter_patcher. Run it once in the app's root, after `flutter pub add flutter_patcher`.
+
+```bash
+dart run flutter_patcher init
+```
+
+| Option | Description | Default |
+|---|---|---|
+| `--project <dir>` | The app's root; it must hold `pubspec.yaml` | The current directory |
+
+`init` does three things, and keeps whatever already exists:
+
+1. Creates `flutter_patcher.yaml` with every setting commented out, so the defaults apply until you uncomment one; see [Project settings](#project-settings-flutter_patcheryaml).
+2. Creates the project's patch key with signing off. The private key goes into this computer's key store, `~/.flutter_patcher/keys/<id>/keys.json`, readable by the current user only. The public key goes into `trust.patch`, next to `trust.enabled: false`. When `flutter_patcher.yaml` already names a key, for example in a clone of the project, `init` creates none, because a host accepts only one key.
+3. Warns about what `build` would refuse: a `version` without a build number, or an Android or iOS project without exactly one application id.
+
+**Output**: one JSON line on stdout:
+
+| Field | Value |
 |---|---|
-| `trust sign`, `trust publish` | Nothing: there is no root or publisher key any more |
-| `publish --production --request <file>` | Delete or replace the `.fptc` file in the store yourself |
-| `keys init --role`, `keys export --without-root`, `keys import --rotate` | Nothing: the patch key is the only key |
+| `command`, `status` | `init`, `initialized` |
+| `config`, `config_created` | The path of `flutter_patcher.yaml`, and whether `init` created it |
+| `public_key` | The project's patch public key |
+| `key_store` | Where the new private key was saved; only when `init` created the key |
+| `private_key` | Where `patch` and `publish` would take the private key from, as `keys status` reports it; `none` on a computer without it |
+| `signing` | The value of `trust.enabled` |
+| `notice` | What to do next: turn signing on before the build you ship, or `keys import` the private key on this computer |
 
-They now fail as unknown commands or options (`USAGE_ERROR`).
+Warnings print on stderr as `WARNING: <CODE>: <text>`, with the code `build` would fail with, such as `WARNING: BUILD_CONFIG_INVALID`.
+
+**Exit codes**: `0` done, with or without warnings; `2` failed, with `CODE: message` on stderr.
+
+| Code | When | Fix |
+|---|---|---|
+| `CONFIG_INVALID` | The project directory has no `pubspec.yaml`, or `flutter_patcher.yaml` is invalid | Run `init` in the app's root, or correct what `message` names |
+| `KEYS_ALREADY_CONFIGURED` | The project names no key and still has a pre-1.0 `flutter_patcher_keys/` directory | Run `keys import flutter_patcher_keys`, because released hosts accept only that key |
+
+**Non-interactive**: `init` never prompts, and running it again changes nothing that exists.
+
+## build
+
+Builds the release app, a host, and saves its baseline to the baseline store. `build` builds release mode only, because a patch is compiled for a release host.
+
+```bash
+dart run flutter_patcher build android
+dart run flutter_patcher build ios       # Apple Silicon Mac only
+```
+
+| Option | Description | Default |
+|---|---|---|
+| `--strategy bytecode\|so` | Patch strategy, Android only; see [Two patch strategies](architecture.md#two-patch-strategies) | `bytecode` |
+| `--flavor <name>` | Flutter flavor; 1 to 64 letters, digits and `_` | No flavor, recorded as `default` |
+| `--channel <name>` | Channel, part of the host's identity and of its patch file name; 1 to 64 letters, digits and `_` | `production` |
+| `--version-code <n>` | The build number | The number after `+` in `version` in `pubspec.yaml` |
+| `--application-id <id>` | The application id (iOS bundle id) | Read from the Gradle or Xcode project; required when that names more than one |
+| `--target <file>` | Entry file | `lib/main.dart` |
+| `--out <dir>` | Output directory; it must not exist, so that a build never overwrites another | `.dart_tool/flutter_patcher/releases/<timestamp>/` |
+| `--export-method <method>` | iOS only, passed to `flutter build ipa`: `app-store`, `ad-hoc`, `development` or `enterprise` | `app-store` |
+| `--baseline-store <uri>` | Saves the baseline here | `baseline_store` in `flutter_patcher.yaml` |
+| `--host-policy <file>` | A host policy you wrote; see [Custom Host Policy](advanced.md#custom-host-policy) | Derived from the project |
+
+**Output**: the output directory holds `app-release.apk` or `app-release.ipa` and the full report, `build.json`. stdout holds one JSON line:
+
+| Field | Value |
+|---|---|
+| `command`, `status` | `build`, `build_archived` |
+| `app` | Path of the APK or IPA to release |
+| `application_id`, `version_code`, `strategy` | The host's identity |
+| `signed` | `true` when the host accepts only files signed with the project's patch key |
+| `fingerprint` | The fingerprint of this host build |
+| `report` | Path of `build.json` |
+
+**Exit codes**: `0` built and baseline saved; `2` failed, with the JSON error on stderr.
+
+| Code | When | Fix |
+|---|---|---|
+| `WARNING: UNSIGNED` | `flutter_patcher.yaml` names no patch key, or `trust.enabled` is `false` | Set `trust.enabled: true` (run `init` first if there is no key), then build again |
+| `WARNING: BASELINE_STORE_LOCAL` | The baseline is kept only in the project's `.flutter_patcher/baselines/` | Set `baseline_store`, or pass `--baseline-store` |
+| `BASELINE_RELEASE_CONFLICT` | The same flavor and build number was built before with different content | Raise the build number, because a release has one baseline; identical content reuses the existing baseline |
+| `BUILD_CONFIG_INVALID` | No build number in `pubspec.yaml`, no single application id, an invalid option, or `--out` exists | Correct what `message` names |
+| `HOST_UNSUPPORTED` | `build ios` on a computer other than a Mac | Build on an Apple Silicon Mac |
+
+**Non-interactive**: `build` never prompts. Signing is decided here from `trust.enabled` and cannot be changed for a released host, so set it before the build you ship.
+
+## patch
+
+Compares the current source with a released build's baseline and writes the host's patch file. With `--withdraw` it writes a withdrawal file of the host instead and compiles nothing.
+
+```bash
+dart run flutter_patcher patch android
+dart run flutter_patcher patch ios                  # On any supported computer
+dart run flutter_patcher patch android --withdraw
+```
+
+| Option | Description | Default |
+|---|---|---|
+| `--version-code <n>` | The release to patch | The number after `+` in `version` in `pubspec.yaml` |
+| `--flavor <name>` | The release's flavor | `default` |
+| `--withdraw` | Writes a withdrawal file: devices that apply it delete their patch and run the installed version from the next cold start. It cannot be combined with `--target` or `--assets` (`USAGE_ERROR`) | Off |
+| `--assets <key>` | Overrides only these asset keys; repeatable | Every changed asset |
+| `--target <file>` | Entry file; it must be the one `build` used | `lib/main.dart` |
+| `--out <dir>` | Output directory; it must not exist | `.dart_tool/flutter_patcher/patches/<timestamp>/` |
+| `--baseline-store <uri>` | Reads the baseline here | `baseline_store` in `flutter_patcher.yaml` |
+
+Strategy, channel and patch key come from the baseline, so `patch` has no options for them.
+
+**Output**: the output directory holds `patch.json` (the report), `patch.draft` (the patch before sealing; not with `--withdraw`) and the patch file, named as in [Patch files](#patch-files). stdout holds one JSON line:
+
+| Field | Value |
+|---|---|
+| `command`, `status` | `patch`; `patch_created` or `withdrawal_created` |
+| `output` | The output directory |
+| `file` | Full path of the patch file. `null` when the host is signed and this machine has no private key for it; a `notice` then says what to do |
+| `seq`, `sealed_at` | The file's sequence, the Unix time in seconds it was sealed, and that time in UTC |
+| `signed` | Whether the file is signed |
+| `patch_key` | The host's patch public key, or `-` for an unsigned host |
+| `platform`, `abi`, `strategy`, `fingerprint`, `scope` | The host the file is for |
+| `changed`, `warnings` | For a patch: what changed, and what to review |
+
+**Exit codes**: `0` file written, or draft written with `"file":null`; `2` failed, with the JSON error on stderr.
+
+| Code | When | Fix |
+|---|---|---|
+| `BASELINE_NOT_FOUND` | No baseline for this flavor and build number | Pass the live release's `--version-code` and `--flavor`, and point `baseline_store` at the store `build` used |
+| `PATCH_NO_CHANGES` | Nothing differs from the baseline | Save your edits; check the release you target |
+| `PATCH_NATIVE_CHANGE` and other rejected changes | The change cannot be carried by a patch; see [What can be patched](architecture.md#what-can-be-patched) | Revert that part, or ship a store release |
+| `PATCH_BASELINE_INCOMPATIBLE` | The host was built with flutter_patcher 1.0 or with another Flutter version | Patch 1.0 hosts with flutter_patcher 1.0.0+1; select the release's Flutter with `--flutter-sdk` |
+| `WARNING: PATCH_NATIVE_ASSET_READER`, `PATCH_BACKGROUND_ENTRY`, `PATCH_RESOURCE_SIZE` | The patch is made, and part of it does not take effect everywhere | Read the warning; see [Troubleshooting](troubleshooting.md) |
+
+**Non-interactive**: `patch` never prompts. On a runner without the key of a signed host it still exits with `0` and `"file":null`, so check `file` in scripts, or set `FLUTTER_PATCHER_KEYS`.
+
+## publish
+
+Optional. Seals a `patch` output again with a sequence numbered at publish time, so that files are ordered by when you publish them, and writes it to the publication store as `<fileName>`. It replaces the file in the store only with a higher sequence, because devices install only a file numbered above every file they accepted.
+
+```bash
+dart run flutter_patcher publish         # Previews, asks, then writes
+dart run flutter_patcher publish --yes   # Writes without asking
+```
+
+| Option | Description | Default |
+|---|---|---|
+| `--patch <dir>` | The `patch` output to publish. If it was deleted, check out that code and run `patch` again | The newest output under `.dart_tool/flutter_patcher/patches/` |
+| `--withdraw` | Writes a withdrawal file for that output's host instead. An output of `patch --withdraw` is published as a withdrawal without this option | Off |
+| `--yes`, `-y` | Publishes without asking | Asks in a terminal; previews without one |
+| `--seq <n>` | The file's sequence, from 1 to 4294967295; it must exceed the sequence of the file in the store | The current Unix time in seconds |
+| `--key-file <file>` | Signs with this key bundle before any other source | |
+| `--receipt <file>` | Also writes the result to this JSON file; the file must not exist. Written only for `published` | |
+
+**Output**: stdout holds one JSON line with `command` (`publish`), `action` (`publish` or `withdraw`), `file` (the file name), `store`, `signed`, `seq` and `status`:
+
+| `status` | Meaning | Written? |
+|---|---|---|
+| `published` | The file is in the store | Yes |
+| `already_published` | The store already holds this patch for this host, or a withdrawal with `--withdraw`; `seq` is the stored one | No |
+| `preview` | No `--yes`, and no terminal to ask in or the answer was not `y` | No |
+
+The question, `Publish <fileName> as <seq> to <store>? [y/N]`, prints on stderr. With a `file://` store and `url` set, stderr also says where to upload the file, because devices see it only once `<url>/<fileName>` serves it.
+
+**Exit codes**: `0` for every `status` above, including `preview`; `2` failed, with `CODE: message` on stderr and nothing written.
+
+| Code | When | Fix |
+|---|---|---|
+| `KEYS_NOT_FOUND` | The host is signed and no source holds its private key | See [Where the private key comes from](#where-the-private-key-comes-from) |
+| `PUBLISH_SEQUENCE_CONFLICT` | The store's file has a sequence at or above the new one, or `--seq` is out of range | Correct this computer's clock, or pass the `--seq` that `message` suggests |
+| `PUBLISH_CONFLICT` | The store's file changed between reading and writing it | Run `publish` again |
+| `PUBLISH_CONFIG_INVALID` | No patch output, an existing `--receipt` file, or a `store` with credentials | Run `patch` first or pass `--patch`; choose a new receipt file |
+| `PUBLISH_STORE_UNAVAILABLE` | The AWS CLI is missing or failed | See [Publication store](#publication-store) |
+
+**Non-interactive**: pass `--yes`. Without it and without a terminal, `publish` exits with `0` and `"status":"preview"`, so check `status` in scripts.
+
+## serve
+
+Development only. Offers the newest file `patch` wrote for each host, a patch or a withdrawal file, exactly as written. It signs, numbers and stores nothing.
+
+```bash
+dart run flutter_patcher serve
+```
+
+| Option | Description | Default |
+|---|---|---|
+| `--port <port>` | The port on this computer, and the port `adb reverse` maps on Android devices. An app built without `url` checks `8686`, so with another port also run `adb reverse tcp:8686 tcp:<port>` | `8686` |
+
+- It offers the file of each host's newest output under `.dart_tool/flutter_patcher/patches/`, and picks up a new `patch` run within about 2 seconds. Outputs written elsewhere with `patch --out` are not offered.
+- Every 2 seconds it runs `adb reverse` for newly connected Android devices.
+- It listens on `127.0.0.1` only and answers only `GET /<fileName>`, with `Range` requests answered as `206`; anything else is `404`.
+- An iPhone cannot reach this computer's `127.0.0.1`, so expose the port over HTTPS, for example with `cloudflared tunnel --url http://127.0.0.1:8686`, and pass that address to `checkUpdate(url: …)`.
+
+**Output**: nothing on stdout. Status lines print on stderr:
+
+| Line | Meaning |
+|---|---|
+| `Android device <serial> reaches this computer at 127.0.0.1:<port>` | `adb reverse` is set up for that device |
+| `Offering patch <seq> (<fileName>, signed\|unsigned)` | A host's newest output is a patch |
+| `Offering a withdrawal of <fileName> (signed\|unsigned, <seq>)…` | A host's newest output is a withdrawal file |
+| `Not offering <fileName>: …` | The newest output has no file, because the host is signed and its key is not on this machine. Nothing is offered for that host, not even an older file. Run `keys import` and `patch` again |
+| `A device checked for updates` | A device read the file's header |
+| `A device downloaded <fileName>` | A device read the whole file |
+
+**Exit codes**: `serve` runs until Ctrl+C. `2` when it cannot start: `SERVE_PORT_BUSY` when the port is in use (choose another with `--port`), `USAGE_ERROR` for an invalid `--port`.
+
+**Non-interactive**: `serve` never prompts and never exits by itself, so do not run it in CI.
+
+## keys
+
+Moves and inspects the project's patch key, the Ed25519 key pair [`init`](#init) creates. A host built while `trust.enabled` in `flutter_patcher.yaml` is `true` installs only files signed with it; why to sign is in [Security model](architecture.md#security-model). The private key stays outside the project.
+
+```bash
+dart run flutter_patcher keys export --out <file>   # Writes the key to a file, for another machine
+dart run flutter_patcher keys export --base64       # Prints the key as one line, for a CI secret
+dart run flutter_patcher keys import <file>         # Adds a key to this machine's key store
+dart run flutter_patcher keys status                # Shows where the private key would come from
+```
+
+| Subcommand and option | Description |
+|---|---|
+| `export --out <file>` | Writes this machine's copy of the project's key to a new file |
+| `export --base64` | Prints it as one base64 line, the value of `FLUTTER_PATCHER_KEYS` |
+| `import <file>` | Adds a key bundle to the key store. `-` reads it from stdin; a directory reads the pre-1.0 `flutter_patcher_keys/` layout. In a project without a patch key, it also writes `trust.patch`, with `trust.enabled: false` |
+| `status --key-file <file>` | Also considers that key bundle, as the first source |
+
+**Output**: one JSON line on stdout with `command` (`keys export`, `keys import` or `keys status`). `export --base64` prints only the base64 line. No command prints the private key except `export`.
+
+| Subcommand | Fields |
+|---|---|
+| `export --out` | `status` (`keys_exported`), `file` |
+| `import` | `status` (`keys_imported`), `key_store`, `public_key`, and `config` when it wrote `trust.patch` |
+| `status` | `config`; `public_key` (`trust.patch`, or `null`); `private_key`: the source that would sign (`--key-file`, `FLUTTER_PATCHER_KEYS`, `signing.command`, `key store`) or `none`. `<source> (other key)` means that source holds another key; an error code means that source cannot be read |
+
+**Exit codes**: `0` done; `2` failed, with `CODE: message` on stderr.
+
+| Code | When | Fix |
+|---|---|---|
+| `KEYS_NOT_CONFIGURED` | `export` in a project without `trust.patch` | Run `init`, or `keys import` the project's bundle |
+| `KEYS_NOT_FOUND` | `export` without the key in this machine's key store, or an `import` file that does not exist | Run it on the machine that has the key |
+| `KEYS_MISMATCH` | `import` of a key other than the one `flutter_patcher.yaml` names | Use the project's key bundle |
+| `KEYS_OUTPUT_EXISTS` | `--out` names an existing file | Choose a new file |
+| `KEYS_BUNDLE_INVALID` | The file is not a key bundle, or holds no patch key | Use a file written by `keys export` |
+
+**Non-interactive**: `keys` never prompts. In CI, set `FLUTTER_PATCHER_KEYS` instead of importing; see [Keys in CI](advanced.md#keys-in-ci).
+
+> **Warning: keep a copy of the private key**
+> A released host accepts only the key it was built with, and the key cannot be replaced. If every copy is lost, those hosts accept no new patch file: delete `trust:` from `flutter_patcher.yaml`, run `init` to create a new key, set `trust.enabled: true`, and ship a new store release.
+
+### Where the private key comes from
+
+`patch` and `publish` sign with the first source that is present:
+
+1. `--key-file <file>` (`publish` only): a key bundle file;
+2. the `FLUTTER_PATCHER_KEYS` environment variable: a key bundle, as `keys export --base64` prints it;
+3. `signing.command` in `flutter_patcher.yaml`: a KMS or another signing service; see [Signing with a KMS or Signing Service](advanced.md#signing-with-a-kms-or-signing-service);
+4. this machine's key store, including key directories written by flutter_patcher 1.0.
+
+| Situation | Result |
+|---|---|
+| The first source present holds a key other than the host's | `KEYS_MISMATCH`; the next source is not tried, so that a wrong secret is reported instead of hidden |
+| `signing.command` fails, times out or signs with another key | `SIGNER_COMMAND_FAILED` |
+| No source is present | `patch` exits with `0` and `"file":null`; `publish` fails with `KEYS_NOT_FOUND` |
+
+## doctor
+
+Checks that the toolchain is ready. The first run downloads the engine and tools for your Flutter version and prepares them, which takes a few minutes.
+
+```bash
+dart run flutter_patcher doctor
+```
+
+| Option | Description | Default |
+|---|---|---|
+| `--json` | Prints one JSON report instead of the checklist | Checklist |
+| `--project <dir>` | Also reports where the project's private key comes from; on a Mac, also checks that `CFBundleVersion` in `ios/Runner/Info.plist` is `$(FLUTTER_BUILD_NUMBER)` or a positive integer | Not checked |
+| `--baseline-store <uri>` | Also checks that the baseline store is reachable. Write access is checked by `build` | Not checked |
+| `--version-code <n>` `--flavor <name>` | With `--baseline-store`: also checks that this release's baseline is complete | Not checked |
+| `--apk <file>` | Also checks that the APK's engine matches the selected Flutter version | Not checked |
+
+**Output**: stdout holds one line per check, `[passed|warning|not_run|failed] <id>: <message>`, then `Toolchain ready. …` or `Doctor failed.`. With `--json`, stdout holds one JSON object:
+
+| Field | Value |
+|---|---|
+| `command`, `status` | `doctor`; `toolchain_ready` or `failed` |
+| `checks` | One object per check: `id`, `status` (`passed`, `warning`, `not_run` or `failed`), `message`, and `code` for a failed check |
+| `host`, `sdk`, `engine_build_id` | The computer, the Flutter SDK and the engine that were checked |
+| `network_requests`, `elapsed_ms` | What the run cost |
+
+**Exit codes**: `0` every check that ran passed; `1` a check failed, with `CODE: message` on stderr; `2` usage error.
+
+**Non-interactive**: `doctor` never prompts. With `--offline` it uses only the local cache and fails when a required download is missing.
 
 ## Patch files
 
-`patch` and `publish` write one kind of file, FPTC v1, and `serve` serves it as written. The host's file always has the same name: `<version_code>-<abi>.fptc` for the default flavor and channel (`default`, `production`), for example `7-arm64-v8a.fptc`, and `<version_code>-<flavor>-<channel>-<abi>.fptc` otherwise, for example `7-paid-beta-arm64-v8a.fptc`. Flavors and channels contain only letters, digits and `_`, so no two hosts share a name. The app finds the name as `PatchTarget.fileName`.
+`patch` and `publish` write one kind of file, FPTC v1. A patch file and a withdrawal file have the same format and the same name.
+
+These files need flutter_patcher 1.1.0 or newer. Hosts built with flutter_patcher 1.0.0 are patched with flutter_patcher 1.0.0+1; see [Upgrading from 1.0](upgrading.md).
+
+| Host | File name | Example |
+|---|---|---|
+| Default flavor and channel (`default`, `production`) | `<version_code>-<abi>.fptc` | `7-arm64-v8a.fptc` |
+| Any other flavor or channel | `<version_code>-<flavor>-<channel>-<abi>.fptc` | `7-paid-beta-arm64-v8a.fptc` |
+
+Every file of a host has the same name, so a newer patch or a withdrawal replaces the previous file. On the device, `PatchTarget.fileName` gives the name.
 
 | Offset | Bytes | Field |
 |---|---|---|
@@ -118,236 +403,38 @@ They now fail as unknown commands or options (`USAGE_ERROR`).
 | 42 | 8 | Payload length L |
 | 50 | 32 | SHA-256 of the payload |
 | 82 | 64 | Ed25519 signature of bytes 0–81 followed by the payload; 64 zero bytes when unsigned |
-| 146 | L | Payload: the patch ZIP. L = 0 is a withdrawal |
+| 146 | L | Payload: the patch ZIP. L = 0 is a withdrawal file |
 
-- A file is at most 320 MiB, and exactly 146 + L bytes.
-- `seq` is the Unix time in seconds when the file was sealed, unless `--seq` gives one. A device installs a file only when its `seq` is above every `seq` it accepted for that host; see [API Reference](api-reference.md).
-- A host built with a patch key accepts only files signed by it; an unsigned host accepts signed and unsigned files.
+- A file is exactly 146 + L bytes, and at most 320 MiB.
+- `seq` is the Unix time in seconds when the file was sealed, or the value of `publish --seq`.
+- Which files a device installs: [What a device accepts](api-reference.md#what-a-device-accepts).
 
 ## Project settings: `flutter_patcher.yaml`
 
-Every setting is optional, and nothing in it is secret. `keys init` creates the file from a template when it is missing.
+Every setting is optional, and none is secret. `init` creates the file with every setting commented out; `keys import` also creates it in a project that has none.
 
 | Setting | Meaning | Default |
 |---|---|---|
-| `url` | The address `build` writes into the app; `checkUpdate()` without `url` downloads `<url>/<fileName>` from it. Devices accept only HTTPS there, or HTTP to the device itself | `http://127.0.0.1:8686`, where `serve` offers patches; `build` warns `URL_LOCAL` |
-| `store` | Publication store, where `publish` writes patch files. `file://` or `s3://` | `.flutter_patcher/updates/` in the project |
-| `baseline_store` | Baseline store, written by `build` and read by `patch`. `file://`, `s3://` or HTTPS | `.flutter_patcher/baselines/` in the project |
-| `trust` | `patch`: the base64 public key of the project's patch key. Hosts built while it is set accept only files it signed. Written by `keys init` and `keys import`. `root` and `publisher`, which flutter_patcher 1.0 wrote, are allowed and ignored | Not set: hosts accept unsigned files |
-| `signing` | `command`: a program that signs instead of the key store; see [Where the private key comes from](#where-the-private-key-comes-from) | The key store |
+| `url` | Optional: the default address of `checkUpdate()`. `build` writes it into the app, and `checkUpdate()` without `url` downloads `<url>/<fileName>` from it. An `https://` address, or `http://` to `127.0.0.1`, `localhost` or `::1` | `http://127.0.0.1:8686`, where `serve` offers patches |
+| `store` | The publication store, where `publish` writes: `file://` or `s3://` | `.flutter_patcher/updates/` in the project |
+| `baseline_store` | The baseline store, written by `build` and read by `patch`: `file://`, `s3://` or HTTPS | `.flutter_patcher/baselines/` in the project; `build` warns `BASELINE_STORE_LOCAL` |
+| `trust.patch` | The base64 public key of the project's patch key, written by `init`. Do not edit it, because released hosts accept only the key they were built with. The `root` and `publisher` entries flutter_patcher 1.0 wrote are ignored | Not set until `init` runs |
+| `trust.enabled` | `true`: hosts built from then on are signed and accept only files signed with `trust.patch`. A file that names a key without `enabled`, as flutter_patcher 1.0 wrote, counts as `true` | `false`, as `init` writes it; `build` warns `UNSIGNED` |
+| `signing.command` | An external program that signs; see [Where the private key comes from](#where-the-private-key-comes-from) | Not set |
 
-Unknown settings, values of the wrong shape, and a `trust` without a valid `patch` fail with `CONFIG_INVALID`. Requirements per store type: [Storage requirements](#storage-requirements).
+An unknown setting, a value of the wrong type, or a `trust` without a valid `patch` fails with `CONFIG_INVALID`.
 
 ## Directories
 
-| Path | Contents | Back up? |
+| Path | Contents | If it is lost |
 |---|---|---|
-| `flutter_patcher.yaml` | Settings and the project's public key | Optional; `keys import` writes the key again |
-| `~/.flutter_patcher/keys/<id>/keys.json` | This machine's copy of the private patch key (the key store) | **Yes**, with `keys export --out <file>`; a lost key cannot be replaced for hosts already shipped |
-| `.flutter_patcher/baselines/` | Default baseline store | **Yes**, or use durable storage: every patch of a host needs its baseline |
-| `.flutter_patcher/updates/` | Default publication store | No |
-| `.dart_tool/flutter_patcher/releases/` | `build` outputs | No |
-| `.dart_tool/flutter_patcher/patches/` | `patch` outputs; `serve` serves the newest of each host | No |
-| `~/.flutter_patcher/` (besides `keys/`) | Downloaded engines and tools, prepared Flutter SDK copies, baseline cache | No; it can be downloaded again |
-
-## keys
-
-Signing is optional. A project has at most one Ed25519 key pair, the patch key. Its public key lives in `flutter_patcher.yaml` (`trust.patch`); its private key never lives in the project. `build` needs no private key. `patch` and `publish` sign when the host has a patch key.
-
-### keys init
-
-```bash
-dart run flutter_patcher keys init
-```
-
-Creates the patch key. The private key goes to this machine's key store, `~/.flutter_patcher/keys/<id>/keys.json` (mode 600 in a mode 700 directory on POSIX, readable by the current user only on Windows); the public key goes to `trust.patch` in `flutter_patcher.yaml`. Hosts built from then on accept only files it signed; hosts built before stay unsigned.
-
-- Refuses with `KEYS_ALREADY_CONFIGURED` when `flutter_patcher.yaml` already names a patch key, or the project still has a `flutter_patcher_keys/` directory. On another machine, use `keys import`.
-- Prints the public key, never the private key. Back it up with `keys export --out <file>`.
-- `--out <file>` writes a new key to that new file only, leaving the key store and the project alone.
-
-### keys export and keys import
-
-```bash
-dart run flutter_patcher keys export --out <file>      # a backup, or for another machine
-dart run flutter_patcher keys import <file>
-dart run flutter_patcher keys export --base64          # one line for a CI secret
-```
-
-| Option | Description |
-|---|---|
-| `export --out <file>` | Write this machine's patch key of the project to a new file (mode 600 on POSIX) |
-| `export --base64` | Print it as one base64 line instead, for `FLUTTER_PATCHER_KEYS` |
-| `import <file>` | Add a key bundle to this machine's key store; `-` reads it from standard input; a directory reads the pre-1.0 `flutter_patcher_keys/` layout (`<dir>/patch/private-key.base64`) |
-
-- `export` reads only this machine's key store, and needs `trust.patch` in `flutter_patcher.yaml` (`KEYS_NOT_CONFIGURED`).
-- `import` refuses a key other than the one `flutter_patcher.yaml` names (`KEYS_MISMATCH`). In a project without a patch key it writes its public key there, so hosts built from then on are signed.
-- Key bundles written by flutter_patcher 1.0, with root, publisher and patch keys, import and sign as they are; only their patch key is used. A bundle without a patch key fails with `KEYS_BUNDLE_INVALID`.
-
-### keys status
-
-```bash
-dart run flutter_patcher keys status
-```
-
-Prints `config` (the settings file), `public_key` (`trust.patch`, or `null`) and `private_key`: where the private key comes from, `--key-file`, `FLUTTER_PATCHER_KEYS`, `signing.command`, `key store` or `none`. `<source> (other key)` means that source holds another key; an error code means it cannot be read. `--key-file <file>` includes that bundle. It signs nothing.
-
-### Where the private key comes from
-
-`patch` and `publish` take the private patch key from the first of:
-
-1. `--key-file <file>` (`publish` only): a key bundle file;
-2. the `FLUTTER_PATCHER_KEYS` environment variable: a key bundle, as `keys export --base64` prints it;
-3. `signing.command` in `flutter_patcher.yaml`;
-4. this machine's key store, where the bundle is found by its public key, including 1.0 directories.
-
-The first source present is used. If it holds a key other than `trust.patch` of the host, the command fails with `KEYS_MISMATCH` instead of trying the next one. When no source exists, `patch` still succeeds without a file (`"file":null`), and `publish` fails with `KEYS_NOT_FOUND`.
-
-`signing.command` signs with a service that holds the key, such as a KMS, HashiCorp Vault or a password manager, so the private key never reaches the machine:
-
-```yaml
-signing:
-  command: my-signer --key "fp-$FLUTTER_PATCHER_SIGN_ROLE"
-```
-
-The command runs in the system shell (`sh`, or `cmd` on Windows, where variables are written `%FLUTTER_PATCHER_SIGN_ROLE%`) with `FLUTTER_PATCHER_SIGN_ROLE=patch` and `FLUTTER_PATCHER_SIGN_PUBLIC_KEY` set, and without `FLUTTER_PATCHER_KEYS`. It reads the bytes to sign on standard input and prints their 64-byte Ed25519 signature in base64; it has 60 seconds. Every signature is verified before use. The service must sign with pure Ed25519 (not Ed25519ph), as HashiCorp Vault transit and Google Cloud KMS `EC_SIGN_ED25519` keys do.
-
-## build
-
-Builds a host app and saves its baseline to the baseline store. It needs no private key.
-
-```bash
-dart run flutter_patcher build android
-dart run flutter_patcher build ios        # Apple Silicon Mac only
-```
-
-| Option | Description | Default |
-|---|---|---|
-| `--strategy bytecode\|so` | Patch strategy, Android only; see [How It Works](architecture.md) | `bytecode` |
-| `--flavor <name>` | Flutter flavor; letters, digits and `_` only | No flavor (recorded as `default`) |
-| `--channel <name>` | Channel, written to the host policy and the patch file name; letters, digits and `_` only | `production` |
-| `--version-code <n>` | Version number | The build number of `version` in `pubspec.yaml` |
-| `--application-id <id>` | When the project does not declare exactly one application id | Read from the Gradle or Xcode project |
-| `--target <file>` | Entry file | `lib/main.dart` |
-| `--out <dir>` | Output directory; must be new | `.dart_tool/flutter_patcher/releases/<timestamp>/` |
-| `--export-method <method>` | iOS only, passed to `flutter build ipa`. `development` installs on your registered devices; `app-store` needs a distribution certificate | `app-store` |
-| `--baseline-store <uri>` | Save the baseline here instead of `baseline_store` in `flutter_patcher.yaml` | From `flutter_patcher.yaml` |
-| `--host-policy <file>` | Advanced: use a host policy you wrote instead of one derived from the project; see below | |
-
-- The build runs in an isolated copy of the project; your source and Flutter SDK are not modified.
-- The output directory holds `app-release.apk` or `app-release.ipa`, the app you release.
-- Rebuilding the same flavor and version: identical content reuses the existing baseline; different content fails with `BASELINE_RELEASE_CONFLICT`, so raise the version.
-- Without `trust.patch` in `flutter_patcher.yaml`, it prints `WARNING: UNSIGNED`: whoever can hand the app a file can run code in it. To sign, run `keys init` and build again; the host's patch key is fixed when it is built.
-- Without `url` in `flutter_patcher.yaml`, it prints `WARNING: URL_LOCAL`: `checkUpdate()` without `url` checks `serve`'s local address.
-- With the default in-project baseline store, and no `--baseline-store`, it prints `WARNING: BASELINE_STORE_LOCAL`.
-
-**Host policy file** (`--host-policy`): a JSON object of strings with exactly `schema` (`"2"`), `strategy` (`bytecode` or `so`; iOS `bytecode`), `abi` (`arm64-v8a` or `ios-arm64`), `application_id`, `version_code`, `flavor`, `channel` and `fptc_key` (the base64 patch public key, or `-` for an unsigned host). A flutter_patcher 1.0 policy (`"schema":"1"`) is accepted too: its `fptc_key` is kept and its `root_key` and `keys` are dropped. Anything else fails with `BUILD_CONFIG_INVALID`, and so do `--flavor` or `--version-code` that differ from the policy.
-
-## patch
-
-Compares your current source with a built release's baseline, builds a patch and seals it as the host's patch file. With `--withdraw` it writes a withdrawal of the host instead.
-
-```bash
-dart run flutter_patcher patch android
-dart run flutter_patcher patch ios
-dart run flutter_patcher patch android --withdraw
-```
-
-| Option | Description | Default |
-|---|---|---|
-| `--version-code <n>` | The release to patch | The build number of `version` in `pubspec.yaml` |
-| `--flavor <name>` | The release's flavor | `default` |
-| `--withdraw` | Write a withdrawal file of that host instead of a patch: devices that apply it drop their patch and run the installed version from the next cold start. It needs only the baseline; nothing is compiled | |
-| `--assets <key>` | Override only these asset keys (repeatable) | Changed assets are selected |
-| `--target <file>` | Entry file | `lib/main.dart` |
-| `--out <dir>` | Output directory; must be new | `.dart_tool/flutter_patcher/patches/<timestamp>/` |
-| `--baseline-store <uri>` | Read the baseline here instead of `baseline_store` in `flutter_patcher.yaml` | From `flutter_patcher.yaml` |
-
-- Strategy, channel and patch key come from the baseline.
-- The output directory holds `patch.draft` (the patch before sealing), `patch.json` (the report) and the patch file, named as in [Patch files](#patch-files). In the report, `changed` lists what changed, `warnings` lists what to look at, and `patch_key` is the host's patch key or `-`.
-- The JSON adds `file` (the patch file's full path), `seq` (the Unix time it was sealed), `sealed_at` (that time in UTC) and `signed`.
-- With `--withdraw`, the output directory holds `patch.json` (`"status":"withdrawal_created"`) and the withdrawal file under the same name; the JSON has the same `file`, `seq` and `signed`.
-- A signed host whose private key no source on this machine holds: `patch` still succeeds, with `"file":null` and a `notice`. `keys import` the key here and patch again, or run `publish --patch <output>` on a machine with the key.
-- `patch` does not write to the publication store; only `publish` does.
-- A baseline of a host built with flutter_patcher 1.0 fails with `PATCH_BASELINE_INCOMPATIBLE`: patch that host with flutter_patcher 1.0.0+1.
-- Changes that cannot be patched fail the command; the rules are in [How It Works](architecture.md).
-- When you patch a bug fix, **keep the build number in `pubspec.yaml`**, or `patch` looks for a release that does not exist; or name it with `--version-code`.
-
-## publish
-
-The optional release command. Seals a `patch` output again with a `seq` numbered at publish time, so files are ordered by the order you publish them, and writes it to the publication store as `<fileName>`, replacing the file there only with a newer one.
-
-Signed and unsigned hosts go through the same flow; the host's baseline decides whether the file is signed. A signed host needs the private key from `--key-file`, `FLUTTER_PATCHER_KEYS`, `signing.command` or the key store ([Where the private key comes from](#where-the-private-key-comes-from)); without one, `publish` fails with `KEYS_NOT_FOUND` before writing anything.
-
-```bash
-dart run flutter_patcher publish
-```
-
-| Option | Description | Default |
-|---|---|---|
-| `--patch <dir>` | The `patch` output to publish | The newest output under `.dart_tool/flutter_patcher/patches/` |
-| `--withdraw` | Write a withdrawal for that output's host instead: devices that apply it drop their patch and run the installed version from the next cold start. An output of `patch --withdraw` is published as a withdrawal without it | |
-| `--yes`, `-y` | Publish without asking | Preview, then ask; only preview when not interactive |
-| `--seq <n>` | Sequence of the file, from 1 to 4294967295; it must exceed the `seq` of the file the store holds | The current Unix time in seconds |
-| `--key-file <file>` | Sign with this key bundle first | |
-| `--receipt <file>` | Also write the result to a new JSON file | |
-| `--project <dir>` | The project | The current directory |
-
-The result has `action` (`publish` or `withdraw`), `file`, `store`, `signed`, `seq` and `status`:
-
-| `status` | When |
-|---|---|
-| `already_published` | The store already holds this draft for this host (or, with `--withdraw`, a withdrawal). Nothing is written; `seq` is the stored one |
-| `preview` | No `--yes` and no terminal to ask in, or the answer was not `y`. Nothing is written; it exits with `0` |
-| `published` | The file was written |
-
-- A store file of this name with a `seq` not below the new one fails with `PUBLISH_SEQUENCE_CONFLICT`: check this computer's clock, or pass `--seq` above the stored one.
-- If the store file changes between reading and writing, it fails with `PUBLISH_CONFLICT`; run `publish` again.
-- `--withdraw` also works when the store holds nothing for the host.
-- To return to an earlier patch, publish its output again with `--patch`: it gets a new, higher `seq`.
-- After publishing to a `file://` store with `url` set, it prints where to upload the file: devices see nothing until `<url>/<fileName>` serves it.
-- `--receipt` is written only for a `published` result. Its file must not exist, or `publish` fails with `PUBLISH_CONFIG_INVALID` before doing anything.
-- An S3 publication store needs a configured AWS CLI.
-
-## serve
-
-A debugging aid for development. It serves the newest file `patch` wrote for each host, a patch or a withdrawal, exactly as written.
-
-```bash
-dart run flutter_patcher serve
-```
-
-| Option | Description | Default |
-|---|---|---|
-| `--port <port>` | Port on this computer, and the port `adb reverse` maps on phones. Apps built without `url` check `8686`; map it with `adb reverse tcp:8686 tcp:<port>` | `8686` |
-| `--project <dir>` | The project | The current directory |
-
-- For each host, serves the file of its newest output under `.dart_tool/flutter_patcher/patches/`; outputs written elsewhere with `patch --out` are not served. Each new `patch` run is picked up within about 2 seconds while `serve` keeps running.
-- It does not publish, write the publication store, renumber or sign anything, and works whatever `store` `flutter_patcher.yaml` names. Devices verify the files as they verify any other.
-- Prints `Offering patch <seq> (<file>, signed|unsigned)` or `Offering a withdrawal of <file> (signed|unsigned, <seq>)` whenever the newest output of a host changes.
-- When a host's newest output has no file (a signed host whose key is not on this machine), it prints `Not offering <file>: ...` and serves nothing for that host, never an older file. Run `keys import` and patch again.
-- Listens on `127.0.0.1` only and serves only `GET /<fileName>`, with `Range: bytes=0-<n>` answered as `206`; anything else is `404`.
-- Every 2 seconds, runs `adb reverse` for newly connected Android devices.
-- iOS devices cannot reach `127.0.0.1` of the computer: expose the port over HTTPS (for example `cloudflared tunnel --url http://127.0.0.1:8686`) and pass that address to `checkUpdate(url: …)`.
-- Ctrl+C stops it.
-
-## doctor
-
-Checks that the toolchain is ready; on the first run it downloads and prepares what it needs.
-
-```bash
-dart run flutter_patcher doctor
-```
-
-| Option | Description |
-|---|---|
-| `--json` | Print a detailed JSON report |
-| `--project <dir>` | Also report where the project's private patch key comes from |
-| `--baseline-store <uri>` | Check that the baseline store is reachable (write access is checked when building) |
-| `--version-code <n>` `--flavor <name>` | With `--baseline-store`: check that release's baseline is complete |
-| `--apk <file>` | Check that an APK's engine matches the selected Flutter version |
-
-Exit codes: `0` passed, `1` a check failed, `2` usage error. `doctor` checks neither devices nor the update flow.
+| `flutter_patcher.yaml` | Settings and the project's public key | `keys import` writes the key again |
+| `~/.flutter_patcher/keys/<id>/keys.json` | This machine's copy of the private patch key, the key store | Hosts built with the key accept no new patch file, unless another copy exists (`keys export --out <file>`) |
+| `.flutter_patcher/baselines/` | The default baseline store | The builds whose baselines it held can no longer be patched |
+| `.flutter_patcher/updates/` | The default publication store | Run `publish` again |
+| `.dart_tool/flutter_patcher/releases/` | `build` outputs | Nothing: the baseline is in the baseline store |
+| `.dart_tool/flutter_patcher/patches/` | `patch` outputs; `serve` offers the newest file of each host | Run `patch` again |
+| `~/.flutter_patcher/` except `keys/` | Downloaded engines and tools, prepared Flutter SDK copies, the baseline cache | They are downloaded again |
 
 ## Storage requirements
 
@@ -355,43 +442,54 @@ Exit codes: `0` passed, `1` a check failed, `2` usage error. `doctor` checks nei
 
 | Type | Requirements |
 |---|---|
-| `s3://` | Requires an installed and configured AWS CLI. A missing object must return `NoSuchKey` (404), so besides read and write permissions the role needs `s3:ListBucket`; otherwise you get `BASELINE_STORE_UNREACHABLE`. For S3-compatible services such as Cloudflare R2, set `FLUTTER_PATCHER_S3_ENDPOINT` |
-| HTTPS | The root returns `200` for `HEAD`; `GET` is supported; `PUT` with `If-None-Match: *` returns `201` when created and `412` when the object exists; missing objects return `404`. Pass the access token in `FLUTTER_PATCHER_BASELINE_TOKEN` |
+| `s3://` | An installed and configured AWS CLI. The role needs read and write permissions and `s3:ListBucket`, because without it a missing object answers `403` instead of `NoSuchKey` and access fails with `BASELINE_STORE_UNREACHABLE`. For an S3-compatible service such as Cloudflare R2, set `FLUTTER_PATCHER_S3_ENDPOINT` |
+| HTTPS | The root answers `200` to `HEAD`; `GET` is supported; `PUT` with `If-None-Match: *` answers `201` when created and `412` when the object exists; a missing object answers `404`. The access token goes in `FLUTTER_PATCHER_BASELINE_TOKEN` |
 | `file://` | A local directory or a network mount |
 
-Baselines are append-only, so several build machines can share one baseline store.
+Baselines are added and never replaced, so several build machines can share one baseline store.
 
 ### Publication store
 
 | Type | Requirements |
 |---|---|
-| `s3://` | Requires an AWS CLI with conditional writes (`put-object --if-match`, `--if-none-match`) and permission to get and put objects under the prefix, plus `s3:ListBucket`: without it a missing file reads as access denied and `publish` fails with `PUBLISH_STORE_UNAVAILABLE`. The path must be a dedicated prefix under the bucket, each segment containing only letters, digits, `_` and `-`, for example `s3://my-bucket/my-app` |
+| `s3://` | An AWS CLI with conditional writes (`put-object --if-match` and `--if-none-match`), permission to get and put objects under the prefix, and `s3:ListBucket`, because without it a missing file reads as access denied and `publish` fails with `PUBLISH_STORE_UNAVAILABLE`. The address is a dedicated prefix under the bucket, such as `s3://my-bucket/my-app`; see [Publishing to S3](advanced.md#publishing-to-s3) |
 | `file://` | A local directory or a network mount |
 
-Only `publish` uses the publication store. It holds one file per host at its root, named as in [Patch files](#patch-files); a `file://` store also holds `.publish.lock`, which need not be served. What flutter_patcher 1.0 wrote there (`manifests/`, `objects/`, `catalog.json`) is neither read nor changed, and keeps serving 1.0 hosts.
+The store holds one file per host at its root, named as in [Patch files](#patch-files). A `file://` store also holds `.publish.lock`, which need not be uploaded or served.
 
-The HTTPS server or CDN that `checkUpdate` downloads from, whether `publish` or you put the file there:
+### Download server
 
-- answers `GET <url>/<fileName>` with the file (`200`, or `206` for the requested range; range support is not required), and `404` when there is none; any other status, such as the `403` private S3 and R2 buckets give for a missing object, makes `checkUpdate` throw;
-- returns content directly, without `3xx` redirects, which the client does not follow;
-- sends a `Content-Length` equal to the file size, or compresses with `Content-Encoding: gzip`;
-- delivers the whole file within 2 minutes, never pausing for 15 seconds;
-- serves a replaced file promptly: devices see a new patch or withdrawal only once the cache does.
+The HTTPS server or CDN that `checkUpdate` downloads from, whether `publish` or you put the file there, must:
+
+- answer `GET <url>/<fileName>` with the file (`200`, or `206` for the requested range; range support is optional), and `404` when there is none. Any other status makes `checkUpdate` throw, including the `403` that private S3 and R2 buckets return for a missing object;
+- return the content directly, because the client does not follow `3xx` redirects;
+- send a `Content-Length` equal to the file size, or compress with `Content-Encoding: gzip`;
+- deliver the whole file within 2 minutes, with no pause of 15 seconds or more;
+- serve a replaced file promptly, because every file of a host has the same name: devices receive a new patch or withdrawal only once the cache serves it.
 
 ## Advanced commands
 
-You rarely need these.
-
 | Command | Purpose |
 |---|---|
-| `baseline --action fetch\|verify\|release` | Download, verify or look up baselines in the baseline store, for investigation |
+| `baseline --action fetch\|verify\|release` | Downloads, verifies or looks up baselines in the baseline store, for investigation |
 
 ## Environment variables
 
 | Variable | Purpose |
 |---|---|
 | `FLUTTER_PATCHER_KEYS` | A key bundle (`keys export --base64`) to sign with, typically a CI secret |
-| `FLUTTER_PATCHER_SIGN_ROLE`, `FLUTTER_PATCHER_SIGN_PUBLIC_KEY` | Set for `signing.command`: always `patch`, and the public key to sign for |
-| `FLUTTER_PATCHER_S3_ENDPOINT` | HTTPS endpoint of an S3-compatible service such as Cloudflare R2. Not needed for AWS S3 |
-| `FLUTTER_PATCHER_BASELINE_TOKEN` | Access token for an HTTPS baseline store, sent as `Authorization: Bearer` |
-| Standard AWS CLI variables and config | S3 credentials and region, such as `AWS_PROFILE` and `AWS_REGION` |
+| `FLUTTER_PATCHER_SIGN_ROLE`, `FLUTTER_PATCHER_SIGN_PUBLIC_KEY` | Set by the CLI for `signing.command`: `patch`, and the public key to sign for |
+| `FLUTTER_PATCHER_S3_ENDPOINT` | The HTTPS endpoint of an S3-compatible service such as Cloudflare R2 |
+| `FLUTTER_PATCHER_BASELINE_TOKEN` | The access token for an HTTPS baseline store, sent as `Authorization: Bearer` |
+| Standard AWS CLI variables and configuration | S3 credentials and region, such as `AWS_PROFILE` and `AWS_REGION` |
+
+## Removed in 1.1
+
+These fail as unknown commands or options (`USAGE_ERROR`) on flutter_patcher 1.1.0 or newer. They still work in flutter_patcher 1.0.0+1, which patches hosts built with 1.0.0.
+
+| Removed | Instead |
+|---|---|
+| `trust sign`, `trust publish` | None: the patch key is the only key |
+| `publish --production --request <file>` | Delete or replace the `.fptc` file in the store yourself |
+| `keys init` | `init`, which also creates `flutter_patcher.yaml`; signing is turned on with `trust.enabled` |
+| `keys init --role`, `keys export --without-root`, `keys import --rotate` | None: the patch key is the only key |

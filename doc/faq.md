@@ -1,91 +1,95 @@
-<!-- ========================================== -->
-<!-- doc/faq.md (English)                       -->
-<!-- ========================================== -->
-
-# Frequently Asked Questions (FAQ)
+# FAQ
 
 **English** | [简体中文](faq-zh.md)
 
+> Short answers on what a patch can change, signing, delivery and rollback, and supported platforms, each with a link to the page that explains it.
+
+You are deciding whether flutter_patcher fits your app, or you have one specific question. Each answer starts with yes or no and gives the reason; the linked page has the details. For an error code, see [Troubleshooting](troubleshooting.md).
+
+## Patches
+
 ### Can a patch add or change images and fonts?
 
-Yes, for assets declared in `pubspec.yaml`. A patch cannot delete an asset that the installed app has (`PATCH_ASSET_DELETE_UNSUPPORTED`); that needs a store release. When patched assets exceed 16 MB in total, `patch` warns with `PATCH_RESOURCE_SIZE`: they stay in memory for the life of the process.
+Yes, for assets declared in `pubspec.yaml`. A patch cannot delete an asset the installed app contains, because a patch only overrides assets: `patch` fails with `PATCH_ASSET_DELETE_UNSUPPORTED`. See [What can be patched](architecture.md#what-can-be-patched).
 
 ### Can a patch add a new package?
 
-Only a pure-Dart package. Packages with native code, platform plugins and FFI packages need a store release; `patch` fails with `PATCH_NATIVE_CHANGE`. Packages that native code depends on stay at the version the app was built with (`PATCH_PINNED_PACKAGE_CHANGED`). The full list is in [How It Works: What can be patched](architecture.md#what-can-be-patched).
-
-### How big is a patch?
-
-A bytecode patch carries only the changed code and assets: changing one line of text in the example app made a patch of about 19 KB. An SO patch carries the whole recompiled `libapp.so`, several megabytes. A patch file can be at most 320 MiB; the built-in downloader (`applyPatch`) must finish within 2 minutes.
+Yes, if the package is pure Dart. A package with native code, a platform plugin or an FFI package fails with `PATCH_NATIVE_CHANGE`, because a patch carries only Dart code and assets. See [What can be patched](architecture.md#what-can-be-patched).
 
 ### Can a patch take effect without restarting the app?
 
-No. A patch runs from the next cold start; the running process keeps its code. The plugin does not restart the app for you.
+No. A patch runs from the next cold start, because the running process keeps the code it loaded. See [Life on the device](architecture.md#life-on-the-device).
 
-### Can an app built with plain `flutter build` receive patches?
+### Does a patch contain the whole app?
 
-No. Only apps built with `flutter_patcher build` accept patches. If a plain build is already in the store, release one built with `flutter_patcher build` first.
+No. A bytecode patch carries your app's own packages, the pure-Dart dependencies when one of them changed, and the changed assets; Flutter and plugins stay in the app. An SO patch carries the whole recompiled `libapp.so`, several megabytes. A patch file is at most 320 MiB, and the built-in downloader must finish within 2 minutes. See [Two patch strategies](architecture.md#two-patch-strategies).
 
 ### Does the bytecode strategy slow the app down?
 
-Without a patch, the app runs exactly as a normal release build. With a patch, only the changed functions run in the interpreter, slower than machine code; everything else still runs as machine code. A change to compute-heavy code runs noticeably slower; on Android, the `so` strategy runs patches at full speed, with larger patches. See [How It Works: Two patch strategies](architecture.md#two-patch-strategies).
+Yes, while a patch runs: the patch carries all of your app's own code and an interpreter runs it, which is slower than machine code, so compute-heavy code in your app runs noticeably slower. Flutter and plugins still run as machine code, and without a patch the app runs as a normal release build. On Android, `--strategy so` runs patches at full speed with larger patch files. See [Two patch strategies](architecture.md#two-patch-strategies).
 
-### What happens when I upgrade Flutter?
+### Can an app built with plain `flutter build` receive patches?
 
-You build and release a new store version. Patches never cross Flutter versions: patches for an older release are made with the Flutter version that built it, for example with `--flutter-sdk`.
+No. Only apps built with `dart run flutter_patcher build` accept patches, because only they contain the engine and entry point that load one. Release a version built that way first. See [The host: an app that accepts patches](architecture.md#the-host-an-app-that-accepts-patches).
 
-### What happens to a patch when a user updates the app from the store?
+### Can a patch be made with another Flutter version than its release?
 
-It stops applying, and the boot diagnostic is `droppedVersionCodeMismatch`. Each patch belongs to one build number; if the new release needs a fix, publish a patch for it.
+No. A patch is built with the Flutter version that built its release, so after upgrading Flutter, ship a new store release; for an older release, select its Flutter with `--flutter-sdk`. See [What can be patched](architecture.md#what-can-be-patched).
+
+### Does a patch survive a store update of the app?
+
+No. A patch belongs to one build number, so after the update it stops applying and the boot diagnostic is `droppedVersionCodeMismatch`. Make a patch for the new build if it needs the fix. See [Other ways a patch stops applying](crash-protection.md#other-ways-a-patch-stops-applying).
 
 ### Can I patch several live releases?
 
-Yes. Each release has its own baseline and its own patch file name, which starts with its version code, such as `7-arm64-v8a.fptc`. Go back to that release's source, fix it, and run `patch --version-code <its build number>`. See the [Production Deployment Guide](production-playbook.md).
+Yes. Each release has its own baseline and its own patch file name, such as `7-arm64-v8a.fptc`: check out that release's source, fix it, and run `patch android --version-code <its build number>`. See [5. Make and Deliver a Patch](production-playbook.md#5-make-and-deliver-a-patch).
+
+## Security and keys
 
 ### Do I need keys?
 
-No. Without a key, `build` makes an unsigned host and prints `WARNING: UNSIGNED`: it accepts any file of its own build, so whoever can hand the app a file can run code in it. To sign, run `dart run flutter_patcher keys init` and build again: hosts built from then on accept only files signed by that patch key. Hosts already released keep the mode they were built with. See [How It Works: Security model](architecture.md#security-model).
+No. Without a key, `build` prints `WARNING: UNSIGNED` and the app installs any intact patch file of its build, so whoever can hand the app a file can run code in it. With `trust.enabled: true` in `flutter_patcher.yaml` before the build you ship, the app installs only files you signed. See [3. Turn On Signing](production-playbook.md#3-turn-on-signing).
 
 ### Can someone who controls my storage or CDN push a patch?
 
-On a signed host, no. The device installs only files signed with your patch key, for exactly its app, version, flavor, channel, ABI and build, numbered above every file it has accepted. Without the private key, changed content only fails verification. On an unsigned host, yes: anyone who can change the file your app receives can run code in it.
+No, not to a signed app: it installs only files signed with your patch key, made for exactly its build and numbered above every file it accepted. An unsigned app installs any intact file of its build. See [Security model](architecture.md#security-model).
+
+## Delivery and operations
 
 ### Can my app download patches its own way?
 
-Yes. The plugin does not fetch patches. Get the file however you like (your own API, a CDN, push, a file bundled with the app, a file picker) and pass its bytes to `FlutterPatcher.applyPatchBytes` or its path to `applyPatchFile`. `FlutterPatcher.patchTarget` tells your server which file the device needs (`fileName`, version code, flavor, channel, ABI) and the highest sequence it has accepted (`acceptedSeq`). `checkUpdate` and `applyPatch` are only a built-in downloader for files placed at a URL. See [Advanced Operations: Serving patch files from your own API](advanced.md#serving-patch-files-from-your-own-api).
-
-### How do I roll back or withdraw a patch?
-
-- **Back to the installed version**: `dart run flutter_patcher patch android --withdraw` (or `ios`) writes a withdrawal file under the same name; deliver it like a patch, or use `publish --withdraw`, which writes it to the store. Devices that apply it drop their patch at the next cold start.
-- **Back to an earlier patch**: `dart run flutter_patcher publish --patch <that patch's output directory>` seals it again with a new sequence.
-- **One device**: `FlutterPatcher.rollback()`.
-
-Uploading an old `.fptc` again has no effect: its sequence is not above the one devices accepted. Deleting the file only stops new installs; devices that have it keep it. Which users get which file (gray release, per user) is your server's choice. See the [Production Deployment Guide](production-playbook.md).
-
-### What if a patch crashes the app at startup?
-
-The device turns the patch off, runs its installed version from the next cold start, and blacklists the patch. Withdraw it or publish a fix promptly, because devices that have not tried it can still install it. See [Crash Protection](crash-protection.md#what-to-do-when-it-trips).
+Yes. The app obtains the file through any channel, such as your own API, a push message or a bundled file, and passes it to `FlutterPatcher.applyPatchBytes` or `applyPatchFile`. See [Custom delivery](advanced.md#custom-delivery-from-your-own-server).
 
 ### Do I need my own backend?
 
-No. Patch files are static files: `patch` writes `<fileName>` into its output directory (and `publish`, if you use it, at the root of its store), and any HTTPS static hosting can serve it, such as AWS S3, Cloudflare R2, Alibaba Cloud OSS or Google Cloud Storage behind a CDN. Give `.fptc` files a short cache time: each new patch replaces the file under the same name. See the [Production Deployment Guide](production-playbook.md).
+No. A patch is one static file, so any HTTPS static hosting or CDN can serve it. See [1. Decide Where the App Gets Patch Files](production-playbook.md#1-decide-where-the-app-gets-patch-files).
 
-### What happens to my 1.0 hosts?
+### Can I roll back a patch?
 
-They keep working as they are: they install only 1.0 signed manifests, so make, publish and withdraw their patches with flutter_patcher 1.0.0+1. On 1.1, `patch` for a 1.0 baseline fails with `PATCH_BASELINE_INCOMPATIBLE`. Your 1.0 project and keys work with 1.1 unchanged, and the next `build` makes a 1.1 host. The 1.0 files in the store (`manifests/`, `objects/`, `catalog.json`) are neither read nor written by 1.1 and keep serving 1.0 hosts. See [CHANGELOG: Upgrading from 1.0](../CHANGELOG.md#upgrading-from-10).
+Yes. Deliver a withdrawal file (`patch android --withdraw`) to return devices to the installed version, or publish an earlier patch's output again to return to that patch. Uploading an old `.fptc` file again has no effect, because devices accept only a higher sequence. See [Delivering a rollback](production-playbook.md#delivering-a-rollback).
+
+### Does the app recover when a patch crashes at startup?
+
+Yes. The device turns the patch off, blacklists it, and runs the installed version from the next cold start. Devices that have not tried the patch still install it, so deliver a withdrawal or a fix. See [What to do when it trips](crash-protection.md#what-to-do-when-it-trips).
+
+### Can apps shipped with flutter_patcher 1.0 still be patched?
+
+Yes, with flutter_patcher 1.0.0+1. On 1.1, `patch` for a 1.0 baseline fails with `PATCH_BASELINE_INCOMPATIBLE`; the project and keys work with 1.1 unchanged, and the next `build` makes a 1.1 app. See [Upgrading from 1.0](upgrading.md).
+
+## Platforms
 
 ### Can I make iOS patches on Linux or Windows?
 
-Yes. Only `build ios` needs an Apple Silicon Mac; `patch ios` runs on any supported computer that can read the baseline `build ios` saved.
+Yes. Only `build ios` needs an Apple Silicon Mac; `patch ios` runs on any supported computer that can read the baseline `build ios` saved. See [Differences on iOS](getting-started.md#differences-on-ios).
 
 ### Are x86 emulators or 32-bit Android devices supported?
 
-No. On Android, hosts and patches are `arm64-v8a` only.
+No. On Android, apps and patches support `arm64-v8a` only.
 
-### Do app stores allow this?
+### Does a Windows checkout change what `patch` compares?
 
-Policies differ between stores and between regulated industries such as finance, health and apps for children; some restrict downloading executable code. Check the rules of the stores and industries you ship in.
+Yes, when Git converts line endings to `CRLF`: the files then differ byte for byte from a baseline built with `LF`, and `patch` reports every file as changed. The fix is in [Troubleshooting](troubleshooting.md).
 
-### Why does `patch` on Windows say every file changed?
+### Is this allowed in every app store?
 
-Git converted line endings to `CRLF`, so the files differ byte for byte from a baseline built with `LF`. The fix is in [Error Codes and Troubleshooting](troubleshooting.md).
+No. Policies differ between stores and between regulated industries such as finance, health and apps for children, and some restrict downloading executable code. Check the rules of the stores and industries you ship in.

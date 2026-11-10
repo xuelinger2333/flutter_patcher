@@ -421,7 +421,7 @@ class FlutterPatcher {
   }
 
   /// Local bad-patch blacklist: patches whose starts failed `maxCrashCount`
-  /// times (see [init]).
+  /// times, or whose code threw after it started (see [init]).
   static Future<List<BlacklistEntry>> get blacklist async {
     if (_unsupportedGuard('blacklist')) return const [];
     try {

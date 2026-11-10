@@ -1,91 +1,95 @@
-<!-- ========================================== -->
-<!-- doc/faq-zh.md (简体中文)                    -->
-<!-- ========================================== -->
-
 # 常见问题
 
 [English](faq.md) | **简体中文**
 
+> 关于补丁能改什么、签名、下发与回滚、支持的平台的简短回答，每条都链接到负责解释的页面。
+
+你正在判断 flutter_patcher 是否适合你的 App，或者有一个具体的问题。每个回答以“能”或“不能”开头并给出原因，细节在所链接的页面中。遇到错误码时，见[错误码与排障](troubleshooting-zh.md)。
+
+## 补丁
+
 ### 补丁能新增或修改图片、字体吗？
 
-能，限于 `pubspec.yaml` 中声明的资源。补丁不能删除安装包里已有的资源（`PATCH_ASSET_DELETE_UNSUPPORTED`），删除需要发布商店版本。补丁中的资源合计超过 16 MB 时，`patch` 会给出警告 `PATCH_RESOURCE_SIZE`：这些资源在进程存活期间一直占用内存。
+能，限于 `pubspec.yaml` 中声明的资源。补丁不能删除安装包中已有的资源，因为补丁只能覆盖资源：`patch` 报 `PATCH_ASSET_DELETE_UNSUPPORTED`。见[能更新什么](architecture-zh.md#能更新什么)。
 
 ### 补丁能引入新的依赖包吗？
 
-只能是纯 Dart 的包。带原生代码的包、平台插件和 FFI 包需要发布商店版本，`patch` 会报 `PATCH_NATIVE_CHANGE`。原生代码依赖的包固定为构建 App 时的版本（`PATCH_PINNED_PACKAGE_CHANGED`）。完整规则见[工作原理：能更新什么](architecture-zh.md#能更新什么)。
-
-### 补丁有多大？
-
-字节码补丁只包含改动的代码和资源：在示例 App 中改一行文字，补丁约 19 KB。SO 补丁包含重新编译的整个 `libapp.so`，有几 MB。补丁文件最大 320 MiB；内置下载器（`applyPatch`）需要在 2 分钟内下载完成。
+能，前提是这个包是纯 Dart 的。带原生代码的包、平台插件和 FFI 包报 `PATCH_NATIVE_CHANGE`，因为补丁只携带 Dart 代码和资源。见[能更新什么](architecture-zh.md#能更新什么)。
 
 ### 补丁能不重启 App 就生效吗？
 
-不能。补丁从下次冷启动开始运行，正在运行的进程保持原来的代码。插件不会替你重启 App。
+不能。补丁从下次冷启动开始运行，因为正在运行的进程保持它已加载的代码。见[设备上的生命周期](architecture-zh.md#设备上的生命周期)。
+
+### 补丁包含整个 App 吗？
+
+不包含。字节码补丁携带你的应用自己的包、有依赖变化时的纯 Dart 依赖，以及改动过的资源；Flutter 和插件留在安装包中。SO 补丁携带重新编译的整个 `libapp.so`，有几 MB。补丁文件最大 320 MiB，内置下载器必须在 2 分钟内下载完成。见[两种补丁策略](architecture-zh.md#两种补丁策略)。
+
+### 字节码策略会让 App 变慢吗？
+
+会，在补丁运行期间：补丁携带你的应用自己的全部代码，并由解释器执行，速度低于机器码，所以应用中计算密集的代码会明显变慢。Flutter 和插件仍以机器码运行；没有补丁时，App 与普通 release 包完全相同。在 Android 上，`--strategy so` 使补丁以原速运行，补丁文件更大。见[两种补丁策略](architecture-zh.md#两种补丁策略)。
 
 ### 用普通 `flutter build` 打的包能接收补丁吗？
 
-不能。只有 `flutter_patcher build` 构建的 App 才能接收补丁。商店中已经是普通构建的，需要先发布一个用 `flutter_patcher build` 构建的版本。
+不能。只有用 `dart run flutter_patcher build` 构建的 App 才能接收补丁，因为只有它们包含加载补丁的引擎和入口。先发布一个这样构建的版本。见[宿主：能接收补丁的安装包](architecture-zh.md#宿主能接收补丁的安装包)。
 
-### 字节码策略会不会让 App 变慢？
+### 能用与发布版本不同的 Flutter 版本生成补丁吗？
 
-没有补丁时，App 与普通 release 包运行方式完全相同。有补丁时，只有改动过的函数在解释器中运行，比机器码慢；其余代码仍以机器码运行。改动的是计算密集的代码时，会明显变慢；在 Android 上，`so` 策略让补丁以原速运行，代价是补丁更大。见[工作原理：两种补丁策略](architecture-zh.md#两种补丁策略)。
+不能。补丁必须用构建该版本的 Flutter 生成，所以升级 Flutter 后要发布新的商店版本；为旧版本生成补丁时，用 `--flutter-sdk` 指定它的 Flutter。见[能更新什么](architecture-zh.md#能更新什么)。
 
-### 升级 Flutter 之后怎么办？
+### 用户从商店升级 App 后，补丁还生效吗？
 
-需要构建并发布新的商店版本。补丁不能跨 Flutter 版本：为旧版本生成补丁时，使用构建它的那个 Flutter 版本，例如通过 `--flutter-sdk` 指定。
-
-### 用户从商店升级 App 后，之前的补丁会怎样？
-
-不再生效，启动诊断为 `droppedVersionCodeMismatch`。每个补丁只属于一个构建号；新版本需要修复时，为它单独发布补丁。
+不生效。每个补丁只属于一个构建号，所以升级后补丁不再运行，启动诊断为 `droppedVersionCodeMismatch`。新构建需要这处修复时，为它生成补丁。见[其他会让补丁失效的情况](crash-protection-zh.md#其他会让补丁失效的情况)。
 
 ### 能同时为多个线上版本打补丁吗？
 
-能。每个版本有各自的基线和各自的补丁文件名，以它的构建号开头，例如 `7-arm64-v8a.fptc`。切回该版本的源码，修复后运行 `patch --version-code <它的构建号>`。见[生产部署](production-playbook-zh.md)。
+能。每个版本有各自的基线和各自的补丁文件名，例如 `7-arm64-v8a.fptc`：切换到该版本的源码，修复后运行 `patch android --version-code <它的构建号>`。见[5. 生成并分发补丁](production-playbook-zh.md#5-生成并分发补丁)。
 
-### 需要密钥吗？
+## 安全与密钥
 
-不需要。没有密钥时，`build` 构建不签名的宿主，并打印 `WARNING: UNSIGNED`：它接受本构建的任何文件，因此能把文件交给 App 的一方就能在 App 中执行代码。要开启签名，运行 `dart run flutter_patcher keys init` 后重新构建：此后构建的宿主只接受这把补丁密钥签名的文件。已发布的宿主保持构建时的模式。见[工作原理：安全模型](architecture-zh.md#安全模型)。
+### 必须有密钥吗？
+
+不必须。没有密钥时，`build` 输出 `WARNING: UNSIGNED`，App 安装本构建的任何完整补丁文件，所以能把文件交给 App 的一方就能在 App 中执行代码。在要上线的构建之前，在 `flutter_patcher.yaml` 中设置 `trust.enabled: true`，App 就只安装你签名的文件。见[3. 开启签名](production-playbook-zh.md#3-开启签名)。
 
 ### 控制了我的存储或 CDN 的人，能推送补丁吗？
 
-签名宿主上不能。设备只安装这样的文件：由你的补丁私钥签名，目标正好是本机的 App、版本、flavor、渠道、ABI 和构建，而且序号大于本机已接受过的所有文件。没有私钥，被改动的内容只会校验失败。不签名宿主上能：谁能改动 App 收到的文件，谁就能在 App 中执行代码。
+不能，对签名的 App 不能：它只安装由你的补丁密钥签名、目标正是本构建、且序号大于它已接受的所有文件的文件。不签名的 App 安装本构建的任何完整文件。见[安全模型](architecture-zh.md#安全模型)。
+
+## 下发与运维
 
 ### App 能用自己的方式下载补丁吗？
 
-能。插件不负责获取补丁。用任何方式拿到文件（自家接口、CDN、推送、随 App 内嵌、文件选择），把字节交给 `FlutterPatcher.applyPatchBytes`，或把路径交给 `applyPatchFile`。`FlutterPatcher.patchTarget` 告诉你的服务端这台设备需要哪个文件（`fileName`、版本号、flavor、渠道、ABI），以及它已接受的最大序号（`acceptedSeq`）。`checkUpdate` 和 `applyPatch` 只是一个内置下载器，用于放在某个 URL 下的文件。见[进阶操作：从自家接口下发补丁文件](advanced-zh.md#从自家接口下发补丁文件)。
+能。App 通过任何渠道获取文件，例如自有接口、推送消息或内置的文件，再交给 `FlutterPatcher.applyPatchBytes` 或 `applyPatchFile`。见[自定义下发](advanced-zh.md#由自家服务端自定义下发)。
 
-### 怎么回退或撤回补丁？
+### 必须有自己的后端吗？
 
-- **回到安装包自带的版本**：`dart run flutter_patcher patch android --withdraw`（或 `ios`）以同一个文件名写出撤回文件；像补丁一样分发它，或改用 `publish --withdraw` 写入存储。应用它的设备在下次冷启动时不再运行补丁。
-- **回到之前的某个补丁**：`dart run flutter_patcher publish --patch <那个补丁的输出目录>`，以新序号重新封装。
-- **单台设备**：`FlutterPatcher.rollback()`。
+不必须。补丁是一个静态文件，所以任何支持 HTTPS 的静态托管或 CDN 都能提供它。见[1. 确定 App 从哪里获取补丁文件](production-playbook-zh.md#1-确定-app-从哪里获取补丁文件)。
 
-重新上传旧的 `.fptc` 不会生效：它的序号不大于设备已接受的序号。删除文件只会阻止新的安装，已经装上的设备不受影响。给哪些用户哪个文件（灰度、按用户）由你的服务端决定。见[生产部署](production-playbook-zh.md)。
+### 能回滚补丁吗？
 
-### 补丁导致 App 启动崩溃怎么办？
+能。下发撤回文件（`patch android --withdraw`）让设备恢复到安装包自带的版本，或者重新发布之前某个补丁的输出让设备恢复到那个补丁。重新上传旧的 `.fptc` 文件不会生效，因为设备只接受更大的序号。见[补丁下发回滚](production-playbook-zh.md#补丁下发回滚)。
 
-设备会停用这个补丁，从下次冷启动起运行安装包自带的版本，并把补丁拉黑。请尽快撤回或发布修复，因为还没试过它的设备仍会安装它。见[崩溃保护](crash-protection-zh.md#熔断之后怎么办)。
+### 补丁导致启动崩溃时，App 能自己恢复吗？
 
-### 需要自己的后端吗？
+能。设备停用并拉黑该补丁，从下次冷启动起运行安装包自带的版本。尚未尝试该补丁的设备仍会安装它，所以要下发撤回文件或修复补丁。见[熔断之后怎么办](crash-protection-zh.md#熔断之后怎么办)。
 
-不需要。补丁文件是静态文件：`patch` 把 `<fileName>` 写在输出目录中（使用 `publish` 时还写在存储的根目录下），任何支持 HTTPS 的静态托管都能提供它，例如 AWS S3、Cloudflare R2、阿里云 OSS 或 Google Cloud Storage 配合 CDN。`.fptc` 文件要设置较短的缓存时间：每个新补丁都会替换同名文件。见[生产部署](production-playbook-zh.md)。
+### 用 flutter_patcher 1.0 发布的 App 还能打补丁吗？
 
-### 我的 1.0 宿主会怎样？
+能，用 flutter_patcher 1.0.0+1。在 1.1 上为 1.0 的基线运行 `patch` 会报 `PATCH_BASELINE_INCOMPATIBLE`；项目和密钥无需改动即可用于 1.1，下一次 `build` 生成 1.1 的 App。见[从 1.0 升级](upgrading-zh.md)。
 
-照常工作：它们只安装 1.0 的签名清单，所以它们的补丁仍用 flutter_patcher 1.0.0+1 生成、发布和撤回。在 1.1 上为 1.0 的基线运行 `patch` 会报 `PATCH_BASELINE_INCOMPATIBLE`。1.0 的项目和密钥无需改动即可用于 1.1，下一次 `build` 起构建的是 1.1 宿主。存储中 1.0 的文件（`manifests/`、`objects/`、`catalog.json`）1.1 不读不写，继续为 1.0 宿主服务。见[更新日志：从 1.0 升级](../CHANGELOG-zh.md#从-10-升级)。
+## 平台
 
 ### 能在 Linux 或 Windows 上生成 iOS 补丁吗？
 
-能。只有 `build ios` 需要 Apple Silicon Mac；`patch ios` 可在任一支持的电脑上运行，只要能读到 `build ios` 保存的基线。
+能。只有 `build ios` 需要 Apple Silicon Mac；`patch ios` 可在任何受支持、且能读到 `build ios` 所存基线的电脑上运行。见[iOS 的不同之处](getting-started-zh.md#ios-的不同之处)。
 
 ### 支持 x86 模拟器或 32 位 Android 设备吗？
 
-不支持。Android 上，宿主和补丁都只支持 `arm64-v8a`。
+不支持。在 Android 上，App 和补丁只支持 `arm64-v8a`。
 
-### 应用商店允许热更新吗？
+### 在 Windows 上检出代码会影响 `patch` 的对比结果吗？
 
-各商店、各受监管行业（如金融、医疗、儿童类应用）的政策不同，有些限制下载可执行代码。请按你发布的商店和所在行业的规则自行确认。
+会，当 Git 把换行符转换成 `CRLF` 时：文件与用 `LF` 构建的基线逐字节不同，`patch` 报告所有文件都有改动。解决方法见[错误码与排障](troubleshooting-zh.md)。
 
-### 为什么在 Windows 上 `patch` 提示所有文件都改了？
+### 所有应用商店都允许热更新吗？
 
-Git 把换行符转成了 `CRLF`，文件与用 `LF` 构建的基线逐字节不同。解决方法见[错误码与排障](troubleshooting-zh.md)。
+不是。各商店以及金融、医疗、儿童类应用等受监管行业的政策不同，部分政策限制下载可执行代码。按你发布的商店和所在行业的规则确认。

@@ -8,115 +8,116 @@
 
 **Open-source, self-hosted over-the-air (OTA) hotfix tool for Flutter (Android & iOS).** Ship critical bug fixes directly from your own servers or CDN without waiting for app store reviews.
 
-## Features
+flutter_patcher is a Flutter plugin with a command-line tool:
 
-- **Open-Source & Self-Hosted**: Fully transparent codebase with zero third-party platform dependencies. A patch is one file; deliver it from any server, CDN or API you control.
-- **Fetch It Your Way**: The app obtains the patch file however it likes (your own API, a CDN, a push, a file) and hands it to the plugin. A built-in downloader is included for the simple case.
-- **Cross-Platform Patching**: Supports both Android and iOS. Patches for either platform can be generated from any supported host OS (e.g., build iOS patches directly on a Linux CI runner).
-- **Code & Asset Updates**: Patch application Dart code, pure-Dart dependencies, images, fonts, and other bundled assets.
-- **Build-Time Safety Checks**: Unsupported changes (such as native code or FFI modifications) are caught and blocked with clear error messages during patch generation—before they ever reach production.
-- **Automatic Rollback**: Automatically reverts to the bundled baseline build if a patch fails on startup.
-- **Verification & Optional Signing**: Every patch file is checked on-device for its target build and integrity before it is installed. Turn on signing and the app accepts only patches signed with your private key.
+1. `build` builds the app you release.
+2. After a fix, `patch` makes one patch file.
+3. You put the file on your HTTPS server. The app downloads it and runs it from the next cold start.
 
-## Supported Versions & Requirements
+Changes to native code or to the Flutter version still need a store release.
+
+## Requirements
 
 | Flutter | Android | iOS |
 |---|:---:|:---:|
 | 3.47.0 – 3.47.9 | ✅ | ✅ |
 
-| Target / Stage | Requirements |
+| For | You need |
 |---|---|
-| Android Device | Android 9 (API 28) or higher, `arm64-v8a`; on Android 7–8 the app runs as built, without patches |
-| iOS Device | iOS 13 or higher |
-| Build Android Release | Linux x64, Windows x64 or Apple Silicon Mac |
-| Build iOS Release | Apple Silicon Mac (Xcode required) |
-| Generate Patches | Any host above can generate both Android and iOS patches |
+| Android devices | Android 9 (API 28) or later, `arm64-v8a`. On Android 7 and 8 the app runs as built, without patches |
+| iOS devices | iOS 13 or later |
+| `build android` | Linux x64, Windows x64 or an Apple Silicon Mac |
+| `build ios` | An Apple Silicon Mac with Xcode |
+| `patch android`, `patch ios` | Any of the computers above |
 
-## What Can Be Patched
+## What can be patched
 
-| Change Type | Supported | Notes |
+| Change | Patchable | Why |
 |---|:---:|---|
-| App Dart code | ✅ | UI and business logic |
-| Pure-Dart dependencies | ✅ | Packages without native code (e.g., `dio`, `intl`) |
-| Images, fonts & assets | ✅ | Adding or modifying assets; deleting assets requires a full app release |
-| Native code, plugins & FFI | ❌ | Kotlin/Swift/C++, platform plugins, and FFI packages (e.g., `mmkv`, `isar`) |
-| Flutter SDK version | ❌ | Patches must be built with the exact same Flutter version as the baseline build |
+| Your Dart code | ✅ | |
+| Pure-Dart dependencies, such as `dio` or `intl` | ✅ | |
+| Added or changed images, fonts and other assets | ✅ | |
+| Removed assets | ❌ | A patch overrides assets and cannot remove them |
+| Native code, platform plugins and FFI packages, such as `mmkv` or `isar` | ❌ | A patch carries only Dart code and assets |
+| The Flutter SDK version | ❌ | A patch is built with the Flutter version that built its release |
 
-## Quick Start
+`patch` checks these limits and fails with an error code when a change breaks one. The full list is in [How It Works](doc/architecture.md#what-can-be-patched).
 
-**1. Add dependency & initialize**
+## Quick start
 
-```bash
-flutter pub add flutter_patcher
-```
+1. Add the dependency, initialize, and check for a patch:
 
-```dart
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await FlutterPatcher.init();
-  runApp(const MyApp());
-}
+   ```bash
+   flutter pub add flutter_patcher
+   dart run flutter_patcher init   # Creates flutter_patcher.yaml and the patch key, signing off
+   ```
 
-// Check for updates at an appropriate time. Without a url, checkUpdate uses
-// the address `build` wrote into the app: `url` in flutter_patcher.yaml, or
-// http://127.0.0.1:8686, where `serve` offers patches while developing.
-final check = await FlutterPatcher.checkUpdate();
-if (check.hasUpdate) {
-  await FlutterPatcher.applyPatch(check.patch!);
-}
-```
+   ```dart
+   Future<void> main() async {
+     WidgetsFlutterBinding.ensureInitialized();
+     await FlutterPatcher.init(); // Initializes flutter_patcher; call it before runApp.
+     runApp(const MyApp());
+   }
 
-**2. Build the release**
+   // Checks for a new patch, by default at 127.0.0.1:8686 where serve offers it.
+   final check = await FlutterPatcher.checkUpdate();
+   if (check.hasUpdate) {
+     // Downloads and verifies the patch; it takes effect on the next cold start.
+     await FlutterPatcher.applyPatch(check.patch!);
+   }
+   ```
 
-```bash
-dart run flutter_patcher build android   # Or `build ios` (on an Apple Silicon Mac)
-```
+2. Build the app and install it. `build` also records the baseline that every later patch of this build is compared with:
 
-Install or ship the app `build` produces. `build` also records the baseline that every later patch of this build is made against.
+   ```bash
+   dart run flutter_patcher build android   # Or build ios, on an Apple Silicon Mac
+   ```
 
-**3. Fix bugs & make a patch**
+3. Change the Dart code, then make the patch. `patch` prints the path of the patch file as `file`:
 
-```bash
-dart run flutter_patcher patch android   # Writes the patch file, e.g. 1-arm64-v8a.fptc
-dart run flutter_patcher serve           # Development: offers it at 127.0.0.1:8686 over USB
-```
+   ```bash
+   dart run flutter_patcher patch android   # Writes one file, such as 1-arm64-v8a.fptc
+   ```
 
-The patch is one `.fptc` file; `patch` prints its path as `file`. `serve` is only a development aid. Any delivery works: put the file at `<url>/<file name>` on an HTTPS host for `checkUpdate`, or get it from your own server, CDN or any channel and pass it on:
+4. Offer the patch to a phone connected over USB, then open the app twice: the first start installs the patch, the second runs it.
 
-```dart
-await FlutterPatcher.applyPatchBytes(bytes);   // or FlutterPatcher.applyPatchFile(path)
-```
+   ```bash
+   dart run flutter_patcher serve   # Offers the newest patch at 127.0.0.1:8686; development only
+   ```
 
-`(await FlutterPatcher.patchTarget).fileName` names the file this host takes. To go back, `patch android --withdraw` writes a withdrawal under the same name: devices that apply it run the installed version again. `publish`, which writes files to a store numbered in publish order, is optional.
+Each step with its expected output is in [Getting Started](doc/getting-started.md).
 
-No keys or `flutter_patcher.yaml` are needed to start. Signing is optional and recommended: run `dart run flutter_patcher keys init` before the build you ship.
+## Before you ship
 
-See the [Getting Started Guide](doc/getting-started.md) for the full walkthrough and the [Production Deployment Guide](doc/production-playbook.md) for going live.
+To keep development and debugging simple, flutter_patcher makes three main features optional. Turning on all three before you release is strongly recommended:
 
-## Caveats
+- **Update address**: pass the HTTPS address that serves your patch files as `checkUpdate(url: …)`, because without it the app asks `serve` on your computer. An app with [custom delivery](doc/advanced.md#custom-delivery-from-your-own-server) does not need it.
+- **Baseline store**: set `baseline_store` in `flutter_patcher.yaml` to durable storage, because a build whose baseline is lost can no longer be patched (`WARNING: BASELINE_STORE_LOCAL`).
+- **Signing**: set `trust.enabled: true` in `flutter_patcher.yaml`, because an unsigned app installs any intact patch file of its build, so whoever can hand it a file can run code in it (`WARNING: UNSIGNED`).
 
-- **Activation**: Installed patches take effect on the **next cold start**.
-- **Keep Your Baselines**: Every patch of a build is made against the baseline `build` recorded. Set `baseline_store` to durable storage; a lost baseline means that build can no longer be patched.
-- **Unsigned Hosts**: An app built without a signing key does not check where a patch comes from: whoever can hand it a patch file can run code in it. The built-in downloader enforces HTTPS; if your app fetches files itself, securing the transport is up to it, or enable signing.
-- **Store Policies**: Some app stores restrict downloading executable code. Verify your distribution channel's policies before deploying.
+The steps are in the [Production Deployment Guide](doc/production-playbook.md).
+
+> **Note**
+> Some app stores and regulated industries restrict downloading executable code. Check the rules of the stores you ship in.
 
 ## Documentation
 
-| Document | Description |
+| Document | What it covers |
 |---|---|
-| [Getting Started](doc/getting-started.md) | End-to-end guide from integration to applying your first patch |
-| [How It Works](doc/architecture.md) | Host runtime, baselines, patching strategy, and security model |
-| [CLI Reference](doc/cli.md) | Commands, flags, and `flutter_patcher.yaml` configuration |
-| [API Reference](doc/api-reference.md) | Client-side Dart API reference |
-| [Production Deployment Guide](doc/production-playbook.md) | From a local setup to a live app: hosting patch files, signing, withdrawing, rolling back, upgrading from 1.0 |
-| [Advanced Operations](doc/advanced.md) | Less common setups and operations |
-| [Crash Protection](doc/crash-protection.md) | Auto-rollback, patch blacklisting, and startup diagnostics |
-| [Troubleshooting](doc/troubleshooting.md) | Error code reference and resolution guide |
-| [FAQ](doc/faq.md) | Version alignment, cold starts, and store compliance |
+| [Getting Started](doc/getting-started.md) | From adding the dependency to a patch running on a phone |
+| [How It Works](doc/architecture.md) | Hosts, baselines, the two patch strategies, the security model, what can be patched |
+| [CLI Reference](doc/cli.md) | Every command, option, output and exit code; `flutter_patcher.yaml` |
+| [API Reference](doc/api-reference.md) | The Dart API the app calls |
+| [Production Deployment Guide](doc/production-playbook.md) | Hosting patch files, keeping baselines, signing, rolling back, upgrading from 1.0 |
+| [Advanced Operations](doc/advanced.md) | KMS signing, keys in CI, stopping signing, custom host policy, S3, delivery from your own server |
+| [Upgrading from 1.0](doc/upgrading.md) | Keep patching apps shipped with 1.0.0 |
+| [Crash Protection](doc/crash-protection.md) | What happens when a patch fails at startup; boot diagnostics |
+| [Troubleshooting](doc/troubleshooting.md) | Every error code and warning, with fixes |
+| [FAQ](doc/faq.md) | Short answers with links |
 
 ## Contributing
 
-Issues and Pull Requests are welcome. Please make sure all checks pass before submitting:
+Issues and pull requests are welcome. Before submitting, run:
 
 ```bash
 flutter pub get
@@ -124,7 +125,7 @@ flutter analyze
 flutter test
 ```
 
-When modifying native code, please also run the on-device acceptance tests in [`test/acceptance`](test/acceptance/README.md).
+A change to native code also needs the on-device acceptance tests in [`test/acceptance`](test/acceptance/README.md), because unit tests do not load a patch on a device.
 
 ## License
 

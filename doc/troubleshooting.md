@@ -1,235 +1,424 @@
-
-<!-- ========================================== -->
-<!-- doc/troubleshooting.md (English)           -->
-<!-- ========================================== -->
-
-# Troubleshooting & Error Codes
+# Troubleshooting
 
 **English** | [简体中文](troubleshooting-zh.md)
 
-When a CLI command fails, it prints an error `code` and a descriptive `message` on standard error: `build`, `patch` and `baseline` as one line of JSON, the other commands as `CODE: message`. For example:
+> Find the error code or warning a command printed, confirm its cause, and fix it; or find out why a device does not install or run a patch.
+
+A command failed or warned, or a patch does not show up on a device. Search this page for the error code or the text you see. The common problems come first, each with its output, cause and fix; every code is listed in [All error codes](#all-error-codes). Problems on the device, which report through the Dart API instead of CLI codes, are in [On the device](#on-the-device).
+
+| Symptom | Entries |
+|---|---|
+| `build` fails or warns | [`BASELINE_RELEASE_CONFLICT`](#baseline_release_conflict) · [`HOST_UNSUPPORTED`](#host_unsupported) · [`PUB_LOCKFILE_MISMATCH`](#pub_lockfile_mismatch) · [`WARNING: UNSIGNED`](#warning-unsigned) · [`WARNING: BASELINE_STORE_LOCAL`](#warning-baseline_store_local) |
+| `patch` fails or writes no file | [Every file shows as changed](#every-file-shows-as-changed) · [`BASELINE_NOT_FOUND`](#baseline_not_found) · [`PATCH_BASELINE_INCOMPATIBLE`](#patch_baseline_incompatible) · [`BASELINE_STORE_UNREACHABLE`](#baseline_store_unreachable) · [`patch` succeeds without a file](#patch-succeeds-without-a-file) |
+| `publish` or `serve` fails | [`PUBLISH_SEQUENCE_CONFLICT`](#publish_sequence_conflict) · [`KEYS_NOT_FOUND`](#keys_not_found) · [`SERVE_PORT_BUSY`](#serve_port_busy) |
+| The device does not get or run the patch | [`checkUpdate` never finds an update](#checkupdate-never-finds-an-update) · [The patch is installed but does not run](#the-patch-is-installed-but-does-not-run) |
+
+## How errors are printed
+
+| Command | On stderr | Exit code |
+|---|---|---|
+| `build`, `patch`, `baseline` | One line of JSON with `code` and `message` | `2` |
+| Other commands | `CODE: message` | `2` |
+| `doctor`, when a check fails | `CODE: message` | `1` |
+| Any command, for a warning | `WARNING: <CODE>: <text>` | Unchanged |
 
 ```json
 {"command":"patch","status":"failed","code":"PATCH_NATIVE_CHANGE","message":"Native plugin/build hook changed: camera"}
 ```
 
-The `message` field usually points directly to the root cause. This guide covers the most common problems first, followed by every error code flutter_patcher 1.1 can raise, by category, and the codes only flutter_patcher 1.0 raises. For the device side, see the end of this document.
+`message` names the file, package or setting involved. Branch on `code`, not on `message`: messages change between versions, codes do not.
 
-## Common Issues
+## Common issues
 
-### Changed a single line of Dart, but every file shows as modified (or fails with `PATCH_NATIVE_CHANGE`)
+### Every file shows as changed
 
-**Cause**: Source files are compared byte for byte against the baseline. Git for Windows converts line endings to `CRLF` by default, so a checkout with other line endings than the one the host was built from (for example, built on Linux CI with `LF`, patched on Windows with `CRLF`) makes every file look modified. When native files differ only in line endings, the `PATCH_NATIVE_CHANGE` message says so and names them.
+```json
+{"command":"patch","status":"failed","code":"PATCH_NATIVE_CHANGE","message":"Application native files differ from the release only in line endings (CRLF/LF): …. Check out the sources with the line endings the host was built from (git core.autocrlf), then patch again."}
+```
 
-**Fix**: Check out the sources with the line endings the host was built from (git `core.autocrlf`), or add `* text=auto eol=lf` to `.gitattributes` and check out again, then patch.
+**How to tell**: you changed one line of Dart, and `changed` in the `patch` output lists every file, or `patch` fails with the message above.
 
-### `BASELINE_NOT_FOUND`: Baseline snapshot missing
+**Cause**: source files are compared byte for byte with the baseline. Git for Windows converts line endings to `CRLF` by default, so a checkout on Windows differs in every file from a host built on Linux or macOS with `LF`.
 
-`patch` looks up the baseline using the target `flavor` and build number (taken from the `+` suffix in `pubspec.yaml` by default). Check the following:
+**Fix**:
 
-- Did you accidentally bump the build number in `pubspec.yaml` while fixing the bug? Revert it to match the live release, or pass `--version-code` explicitly.
-- Does `--flavor` match the flavor used during `build`?
-- Is `baseline_store` on this machine pointing to the same storage backend used during `build`?
+1. Add `* text=auto eol=lf` to `.gitattributes`, or set git `core.autocrlf` to the value used on the machine that built the host.
+2. Check the sources out again.
+3. Run `patch` again.
 
-### `BASELINE_RELEASE_CONFLICT`: Rebuild rejected
+### `BASELINE_NOT_FOUND`
 
-A baseline snapshot with different content already exists for this version number, so `build` refuses to overwrite it.
-- If that release is **already live**, increment the build number in `pubspec.yaml` before building.
-- If that build was **never shipped** and you want to discard it, delete the corresponding `release-<flavor>-<version_code>-<abi>` object from your baseline store and re-run `build`.
+```json
+{"command":"patch","status":"failed","code":"BASELINE_NOT_FOUND","message":"No archived release-…; check --flavor/--version-code, or pass --fingerprint for a legacy baseline."}
+```
 
-### `PATCH_BASELINE_INCOMPATIBLE`: The host cannot be patched by this flutter_patcher
+**How to tell**: `message` names the release `patch` looked for, by flavor, build number and ABI.
 
-The `message` says which case it is:
+**Cause**: `patch` finds the baseline by flavor and build number, by default the number after `+` in `pubspec.yaml`. Either that pair was never built, or this machine reads another baseline store than `build` wrote to.
 
-- **Built with flutter_patcher 1.0** (`This host was built with flutter_patcher 1.0`): patch, publish and withdraw for that host with flutter_patcher 1.0.0+1. Hosts built with 1.1 from then on are patched with 1.1.
-- **Flutter version differs**: patches must be generated with the **exact same Flutter SDK version** that built the release. Switch to it, or point to it with `--flutter-sdk`.
-- **Baseline lacks records** (`rebuild host`): the host predates what this version needs; build and ship a new host.
-- **From `publish`** (`is not a patch output of this flutter_patcher`): the `--patch` directory was written by flutter_patcher 1.0; run `patch` again.
+**Fix**: check in order:
 
-### `BASELINE_STORE_UNREACHABLE` even though storage is accessible
+1. The build number in `pubspec.yaml` is the live release's; otherwise pass `--version-code <n>`.
+2. `--flavor` is the flavor used for `build`.
+3. `baseline_store` in `flutter_patcher.yaml`, or `--baseline-store`, names the store `build` used.
 
-When querying an object that does not exist, your storage backend must return `404` (`NoSuchKey` on S3). On AWS S3 and compatible services, IAM roles without `s3:ListBucket` permission return `403 Forbidden` for missing objects (some CDNs behave similarly), which triggers this error. Grant `s3:ListBucket` to the role—the error `message` will name the specific object that failed.
+If the baseline was deleted, that build can no longer be patched: ship a new store release.
 
-### `PUBLISH_SEQUENCE_CONFLICT`: The store holds a newer file
+### `BASELINE_RELEASE_CONFLICT`
 
-The store's file for this host has a `seq` not below the one `publish` would write. A file's `seq` is the Unix time it was sealed, so this means a computer with a clock ahead of yours published last, or a `--seq` was given before. Fix this computer's clock, or publish with the `--seq` the `message` suggests. Devices that took the newer file accept only files numbered above it.
+```json
+{"command":"build","status":"failed","code":"BASELINE_RELEASE_CONFLICT","message":"release-… is already archived with different content: …; bump versionCode."}
+```
 
-### `patch` succeeds with `"file":null`
+**How to tell**: you ran `build` again with the same flavor and build number, and the code or dependencies changed since the earlier build.
 
-The host was built with a patch key (`trust.patch`) and no source on this machine holds its private key. The draft is in the output directory. Bring the key here with `keys import <bundle>` and run `patch` again, or run `publish --patch <output>` on a machine that has the key. `keys status` shows where the key would come from.
+**Cause**: a release has one baseline. Identical content reuses the existing baseline; different content is refused, because replacing the baseline would leave the app already shipped without a matching one.
 
-### `HOST_UNSUPPORTED`: Unsupported host OS or architecture
+**Fix**:
 
-- **Building Android baselines (`build android`)**: Requires Linux x64, Windows x64 or an Apple Silicon Mac.
-- **Building iOS baselines (`build ios`)**: Requires an Apple Silicon Mac.
-- **Generating patches (`patch android` / `patch ios`)**: Supported on all three host platforms above.
+1. If that build is live, raise the build number in `pubspec.yaml`, or pass `--version-code`, and build again.
+2. If that build was never shipped, delete the object `message` names (`release-<flavor>-<version_code>-<abi>.tar.gz`) from the baseline store and build again.
 
-### `checkUpdate` on the device never finds an update
+### `PATCH_BASELINE_INCOMPATIBLE`
 
-- `checkUpdate` requests `<url>/<fileName>`: compare `(await FlutterPatcher.patchTarget).fileName` with the name of the file you serve, and `url` with where it is served. Without `url` in the call, it is `url` from `flutter_patcher.yaml` when the app was built (rebuild after changing it).
-- A `file://` store with `url` set is not what devices read: upload the file to `<url>/<fileName>` after each `publish`.
-- The file must be newer than `patchTarget.acceptedSeq`. A file sealed on a computer whose clock is behind, or an old file uploaded again, is not; run `patch` again, or `publish` it again (with `--seq` above `acceptedSeq` if needed).
-- The file must be for the build installed on the device (`patchTarget.versionCode`, `flavor`, `channel`, `abi`, `fingerprint`). After users update the app from the store, make and deliver a patch for the new build.
-- A CDN may still serve the previous file; shorten its cache lifetime for `.fptc` files.
-- The endpoint must answer directly over HTTPS, without `3xx` redirects, and `404` for a missing file.
-- To see what the device thinks of the file, fetch its first 146 bytes yourself and pass them to `FlutterPatcher.inspectPatch`: `reason` says why it is not new.
+```json
+{"command":"patch","status":"failed","code":"PATCH_BASELINE_INCOMPATIBLE","message":"This host was built with flutter_patcher 1.0; patch and publish for it with flutter_patcher 1.0.0+1."}
+```
 
----
+**How to tell**: `message` names one of the cases below.
 
-## CLI Error Codes
+**Cause**: the host cannot be patched by this flutter_patcher, or with the selected Flutter SDK.
 
-### 1. Environment & Toolchain
+**Fix**: by `message`:
 
-| Error Code | Meaning | Resolution |
-|---|---|---|
-| `FLUTTER_NOT_FOUND` | `flutter` is not available in `PATH` | Add Flutter to `PATH` or specify `--flutter-sdk` |
-| `FLUTTER_VERSION_INVALID` | Failed to parse Flutter version info | Run `flutter --version` to verify the SDK installation |
-| `SDK_NOT_READY` | The selected Flutter SDK is uninitialized or has an incomplete cache | Run `flutter doctor` once, then retry |
-| `SDK_PREPARE_FAILED` | Failed to prepare the internal Flutter SDK workspace | Check network connectivity and disk space, then retry; open an issue if it persists |
-| `ENGINE_ARTIFACT_MISSING` | No prebuilt engine artifacts available for this Flutter version | Switch to a supported Flutter version; see the [README](../README.md) |
-| `ENGINE_ARTIFACT_MISMATCH`<br>`ARTIFACT_HASH_MISMATCH`<br>`ARTIFACT_INVALID`<br>`ENGINE_MANIFEST_INVALID`<br>`TOOLS_ARTIFACT_MISSING`<br>`TOOLS_VERSION_UNSUPPORTED`<br>`YAML_CACHE_INVALID`<br>`YAML_GENERATION_FAILED`<br>`EMBEDDING_POM_UNAVAILABLE` | Downloaded engine or toolchain artifacts are incomplete or failed checksum verification | Check your network connection and retry; corrupted cache entries are automatically quarantined and re-downloaded |
-| `CACHE_INVALID` | A path the command uses (cache, project, store, keys, patch output or receipt) is or passes through a symbolic link | Use the real path instead of a symbolic link |
-| `HOST_UNSUPPORTED` | Current OS or CPU architecture is unsupported for this command | See [`HOST_UNSUPPORTED` above](#host_unsupported-unsupported-host-os-or-architecture) |
-| `ANDROID_SDK_MISSING` | Android SDK or `build-tools` not found | Set `ANDROID_HOME` or run `flutter config --android-sdk` |
-| `JAVA_HOME_INVALID` | `JAVA_HOME` does not point to a valid JDK | Fix your `JAVA_HOME` environment variable |
-| `XCODE_MISSING` | Xcode or the iOS platform SDK is not installed | Install Xcode and download the iOS platform component in Xcode Settings |
-| `DISK_FULL` | Insufficient disk space | Free up disk space and retry |
-| `PUB_LOCKFILE_MISMATCH` | `pubspec.lock` does not match `pubspec.yaml`, or was resolved with another package host (for example, a `PUB_HOSTED_URL` mirror set in one terminal and not in another) | Run `flutter pub get` in the project from the terminal you build in, then retry |
-| `TOOL_FAILED` | An underlying build tool exited with an error | Inspect the tail of the tool's output included in `message` |
-| `CONFIG_INVALID` | Invalid `flutter_patcher.yaml` (an unknown setting, a value of the wrong shape, a `trust` without a valid `patch` key), an invalid CLI flag, or `HOME`/`USERPROFILE` not set | Fix the configuration or flag as described in `message` |
-| `USAGE_ERROR` | Incorrect CLI command syntax, including commands and options removed in 1.1 (`trust`, `publish --production`/`--request`, `keys import --rotate`, `keys init --role`, `keys export --without-root`) | Run with `--help` to see valid usage; see [CLI Reference: Removed in 1.1](cli.md#removed-in-11) |
-| `DOCTOR_FAILED` | `doctor` encountered an unexpected error | Check `message` for details |
-| `INTERFACE_INPUT_MISSING`<br>`INTERFACE_GENERATION_FAILED`<br>`INTERFACE_INDEX_FAILED`<br>`INTERFACE_VALIDATION_FAILED`<br>`INTERFACE_NOT_CONVERGED`<br>`INTERFACE_NO_PROGRESS` | The maintainer command `interface` could not generate or validate a host interface | Only maintainers adapting a new Flutter version run it; check `message` |
-
-### 2. Keys and Signing (`keys`, `patch`, `publish`)
-
-| Error Code | Meaning | Resolution |
-|---|---|---|
-| `KEYS_NOT_CONFIGURED` | `keys export` in a project whose `flutter_patcher.yaml` has no `trust.patch` | Run `keys init`, or `keys import` the project's key bundle |
-| `KEYS_NOT_FOUND` | A signed host's file must be signed and no source holds the private key (`publish`); the `--key-file` or `keys import` file does not exist; or `keys export` finds no key in this machine's key store | Run `keys import <file>`, set `FLUTTER_PATCHER_KEYS`, or configure `signing.command`; `keys status` shows what this machine has |
-| `KEYS_MISMATCH` | The first key source holds a key other than the host's `trust.patch`, `keys import` got another key than `flutter_patcher.yaml` names, or a stored key's signature does not verify | Use the project's key. A host accepts only the key it was built with; a new key needs new hosts |
-| `KEYS_ALREADY_CONFIGURED` | `keys init` in a project that already names a patch key, or still has a `flutter_patcher_keys/` directory | Bring the existing key to this machine with `keys import <bundle>`, or `keys import flutter_patcher_keys` for the old directory |
-| `KEYS_BUNDLE_INVALID` | The file is not a key bundle, holds no patch key, or the directory has no `patch/private-key.base64`; also a damaged file in `~/.flutter_patcher/keys/` (named in `message`) | Use a file written by `keys export`, or a 1.0 bundle that has a patch key |
-| `SIGNER_COMMAND_FAILED` | `signing.command` could not start, exited non-zero, took over 60 seconds, printed no base64 64-byte signature, or signed with another key | Run the command by hand with the same environment; check that the service's key is pure Ed25519 and is the patch key |
-| `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | The output file already exists, or the key store directory cannot be created | Choose a new file; check the permissions of `~/.flutter_patcher/keys` |
-| `KEYS_PERMISSIONS_FAILED` | Failed to restrict file permissions on private keys | Verify that the filesystem supports standard permission attributes |
-| `KEYS_IO_ERROR` | Failed to read or write keys | Check directory permissions and retry |
-
-### 3. Building Baselines (`build`)
-
-| Error Code | Meaning | Resolution |
-|---|---|---|
-| `BUILD_CONFIG_INVALID` | Invalid build configuration: no `+` build number in `pubspec.yaml`, no single application id, an invalid `--host-policy` file (neither schema 2 nor a 1.0 schema 1 policy), `--flavor` or `--version-code` differing from that policy, or an output directory that exists | Supply or fix what `message` names (e.g., `version: 1.0.0+1`, `--application-id`, a new `--out`) |
-| `BUILD_PROJECT_INVALID` | Unsupported project layout (e.g., symlinks in source packages, or directory names colliding with `build` case-insensitively) | Adjust the project structure as indicated in `message` |
-| `BUILD_BOOTSTRAP_UNAVAILABLE` | Project does not depend on `flutter_patcher` | Run `flutter pub add flutter_patcher` |
-| `BUILD_INPUT_CHANGED` | Source files were modified while the build was running | Do not edit files during `build`; re-run the command |
-| `BUILD_STEP_FAILED` | Underlying Flutter build step failed | Check the log tail and log directory path reported in `message` |
-| `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | Produced app bundle failed validation or engine injection | On iOS, verify code signing and `--export-method`; otherwise, open an issue |
-| `BASELINE_RELEASE_CONFLICT` | A different baseline already exists for this build number | See [`BASELINE_RELEASE_CONFLICT` above](#baseline_release_conflict-rebuild-rejected) |
-| `BASELINE_CONTENT_CONFLICT` | Identical source inputs produced conflicting build outputs | Please open an issue |
-| `BUILD_FAILED` | Unexpected build failure | Check `message` for details |
-
-### 4. Baseline Storage
-
-| Error Code | Meaning | Resolution |
-|---|---|---|
-| `BASELINE_NOT_FOUND` | Baseline snapshot not found for this release | See [`BASELINE_NOT_FOUND` above](#baseline_not_found-baseline-snapshot-missing) |
-| `BASELINE_STORE_UNREACHABLE` | Cannot reach or authenticate with baseline storage | Check network, credentials, and `s3:ListBucket` permissions (see above) |
-| `BASELINE_STORE_PROTOCOL` | Storage backend does not support conditional create-if-not-exists writes | See [CLI Reference: Storage requirements](cli.md#storage-requirements) |
-| `BASELINE_INVALID` | Baseline snapshot is corrupted | Restore the baseline object from backup |
-| `BASELINE_FINGERPRINT_MISMATCH` | Baseline fingerprint does not match the requested release parameters | Verify `--version-code`, `--flavor`, and Flutter SDK version |
-| `BASELINE_ARTIFACTS_MISSING`<br>`BASELINE_SCHEMA_UNSUPPORTED`<br>`BASELINE_NOT_RELEASE` | Baseline was created by an incompatible older version of `flutter_patcher` | Rebuild and ship a new baseline release using the current `flutter_patcher` version |
-| `BASELINE_RELEASE_AMBIGUOUS` | An old-format record and a current release object for the same version disagree | Delete the one named in `message` |
-| `BASELINE_OPERATION_FAILED` | Unexpected baseline storage error | Check `message` for details |
-
-### 5. Generating Patches (`patch`)
-
-**Safety Check Rejections** (blocks unsupported changes from being packaged into a patch):
-
-| Error Code | Meaning | Resolution |
-|---|---|---|
-| `PATCH_NATIVE_CHANGE` | Native code, native plugins, or build hooks were modified, or a new native dependency was added. A different flutter_patcher version than the host was built with counts too | Revert the native changes or ship a full app release; patch with the flutter_patcher version the host was built with. (If you didn't touch native code, check for `CRLF` line-ending diffs above.) |
-| `PATCH_PINNED_PACKAGE_CHANGED` | A package locked to the baseline (because it contains or is depended on by native code) changed version | Pin the package back to its baseline version under `dependency_overrides` as shown in `message` |
-| `PATCH_FFI_UNSUPPORTED` | Modified Dart code invokes native functions via `dart:ffi` | Keep FFI calls inside unmodified baseline code, or ship a full app release |
-| `PATCH_UNSAFE` | Bytecode compatibility verification failed | Check `message` for the specific violations and inspect the working directory logs |
-| `PATCH_DYNAMIC_ICON` | Code dynamically constructs non-`const` `IconData` at runtime | Replace with compile-time constant icons (`const IconData(...)` or `Icons.*`) |
-| `PATCH_ASSET_DELETE_UNSUPPORTED` | An existing bundled asset was deleted | Restore the asset file, or ship a full app release |
-| `PATCH_ENGINE_UNSUPPORTED` | The baseline app's engine does not support asset patching | Rebuild and ship a new baseline release with the current version |
-| `PATCH_NO_CHANGES` | No effective changes detected against the baseline | Make sure your edits are saved and you are diffing against the intended baseline version |
-
-**Patch Warnings** (patch generation succeeds, but review potential runtime behavior):
-
-| Warning Code | Meaning |
+| `message` | Fix |
 |---|---|
-| `PATCH_NATIVE_ASSET_READER` | Native code reads an asset that was modified in this patch; native code will continue to see the original asset bundled in the baseline app |
-| `PATCH_BACKGROUND_ENTRY` | An entry-point function runs on a separate Flutter engine (e.g., background isolate tasks) and may continue executing baseline code or assets |
-| `PATCH_RESOURCE_SIZE` | Patched assets exceed 16 MB in total and will remain resident in memory for the lifetime of the app process |
+| `This host was built with flutter_patcher 1.0; …` | Patch, publish and withdraw for that host with flutter_patcher 1.0.0+1; see [Upgrading from 1.0](upgrading.md) |
+| `SDK differs from baseline`, or `SDK or engine build differs from the release` | A patch is built with the Flutter version that built its release. Switch to it, or pass `--flutter-sdk <path>` |
+| A message that ends in `rebuild host`, or starts with `Rebuild this bytecode host` | The host lacks records this version needs. Build and ship a new host |
+| From `publish`: `… is not a patch output of this flutter_patcher; patch again.` | The `--patch` directory was written by flutter_patcher 1.0. Run `patch` again |
 
-**Other `patch` Errors**:
+### `BASELINE_STORE_UNREACHABLE`
 
-| Error Code | Meaning | Resolution |
-|---|---|---|
-| `PATCH_BASELINE_INCOMPATIBLE` | The host was built with flutter_patcher 1.0, with another Flutter version, or lacks records this version needs; from `publish`, a patch output of flutter_patcher 1.0 | See `PATCH_BASELINE_INCOMPATIBLE` under Common Issues above |
-| `PATCH_TARGET_MISMATCH` | Entry-point target file differs from the baseline build | Pass the same `--target` used during `build` |
-| `PATCH_DRAFT_INVALID` | `patch` or `publish` found no valid `patch.draft` in the output directory | Pass an output of `patch` from this flutter_patcher version, or run `patch` again |
-| `PATCH_CONFIG_INVALID` | Invalid options, such as the flavor, build number or `--target`, or an output directory that already exists | Fix them as described in `message` |
-| `PATCH_COMPILE_FAILED` | Dart compilation failed | Verify that a standard `flutter build` succeeds first |
-| `PATCH_SOURCE_INVALID`<br>`PACKAGE_INPUT_INVALID` | Unsupported source package layout (e.g., contains symlinks) | Remove symlinks or adjust layout as described in `message` |
-| `PATCH_ASSET_INVALID`<br>`FONT_SUBSET_FAILED` | Asset processing or icon font tree-shaking failed | Fix the offending asset or font file as indicated in `message` |
-| `PATCH_TOOL_FAILED` | Internal compilation or diff tool failed | Inspect the tool output and working directory in `message` |
-| `PATCH_PACKAGE_INVALID` | Failed to package the patch | Please open an issue |
-| `PATCH_FAILED` | Unexpected patch generation failure | Check `message` for details |
+```json
+{"command":"patch","status":"failed","code":"BASELINE_STORE_UNREACHABLE","message":"Cannot tell whether … exists: … The store must report a missing object as HTTP 404 or S3 NoSuchKey (an S3 role needs s3:ListBucket)."}
+```
 
-### 6. Publishing & Local Serving (`publish`, `serve`)
+**How to tell**: the store is reachable with the same credentials, for example `aws s3 ls` works on an object that exists, and `message` starts with `Cannot tell whether`.
 
-| Error Code | Meaning | Resolution |
-|---|---|---|
-| `PUBLISH_CONFIG_INVALID` | No patch output to publish (none under `.dart_tool/flutter_patcher/patches/` and no `--patch`), unexpected arguments, a `--receipt` file that already exists, or a `store` URI with credentials, a query or a fragment | Run `patch` first or pass `--patch`; choose a new receipt file; fix `store` |
-| `PUBLISH_SEQUENCE_CONFLICT` | The store's file for this host has a `seq` not below the new one, or `--seq` is not a number from 1 to 4294967295 | See `PUBLISH_SEQUENCE_CONFLICT` under Common Issues above |
-| `PUBLISH_CONFLICT` | The store's file changed between `publish` reading and writing it, for example another `publish` at the same time | Run `publish` again |
-| `PUBLISH_STORE_UNAVAILABLE` | The AWS CLI is missing or failed, the store does not support conditional writes, or the role lacks `s3:ListBucket` (a missing file then reads as access denied) | Check the AWS CLI version, credentials, permissions and `FLUTTER_PATCHER_S3_ENDPOINT` |
-| `PUBLISH_STORE_INVALID` | Invalid `s3://` store (an S3 prefix must be below the bucket root and use only letters, digits, `_` and `-`), a stored file over 320 MiB, or an S3 response without an ETag | Fix the `store` setting as described in `message`; replace the oversized file |
-| `PUBLISH_FAILED` | Unexpected publication failure, including a store file of this host's name that is not an FPTC v1 file | Delete or replace that file in the store; otherwise check the store and `message` |
-| `SERVE_PORT_BUSY` | Another program listens on the port `serve` uses | Stop it, or run `serve --port <port>` and map the phone's `8686` to it with `adb reverse tcp:8686 tcp:<port>` |
+**Cause**: the store must answer `404` (`NoSuchKey` on S3) for an object that does not exist. A role without `s3:ListBucket` gets `403` instead, and some CDNs behave the same, so flutter_patcher cannot tell a missing baseline from a refused request.
 
-`serve` prints `Not offering <file>: ...` and serves nothing for that host when the host's newest `patch` output has no file (a signed host whose key is not on this machine): run `keys import` and patch again. It never falls back to an older file.
+**Fix**:
 
-### 7. Warnings
+1. Grant `s3:ListBucket` on the bucket to the role.
+2. Run the command again.
 
-These print as `WARNING: <code>: <text>` and do not fail the command:
+Other messages under this code name the network or credential failure; the requirements per store type are in [Baseline store](cli.md#baseline-store).
 
-| Warning Code | Meaning |
+### `patch` succeeds without a file
+
+```json
+{"command":"patch","status":"patch_created","file":null,"notice":"This host accepts only files signed by its patch key, which this machine does not have: `flutter_patcher keys import` it here and patch again, or run `flutter_patcher publish --patch` with this output where it is.", …}
+```
+
+**How to tell**: `patch` exits with `0`, and `file` in its output is `null`.
+
+**Cause**: the host is signed, and no source on this machine holds its private key, so `patch` wrote only the draft.
+
+**Fix**: do one of these:
+
+1. Run `keys import <bundle>` on this machine, then `patch` again.
+2. Run `publish --patch <output>` on a machine that has the key.
+
+`keys status` shows which source would sign; see [Where the private key comes from](cli.md#where-the-private-key-comes-from).
+
+### `PUBLISH_SEQUENCE_CONFLICT`
+
+```text
+PUBLISH_SEQUENCE_CONFLICT: The store holds 7-arm64-v8a.fptc numbered …, which devices may have taken already; this one would be …. Check this computer's clock, or publish with --seq ….
+```
+
+**How to tell**: the first number in `message` is at or above the second.
+
+**Cause**: a file's sequence is the Unix time it was sealed. The file in the store was published by a computer whose clock runs ahead, or with a `--seq` above the current time. Devices that took it install only files numbered above it.
+
+**Fix**:
+
+1. Correct this computer's clock and run `publish` again.
+2. If the stored number is still higher, publish with the `--seq` that `message` suggests.
+
+### `KEYS_NOT_FOUND`
+
+```text
+KEYS_NOT_FOUND: No private key for patch key … in …. Run `flutter_patcher keys import`, set FLUTTER_PATCHER_KEYS or configure signing.command.
+```
+
+**How to tell**: `publish` fails before writing anything, and `keys status` prints `"private_key":"none"`.
+
+**Cause**: the host is signed, and none of the sources `message` lists holds its private key.
+
+**Fix**: do one of these:
+
+1. Run `keys import <bundle>` with a bundle from `keys export --out <file>` on a machine that has the key.
+2. In CI, set `FLUTTER_PATCHER_KEYS`; see [Keys in CI](advanced.md#keys-in-ci).
+
+If every copy of the key is lost, hosts built with it accept no new patch file: see [3. Turn On Signing](production-playbook.md#3-turn-on-signing).
+
+### `HOST_UNSUPPORTED`
+
+```json
+{"command":"build","status":"failed","code":"HOST_UNSUPPORTED","message":"build ios requires macOS with Xcode; patch ios runs on every host."}
+```
+
+**How to tell**: `message` names the detected computer, or says that `build ios` requires macOS.
+
+**Cause**: the command does not run on this operating system or CPU.
+
+**Fix**: run it on a supported computer:
+
+| Command | Supported computers |
 |---|---|
-| `UNSIGNED` | `build` made a host without a patch key: it accepts unsigned files, so whoever can hand the app a file can run code in it. To sign, run `keys init` and build again |
-| `URL_LOCAL` | `flutter_patcher.yaml` has no `url`, so `checkUpdate()` without `url` checks `serve`'s local address. Set `url` before building a release for the store, unless the app obtains patch files itself |
-| `BASELINE_STORE_LOCAL` | `build` keeps the baseline only inside the project, in `.flutter_patcher/`. Back that folder up, or set `baseline_store`; every patch of the host needs it |
-| `ARTIFACT_CHECK_SKIPPED` | The artifact index could not be downloaded, so the cached index was used |
+| `build android` | Linux x64, Windows x64, Apple Silicon Mac |
+| `build ios` | Apple Silicon Mac |
+| `patch android`, `patch ios` | Any of the above |
 
----
+### `PUB_LOCKFILE_MISMATCH`
+
+```json
+{"command":"build","status":"failed","code":"PUB_LOCKFILE_MISMATCH","message":"pubspec.lock does not match pubspec.yaml or this shell's package host (https://pub.dev). Run `flutter pub get` in the project from this shell, then try again."}
+```
+
+**How to tell**: `message` names the package host of the current shell.
+
+**Cause**: `pubspec.lock` does not match `pubspec.yaml`, or it was resolved with another package host, for example a `PUB_HOSTED_URL` mirror set in one terminal and not in another.
+
+**Fix**:
+
+1. Run `flutter pub get` in the project, in the terminal you build in.
+2. Run the command again.
+
+### `SERVE_PORT_BUSY`
+
+```text
+SERVE_PORT_BUSY: Port 8686 is in use on this computer; choose another with --port.
+```
+
+**How to tell**: `serve` exits at once.
+
+**Cause**: another program, often an earlier `serve`, listens on the port.
+
+**Fix**:
+
+1. Stop that program, or run `serve --port <port>`.
+2. With another port, map the phone's `8686` to it: `adb reverse tcp:8686 tcp:<port>`, because an app built without `url` checks `8686`.
+
+### `WARNING: UNSIGNED`
+
+```text
+WARNING: UNSIGNED: this host accepts patch files that are not signed, so whoever can hand the app a file can run code in it. To sign, set trust.enabled to true in flutter_patcher.yaml (run `flutter_patcher init` first if it names no key) and build again.
+```
+
+**How to tell**: `flutter_patcher.yaml` names no patch key, or `trust.enabled` is `false`.
+
+**Cause**: signing is off, which is how `init` leaves a project.
+
+**Fix**:
+
+1. If `flutter_patcher.yaml` has no `trust.patch`, run `dart run flutter_patcher init`.
+2. Set `trust.enabled: true` in `flutter_patcher.yaml`.
+3. Build again.
+
+**If you ignore it**: the app installs any intact patch file of its build. This cannot be changed for a released host, so a signed host needs a new store release.
+
+### `WARNING: BASELINE_STORE_LOCAL`
+
+```text
+WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every patch of the host needs it, so set baseline_store in flutter_patcher.yaml to a durable store.
+```
+
+**How to tell**: `flutter_patcher.yaml` has no `baseline_store`, and `build` ran without `--baseline-store`.
+
+**Cause**: the baseline is saved only in the project, in `.flutter_patcher/baselines/`.
+
+**Fix**: set `baseline_store`; see [2. Keep the Baselines](production-playbook.md#2-keep-the-baselines).
+
+**If you ignore it**: when that directory is lost, this build can no longer be patched, and `patch` fails with `BASELINE_NOT_FOUND`.
+
+### `checkUpdate` never finds an update
+
+**How to tell**: `checkUpdate()` returns `hasUpdate: false`, or `serve` prints `A device checked for updates` and never `A device downloaded`.
+
+**Cause**: the device requests `<url>/<fileName>` and takes only a file of its own build numbered above every file it accepted.
+
+**Fix**: check in order:
+
+1. The name: compare `(await FlutterPatcher.patchTarget).fileName` with the file you serve, and `url` with where it is served. Without `url` in the call, the app uses `url` from `flutter_patcher.yaml` at build time, so rebuild after changing it.
+2. The upload: with a `file://` store, `publish` writes only to this computer. Upload the file to `<url>/<fileName>` after each `publish`.
+3. The sequence: the file must be numbered above `patchTarget.acceptedSeq`. An old file uploaded again is not; run `patch` or `publish` again.
+4. The build: the file must be for the installed build (`patchTarget.versionCode`, `flavor`, `channel`, `abi`, `fingerprint`). After users update the app, make a patch for the new build.
+5. The server: it must answer over HTTPS without `3xx` redirects, with `404` when there is no file, and without a long cache time for `.fptc` files; see [Download server](cli.md#download-server).
+
+To see how the device judges a file, pass its first 146 bytes to `FlutterPatcher.inspectPatch`: `reason` says why it is not new.
+
+### The patch is installed but does not run
+
+**How to tell**: `applyPatch` returned `ok: true`, and after a cold start the app still shows the old behavior.
+
+**Cause**: the patch failed at startup and was turned off, or the app was upgraded.
+
+**Fix**:
+
+1. Read `FlutterPatcher.lastBootDiagnostic`: `status` says why the patch was skipped or rolled back.
+2. Follow [Boot diagnostics](crash-protection.md#boot-diagnostics) for that `status`.
+
+## All error codes
+
+### Environment and toolchain
+
+| Code | When it appears | Fix |
+|---|---|---|
+| `FLUTTER_NOT_FOUND` | `flutter` is not on `PATH` | Add Flutter to `PATH`, or pass `--flutter-sdk` |
+| `FLUTTER_VERSION_INVALID` | The Flutter version cannot be read | Run `flutter --version` to check the SDK |
+| `SDK_NOT_READY` | The selected Flutter SDK is not initialized, or its cache is incomplete | Run `flutter doctor` once, then retry |
+| `SDK_PREPARE_FAILED` | The Flutter SDK copy flutter_patcher builds with cannot be prepared | Check the network and disk space, then retry |
+| `ENGINE_ARTIFACT_MISSING` | No flutter_patcher engine exists for this Flutter version, or it cannot be downloaded | Use Flutter 3.47.0 to 3.47.9; check the network |
+| `ENGINE_ARTIFACT_MISMATCH`<br>`ARTIFACT_HASH_MISMATCH`<br>`ARTIFACT_INVALID`<br>`ENGINE_MANIFEST_INVALID`<br>`TOOLS_ARTIFACT_MISSING`<br>`TOOLS_VERSION_UNSUPPORTED`<br>`YAML_CACHE_INVALID`<br>`YAML_GENERATION_FAILED`<br>`EMBEDDING_POM_UNAVAILABLE` | A downloaded engine or tool file is incomplete or fails its checksum | Check the network and retry; a damaged cache entry is set aside and downloaded again |
+| `CACHE_INVALID` | A path the command uses (cache, project, store, keys, output or receipt) is or passes through a symbolic link | Use the real path |
+| `HOST_UNSUPPORTED` | The command does not run on this OS or CPU | See [`HOST_UNSUPPORTED`](#host_unsupported) |
+| `ANDROID_SDK_MISSING` | The Android SDK or its `build-tools` is not found | Set `ANDROID_HOME`, or run `flutter config --android-sdk` |
+| `JAVA_HOME_INVALID` | `JAVA_HOME` does not point to a JDK | Correct `JAVA_HOME` |
+| `XCODE_MISSING` | Xcode or the iOS platform is not installed | Install Xcode and the iOS platform in Xcode Settings |
+| `DISK_FULL` | The disk is full | Free space and retry |
+| `PUB_LOCKFILE_MISMATCH` | `pubspec.lock` does not match `pubspec.yaml` or the package host | See [`PUB_LOCKFILE_MISMATCH`](#pub_lockfile_mismatch) |
+| `TOOL_FAILED` | A build tool exited with an error | Read the end of the tool's output in `message` |
+| `CONFIG_INVALID` | `flutter_patcher.yaml` is invalid (an unknown setting, a value of the wrong type, a `trust` without a valid `patch`), an option is invalid, or `HOME`/`USERPROFILE` is not set | Correct what `message` names |
+| `USAGE_ERROR` | The command line is wrong, including a command or option removed in 1.1 | Run the command with `--help`; see [Removed in 1.1](cli.md#removed-in-11) |
+| `DOCTOR_FAILED` | `doctor` hit an unexpected error | Read `message` |
+| `INTERFACE_INPUT_MISSING`<br>`INTERFACE_GENERATION_FAILED`<br>`INTERFACE_INDEX_FAILED`<br>`INTERFACE_VALIDATION_FAILED`<br>`INTERFACE_NOT_CONVERGED`<br>`INTERFACE_NO_PROGRESS` | The maintainer command `interface` failed | Maintainers only; read `message` |
+
+### Keys and signing
+
+| Code | When it appears | Fix |
+|---|---|---|
+| `KEYS_NOT_CONFIGURED` | `keys export` in a project without `trust.patch` | Run `init`, or `keys import` the project's key bundle |
+| `KEYS_NOT_FOUND` | `publish` for a signed host and no source holds the private key; a `--key-file` or `keys import` file does not exist; `keys export` without the key in this machine's key store | See [`KEYS_NOT_FOUND`](#keys_not_found) |
+| `KEYS_MISMATCH` | The first key source holds a key other than the host's; `keys import` got a key other than the one `flutter_patcher.yaml` names | Use the project's key. A host accepts only the key it was built with, so a new key needs new hosts |
+| `KEYS_ALREADY_CONFIGURED` | `init` in a project that names no key and still has a pre-1.0 `flutter_patcher_keys/` directory | Run `keys import flutter_patcher_keys`, because released hosts accept only that key |
+| `KEYS_BUNDLE_INVALID` | The file is not a key bundle or holds no patch key; or a file in `~/.flutter_patcher/keys/`, named in `message`, is damaged | Use a file written by `keys export` |
+| `SIGNER_COMMAND_FAILED` | `signing.command` cannot start, exits non-zero, takes over 60 seconds, prints no base64 64-byte signature, or signs with another key | Run the command by hand with the same environment; see [Signing with a KMS or Signing Service](advanced.md#signing-with-a-kms-or-signing-service) |
+| `KEYS_OUTPUT_EXISTS`<br>`KEYS_OUTPUT_UNAVAILABLE` | The output file exists, or the key store directory cannot be created | Choose a new file; check the permissions of `~/.flutter_patcher/keys` |
+| `KEYS_PERMISSIONS_FAILED` | The private key file cannot be restricted to the current user | Use a file system that supports file permissions |
+| `KEYS_IO_ERROR` | A key cannot be read or written | Check directory permissions and retry |
+
+### `build`
+
+| Code | When it appears | Fix |
+|---|---|---|
+| `BUILD_CONFIG_INVALID` | No `+` build number in `pubspec.yaml`, no single application id, an invalid `--host-policy` file, a `--flavor` or `--version-code` that differs from that policy, or an output directory that exists | Correct what `message` names, for example `version: 1.0.0+1`, `--application-id`, a new `--out` |
+| `BUILD_PROJECT_INVALID` | The project layout is not supported, for example symbolic links in source packages | Change the project as `message` says |
+| `BUILD_BOOTSTRAP_UNAVAILABLE` | The project does not depend on `flutter_patcher` | Run `flutter pub add flutter_patcher` |
+| `BUILD_INPUT_CHANGED` | A source file changed while the build ran | Build again without editing files meanwhile |
+| `BUILD_STEP_FAILED` | A Flutter build step failed | Read the end of the log and the log directory in `message` |
+| `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | The built app fails validation, for example its application id or build number differs from the host policy | On iOS, check code signing and `--export-method`; with `--host-policy`, check `application_id` and `version_code` |
+| `BASELINE_RELEASE_CONFLICT` | This build number has a baseline with different content | See [`BASELINE_RELEASE_CONFLICT`](#baseline_release_conflict) |
+| `BASELINE_CONTENT_CONFLICT` | Identical source produced different build output | Open an issue |
+| `BUILD_FAILED` | An unexpected error | Read `message` |
+
+### Baseline store
+
+| Code | When it appears | Fix |
+|---|---|---|
+| `BASELINE_NOT_FOUND` | The release has no baseline in the store | See [`BASELINE_NOT_FOUND`](#baseline_not_found) |
+| `BASELINE_STORE_UNREACHABLE` | The store cannot be reached, rejects the credentials, or answers `403` for a missing object | See [`BASELINE_STORE_UNREACHABLE`](#baseline_store_unreachable) |
+| `BASELINE_STORE_PROTOCOL` | The store does not support create-if-absent writes | See [Baseline store](cli.md#baseline-store) |
+| `BASELINE_INVALID` | The baseline is damaged | Restore the object from a copy; without one, ship a new store release |
+| `BASELINE_FINGERPRINT_MISMATCH` | The baseline is not the requested release's | Check `--version-code`, `--flavor` and the Flutter version |
+| `BASELINE_ARTIFACTS_MISSING`<br>`BASELINE_SCHEMA_UNSUPPORTED`<br>`BASELINE_NOT_RELEASE` | The baseline was written by an older, incompatible flutter_patcher | Build and ship a new host |
+| `BASELINE_RELEASE_AMBIGUOUS` | An old-format record and a current one for the same release disagree | Delete the one `message` names |
+| `BASELINE_OPERATION_FAILED` | An unexpected error | Read `message` |
+
+### `patch`: changes a patch cannot carry
+
+Why each is refused is in [What can be patched](architecture.md#what-can-be-patched).
+
+| Code | When it appears | Fix |
+|---|---|---|
+| `PATCH_NATIVE_CHANGE` | Native code, a native plugin or a build hook changed, or a native dependency was added. A flutter_patcher version other than the host's counts as such a change | Revert the native change or ship a store release; patch with the flutter_patcher version the host was built with. Without a native change, see [Every file shows as changed](#every-file-shows-as-changed) |
+| `PATCH_PINNED_PACKAGE_CHANGED` | A package that must stay at its baseline version, because it has native code or native code depends on it, changed version | Pin it to the baseline version under `dependency_overrides`, as `message` shows |
+| `PATCH_FFI_UNSUPPORTED` | Code the patch carries calls native functions through `dart:ffi`; the patch carries the whole package, not only the changed lines | Move the FFI calls into a package the host keeps, such as a plugin, or ship a store release |
+| `PATCH_UNSAFE` | The bytecode compatibility check failed | Read the violations in `message` |
+| `PATCH_DYNAMIC_ICON` | Code builds a non-`const` `IconData` at run time | Use `const IconData(...)` or `Icons.*` |
+| `PATCH_ASSET_DELETE_UNSUPPORTED` | An asset of the app was deleted | Restore the asset, or ship a store release |
+| `PATCH_ENGINE_UNSUPPORTED` | The host's engine cannot install patch assets | Build and ship a new host |
+| `PATCH_NO_CHANGES` | Nothing differs from the baseline | Save your edits; check the release you target |
+
+### `patch`: warnings
+
+The patch is made; part of it does not take effect everywhere.
+
+| Code | When it appears | If you ignore it |
+|---|---|---|
+| `PATCH_NATIVE_ASSET_READER` | Native code reads an asset this patch changes | Native code still sees the app's original asset |
+| `PATCH_BACKGROUND_ENTRY` | An entry point runs in a separate Flutter engine, such as a background task | That entry point runs the app's original code and assets |
+| `PATCH_RESOURCE_SIZE` | The patch's assets exceed 16 MB in total | They stay in memory for the life of the process |
+
+### `patch`: other errors
+
+| Code | When it appears | Fix |
+|---|---|---|
+| `PATCH_BASELINE_INCOMPATIBLE` | The host cannot be patched by this flutter_patcher or Flutter version | See [`PATCH_BASELINE_INCOMPATIBLE`](#patch_baseline_incompatible) |
+| `PATCH_TARGET_MISMATCH` | The entry file differs from the host's | Pass the `--target` used for `build` |
+| `PATCH_DRAFT_INVALID` | The output directory holds no valid `patch.draft` | Pass an output of `patch` from this version, or run `patch` again |
+| `PATCH_CONFIG_INVALID` | An option is invalid, or the output directory exists | Correct what `message` names |
+| `PATCH_COMPILE_FAILED` | Dart compilation failed | Check that `flutter build` succeeds first |
+| `PATCH_SOURCE_INVALID`<br>`PACKAGE_INPUT_INVALID` | The source package layout is not supported, for example symbolic links | Change the layout as `message` says |
+| `PATCH_ASSET_INVALID`<br>`FONT_SUBSET_FAILED` | An asset or icon font cannot be processed | Fix the file `message` names |
+| `PATCH_TOOL_FAILED` | A compile or diff tool failed | Read the tool output in `message` |
+| `PATCH_PACKAGE_INVALID` | The patch cannot be packaged | Open an issue |
+| `PATCH_FAILED` | An unexpected error | Read `message` |
+
+### `publish` and `serve`
+
+| Code | When it appears | Fix |
+|---|---|---|
+| `PUBLISH_CONFIG_INVALID` | No patch output to publish, unexpected arguments, a `--receipt` file that exists, or a `store` address with credentials, a query or a fragment | Run `patch` first or pass `--patch`; choose a new receipt file; correct `store` |
+| `PUBLISH_SEQUENCE_CONFLICT` | The store's file has a sequence at or above the new one, or `--seq` is not from 1 to 4294967295 | See [`PUBLISH_SEQUENCE_CONFLICT`](#publish_sequence_conflict) |
+| `PUBLISH_CONFLICT` | The store's file changed between reading and writing it, for example by another `publish` | Run `publish` again |
+| `PUBLISH_STORE_UNAVAILABLE` | The AWS CLI is missing or failed, the store lacks conditional writes, or the role lacks `s3:ListBucket` | See [Publication store](cli.md#publication-store) |
+| `PUBLISH_STORE_INVALID` | The `s3://` store is not a prefix below the bucket root made of letters, digits, `_` and `-`; or the store holds a file under this host's name that is not a patch file or exceeds 320 MiB | Correct `store`; remove the file `message` names |
+| `PUBLISH_FAILED` | An unexpected error | Check the store and read `message` |
+| `SERVE_PORT_BUSY` | The port is in use | See [`SERVE_PORT_BUSY`](#serve_port_busy) |
+
+### Other warnings
+
+| Code | When it appears | If you ignore it |
+|---|---|---|
+| `UNSIGNED`, `BASELINE_STORE_LOCAL` | `build`, with the setting missing | See the entries under [Common issues](#common-issues) |
+| `ARTIFACT_CHECK_SKIPPED` | The artifact index cannot be downloaded | The command continues with the cached index |
 
 ## flutter_patcher 1.0 only
 
-flutter_patcher 1.1 never raises these codes. They come from flutter_patcher 1.0.0+1 working on hosts built with 1.0.0, which use signed manifests, `catalog.json` and trust updates. Keep using 1.0.0+1 for those hosts; 1.1 does not read or change what 1.0 keeps in the store (`manifests/`, `objects/`, `catalog.json`) or in `.dart_tool/flutter_patcher/publish-pending.json`.
+flutter_patcher 1.1.0 or newer never prints these codes. They come from flutter_patcher 1.0.0+1, which patches hosts built with 1.0.0; see [Upgrading from 1.0](upgrading.md).
 
-| Error Code | Meaning | Resolution (with 1.0.0+1) |
+| Code | When it appears | Fix, with 1.0.0+1 |
 |---|---|---|
-| `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | A previous 1.0 publication or cleanup was interrupted | Run `publish` (or the same request file) again in the same project with 1.0.0+1; it resumes from `publish-pending.json`. Do not delete files from the store |
-| `PUBLISH_URL_UNREACHABLE`<br>`PUBLISH_URL_INVALID` | 1.0 `publish` could not read the release's manifest at `url`, or found something else there | Fix `url` or the network; the address must answer `404` for a release with nothing published |
-| `PUBLISH_CATALOG_INVALID`<br>`PUBLISH_CATALOG_FULL` | `catalog.json` is damaged, belongs to another application id, or reached 8 MiB | Use a dedicated store path per app; never edit the store by hand; open an issue for a full catalog |
-| `PUBLISH_MANIFEST_CONFLICT` | `manifests/<hash>.json` kept changing while 1.0 rewrote it | Run `publish` again |
-| `PUBLISH_RETENTION_STALE`<br>`PUBLISH_OBJECT_CHANGED` | A 1.0 cleanup plan is stale | Run the dry run again for a fresh plan |
+| `PUBLISH_BUSY`<br>`PUBLISH_COMMIT_UNKNOWN`<br>`PUBLISH_UPLOAD_FAILED`<br>`PUBLISH_DELETE_UNKNOWN` | An earlier publish or cleanup was interrupted | Run `publish`, or the same request file, again in the same project; it resumes from `.dart_tool/flutter_patcher/publish-pending.json` |
+| `PUBLISH_URL_UNREACHABLE`<br>`PUBLISH_URL_INVALID` | `publish` cannot read the release's manifest at `url` | Fix `url` or the network; the address must answer `404` for a release with nothing published |
+| `PUBLISH_CATALOG_INVALID`<br>`PUBLISH_CATALOG_FULL` | `catalog.json` is damaged, belongs to another application id, or reached 8 MiB | Use one store path per app and do not edit its files |
+| `PUBLISH_MANIFEST_CONFLICT` | `manifests/<hash>.json` kept changing while it was rewritten | Run `publish` again |
+| `PUBLISH_RETENTION_STALE`<br>`PUBLISH_OBJECT_CHANGED` | A cleanup plan is out of date | Run the dry run again |
 | `PUBLISH_TARGET_MISMATCH` | The patch does not belong to the release | Make the patch again for that release |
-| `PUBLISH_PATCH_INVALID` | The patch bundle is damaged or over 320 MB | Make the patch again; reduce its assets |
-| `PUBLISH_SIGNATURE_INVALID` | A signature did not verify against the baseline's patch key or `--root-public` | Publish with the keys the host was built with |
-| `TRUST_CONFIG_INVALID`<br>`TRUST_INVALID`<br>`TRUST_REPLAY`<br>`TRUST_SCOPE_CONFLICT`<br>`TRUST_CONFLICT`<br>`TRUST_OUTPUT_EXISTS`<br>`TRUST_FAILED` | A 1.0 `trust sign` or `trust publish` failed | Follow `message`; increment `revision` beyond the published one for `TRUST_REPLAY` |
+| `PUBLISH_PATCH_INVALID` | The patch bundle is damaged or over 320 MB | Make the patch again with fewer assets |
+| `PUBLISH_SIGNATURE_INVALID` | A signature does not verify against the baseline's patch key or `--root-public` | Publish with the keys the host was built with |
+| `TRUST_CONFIG_INVALID`<br>`TRUST_INVALID`<br>`TRUST_REPLAY`<br>`TRUST_SCOPE_CONFLICT`<br>`TRUST_CONFLICT`<br>`TRUST_OUTPUT_EXISTS`<br>`TRUST_FAILED` | `trust sign` or `trust publish` failed | Follow `message`; for `TRUST_REPLAY`, raise `revision` above the published one |
 
----
+## On the device
 
-## On-Device Debugging
+The device reports through the Dart API, not through the codes above.
 
-The device does not use the CLI error codes above. To diagnose a device:
-
-1. **Install failures**: `applyPatch`, `applyPatchBytes` and `applyPatchFile` return a `PatchApplyError`; see [API Reference](api-reference.md) for each value and the rules a file must meet. `invalidArgs` means the file is not newer than `patchTarget.acceptedSeq`; `signatureInvalid` means it is not this build's file, is damaged, or is not signed by the host's patch key.
-2. **Update not found**: `FlutterPatcher.inspectPatch` on the file's first 146 bytes gives the `reason`; see `checkUpdate` above.
-3. **Patch did not activate after cold start**: inspect `FlutterPatcher.lastBootDiagnostic` to see why the runtime skipped or rolled back the patch; see [Crash Protection](crash-protection.md).
-4. **Verbose runtime logs**: during development, filter Android `logcat` or the iOS Xcode Console by `FlutterPatcher` to view native verification and loading logs.
+| Symptom | Where to look |
+|---|---|
+| The patch does not install | `applyPatch`, `applyPatchBytes` and `applyPatchFile` return a `PatchApplyError`; each value is in [`PatchApplyError`](api-reference.md#patchapplyerror), and the rules a file must meet in [What a device accepts](api-reference.md#what-a-device-accepts) |
+| No update is found | See [`checkUpdate` never finds an update](#checkupdate-never-finds-an-update) |
+| The patch is installed but does not run | See [The patch is installed but does not run](#the-patch-is-installed-but-does-not-run) |
+| Native verification and loading details | Filter Android `logcat` or the Xcode console by `FlutterPatcher` |
