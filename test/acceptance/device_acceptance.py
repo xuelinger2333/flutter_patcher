@@ -10,21 +10,20 @@ Android SDK and an unlocked API 28+ arm64 device.
 snapshot of this working tree, fetches the outputs and verifies locally.
 
 `--platform ios` (macOS with Xcode; bytecode hosts) builds with automatic
-signing for `--team`, serves the patch files through a cloudflared quick
-tunnel (publicly trusted HTTPS) and drives the app through `iproxy` (Homebrew
-libimobiledevice) and `xcrun devicectl`. Code signing needs the login
+signing for `--team` and drives the app through `iproxy` (Homebrew
+libimobiledevice) and `xcrun devicectl`. The patch files go to the app over
+the same USB connection and the app serves them to itself on 127.0.0.1, so
+the phone needs no network access. Code signing needs the login
 keychain: prepare in the Mac's desktop Terminal with the iPhone attached, then
 run the device steps from anywhere on the Mac, e.g. over SSH:
 
   python3 test/acceptance/device_acceptance.py --platform ios --signing signed \\
     --prepare-only --team TEAM --bundle-id BUNDLE_ID --flutter-sdk SDK --out DIR
   python3 test/acceptance/device_acceptance.py --platform ios --signing signed \\
-    --resume-built --flutter-sdk SDK --cloudflared CLOUDFLARED --out DIR
+    --resume-built --flutter-sdk SDK --out DIR
 """
 import argparse
 from datetime import datetime
-import functools
-import http.server
 import json
 import os
 import re
@@ -35,9 +34,9 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from integration import WINDOWS, call, configure_android, dart_binary, flutter_launcher, normalize_line_endings, snapshot
@@ -225,6 +224,12 @@ class AndroidDevice:
         return subprocess.run([*map(str, self.adb), *a], capture_output=True, encoding='utf-8',
                               errors='replace', timeout=timeout)
 
+    def put(self, file, name):
+        """Offers `file` as `name` under the origin."""
+        target = self.out / 'srv' / name
+        if file.resolve() != target.resolve():
+            shutil.copyfile(file, target)
+
     def start(self):
         if self.server.stdout.readline().strip() != 'READY':
             raise RuntimeError('TLS server did not start')
@@ -283,75 +288,29 @@ def find_iphone(serial, out):
     return identifier, udid
 
 
-class _NoStore(http.server.SimpleHTTPRequestHandler):
-    """Static files that neither Cloudflare nor the phone may cache: the test swaps them."""
-
-    def do_GET(self):
-        del self.headers['If-Modified-Since']
-        super().do_GET()
-
-    def do_HEAD(self):
-        del self.headers['If-Modified-Since']
-        super().do_HEAD()
-
-    def end_headers(self):
-        self.send_header('Cache-Control', 'no-store')
-        super().end_headers()
-
-    def log_message(self, format, *args):
-        with open(self.server.log, 'a', encoding='utf-8') as log:
-            log.write(format % args + '\n')
-
-
 class IosDevice:
-    """devicectl; the origin is `srv` over a cloudflared quick tunnel, control through `iproxy`."""
+    """devicectl; control through `iproxy`, and the origin is the app itself: it serves what `put` sends."""
 
     def __init__(self, args, out):
         self.out, self.args, self.processes = out, args, []
         self.bundle = (out / 'bundle-id.txt').read_text().strip()
         self.device, self.udid = find_iphone(args.serial, out)
-        self.http = None
 
     def spawn(self, name, command):
         log = open(self.out / f'{name}.log', 'w', encoding='utf-8')
         self.processes.append(subprocess.Popen([str(c) for c in command], stdout=log, stderr=subprocess.STDOUT))
         return self.processes[-1]
 
+    def put(self, file, name):
+        """Sends `file` to the running app, which serves it as `name` under the origin."""
+        request = urllib.request.Request(CONTROL + '/put?' + urllib.parse.urlencode({'path': name}),
+                                         data=file.read_bytes())
+        with urllib.request.urlopen(request, timeout=120) as response:
+            response.read()
+
     def start(self):
         iproxy = tool(None, 'iproxy')
-        self.http = http.server.ThreadingHTTPServer(
-            ('127.0.0.1', 0), functools.partial(_NoStore, directory=str(self.out / 'srv')))
-        self.http.log = self.out / 'http-server.log'
-        threading.Thread(target=self.http.serve_forever, daemon=True).start()
-        tunnel = self.spawn('tunnel', [self.args.cloudflared or tool(None, 'cloudflared'), 'tunnel',
-                                       '--no-autoupdate', '--protocol', 'http2',
-                                       '--url', f'http://127.0.0.1:{self.http.server_port}'])
-        origin = None
-        for _ in range(90):
-            time.sleep(1)
-            text = (self.out / 'tunnel.log').read_text(errors='replace')
-            urls = [w for w in text.split() if w.startswith('https://') and w.endswith('.trycloudflare.com')]
-            if urls and 'Registered tunnel connection' in text:
-                origin = urls[0]
-                break
-            if tunnel.poll() is not None:
-                break
-        if not origin:
-            raise RuntimeError(f'cloudflared gave no tunnel; see {self.out / "tunnel.log"}')
-        # A fresh quick-tunnel name needs a while in DNS; steps start once it serves srv.
-        token = secrets.token_hex(8)
-        write(self.out / 'srv/probe.txt', token)
-        try:
-            for _ in range(60):
-                probe = subprocess.run(['curl', '-s', '-m', '10', origin + '/probe.txt'], capture_output=True,
-                                       text=True)
-                if probe.stdout == token:
-                    break
-                time.sleep(3)
-            else:
-                raise RuntimeError(f'{origin} does not serve {self.out / "srv"}; see {self.out / "tunnel.log"}')
-        finally:
-            (self.out / 'srv/probe.txt').unlink()
+        origin = CONTROL + '/srv'
         print('ORIGIN ' + origin, flush=True)
         # usbmuxd connects to the fixture's loopback server on the phone.
         proxy = self.spawn('iproxy', [iproxy, '-u', self.udid, '-s', '127.0.0.1', '8767:8767'])
@@ -400,8 +359,6 @@ class IosDevice:
                 process.wait(10)
             except subprocess.TimeoutExpired:
                 process.kill()
-        if self.http:
-            self.http.shutdown()
 
 
 def control(path, body=None):
@@ -445,8 +402,12 @@ def verify(args, out):
         name = (out / 'file-name.txt').read_text().strip()
 
         def offer(file):  # The device finds its file in the store by name.
-            shutil.copyfile(srv / file, srv / 'pub' / name)
+            device.put(srv / file, 'pub/' + name)
             return control('/check', {'url': origin + '/pub'})
+
+        def fetch():  # The app fetches the file itself, as from its own server.
+            device.put(srv / 'file1.fptc', 'file1.fptc')
+            return control('/fetch', {'url': origin + '/file1.fptc'})
 
         check = lambda n: lambda: offer(f'file{n}.fptc')
         plan = [
@@ -455,8 +416,7 @@ def verify(args, out):
              {'file': name, 'signed': args.signing == 'signed', 'accepted': 0}),
             ('tampered file rejected', lambda: offer('tampered.fptc'),
              {'update': True, 'ok': False, 'error': 'signatureInvalid'}),
-            ('app fetches the file itself', lambda: control('/fetch', {'url': origin + '/file1.fptc'}),
-             {'ok': True}),
+            ('app fetches the file itself', fetch, {'ok': True}),
             ('the same file is not new', check(1), {'update': False}),
             ('patched boot', launch, patched),
             ('patched second boot', launch, patched),
@@ -516,7 +476,6 @@ def main():
     parser.add_argument('--remote-android', default='/opt/android-sdk')
     parser.add_argument('--team', help='iOS: Apple development team ID for automatic signing')
     parser.add_argument('--bundle-id', help="iOS: the fixture's bundle ID, unique to the team")
-    parser.add_argument('--cloudflared', help='iOS: cloudflared binary (default: from PATH)')
     args = parser.parse_args()
     if args.platform == 'android':
         if not args.strategy:
