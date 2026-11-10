@@ -15,6 +15,7 @@ import 'baseline/split.dart';
 import 'baseline/store.dart';
 import 'build/command.dart';
 import 'build/ios.dart' show iosExportMethods;
+import 'init_command.dart';
 import 'patch_command.dart';
 import 'keys/command.dart';
 import 'keys/keyring.dart';
@@ -156,6 +157,7 @@ ArgParser parser() {
     ..addCommand('publish', publishOptions())
     ..addCommand('serve', serveOptions())
     ..addCommand('baseline', baselineOptions())
+    ..addCommand('init', initOptions())
     ..addCommand('keys', keysOptions())
     ..addCommand('interface', interfaces);
 }
@@ -176,7 +178,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-        'flutter_patcher keys init|export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [--withdraw] [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--seq <n>] [--yes] [options]\nflutter_patcher serve [--port <port>] [--project <dir>]\n\n${args.commands['doctor']!.usage}',
+        'flutter_patcher init [--project <dir>]\nflutter_patcher keys export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [--withdraw] [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--seq <n>] [--yes] [options]\nflutter_patcher serve [--port <port>] [--project <dir>]\n\n${args.commands['doctor']!.usage}',
       );
       return 0;
     }
@@ -194,6 +196,17 @@ Future<int> runCli(List<String> arguments) async {
         throw Failure(
           'KEYS_IO_ERROR',
           'Key initialization failed; check output permissions and required local tools.',
+        );
+      }
+    }
+    if (parsed.command!.name == 'init') {
+      try {
+        return await initCommand(parsed.command!);
+      } on IOException {
+        throw Failure(
+          'KEYS_IO_ERROR',
+          'Initialization failed; check the permissions of the project and '
+              'of ~/.flutter_patcher.',
         );
       }
     }
@@ -520,8 +533,7 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
         'project_keys',
         project == null
             ? 'No project supplied; its keys are not checked.'
-            : 'The project names no patch key: its hosts accept unsigned '
-                  'patch files. Run keys init to sign them.',
+            : 'The project names no patch key; run init to create one.',
       );
     } else {
       await check('project_keys', () async {

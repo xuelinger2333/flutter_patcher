@@ -152,10 +152,9 @@ def prepare(args, repo, out):
     key = []
     if args.signing == 'signed':
         # One key bundle file signs everything, as a CI job's would.
-        patcher('keys', 'keys', 'init', '--out', out / 'keys.json')
-        public = next(json.loads(line) for line in (out / 'keys.log').read_text().splitlines()
-                      if line.startswith('{'))['public_key']
-        config += f'trust:\n  patch: {public}\n'
+        call([dart, repo / 'test/acceptance/new_key.dart', out / 'keys.json'], repo, out / 'keys.log')
+        public = (out / 'keys.log').read_text().split()[-1]
+        config += f'trust:\n  patch: {public}\n  enabled: true\n'
         key = ['--key-file', out / 'keys.json']
     write(app / 'flutter_patcher.yaml', config)
     (out / 'store').mkdir()

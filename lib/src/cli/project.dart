@@ -18,14 +18,14 @@ class ProjectConfig {
   /// Where serve offers patches, and where hosts look when url is not set.
   static const localUrl = 'http://127.0.0.1:8686';
 
-  /// Written by `keys init` when the project has no configuration yet.
+  /// Written by `init` when the project has no configuration yet.
   static const template = '''
 # flutter_patcher project settings. Commands read them when no flag is given.
 # Every setting is optional, and nothing here is secret.
 
-# Written into the app as the address FlutterPatcher.checkUpdate() uses when
-# it is given none. Default: http://127.0.0.1:8686, where serve offers patches
-# while developing.
+# The address FlutterPatcher.checkUpdate() uses when the app passes none;
+# build writes it into the app. Default: http://127.0.0.1:8686, where serve
+# offers patches while developing.
 # url: https://cdn.example.com/my-app
 
 # Where publish writes patch files: file:// or s3://. Default:
@@ -97,12 +97,21 @@ class ProjectConfig {
           map.values.every((v) => v is String);
       // flutter_patcher 1.0 also wrote root and publisher keys; only the
       // patch key is used.
+      final trust = values['trust'];
       require(
-        values['trust'] == null ||
-            (strings(values['trust'], {'root', 'publisher', 'patch'}) &&
-                rawEd25519Key((values['trust'] as Map)['patch']) != null),
+        trust == null ||
+            (trust is Map &&
+                trust.keys.every(
+                  {'root', 'publisher', 'patch', 'enabled'}.contains,
+                ) &&
+                rawEd25519Key(trust['patch']) != null &&
+                ['root', 'publisher'].every(
+                  (role) => trust[role] == null || trust[role] is String,
+                ) &&
+                (trust['enabled'] == null || trust['enabled'] is bool)),
         'CONFIG_INVALID',
-        '$file: trust.patch is the base64 Ed25519 public key of the patch key.',
+        '$file: trust.patch is the base64 Ed25519 public key of the patch key, '
+            'and trust.enabled is true or false.',
       );
       require(
         values['signing'] == null || strings(values['signing'], {'command'}),
@@ -133,15 +142,24 @@ class ProjectConfig {
 
   bool get baselinesInProject => this['baseline_store'] == null;
 
-  /// The patch public key hosts of this project trust, or null: hosts it
-  /// builds then accept unsigned patch files.
+  /// The project's patch public key, or null before `init` creates one.
   String? get patchKey => (_values['trust'] as Map?)?['patch'] as String?;
+
+  /// Whether hosts built now are signed: `trust.enabled`. A file that names
+  /// a key without it, as flutter_patcher 1.0 wrote, counts as true, since
+  /// its hosts always were signed.
+  bool get signingEnabled =>
+      patchKey != null && (_values['trust'] as Map)['enabled'] != false;
+
+  /// The key hosts built now accept patch files from, or null for an
+  /// unsigned host.
+  String? get hostKey => signingEnabled ? patchKey : null;
 
   /// The external signing command, when one is configured.
   String? get signingCommand =>
       (_values['signing'] as Map?)?['command'] as String?;
 
-  /// Records [patchKey] as the key hosts built from now on trust, in a
+  /// Records [patchKey] as the project's patch key, with signing off, in a
   /// project that names none yet, creating the file from [template] if
   /// needed. The rest of an existing file is kept as written.
   Future<void> writeTrust(String patchKey) async {
@@ -152,12 +170,22 @@ class ProjectConfig {
     final separator = text.isEmpty || text.endsWith('\n') ? '' : '\n';
     await _write(
       '$text$separator\n'
-      '# The public key hosts built from now on trust: they accept only patch\n'
-      '# files signed by it. Written by `flutter_patcher keys`; hosts already\n'
-      '# shipped keep the key they were built with.\n'
+      '# The project\'s patch key, written by `flutter_patcher init`. Its\n'
+      '# private key is in the key store of the computer that ran init.\n'
       'trust:\n'
-      '  patch: $patchKey\n',
+      '  patch: $patchKey\n'
+      '  # true: hosts built from now on accept only patch files signed by\n'
+      '  # this key. Hosts already shipped keep what they were built with.\n'
+      '  enabled: false\n',
     );
+  }
+
+  /// Creates the file from [template] when the project has none; true when
+  /// it did.
+  Future<bool> create() async {
+    if (await File(path).exists()) return false;
+    await _write(template);
+    return true;
   }
 
   Future<void> _write(String text) async {

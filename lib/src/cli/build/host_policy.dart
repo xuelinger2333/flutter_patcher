@@ -163,7 +163,7 @@ class HostPolicy {
             'names the host\'s patch files.',
       );
     }
-    applicationId ??= await _applicationId(project, platform);
+    applicationId ??= await projectApplicationId(project, platform);
     versionCode ??= await buildNumber(project);
     return HostPolicy({
       'schema': '2',
@@ -173,7 +173,7 @@ class HostPolicy {
       'version_code': versionCode,
       'flavor': flavor ?? 'default',
       'channel': channel ?? 'production',
-      'fptc_key': config.patchKey ?? '-',
+      'fptc_key': config.hostKey ?? '-',
     });
   }
 }
@@ -195,7 +195,7 @@ Future<String> buildNumber(String project) async {
 }
 
 /// The one application id [project]'s Gradle or Xcode project declares.
-Future<String> _applicationId(String project, String platform) async {
+Future<String> projectApplicationId(String project, String platform) async {
   final ids = <String>{};
   if (platform == 'android') {
     for (final name in ['build.gradle.kts', 'build.gradle']) {

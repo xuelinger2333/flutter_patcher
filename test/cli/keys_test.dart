@@ -26,59 +26,72 @@ void main() {
     return {'HOME': home, 'USERPROFILE': home};
   }
 
-  Future<ProcessResult> cli(
+  Future<ProcessResult> run(
     List<String> args, {
     required Map<String, String> environment,
     String? project,
   }) => Process.run(dartVm, [
     p.absolute('bin/flutter_patcher.dart'),
-    'keys',
     ...args,
     if (project != null) ...['--project', project],
   ], environment: environment);
+
+  Future<ProcessResult> cli(
+    List<String> args, {
+    required Map<String, String> environment,
+    String? project,
+  }) => run(['keys', ...args], environment: environment, project: project);
+
+  Future<ProcessResult> init({
+    required Map<String, String> environment,
+    required String project,
+  }) => run(['init'], environment: environment, project: project);
 
   Map report(ProcessResult result) {
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     return jsonDecode(result.stdout as String) as Map;
   }
 
-  String project(String name) =>
-      (Directory(p.join(root.path, name))..createSync()).path;
+  /// A Flutter app's root: init runs only where a pubspec.yaml is.
+  String project(String name) {
+    final dir = Directory(p.join(root.path, name))..createSync();
+    File(p.join(dir.path, 'pubspec.yaml'))
+        .writeAsStringSync('name: $name\nversion: 1.0.0+1\n');
+    return dir.path;
+  }
 
   String yaml(String project) =>
       File(p.join(project, 'flutter_patcher.yaml')).readAsStringSync();
 
   test('help and invalid usage', () async {
     final env = machine('a');
-    expect((await cli(['init', '--help'], environment: env)).exitCode, 0);
+    expect((await cli(['--help'], environment: env)).exitCode, 0);
+    expect((await run(['init', '--help'], environment: env)).exitCode, 0);
     for (final args in [
       <String>[],
       ['rotate'],
+      ['init'],
+      ['init', '--out', 'x'],
       ['import', 'x', '--rotate'],
-      ['init', '--out', 'x', '--role', 'publisher'],
-      ['init', 'extra'],
-      ['init', '--force'],
       ['import'],
       ['export'],
       ['export', '--base64', '--out', 'x'],
-      ['init', '--role', 'patch'],
-      ['init', '--out', 'x', '--role', 'patch'],
       ['export', '--base64', '--without-root'],
     ]) {
       final result = await cli(args, environment: env);
       expect(result.exitCode, 2, reason: '$args');
       expect(result.stderr, contains('USAGE_ERROR'), reason: '$args');
     }
+    expect(
+      (await cli(['init'], environment: env)).stderr,
+      contains('flutter_patcher init'),
+    );
   });
 
   if (!HostIdentity.verified.contains(HostIdentity.current().key)) {
     test('unsupported host fails without creating keys', () async {
       final app = project('app');
-      final result = await cli(
-        ['init'],
-        environment: machine('a'),
-        project: app,
-      );
+      final result = await init(environment: machine('a'), project: app);
       expect(result.exitCode, 2);
       expect(result.stderr, contains('HOST_UNSUPPORTED'));
       expect(File(p.join(app, 'flutter_patcher.yaml')).existsSync(), false);
@@ -86,11 +99,15 @@ void main() {
     return;
   }
 
-  test('init keeps the private key in the key store, the public key in the project', () async {
+  test('init creates the settings and the key, with signing off', () async {
     final env = machine('a');
     final app = project('app');
-    final created = report(await cli(['init'], environment: env, project: app));
-    expect(created['status'], 'keys_created');
+    final created = report(await init(environment: env, project: app));
+    expect(created['status'], 'initialized');
+    expect(created['config_created'], true);
+    expect(created['signing'], false);
+    expect(created['private_key'], 'key store');
+    expect(created['notice'], contains('trust.enabled'));
     final stored = File(created['key_store'] as String);
     expect(
       p.isWithin(p.join(env['HOME']!, '.flutter_patcher', 'keys'), stored.path),
@@ -99,11 +116,13 @@ void main() {
     final bundle = KeyBundle.decode(stored.readAsStringSync());
     expect(created['public_key'], bundle.publicKey);
     expect(yaml(app), contains('trust:\n  patch: ${bundle.publicKey}\n'));
+    expect(yaml(app), contains('  enabled: false\n'));
+    expect(yaml(app), contains('# store:'));
+    expect(yaml(app), contains('# baseline_store:'));
     expect(yaml(app), isNot(contains('root:')));
     final secret = base64Encode(bundle.seed);
     expect(created.toString(), isNot(contains(secret)));
     expect(yaml(app), isNot(contains(secret)));
-    expect(yaml(app), contains('# store:'));
     if (Platform.isWindows) {
       final acl =
           Process.runSync('icacls', [stored.parent.path]).stdout as String;
@@ -115,10 +134,13 @@ void main() {
       expect(stored.parent.statSync().mode & 0x1ff, 0x1c0); // 0700
     }
 
-    // A new key for a project that has one would split its hosts.
-    final again = await cli(['init'], environment: env, project: app);
-    expect(again.exitCode, 2);
-    expect(again.stderr, contains('KEYS_ALREADY_CONFIGURED'));
+    // Run again, init keeps the key: a new one would split the hosts.
+    final before = yaml(app);
+    final again = report(await init(environment: env, project: app));
+    expect(again['config_created'], false);
+    expect(again.containsKey('key_store'), false);
+    expect(again['public_key'], bundle.publicKey);
+    expect(yaml(app), before);
     expect(
       KeyBundle.decode(stored.readAsStringSync()).encode(),
       bundle.encode(),
@@ -129,6 +151,40 @@ void main() {
     );
     expect(status['public_key'], bundle.publicKey);
     expect(status['private_key'], 'key store');
+  });
+
+  test(
+    'init in a clone keeps the project key and names the missing one',
+    () async {
+      final app = project('app');
+      report(await init(environment: machine('first'), project: app));
+      final clone = project('clone');
+      File(p.join(clone, 'flutter_patcher.yaml')).writeAsStringSync(yaml(app));
+      final cloned = report(
+        await init(environment: machine('second'), project: clone),
+      );
+      expect(cloned['public_key'], isNotNull);
+      expect(cloned['private_key'], 'none');
+      expect(cloned['notice'], contains('keys import'));
+      expect(yaml(clone), yaml(app));
+    },
+  );
+
+  test('init outside a Flutter app changes nothing', () async {
+    final empty = (Directory(p.join(root.path, 'empty'))..createSync()).path;
+    final result = await init(environment: machine('a'), project: empty);
+    expect(result.exitCode, 2);
+    expect(result.stderr, contains('CONFIG_INVALID'));
+    expect(Directory(empty).listSync(), isEmpty);
+  });
+
+  test('init warns about what build would refuse', () async {
+    final app = project('app');
+    File(p.join(app, 'pubspec.yaml'))
+        .writeAsStringSync('name: app\nversion: 1.0.0\n');
+    final result = await init(environment: machine('a'), project: app);
+    report(result);
+    expect(result.stderr, contains('WARNING: BUILD_CONFIG_INVALID'));
   });
 
   test('a project without a key signs nothing', () async {
@@ -144,7 +200,7 @@ void main() {
     () async {
       final first = machine('first'), second = machine('second');
       final app = project('app');
-      report(await cli(['init'], environment: first, project: app));
+      report(await init(environment: first, project: app));
       final backup = p.join(root.path, 'backup.json');
       report(
         await cli(
@@ -207,9 +263,17 @@ void main() {
     () async {
       final env = machine('a');
       final app = project('app');
-      report(await cli(['init'], environment: env, project: app));
+      report(await init(environment: env, project: app));
+      final other = machine('b'), otherApp = project('other');
+      report(await init(environment: other, project: otherApp));
       final stranger = p.join(root.path, 'stranger.json');
-      report(await cli(['init', '--out', stranger], environment: env));
+      report(
+        await cli(
+          ['export', '--out', stranger],
+          environment: other,
+          project: otherApp,
+        ),
+      );
       final refused = await cli(
         ['import', stranger],
         environment: env,
@@ -225,6 +289,7 @@ void main() {
       expect(imported['config'], isNotNull);
       final bundle = KeyBundle.decode(File(stranger).readAsStringSync());
       expect(yaml(fresh), contains('patch: ${bundle.publicKey}'));
+      expect(yaml(fresh), contains('enabled: false'));
     },
   );
 
@@ -255,6 +320,10 @@ void main() {
     );
     expect(status['public_key'], patch);
     expect(status['private_key'], 'key store');
+    // Its hosts were always signed, so they stay signed.
+    final initialized = report(await init(environment: env, project: app));
+    expect(initialized['public_key'], patch);
+    expect(initialized['signing'], true);
   });
 
   test('a pre-1.0 key directory is imported, not replaced', () async {
@@ -264,9 +333,9 @@ void main() {
     File(p.join(app, 'flutter_patcher_keys', 'patch', 'private-key.base64'))
       ..createSync(recursive: true)
       ..writeAsStringSync('${base64Encode(bundle.seed)}\n');
-    final init = await cli(['init'], environment: env, project: app);
-    expect(init.exitCode, 2);
-    expect(init.stderr, contains('keys import flutter_patcher_keys'));
+    final first = await init(environment: env, project: app);
+    expect(first.exitCode, 2);
+    expect(first.stderr, contains('keys import flutter_patcher_keys'));
     report(
       await cli(
         ['import', p.join(app, 'flutter_patcher_keys')],
@@ -279,8 +348,7 @@ void main() {
 
   test('key generation needs no external tool', () async {
     final app = project('app');
-    final result = await cli(
-      ['init'],
+    final result = await init(
       environment: {...machine('a'), 'PATH': ''},
       project: app,
     );

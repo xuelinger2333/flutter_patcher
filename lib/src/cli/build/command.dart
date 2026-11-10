@@ -110,14 +110,8 @@ Future<int> buildCommand(ArgResults args) async {
       stderr.writeln(
         'WARNING: UNSIGNED: this host accepts patch files that are not '
         'signed, so whoever can hand the app a file can run code in it. To '
-        'sign, run `flutter_patcher keys init` and build again.',
-      );
-    }
-    if (config.urlIsLocal) {
-      stderr.writeln(
-        'WARNING: URL_LOCAL: this host looks for patches at ${config.url}, '
-        'where serve offers them while developing; set url in '
-        '${ProjectConfig.file} to your HTTPS address before going live.',
+        'sign, set trust.enabled to true in ${ProjectConfig.file} (run '
+        '`flutter_patcher init` first if it names no key) and build again.',
       );
     }
     // build archives a host's first baseline, so a new file store starts here.

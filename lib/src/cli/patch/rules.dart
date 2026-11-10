@@ -171,8 +171,9 @@ final patchRules = <PatchRule>[
     final first = sites.first as Map;
     return [
       'Patched code would run FFI in the interpreter (${first['message']} at '
-          '${first['file']}:${first['line']}). Keep FFI in unchanged host code, '
-          'which a patch may call, or ship a new host release.',
+          '${first['file']}:${first['line']}). Move FFI calls into a package the '
+          'host keeps, such as a plugin, which a patch may call, or ship a '
+          'new host release.',
     ];
   }, strategies: const {'bytecode'}),
   PatchRule(

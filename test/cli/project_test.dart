@@ -131,6 +131,8 @@ void main() {
       'trust:\n  root: ${keys['root']}\n',
       'trust:\n  patch: not-a-key\n',
       'trust:\n  patch: ${keys['patch']}\n  other: x\n',
+      'trust:\n  patch: ${keys['patch']}\n  enabled: maybe\n',
+      'trust:\n  enabled: true\n',
       'signing:\n  cmd: x\n',
     ]) {
       write(text);
@@ -145,7 +147,34 @@ void main() {
   });
 
   test('the patch key of a 1.0 project is read past its other keys', () async {
-    expect((await ProjectConfig.load(project.path)).patchKey, keys['patch']);
+    final config = await ProjectConfig.load(project.path);
+    expect(config.patchKey, keys['patch']);
+    // A key without trust.enabled signs, as such hosts always did.
+    expect([config.signingEnabled, config.hostKey], [true, keys['patch']]);
+  });
+
+  test('trust.enabled turns signing on and off', () async {
+    final file = File(p.join(project.path, ProjectConfig.file));
+    for (final (enabled, signed) in [('true', true), ('false', false)]) {
+      file.writeAsStringSync(
+        'trust:\n  patch: ${keys['patch']}\n  enabled: $enabled\n',
+      );
+      final config = await ProjectConfig.load(project.path);
+      expect(config.patchKey, keys['patch']);
+      expect(config.signingEnabled, signed);
+      expect(config.hostKey, signed ? keys['patch'] : null);
+    }
+  });
+
+  test('create writes the template only when there is no file', () async {
+    final file = File(p.join(project.path, ProjectConfig.file))..deleteSync();
+    final config = await ProjectConfig.load(project.path);
+    expect(await config.create(), true);
+    expect(file.readAsStringSync(), ProjectConfig.template);
+    expect((await ProjectConfig.load(project.path)).patchKey, isNull);
+    file.writeAsStringSync('store: file:///tmp/p\n');
+    expect(await config.create(), false);
+    expect(file.readAsStringSync(), 'store: file:///tmp/p\n');
   });
 
   test('a patch key is added to a file as written', () async {
@@ -159,6 +188,7 @@ void main() {
     );
     expect(config['store'], 'file:///tmp/p');
     expect(config.patchKey, keys['patch']);
+    expect(config.signingEnabled, false);
   });
 
   test('url defaults to serve and accepts only an http(s) address', () async {
