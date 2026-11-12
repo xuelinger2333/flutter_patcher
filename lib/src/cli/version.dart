@@ -1,5 +1,5 @@
 /// The package version; test/cli/version_test.dart keeps it equal to pubspec.yaml.
-const packageVersion = '1.1.0';
+const packageVersion = '1.1.1';
 
 /// The plugin version hosts compare patches against: [packageVersion]
 /// without its build suffix, since hosts read only major.minor.patch.

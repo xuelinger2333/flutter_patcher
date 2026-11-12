@@ -2,6 +2,81 @@
 
 [English](CHANGELOG.md) | **简体中文**
 
+## 1.1.1
+
+1.1.1 让 `build` 和 `patch` 接受编译期变量（`--dart-define`）。日常开发仍然使用 `flutter run` 和
+`flutter build`；只有构建宿主和生成补丁时才用到 flutter_patcher。
+
+### `build` 接受编译期变量和 `flutter build` 选项
+
+**新增** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- `build` 接受 `--dart-define`（`-D`）和 `--dart-define-from-file`（JSON 或 `.env`），合并方式与
+  `flutter build` 相同。变量名和值以明文保存在基线中。
+- `--` 之后的选项传给 `flutter build`，只接受不影响补丁的选项，例如 `--android-project-arg`；其他选项报
+  `BUILD_CONFIG_INVALID`。
+- `flutter build` 自己设置的变量（`FLUTTER_APP_FLAVOR`、`FLUTTER_BUILD_NAME`、`FLUTTER_BUILD_NUMBER`、
+  `FLUTTER_VERSION` 等）由 `build` 设置并保存在基线中，不能传入。
+
+文档：[编译期变量和 `flutter build` 选项](doc/cli-zh.md#编译期变量和-flutter-build-选项)
+
+### 补丁可以修改或新增编译期变量
+
+**新增** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- `patch` 接受 `--dart-define` 和 `--dart-define-from-file`：传入的变量是本补丁修改或新增的，没有传入的
+  变量是宿主构建时的值。不能删除变量。
+- 每个补丁都从宿主构建时的值出发，与之前的补丁无关。变量的改动是补丁的一部分，随补丁被撤回、回滚或
+  取代而失效。
+- 没有 Dart 源码读取传入的变量时报 `PATCH_DEFINE_UNREAD`。只改变量、不改源码也能生成补丁。
+- 报告中的 `defines` 列出修改和新增的变量名。
+
+文档：[patch](doc/cli-zh.md#patch)
+
+### 补丁沿用宿主的构建输入
+
+**变更** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- 之前：补丁编译时只有 `FLUTTER_APP_FLAVOR`；SO 策略的补丁重新构建时，`FLUTTER_BUILD_NAME` 取当前
+  `pubspec.yaml` 中的 `version`；`patch` 需要传入宿主的 `--target`。
+- 现在：入口文件、编译期变量、`flutter build` 自己设置的变量和 `--` 之后的选项都保存在基线中，两种
+  策略的补丁都用它们编译。`patch` 不需要 `--target`；传入的 `--target` 与宿主不同，或宿主构建时
+  `pubspec.yaml` 中没有 `version` 而现在有，报 `PATCH_BUILD_INPUTS_MISMATCH`。宿主和补丁都在关闭
+  Flutter 功能开关 `windowing` 和 `accessibility_evaluations` 的情况下构建。
+- 要保持之前的行为：1.1.1 中没有办法。用 1.1.0 构建的宿主没有保存这些输入，它们的补丁按 1.1.0 的方式
+  编译。
+
+文档：[patch](doc/cli-zh.md#patch)
+
+### `isAvailable`；`checkUpdate` 在不接收补丁的 App 中返回没有更新
+
+**变更** · 运行时 · 2026-11-12 · flutter_patcher 1.1.1
+
+- 之前：在用 `flutter run` 启动或用 `flutter build` 构建的 App 中，`checkUpdate` 抛出
+  `PatcherException`。
+- 现在：`checkUpdate` 返回没有更新，不发送请求。新增的 `FlutterPatcher.isAvailable` 说明本 App 能否接收
+  补丁。`patchTarget` 和 `inspectPatch` 仍然抛出异常。
+- 要保持之前的行为：先检查 `isAvailable`。
+
+文档：[isAvailable](doc/api-reference-zh.md#isavailable)
+
+### 字节码补丁中的 `fromEnvironment` 读到了未定义的值
+
+**修复** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- 之前：字节码补丁编译时没有任何编译期变量，补丁所含的库中直接调用的 `String.fromEnvironment`、
+  `bool.fromEnvironment` 和 `int.fromEnvironment` 得到默认值，包括 `dart.vm.product` 和
+  `FLUTTER_APP_FLAVOR`。通过 Flutter 框架读取的常量（如 `kReleaseMode`、`appFlavor`）不受影响。SO 策略
+  不受影响。
+- 现在：字节码补丁用宿主的变量编译。修复在新发布的编译工具中，1.1.1 为用 1.1.0 构建的宿主打补丁时也
+  使用它。
+
+### 1.1.1 中的其他变更
+
+**变更** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- 用 1.1.1 构建的宿主，其基线只能由 1.1.1 或更新版本读取；用 1.1.0 构建的宿主可以继续用 1.1.1 打补丁。
+
 ## 1.1.0
 
 1.1.0 让补丁变成一个文件。`patch` 为每个宿主写出一个文件，App 用任何方式拿到它并交给插件，插件校验后安装，

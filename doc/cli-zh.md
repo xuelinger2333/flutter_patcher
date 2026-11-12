@@ -139,6 +139,8 @@ dart run flutter_patcher init
 ```bash
 dart run flutter_patcher build android
 dart run flutter_patcher build ios       # 只能在 Apple Silicon Mac 上运行
+dart run flutter_patcher build android --dart-define=API_URL=https://api.example.com
+dart run flutter_patcher build android -- --android-project-arg=store=play
 ```
 
 | 选项 | 说明 | 默认值 |
@@ -153,6 +155,9 @@ dart run flutter_patcher build ios       # 只能在 Apple Silicon Mac 上运行
 | `--export-method <method>` | 仅 iOS，传给 `flutter build ipa`：`app-store`、`ad-hoc`、`development` 或 `enterprise` | `app-store` |
 | `--baseline-store <uri>` | 把基线保存到这里 | `flutter_patcher.yaml` 中的 `baseline_store` |
 | `--host-policy <file>` | 自己写的宿主策略；见[自定义宿主策略](advanced-zh.md#自定义宿主策略) | 根据项目生成 |
+| `--dart-define <KEY=VALUE>`、`-D` | 编译期变量，Dart 代码用 `String.fromEnvironment` 等读取；可重复 | 无 |
+| `--dart-define-from-file <file>` | 从 JSON 或 `.env` 文件读取编译期变量；可重复，后面的文件覆盖前面的，`--dart-define` 覆盖文件 | 无 |
+| `-- <options>` | `--` 之后的选项传给 `flutter build`；只接受[下面列出的选项](#编译期变量和-flutter-build-选项) | 无 |
 
 **输出**：输出目录中有 `app-release.apk` 或 `app-release.ipa`，以及完整报告 `build.json`。stdout 输出一行 JSON：
 
@@ -172,10 +177,20 @@ dart run flutter_patcher build ios       # 只能在 Apple Silicon Mac 上运行
 | `WARNING: UNSIGNED` | `flutter_patcher.yaml` 中没有补丁密钥，或 `trust.enabled` 为 `false` | 设置 `trust.enabled: true`（没有密钥时先运行 `init`），然后重新构建 |
 | `WARNING: BASELINE_STORE_LOCAL` | 基线只保存在项目的 `.flutter_patcher/baselines/` 中 | 设置 `baseline_store`，或传 `--baseline-store` |
 | `BASELINE_RELEASE_CONFLICT` | 相同的 flavor 和构建号之前构建过，且内容不同 | 提升构建号，因为一个版本只有一份基线；内容相同时沿用已有基线 |
-| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有构建号、application id 不唯一、选项无效，或 `--out` 已存在 | 按 `message` 指出的内容修正 |
+| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有构建号、application id 不唯一、选项无效、编译期变量或 `--` 之后的选项不被接受，或 `--out` 已存在 | 按 `message` 指出的内容修正 |
 | `HOST_UNSUPPORTED` | 在 Mac 以外的电脑上运行 `build ios` | 在 Apple Silicon Mac 上构建 |
 
 **非交互**：`build` 不会提问。宿主是否签名在这里由 `trust.enabled` 决定，已发布的宿主无法更改，所以在构建上线版本之前设置好。
+
+### 编译期变量和 `flutter build` 选项
+
+日常开发仍然使用 `flutter run` 和 `flutter build`。构建宿主时，把同样的 `--dart-define` 和 `--dart-define-from-file` 传给 `build`。
+
+- 变量名和值以明文保存在基线中，该宿主的每个补丁都用它们编译。
+- 以下变量由 `build` 按 `flutter build` 的方式设置，并保存在基线中：`FLUTTER_APP_FLAVOR`、`FLUTTER_BUILD_NAME`、`FLUTTER_BUILD_NUMBER`、`FLUTTER_VERSION`、`FLUTTER_CHANNEL`、`FLUTTER_GIT_URL`、`FLUTTER_FRAMEWORK_REVISION`、`FLUTTER_ENGINE_REVISION`、`FLUTTER_DART_VERSION`、`FLUTTER_ENABLED_FEATURE_FLAGS`。传入以这些名字或 `dart.` 开头的变量会报 `BUILD_CONFIG_INVALID`。
+- `FLUTTER_BUILD_NAME` 是 `pubspec.yaml` 中 `version` 的 `+` 之前的部分，`FLUTTER_BUILD_NUMBER` 是构建号，`FLUTTER_APP_FLAVOR` 是 `--flavor`。
+- 宿主和它的补丁都在关闭 Flutter 功能开关 `windowing` 和 `accessibility_evaluations` 的情况下构建，与 `flutter config` 中的设置无关。
+- `--` 之后只接受这些选项，其他选项报 `BUILD_CONFIG_INVALID`：`--android-project-arg <key=value>`（`-P`）、`--android-project-cache-dir <dir>`、`--[no-]android-gradle-daemon`、`--[no-]android-skip-build-dependency-validation`、`--performance-measurement-file <file>`、`--ignore-deprecation`、`--[no-]fatal-warnings`、`--verbose`（`-v`）。它们保存在基线中，SO 策略的补丁重新构建时也使用它们。
 
 ## patch
 
@@ -185,19 +200,29 @@ dart run flutter_patcher build ios       # 只能在 Apple Silicon Mac 上运行
 dart run flutter_patcher patch android
 dart run flutter_patcher patch ios                  # 可在任何受支持的电脑上运行
 dart run flutter_patcher patch android --withdraw
+dart run flutter_patcher patch android --dart-define=API_URL=https://api2.example.com
 ```
 
 | 选项 | 说明 | 默认值 |
 |---|---|---|
 | `--version-code <n>` | 要打补丁的版本 | `pubspec.yaml` 中 `version` 的 `+` 之后的数字 |
 | `--flavor <name>` | 该版本的 flavor | `default` |
-| `--withdraw` | 写出撤回文件：应用它的设备删除自己的补丁，从下次冷启动起运行安装包自带的版本。不能与 `--target` 或 `--assets` 同时使用（`USAGE_ERROR`） | 关闭 |
+| `--withdraw` | 写出撤回文件：应用它的设备删除自己的补丁，从下次冷启动起运行安装包自带的版本。不能与 `--target`、`--assets` 或编译期变量同时使用（`USAGE_ERROR`） | 关闭 |
 | `--assets <key>` | 只覆盖这些资源 key；可重复 | 所有改动过的资源 |
-| `--target <file>` | 入口文件；必须与 `build` 使用的相同 | `lib/main.dart` |
+| `--target <file>` | 入口文件；必须与 `build` 使用的相同 | 宿主的入口文件；用 1.1.1 之前的版本构建的宿主为 `lib/main.dart` |
+| `--dart-define <KEY=VALUE>`、`-D` | 本补丁修改或新增的编译期变量；可重复 | 宿主构建时的变量 |
+| `--dart-define-from-file <file>` | 同上，从 JSON 或 `.env` 文件读取 | 宿主构建时的变量 |
 | `--out <dir>` | 输出目录；必须不存在 | `.dart_tool/flutter_patcher/patches/<timestamp>/` |
 | `--baseline-store <uri>` | 从这里读取基线 | `flutter_patcher.yaml` 中的 `baseline_store` |
 
-策略、渠道和补丁密钥来自基线，所以 `patch` 没有对应的选项。
+策略、渠道和补丁密钥来自基线，所以 `patch` 没有对应的选项。`build` 自己设置的变量和 `--` 之后的选项也来自基线：`pubspec.yaml` 中的 `version` 改变之后，补丁中的 `FLUTTER_BUILD_NAME` 仍是宿主构建时的值。`patch` 不接受 `--`。
+
+编译期变量在补丁中的规则：
+
+- 传入的变量是本补丁修改或新增的；没有传入的变量是宿主构建时的值。不能删除变量。
+- 每个补丁都从宿主构建时的值出发，与之前的补丁无关：要保留上一个补丁改过的值，再传一次。
+- 变量的改动是补丁的一部分：补丁被撤回、被 `rollback` 删除或被另一个补丁取代之后，它改动的值随之失效。
+- 必须有 Dart 源码用 `fromEnvironment` 或 `hasEnvironment` 读取传入的变量，否则报 `PATCH_DEFINE_UNREAD`。只改变量、不改源码也能生成补丁。
 
 **输出**：输出目录中有 `patch.json`（报告）、`patch.draft`（封装之前的补丁；`--withdraw` 时没有）和补丁文件，命名规则见[补丁文件](#补丁文件)。stdout 输出一行 JSON：
 
@@ -211,6 +236,7 @@ dart run flutter_patcher patch android --withdraw
 | `patch_key` | 宿主的补丁公钥；不签名宿主为 `-` |
 | `platform`、`abi`、`strategy`、`fingerprint`、`scope` | 文件所属的宿主 |
 | `changed`、`warnings` | 仅补丁：改动了什么，以及需要留意什么 |
+| `defines` | 仅当补丁修改或新增了编译期变量：`changed` 和 `added` 列出变量名 |
 
 **退出码**：`0` 已写出文件，或已写出草稿且 `"file":null`；`2` 失败，stderr 输出 JSON 错误。
 
@@ -219,6 +245,8 @@ dart run flutter_patcher patch android --withdraw
 | `BASELINE_NOT_FOUND` | 这个 flavor 和构建号没有基线 | 传入线上版本的 `--version-code` 和 `--flavor`，并让 `baseline_store` 指向 `build` 使用的存储 |
 | `PATCH_NO_CHANGES` | 与基线相比没有任何改动 | 保存你的修改；确认目标版本 |
 | `PATCH_NATIVE_CHANGE` 等拒绝改动的错误码 | 补丁无法携带这处改动；见[能更新什么](architecture-zh.md#能更新什么) | 还原这部分改动，或发布商店版本 |
+| `PATCH_BUILD_INPUTS_MISMATCH` | `--target` 不是宿主的入口文件，或宿主构建时 `pubspec.yaml` 中没有 `version` 而现在有 | 去掉 `--target`；去掉 `version`，或发布新的宿主 |
+| `PATCH_DEFINE_UNREAD` | 没有 Dart 源码读取传入的编译期变量 | 检查变量名 |
 | `PATCH_BASELINE_INCOMPATIBLE` | 宿主是用 flutter_patcher 1.0 或另一个 Flutter 版本构建的 | 1.0 的宿主用 flutter_patcher 1.0.0+1 打补丁；用 `--flutter-sdk` 指定该版本的 Flutter |
 | `WARNING: PATCH_NATIVE_ASSET_READER`、`PATCH_BACKGROUND_ENTRY`、`PATCH_RESOURCE_SIZE` | 补丁已生成，但其中一部分不是在所有地方都生效 | 阅读警告内容；见[错误码与排障](troubleshooting-zh.md) |
 

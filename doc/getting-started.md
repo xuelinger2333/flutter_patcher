@@ -51,6 +51,8 @@ Future<void> checkForPatch() async {
 }
 ```
 
+An app started with `flutter run` takes no patches and `checkUpdate` reports no update there, so this code stays as it is during development.
+
 ## Step 2: Build and install
 
 ```bash

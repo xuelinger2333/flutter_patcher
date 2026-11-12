@@ -15,6 +15,7 @@ import 'package:flutter_patcher/flutter_patcher.dart';
 | 成员 | 说明 |
 |---|---|
 | [`init`](#init) | 配置崩溃保护，在 `runApp()` 之前调用 |
+| [`isAvailable`](#isavailable) | 本 App 能否接收补丁 |
 | [`checkUpdate`](#checkupdate) | 检查某个 URL 上是否有本宿主更新的补丁文件 |
 | [`applyPatch`](#applypatch) | 下载并安装 `checkUpdate` 找到的文件 |
 | [`patchTarget`](#patchtarget) | 本宿主的标识，自定义下发时发给服务端 |
@@ -30,7 +31,7 @@ import 'package:flutter_patcher/flutter_patcher.dart';
 | [`rollback`](#rollback) | 删除本机已安装的补丁 |
 | [`clearBlacklist`](#clearblacklist) | 清空本机的黑名单 |
 
-`patchTarget`、`inspectPatch`、`applyPatchBytes` 和 `applyPatchFile` 需要 flutter_patcher 1.1.0 或更新版本。用 flutter_patcher 1.0.0 构建的宿主用 flutter_patcher 1.0.0+1 打补丁，见[从 1.0 升级](upgrading-zh.md)。
+`patchTarget`、`inspectPatch`、`applyPatchBytes` 和 `applyPatchFile` 需要 flutter_patcher 1.1.0 或更新版本，`isAvailable` 需要 1.1.1 或更新版本。用 flutter_patcher 1.0.0 构建的宿主用 flutter_patcher 1.0.0+1 打补丁，见[从 1.0 升级](upgrading-zh.md)。
 
 ## 方法与属性
 
@@ -60,6 +61,16 @@ static Future<void> init({
 
 **异常**：无。
 
+### `isAvailable`
+
+```dart
+static Future<bool> get isAvailable
+```
+
+本 App 能否接收补丁：运行在 Android 或 iOS 上，并且是用 `dart run flutter_patcher build` 构建的。用 `flutter run` 启动或用 `flutter build` 构建的 App 返回 `false`。
+
+**异常**：无。
+
 ### `checkUpdate`
 
 ```dart
@@ -82,11 +93,12 @@ static Future<PatchCheckResult> checkUpdate({
 
 - 发送带 `Range: bytes=0-145` 的 `GET <url>/<fileName>`，其中 `<fileName>` 是 [`patchTarget.fileName`](#patchtarget)，读取前 146 字节，并按 [`inspectPatch`](#inspectpatch) 的规则判断。
 - 只有文件是 `fresh` 时 `hasUpdate` 才为 `true`：本宿主更新的补丁，或更新的撤回。
+- [`isAvailable`](#isavailable) 为 `false` 时不发送请求，返回没有更新。
 - `404` 表示没有更新。`200`、`206`、`404` 以外的状态码都会抛出异常，所以服务器对不存在的文件必须返回 `404`；完整要求见 [CLI 参考：下载服务器](cli-zh.md#下载服务器)。
 - 地址必须是 HTTPS，因为不签名宿主会安装本构建的任何完整文件，在传输中被替换的文件就会在 App 中运行。只有指向设备本机的 `http://127.0.0.1`、`http://[::1]`、`http://localhost` 允许 HTTP，`serve` 通过 `adb reverse` 从这里被访问。
 - 不跟随重定向，地址中也不能包含用户名、密码或 `#` 片段，所以响应无法把下载引向别处。
 
-**异常**：以下情况抛出 [`PatcherException`](#patcherexception)：App 不是用 flutter_patcher 构建；没有传入 `url` 且 App 中没有地址；请求失败，包括响应不足 146 字节。
+**异常**：以下情况抛出 [`PatcherException`](#patcherexception)：没有传入 `url` 且 App 中没有地址；请求失败，包括响应不足 146 字节。
 
 ### `applyPatch`
 
@@ -440,6 +452,7 @@ switch (result.error) {
 | 接口 | 在其他平台上 |
 |---|---|
 | `init`、`rollback`、`clearBlacklist` | 什么都不做 |
+| `isAvailable` | `false` |
 | `checkUpdate` | 返回没有更新 |
 | `applyPatch`、`applyPatchBytes`、`applyPatchFile` | 返回 `unknown` |
 | `patchTarget`、`inspectPatch` | 抛出 `PatcherException` |
@@ -448,4 +461,4 @@ switch (result.error) {
 | `deviceAbi` | `''` |
 | `blacklist` | 空列表 |
 
-在 Android 和 iOS 上，不是用 `dart run flutter_patcher build` 构建的 App 不接收补丁，所以 `checkUpdate`、`patchTarget` 和 `inspectPatch` 抛出 `PatcherException`，`applyPatch`、`applyPatchBytes` 和 `applyPatchFile` 返回 `unknown`。
+在 Android 和 iOS 上，不是用 `dart run flutter_patcher build` 构建的 App 不接收补丁：`isAvailable` 为 `false`，`checkUpdate` 返回没有更新，`patchTarget` 和 `inspectPatch` 抛出 `PatcherException`，`applyPatch`、`applyPatchBytes` 和 `applyPatchFile` 返回 `unknown`。

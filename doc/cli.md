@@ -139,6 +139,8 @@ Builds the release app, a host, and saves its baseline to the baseline store. `b
 ```bash
 dart run flutter_patcher build android
 dart run flutter_patcher build ios       # Apple Silicon Mac only
+dart run flutter_patcher build android --dart-define=API_URL=https://api.example.com
+dart run flutter_patcher build android -- --android-project-arg=store=play
 ```
 
 | Option | Description | Default |
@@ -153,6 +155,9 @@ dart run flutter_patcher build ios       # Apple Silicon Mac only
 | `--export-method <method>` | iOS only, passed to `flutter build ipa`: `app-store`, `ad-hoc`, `development` or `enterprise` | `app-store` |
 | `--baseline-store <uri>` | Saves the baseline here | `baseline_store` in `flutter_patcher.yaml` |
 | `--host-policy <file>` | A host policy you wrote; see [Custom Host Policy](advanced.md#custom-host-policy) | Derived from the project |
+| `--dart-define <KEY=VALUE>`, `-D` | A define, read in Dart with `String.fromEnvironment` and the like; repeatable | None |
+| `--dart-define-from-file <file>` | Defines from a JSON or `.env` file; repeatable, a later file wins over an earlier one and `--dart-define` wins over files | None |
+| `-- <options>` | Options after `--` are passed to `flutter build`; only [those listed below](#defines-and-flutter-build-options) | None |
 
 **Output**: the output directory holds `app-release.apk` or `app-release.ipa` and the full report, `build.json`. stdout holds one JSON line:
 
@@ -172,10 +177,20 @@ dart run flutter_patcher build ios       # Apple Silicon Mac only
 | `WARNING: UNSIGNED` | `flutter_patcher.yaml` names no patch key, or `trust.enabled` is `false` | Set `trust.enabled: true` (run `init` first if there is no key), then build again |
 | `WARNING: BASELINE_STORE_LOCAL` | The baseline is kept only in the project's `.flutter_patcher/baselines/` | Set `baseline_store`, or pass `--baseline-store` |
 | `BASELINE_RELEASE_CONFLICT` | The same flavor and build number was built before with different content | Raise the build number, because a release has one baseline; identical content reuses the existing baseline |
-| `BUILD_CONFIG_INVALID` | No build number in `pubspec.yaml`, no single application id, an invalid option, or `--out` exists | Correct what `message` names |
+| `BUILD_CONFIG_INVALID` | No build number in `pubspec.yaml`, no single application id, an invalid option, a define or an option after `--` that is not accepted, or `--out` exists | Correct what `message` names |
 | `HOST_UNSUPPORTED` | `build ios` on a computer other than a Mac | Build on an Apple Silicon Mac |
 
 **Non-interactive**: `build` never prompts. Signing is decided here from `trust.enabled` and cannot be changed for a released host, so set it before the build you ship.
+
+### Defines and `flutter build` options
+
+Daily development keeps using `flutter run` and `flutter build`. When you build a host, pass `build` the same `--dart-define` and `--dart-define-from-file`.
+
+- Names and values are kept in the baseline as plain text, and every patch of the host is compiled with them.
+- `build` sets these defines as `flutter build` does and keeps them in the baseline: `FLUTTER_APP_FLAVOR`, `FLUTTER_BUILD_NAME`, `FLUTTER_BUILD_NUMBER`, `FLUTTER_VERSION`, `FLUTTER_CHANNEL`, `FLUTTER_GIT_URL`, `FLUTTER_FRAMEWORK_REVISION`, `FLUTTER_ENGINE_REVISION`, `FLUTTER_DART_VERSION`, `FLUTTER_ENABLED_FEATURE_FLAGS`. A define whose name starts with one of them or with `dart.` is refused with `BUILD_CONFIG_INVALID`.
+- `FLUTTER_BUILD_NAME` is `version` in `pubspec.yaml` before `+`, `FLUTTER_BUILD_NUMBER` is the build number and `FLUTTER_APP_FLAVOR` is `--flavor`.
+- A host and its patches are built with the Flutter feature flags `windowing` and `accessibility_evaluations` off, whatever `flutter config` says.
+- Only these options are accepted after `--`; any other is refused with `BUILD_CONFIG_INVALID`: `--android-project-arg <key=value>` (`-P`), `--android-project-cache-dir <dir>`, `--[no-]android-gradle-daemon`, `--[no-]android-skip-build-dependency-validation`, `--performance-measurement-file <file>`, `--ignore-deprecation`, `--[no-]fatal-warnings`, `--verbose` (`-v`). They are kept in the baseline, and an SO patch is rebuilt with them.
 
 ## patch
 
@@ -185,19 +200,29 @@ Compares the current source with a released build's baseline and writes the host
 dart run flutter_patcher patch android
 dart run flutter_patcher patch ios                  # On any supported computer
 dart run flutter_patcher patch android --withdraw
+dart run flutter_patcher patch android --dart-define=API_URL=https://api2.example.com
 ```
 
 | Option | Description | Default |
 |---|---|---|
 | `--version-code <n>` | The release to patch | The number after `+` in `version` in `pubspec.yaml` |
 | `--flavor <name>` | The release's flavor | `default` |
-| `--withdraw` | Writes a withdrawal file: devices that apply it delete their patch and run the installed version from the next cold start. It cannot be combined with `--target` or `--assets` (`USAGE_ERROR`) | Off |
+| `--withdraw` | Writes a withdrawal file: devices that apply it delete their patch and run the installed version from the next cold start. It cannot be combined with `--target`, `--assets` or defines (`USAGE_ERROR`) | Off |
 | `--assets <key>` | Overrides only these asset keys; repeatable | Every changed asset |
-| `--target <file>` | Entry file; it must be the one `build` used | `lib/main.dart` |
+| `--target <file>` | Entry file; it must be the one `build` used | The host's entry file; `lib/main.dart` for a host built before 1.1.1 |
+| `--dart-define <KEY=VALUE>`, `-D` | A define this patch changes or adds; repeatable | The host's defines |
+| `--dart-define-from-file <file>` | The same, from a JSON or `.env` file | The host's defines |
 | `--out <dir>` | Output directory; it must not exist | `.dart_tool/flutter_patcher/patches/<timestamp>/` |
 | `--baseline-store <uri>` | Reads the baseline here | `baseline_store` in `flutter_patcher.yaml` |
 
-Strategy, channel and patch key come from the baseline, so `patch` has no options for them.
+Strategy, channel and patch key come from the baseline, so `patch` has no options for them. The defines `build` sets itself and the options after `--` come from the baseline too: after `version` in `pubspec.yaml` changes, `FLUTTER_BUILD_NAME` in a patch is still the host's. `patch` takes no `--`.
+
+Defines in a patch:
+
+- A define you pass is one this patch changes or adds; every define you do not pass has the value the host was built with. A define cannot be removed.
+- Every patch starts from the host's values, whatever earlier patches passed: to keep a value an earlier patch changed, pass it again.
+- A changed define is part of its patch: when the patch is withdrawn, deleted by `rollback` or replaced by another patch, its values go with it.
+- Dart source must read a define you pass with `fromEnvironment` or `hasEnvironment`, or `patch` fails with `PATCH_DEFINE_UNREAD`. A patch can change defines and no source.
 
 **Output**: the output directory holds `patch.json` (the report), `patch.draft` (the patch before sealing; not with `--withdraw`) and the patch file, named as in [Patch files](#patch-files). stdout holds one JSON line:
 
@@ -211,6 +236,7 @@ Strategy, channel and patch key come from the baseline, so `patch` has no option
 | `patch_key` | The host's patch public key, or `-` for an unsigned host |
 | `platform`, `abi`, `strategy`, `fingerprint`, `scope` | The host the file is for |
 | `changed`, `warnings` | For a patch: what changed, and what to review |
+| `defines` | Only when the patch changes or adds defines: their names, in `changed` and `added` |
 
 **Exit codes**: `0` file written, or draft written with `"file":null`; `2` failed, with the JSON error on stderr.
 
@@ -219,6 +245,8 @@ Strategy, channel and patch key come from the baseline, so `patch` has no option
 | `BASELINE_NOT_FOUND` | No baseline for this flavor and build number | Pass the live release's `--version-code` and `--flavor`, and point `baseline_store` at the store `build` used |
 | `PATCH_NO_CHANGES` | Nothing differs from the baseline | Save your edits; check the release you target |
 | `PATCH_NATIVE_CHANGE` and other rejected changes | The change cannot be carried by a patch; see [What can be patched](architecture.md#what-can-be-patched) | Revert that part, or ship a store release |
+| `PATCH_BUILD_INPUTS_MISMATCH` | `--target` is not the host's entry file, or `pubspec.yaml` has a `version` and had none when the host was built | Drop `--target`; remove `version`, or release a new host |
+| `PATCH_DEFINE_UNREAD` | No Dart source reads a define you passed | Check its name |
 | `PATCH_BASELINE_INCOMPATIBLE` | The host was built with flutter_patcher 1.0 or with another Flutter version | Patch 1.0 hosts with flutter_patcher 1.0.0+1; select the release's Flutter with `--flutter-sdk` |
 | `WARNING: PATCH_NATIVE_ASSET_READER`, `PATCH_BACKGROUND_ENTRY`, `PATCH_RESOURCE_SIZE` | The patch is made, and part of it does not take effect everywhere | Read the warning; see [Troubleshooting](troubleshooting.md) |
 

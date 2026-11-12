@@ -15,6 +15,7 @@ import 'package:flutter_patcher/flutter_patcher.dart';
 | Member | Description |
 |---|---|
 | [`init`](#init) | Configures crash protection; call it before `runApp()` |
+| [`isAvailable`](#isavailable) | Whether this app can take patches |
 | [`checkUpdate`](#checkupdate) | Checks a URL for a newer patch file for this host |
 | [`applyPatch`](#applypatch) | Downloads and installs the file `checkUpdate` found |
 | [`patchTarget`](#patchtarget) | Identifies this host, for the server in custom delivery |
@@ -30,7 +31,7 @@ import 'package:flutter_patcher/flutter_patcher.dart';
 | [`rollback`](#rollback) | Deletes the installed patch on this device |
 | [`clearBlacklist`](#clearblacklist) | Empties this device's blacklist |
 
-`patchTarget`, `inspectPatch`, `applyPatchBytes` and `applyPatchFile` need flutter_patcher 1.1.0 or newer. Hosts built with flutter_patcher 1.0.0 are patched with flutter_patcher 1.0.0+1; see [Upgrading from 1.0](upgrading.md).
+`patchTarget`, `inspectPatch`, `applyPatchBytes` and `applyPatchFile` need flutter_patcher 1.1.0 or newer, and `isAvailable` needs 1.1.1 or newer. Hosts built with flutter_patcher 1.0.0 are patched with flutter_patcher 1.0.0+1; see [Upgrading from 1.0](upgrading.md).
 
 ## Methods and properties
 
@@ -60,6 +61,16 @@ Configures crash protection.
 
 **Throws**: nothing.
 
+### `isAvailable`
+
+```dart
+static Future<bool> get isAvailable
+```
+
+Whether this app can take patches: it runs on Android or iOS and was built with `dart run flutter_patcher build`. It is `false` in an app started with `flutter run` or built with `flutter build`.
+
+**Throws**: never.
+
 ### `checkUpdate`
 
 ```dart
@@ -82,11 +93,12 @@ Checks `url` for a newer patch file for this host.
 
 - Requests `GET <url>/<fileName>` with `Range: bytes=0-145`, where `<fileName>` is [`patchTarget.fileName`](#patchtarget), reads the first 146 bytes and judges them as [`inspectPatch`](#inspectpatch) does.
 - `hasUpdate` is `true` only when the file is `fresh`: a newer patch or a newer withdrawal for this host.
+- When [`isAvailable`](#isavailable) is `false`, no request is sent and there is no update.
 - `404` means no update. Any status other than `200`, `206` or `404` throws, so the server must answer `404` for a missing file; the full requirements are in [CLI Reference: Download server](cli.md#download-server).
 - The address must be HTTPS, because an unsigned host installs any intact file of its build and a file replaced in transit would run in the app. Plain HTTP is accepted only to the device itself, `http://127.0.0.1`, `http://[::1]` or `http://localhost`, where `serve` is reached through `adb reverse`.
 - Redirects are not followed and the address must not contain a user name, a password or a `#` fragment, so a response cannot send the download elsewhere.
 
-**Throws**: [`PatcherException`](#patcherexception) when the app was not built with flutter_patcher, when no `url` is given and the app has none, and when the request fails, including a response shorter than 146 bytes.
+**Throws**: [`PatcherException`](#patcherexception) when no `url` is given and the app has none, and when the request fails, including a response shorter than 146 bytes.
 
 ### `applyPatch`
 
@@ -440,6 +452,7 @@ The plugin works only on Android and iOS. On any other platform every call does 
 | API | On other platforms |
 |---|---|
 | `init`, `rollback`, `clearBlacklist` | Does nothing |
+| `isAvailable` | `false` |
 | `checkUpdate` | Reports no update |
 | `applyPatch`, `applyPatchBytes`, `applyPatchFile` | Returns `unknown` |
 | `patchTarget`, `inspectPatch` | Throws `PatcherException` |
@@ -448,4 +461,4 @@ The plugin works only on Android and iOS. On any other platform every call does 
 | `deviceAbi` | `''` |
 | `blacklist` | An empty list |
 
-On Android and iOS, an app not built with `dart run flutter_patcher build` accepts no patches, so `checkUpdate`, `patchTarget` and `inspectPatch` throw `PatcherException`, and `applyPatch`, `applyPatchBytes` and `applyPatchFile` return `unknown`.
+On Android and iOS, an app not built with `dart run flutter_patcher build` accepts no patches: `isAvailable` is `false`, `checkUpdate` reports no update, `patchTarget` and `inspectPatch` throw `PatcherException`, and `applyPatch`, `applyPatchBytes` and `applyPatchFile` return `unknown`.

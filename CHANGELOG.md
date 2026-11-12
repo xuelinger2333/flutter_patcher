@@ -1,5 +1,96 @@
 > Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
 
+## 1.1.1
+
+1.1.1 lets `build` and `patch` take defines (`--dart-define`). Daily
+development keeps using `flutter run` and `flutter build`; flutter_patcher
+comes in only to build a host and to make a patch.
+
+### `build` takes defines and `flutter build` options
+
+**Added** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- `build` takes `--dart-define` (`-D`) and `--dart-define-from-file` (JSON or
+  `.env`) and merges them as `flutter build` does. Names and values are kept
+  in the baseline as plain text.
+- Options after `--` are passed to `flutter build`. Only options that do not
+  affect patches are accepted, such as `--android-project-arg`; any other is
+  refused with `BUILD_CONFIG_INVALID`.
+- The defines `flutter build` sets itself (`FLUTTER_APP_FLAVOR`,
+  `FLUTTER_BUILD_NAME`, `FLUTTER_BUILD_NUMBER`, `FLUTTER_VERSION` and others)
+  are set by `build` and kept in the baseline; they cannot be passed.
+
+Docs: [Defines and `flutter build` options](doc/cli.md#defines-and-flutter-build-options)
+
+### A patch can change or add defines
+
+**Added** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- `patch` takes `--dart-define` and `--dart-define-from-file`: a define you
+  pass is one this patch changes or adds, and every other define has the
+  value the host was built with. A define cannot be removed.
+- Every patch starts from the host's values, whatever earlier patches passed.
+  A changed define is part of its patch and goes with it when the patch is
+  withdrawn, rolled back or replaced.
+- `patch` fails with `PATCH_DEFINE_UNREAD` when no Dart source reads a define
+  you pass. A patch can change defines and no source.
+- `defines` in the report names the defines changed and added.
+
+Docs: [patch](doc/cli.md#patch)
+
+### A patch is built from its host's build inputs
+
+**Changed** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- Before: a patch was compiled with `FLUTTER_APP_FLAVOR` alone; an SO patch
+  was rebuilt with `FLUTTER_BUILD_NAME` from the current `version` in
+  `pubspec.yaml`; `patch` needed the host's `--target`.
+- Now: the entry file, the defines, the defines `flutter build` sets itself
+  and the options after `--` are kept in the baseline, and patches of both
+  strategies are compiled with them. `patch` needs no `--target`; a
+  `--target` other than the host's, or a `version` in `pubspec.yaml` when the
+  host was built without one, fails with `PATCH_BUILD_INPUTS_MISMATCH`. Hosts
+  and patches are built with the Flutter feature flags `windowing` and
+  `accessibility_evaluations` off.
+- To keep the previous behavior: not possible in 1.1.1. Hosts built with
+  1.1.0 have no recorded inputs, and their patches are compiled as in 1.1.0.
+
+Docs: [patch](doc/cli.md#patch)
+
+### `isAvailable`; `checkUpdate` reports no update in an app that takes no patches
+
+**Changed** · Runtime · 2026-11-12 · flutter_patcher 1.1.1
+
+- Before: in an app started with `flutter run` or built with `flutter build`,
+  `checkUpdate` threw `PatcherException`.
+- Now: `checkUpdate` reports no update and sends no request. The new
+  `FlutterPatcher.isAvailable` tells whether this app can take patches.
+  `patchTarget` and `inspectPatch` still throw.
+- To keep the previous behavior: check `isAvailable` first.
+
+Docs: [isAvailable](doc/api-reference.md#isavailable)
+
+### `fromEnvironment` read no define in a bytecode patch
+
+**Fixed** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- Before: a bytecode patch was compiled with no defines at all, so
+  `String.fromEnvironment`, `bool.fromEnvironment` and `int.fromEnvironment`
+  called directly in the libraries a patch carries gave their defaults,
+  `dart.vm.product` and `FLUTTER_APP_FLAVOR` included. Constants read through
+  the Flutter framework, such as `kReleaseMode` and `appFlavor`, were not
+  affected, and neither were SO patches.
+- Now: a bytecode patch is compiled with its host's defines. The fix is in
+  newly published compiler tools, which 1.1.1 also uses to patch hosts built
+  with 1.1.0.
+
+### Other changes in 1.1.1
+
+**Changed** · CLI · 2026-11-12 · flutter_patcher 1.1.1
+
+- The baseline of a host built with 1.1.1 is read only by 1.1.1 or newer;
+  hosts built with 1.1.0 keep being patched with 1.1.1.
+
 ## 1.1.0
 
 1.1.0 makes a patch one file. `patch` writes one file per host, the app gets

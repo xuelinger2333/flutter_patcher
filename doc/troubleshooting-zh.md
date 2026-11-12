@@ -314,7 +314,7 @@ WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every p
 
 | 错误码 | 出现条件 | 处理方法 |
 |---|---|---|
-| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有 `+` 构建号、application id 不唯一、`--host-policy` 文件无效、`--flavor` 或 `--version-code` 与该策略不一致，或输出目录已存在 | 按 `message` 指出的内容修正，例如 `version: 1.0.0+1`、`--application-id`、新的 `--out` |
+| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有 `+` 构建号、application id 不唯一、`--host-policy` 文件无效、`--flavor` 或 `--version-code` 与该策略不一致、编译期变量或 `--` 之后的选项不被接受，或输出目录已存在 | 按 `message` 指出的内容修正，例如 `version: 1.0.0+1`、`--application-id`、新的 `--out` |
 | `BUILD_PROJECT_INVALID` | 不支持的项目结构，例如源码包中有符号链接 | 按 `message` 的说明调整项目 |
 | `BUILD_BOOTSTRAP_UNAVAILABLE` | 项目没有依赖 `flutter_patcher` | 运行 `flutter pub add flutter_patcher` |
 | `BUILD_INPUT_CHANGED` | 构建过程中源文件发生了变化 | 重新构建，期间不要修改文件 |
@@ -368,6 +368,8 @@ WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every p
 |---|---|---|
 | `PATCH_BASELINE_INCOMPATIBLE` | 当前的 flutter_patcher 或 Flutter 版本不能为该宿主打补丁 | 见 [`PATCH_BASELINE_INCOMPATIBLE`](#patch_baseline_incompatible) |
 | `PATCH_TARGET_MISMATCH` | 入口文件与宿主的不同 | 传入 `build` 时使用的 `--target` |
+| `PATCH_BUILD_INPUTS_MISMATCH` | `--target` 不是宿主的入口文件，或宿主构建时 `pubspec.yaml` 中没有 `version` 而现在有 | 去掉 `--target`；去掉 `version`，或发布新的宿主 |
+| `PATCH_DEFINE_UNREAD` | 没有 Dart 源码用 `fromEnvironment` 或 `hasEnvironment` 读取 `patch` 传入的编译期变量 | 检查变量名 |
 | `PATCH_DRAFT_INVALID` | 输出目录中没有有效的 `patch.draft` | 传入当前版本 `patch` 的输出，或重新运行 `patch` |
 | `PATCH_CONFIG_INVALID` | 选项无效，或输出目录已存在 | 按 `message` 指出的内容修正 |
 | `PATCH_COMPILE_FAILED` | Dart 编译失败 | 先确认 `flutter build` 能成功 |
