@@ -5,7 +5,6 @@ import 'package:yaml/yaml.dart';
 
 import '../core.dart';
 import '../baseline/manifest.dart';
-import '../build/defines.dart';
 import '../build/pins.dart';
 import '../build/virtual_paths.dart';
 import 'hooks.dart';
@@ -93,13 +92,23 @@ class BytecodeProducer implements CodeProducer {
         if (name != app) dependencyChanged = true;
       }
     }
+    // A changed define changes every library that reads it, as an edit
+    // of that library would.
+    for (final reader in facts.defineReaders.values.expand((r) => r)) {
+      final name = Uri.parse(reader).pathSegments.first;
+      if (changed.contains(reader) || !hashes.containsKey(reader)) {
+        continue;
+      }
+      changed.add(reader);
+      if (name != app) dependencyChanged = true;
+    }
     // The generated host.dart imports the host's entry file: a different
     // --target is a mistake, not a dependency change for the whole tier to
     // carry (it would ship the other entry's main).
     require(
       !changed.contains('package:dynamic_modules/host.dart'),
       'PATCH_TARGET_MISMATCH',
-      'The host was built from a different entry file than ${run.req.target}; '
+      'The host was built from a different entry file than ${run.target}; '
           'patch with the --target the host was built with.',
     );
     // Libraries the host never compiled are new only if they changed since
@@ -217,7 +226,7 @@ class BytecodeProducer implements CodeProducer {
     await File(p.join(m.dir, run.app, '__patch_entry.dart')).writeAsString(
       patchEntry(
         names[run.app]!,
-        req.target.substring(4),
+        run.target.substring(4),
         req.moduleId,
         run.resolved.fingerprint,
         tier,
@@ -238,7 +247,7 @@ class BytecodeProducer implements CodeProducer {
       // Lets the whole tier drop Flutter's code for other platforms.
       'target_os': req.platform,
       if (usage.contains('environment_defines'))
-        'environment_defines': releaseDefines(req.flavor),
+        'environment_defines': run.inputs.compileDefines,
       'emit': emit,
       // Tools call this module identity 'seq'; it is not patch_seq.
       'seq': req.moduleId,
@@ -300,25 +309,32 @@ class BytecodeProducer implements CodeProducer {
     await _module(tier);
     run.phase = 'resources';
     final bundle = p.join(work, 'flutter_assets');
+    final options = await run.inputs.flutterOptions(run.project, bundle: true);
     // The bundle build compiles the whole app once more just for assets.
     // Meanwhile the module compiles: assets never change it. The compile
     // emits right away (the tool emits only when every check passes).
     final bundling = withoutBuildHooks(
       run.config,
       p.join(work, 'no-hooks'),
-      () => _p.commands.run(sdk.host.flutterLauncher(_p.managed), [
-        '--suppress-analytics',
-        'build',
-        'bundle',
-        '--release',
-        '--no-pub',
-        '--target-platform',
-        req.platform == 'ios' ? 'ios' : 'android-arm64',
-        '--target',
-        req.target,
-        '--asset-dir',
-        bundle,
-      ], cwd: run.project),
+      () => _p.commands.run(
+        sdk.host.flutterLauncher(_p.managed),
+        [
+          '--suppress-analytics',
+          'build',
+          'bundle',
+          '--release',
+          '--no-pub',
+          '--target-platform',
+          req.platform == 'ios' ? 'ios' : 'android-arm64',
+          '--target',
+          run.target,
+          ...options,
+          '--asset-dir',
+          bundle,
+        ],
+        cwd: run.project,
+        extraEnvironment: run.inputs.flutterEnvironment,
+      ),
     );
     final compiling = _compile(true);
     try {

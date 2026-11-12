@@ -70,7 +70,7 @@ class LibappProducer implements CodeProducer {
       project: run.project,
       output: p.join(work, 'unused'),
       publicKey: receipt['public_key'] as String,
-      target: req.target,
+      target: run.target,
       flavor: req.flavor == 'default' ? null : req.flavor,
       versionCode: req.minBuild.toString(),
       hostPolicy: policy,
@@ -88,7 +88,7 @@ class LibappProducer implements CodeProducer {
       run.project,
       bootstrapSource(
         run.app,
-        req.target.substring(4),
+        run.target.substring(4),
         fingerprint,
         receipt['public_key'] as String,
         modules: false,
@@ -100,6 +100,7 @@ class LibappProducer implements CodeProducer {
       request,
       target,
       const [],
+      run.inputs,
     );
     run.phase = 'verify-apk';
     final info = await builder.verifyApk(apk, host, request, trust);

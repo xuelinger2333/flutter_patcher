@@ -8,6 +8,7 @@ import '../core.dart';
 import '../run_work.dart';
 import '../baseline/manifest.dart';
 import '../baseline/repository.dart';
+import '../build/defines.dart';
 import '../build/host_policy.dart';
 import '../build/runtime_package.dart';
 import '../build/workspace.dart';
@@ -27,7 +28,13 @@ class PatchFailure extends Failure {
 }
 
 class PatchRequest {
-  final String project, output, target, flavor;
+  final String project, output, flavor;
+
+  /// The entry the patch was asked for; the host's when null.
+  final String? target;
+
+  /// The defines the patch changes or adds.
+  final Map<String, String> defines;
 
   /// `android` or `ios`; must match the release's host policy.
   final String platform;
@@ -48,7 +55,8 @@ class PatchRequest {
     required this.moduleId,
     required this.minBuild,
     this.assets = const [],
-    this.target = 'lib/main.dart',
+    this.target,
+    this.defines = const {},
     this.platform = 'android',
     this.offline = false,
   });
@@ -61,14 +69,6 @@ class PatchRequest {
           minBuild > 0,
       'PATCH_CONFIG_INVALID',
       'Invalid fingerprint, flavor, build number or module identity',
-    );
-    require(
-      target.startsWith('lib/') &&
-          !target.split('/').contains('..') &&
-          !target.contains('\\') &&
-          await File(p.join(project, target)).exists(),
-      'PATCH_CONFIG_INVALID',
-      'Select an existing lib/ entry',
     );
     await rejectLinks(output);
     require(
@@ -202,6 +202,12 @@ class PatchRun {
 
   /// The build copy of the project, its package config and package name.
   late final String project, config, app;
+
+  /// What the patch compiles with: its host's build inputs, with the
+  /// defines the patch changes or adds.
+  late final PatchInputs patch;
+  BuildInputs get inputs => patch.inputs;
+  String get target => inputs.target;
   Map<String, dynamic> get receipt => resolved.receipt;
 }
 
@@ -300,6 +306,26 @@ class PatchPipeline {
       );
 
       final current = run = PatchRun(this, req, resolved, work);
+      final host = BuildInputs.read(
+        receipt,
+        flavor: req.flavor,
+        target: req.target ?? 'lib/main.dart',
+      );
+      current.patch = await host.patched(
+        project: req.project,
+        sdk: host.recorded ? await sdkDefines(managed) : const {},
+        overrides: req.defines,
+        target: req.target,
+      );
+      final target = current.target;
+      require(
+        target.startsWith('lib/') &&
+            !target.split('/').contains('..') &&
+            !target.contains('\\') &&
+            await File(p.join(req.project, target)).exists(),
+        'PATCH_CONFIG_INVALID',
+        'Select an existing lib/ entry',
+      );
       final producer = resolved.strategy == 'so'
           ? LibappProducer(current)
           : BytecodeProducer(current);
@@ -334,7 +360,7 @@ class PatchPipeline {
       await installRuntimePackage(
         current.config,
         current.app,
-        req.target.substring(4),
+        target.substring(4),
       );
       final oldState = receipt['package_inputs'];
       require(
@@ -362,6 +388,10 @@ class PatchPipeline {
           platform: req.platform,
         );
       }
+      current.facts.defineReaders = await defineReaders(current.config, [
+        ...current.patch.changed,
+        ...current.patch.added,
+      ]);
       trace('package inputs');
       await producer.inputs(dependencyChanged);
       current.rules.check(PatchStage.inputs, current.facts);
@@ -448,6 +478,7 @@ class PatchPipeline {
         'module_id': req.moduleId,
         'min_build': req.minBuild,
         ...code.report,
+        'defines': ?current.patch.report,
         'changed': facts.changed,
         if (current.rules.warnings.isNotEmpty)
           'warnings': current.rules.warnings,

@@ -63,6 +63,9 @@ class PatchFacts {
   /// Asset keys the patch carries, and those the release has but it lacks.
   List<String> assets = const [], deletedAssets = const [];
 
+  /// The defines the patch changes or adds, and the libraries reading each.
+  Map<String, List<String>> defineReaders = const {};
+
   /// Everything the patch changes; empty means there is nothing to ship.
   final List<String> changed = [];
 
@@ -130,6 +133,16 @@ class PatchRule {
 /// Every boundary a patch is held to. A rule here is the only place its
 /// condition is decided; producers only gather facts.
 final patchRules = <PatchRule>[
+  PatchRule(
+    'PATCH_DEFINE_UNREAD',
+    PatchStage.inputs,
+    (f) => [
+      for (final e in f.defineReaders.entries)
+        if (e.value.isEmpty)
+          'No Dart source reads the define  with fromEnvironment or '
+              'hasEnvironment, so it would change nothing; check its name.',
+    ],
+  ),
   PatchRule(
     'PATCH_NATIVE_CHANGE',
     PatchStage.inputs,

@@ -34,6 +34,10 @@ class BuildRequest {
   /// Where the host downloads patches; recorded in its host trust.
   final String? url;
 
+  /// The user's defines, and `flutter build` options passed on to it.
+  final Map<String, String> defines;
+  final List<String> flutterArgs;
+
   /// `android` or `ios`, from the host policy's ABI.
   String get platform => platformOfAbi[hostPolicy.fields['abi']]!;
 
@@ -47,6 +51,8 @@ class BuildRequest {
     this.versionCode,
     this.exportMethod,
     this.url,
+    this.defines = const {},
+    this.flutterArgs = const [],
   });
   Future<void> validate() async {
     require(
@@ -123,6 +129,18 @@ class BuildPipeline {
     'engine_capabilities': engine['capabilities'],
   };
 
+  /// What [request]'s host, built in the copy [project], compiles with.
+  Future<BuildInputs> inputsOf(BuildRequest request, String project) async =>
+      BuildInputs.of(
+        target: request.target,
+        defines: request.defines,
+        flutterArgs: request.flutterArgs,
+        sdk: await sdkDefines(managed),
+        flavor: request.flavor,
+        buildName: await buildName(project),
+        buildNumber: request.hostPolicy.fields['version_code']!,
+      );
+
   Future<Map<String, dynamic>> build(BuildRequest request) async {
     await request.validate();
     _requireOutsideSdk(request.output);
@@ -162,6 +180,7 @@ class BuildPipeline {
         application: true,
       );
       final crlf = await crlfDartSources(project);
+      final inputs = await inputsOf(request, project);
       final pubspec = loadYaml(
         await File(p.join(project, 'pubspec.yaml')).readAsString(),
       ) as Map;
@@ -230,7 +249,7 @@ class BuildPipeline {
             '--no-aot',
             '--no-tfa',
             '--no-link-platform',
-            ...defineArgs(releaseDefines(request.flavor)),
+            ...defineArgs(inputs.compileDefines),
             if (virtual != null) ...virtual.compilerArgs,
             '--packages',
             virtual?.packagesUri ?? packages,
@@ -251,7 +270,7 @@ class BuildPipeline {
           '--no-aot',
           '--no-tfa',
           linked ? '--link-platform' : '--no-link-platform',
-          ...defineArgs(releaseDefines(request.flavor)),
+          ...defineArgs(inputs.compileDefines),
           '--packages',
           packages,
           if (iface != null) ...['--dynamic-interface', iface],
@@ -388,8 +407,9 @@ class BuildPipeline {
               request,
               target,
               extra,
+              inputs,
             )
-          : await assembleApk(run, project, request, target, extra);
+          : await assembleApk(run, project, request, target, extra, inputs);
       phase = ios ? 'verify-ipa' : 'verify-apk';
       final apkInfo = ios
           ? _bind(
@@ -437,6 +457,7 @@ class BuildPipeline {
         'public_key': request.publicKey,
         'package_inputs': sourceInputs,
         'pinned_packages': pins.pinned,
+        'build_inputs': inputs.toJson(),
         ..._built,
         'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
         'crlf_dart_sources': crlf,
@@ -511,6 +532,7 @@ class BuildPipeline {
         application: true,
       );
       final crlf = await crlfDartSources(project);
+      final inputs = await inputsOf(request, project);
       final package =
           (loadYaml(await File(p.join(project, 'pubspec.yaml')).readAsString())
                   as Map)['name']
@@ -564,7 +586,14 @@ class BuildPipeline {
         ),
       );
       phase = 'apk';
-      final apk = await assembleApk(run, project, request, target, const []);
+      final apk = await assembleApk(
+        run,
+        project,
+        request,
+        target,
+        const [],
+        inputs,
+      );
       phase = 'verify-apk';
       final apkInfo = await verifyApk(apk, release, request, hostTrust);
       final virtual = await VirtualPackages.write(packages, [
@@ -576,6 +605,7 @@ class BuildPipeline {
         ...apkInfo,
         'public_key': request.publicKey,
         'package_inputs': sourceInputs,
+        'build_inputs': inputs.toJson(),
         ..._built,
         'build_host': {'os': sdk.host.os, 'arch': sdk.host.arch},
         'crlf_dart_sources': crlf,
@@ -687,6 +717,7 @@ class BuildPipeline {
     BuildRequest request,
     String target,
     List<String> extra,
+    BuildInputs inputs,
   ) async {
     final gradle = p.join(cache, 'gradle');
     await Directory(gradle).create(recursive: true);
@@ -714,14 +745,16 @@ class BuildPipeline {
         '--target',
         target,
         if (request.flavor != null) ...['--flavor', request.flavor!],
-        if (request.versionCode != null) ...[
+        if (!inputs.recorded && request.versionCode != null) ...[
           '--build-number',
           request.versionCode!,
         ],
+        ...await inputs.flutterOptions(project),
         ...extra,
       ],
       cwd: project,
       env: {
+        ...inputs.flutterEnvironment,
         'FLUTTER_STORAGE_BASE_URL': Uri.directory(mirror).toString(),
         'GRADLE_USER_HOME': gradle,
       },

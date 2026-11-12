@@ -205,3 +205,43 @@ String patchEntry(
     'import ${jsonEncode('package:$package/$target').replaceAll(r'$', r'\$')} as app;\n'
     '@pragma("vm:entry-point")\n@pragma("dyn-module:entry-point")\n'
     'Object? dynamicModuleEntrypoint() => <Object?>[1,$seq,"$fingerprint","$tier",app.main,null];\n';
+
+/// The libraries of [config]'s packages that read each of the defines
+/// [keys]: those that name the key in a string literal and call
+/// `fromEnvironment` or `hasEnvironment`, which is how a define reaches
+/// code, also when a constant holds its name.
+Future<Map<String, List<String>>> defineReaders(
+  String config,
+  List<String> keys,
+) async {
+  final readers = {for (final key in keys) key: <String>[]};
+  if (keys.isEmpty) return readers;
+  final reads = RegExp('(from|has)Environment');
+  final roots = await packageRoots(config);
+  for (final name in roots.keys.toList()..sort()) {
+    final root = Directory.fromUri(roots[name] as Uri);
+    if (!await root.exists()) continue;
+    final files = await root
+        .list(recursive: true, followLinks: false)
+        .where((e) => e is File && e.path.endsWith('.dart'))
+        .toList();
+    for (final file in files..sort((a, b) => a.path.compareTo(b.path))) {
+      final String text;
+      try {
+        text = await (file as File).readAsString();
+      } on FileSystemException {
+        continue; // Not UTF-8 text: no Dart library.
+      }
+      if (!reads.hasMatch(text)) continue;
+      final relative = p
+          .relative(file.path, from: root.path)
+          .replaceAll('\\', '/');
+      for (final key in keys) {
+        if (text.contains("'$key'") || text.contains('"$key"')) {
+          readers[key]!.add('package:$name/$relative');
+        }
+      }
+    }
+  }
+  return readers;
+}

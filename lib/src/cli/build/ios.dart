@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../core.dart';
 import '../patch/resources.dart';
+import 'defines.dart';
 import 'pipeline.dart';
 
 /// Info.plist key carrying the host trust text; signed with the app, read by
@@ -67,32 +68,39 @@ Future<String> assembleIpa(
   BuildRequest request,
   String target,
   List<String> extra,
+  BuildInputs inputs,
 ) async {
   final exported = Directory(p.join(project, 'build/ios/ipa'));
   if (await exported.exists()) await exported.delete(recursive: true);
-  await run(flutter, [
-    '--suppress-analytics',
-    'build',
-    'ipa',
-    '--release',
-    // Not --no-pub: only the pub step regenerates the native plugin
-    // registrants for release, which leaves out dev_dependency plugins
-    // (e.g. integration_test); a stale debug registrant references them
-    // and the release compile fails. pub get --enforce-lockfile already
-    // ran, so this check resolves nothing.
-    '--target',
-    target,
-    if (request.flavor != null) ...['--flavor', request.flavor!],
-    if (request.versionCode != null) ...[
-      '--build-number',
-      request.versionCode!,
+  await run(
+    flutter,
+    [
+      '--suppress-analytics',
+      'build',
+      'ipa',
+      '--release',
+      // Not --no-pub: only the pub step regenerates the native plugin
+      // registrants for release, which leaves out dev_dependency plugins
+      // (e.g. integration_test); a stale debug registrant references them
+      // and the release compile fails. pub get --enforce-lockfile already
+      // ran, so this check resolves nothing.
+      '--target',
+      target,
+      if (request.flavor != null) ...['--flavor', request.flavor!],
+      if (!inputs.recorded && request.versionCode != null) ...[
+        '--build-number',
+        request.versionCode!,
+      ],
+      ...await inputs.flutterOptions(project),
+      if (request.exportMethod != null) ...[
+        '--export-method',
+        request.exportMethod!,
+      ],
+      ...extra,
     ],
-    if (request.exportMethod != null) ...[
-      '--export-method',
-      request.exportMethod!,
-    ],
-    ...extra,
-  ], cwd: project);
+    cwd: project,
+    env: inputs.flutterEnvironment,
+  );
   final ipas = await exported.exists()
       ? await exported
             .list()

@@ -57,6 +57,20 @@ class FlutterPatcher {
   @visibleForTesting
   static bool debugAssumeSupported = false;
 
+  /// Whether this app can take patches: it runs on Android or iOS and was
+  /// built with `flutter_patcher build`. False for an app started with
+  /// `flutter run` or built with `flutter build`, where [checkUpdate] finds
+  /// no update, the apply methods fail without throwing, and [patchTarget]
+  /// and [inspectPatch] throw.
+  static Future<bool> get isAvailable async {
+    if (!platform_io.isSupported && !debugAssumeSupported) return false;
+    try {
+      return await _hostStrategy() != null;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   /// Throws when this app was not built with `flutter_patcher build`.
   static Future<void> _requireHost() async {
     if (await _hostStrategy() == null) {
@@ -270,13 +284,21 @@ class FlutterPatcher {
   /// This is one way to deliver patch files; an app that fetches them
   /// itself passes them to [applyPatchBytes] instead.
   ///
-  /// Throws [PatcherException] on a host built without a host policy, when
-  /// no address is given and the app has none, and when the check fails.
+  /// An app not built with `flutter_patcher build` has no update (see
+  /// [isAvailable]). Throws [PatcherException] when no address is given and
+  /// the app has none, and when the check fails.
   static Future<PatchCheckResult> checkUpdate({
     String? url,
     Duration timeout = const Duration(seconds: 10),
   }) async {
     if (_unsupportedGuard('checkUpdate')) {
+      return PatchCheckResult.none();
+    }
+    if (!await isAvailable) {
+      _log(
+        'checkUpdate: this app was not built with flutter_patcher build, '
+        'so it takes no patches',
+      );
       return PatchCheckResult.none();
     }
 

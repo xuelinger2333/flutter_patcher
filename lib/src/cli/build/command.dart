@@ -12,6 +12,7 @@ import '../sdk/host.dart';
 import '../sdk/environment.dart';
 import '../baseline/repository.dart';
 import '../baseline/store.dart';
+import 'defines.dart';
 import 'pipeline.dart';
 import 'host_policy.dart';
 import '../project.dart';
@@ -20,12 +21,22 @@ Future<int> buildCommand(ArgResults args) async {
   RandomAccessFile? lock;
   try {
     require(
-      args.rest.length == 1 &&
-          const ['android', 'ios'].contains(args.rest.single),
+      args.rest.isNotEmpty &&
+          const ['android', 'ios'].contains(args.rest.first),
       'USAGE_ERROR',
       'Use build android or build ios.',
     );
-    final platform = args.rest.single;
+    final platform = args.rest.first;
+    // What the build was given is checked before anything slow starts.
+    final flutterArgs = checkFlutterArgs(
+      args.rest.skip(1).toList(),
+      'BUILD_CONFIG_INVALID',
+    );
+    final defines = await readDefines(
+      args.multiOption('dart-define-from-file'),
+      args.multiOption('dart-define'),
+      'BUILD_CONFIG_INVALID',
+    );
 
     final host = requireSupportedHost(target: platform);
 
@@ -77,6 +88,8 @@ Future<int> buildCommand(ArgResults args) async {
       versionCode: args['version-code'] as String?,
       exportMethod: args['export-method'] as String?,
       url: config.url,
+      defines: defines,
+      flutterArgs: flutterArgs,
     );
     require(
       request.platform == platform,
