@@ -139,13 +139,15 @@ Future<int> patchCommand(ArgResults args) async {
       offline: offline,
     );
     await request.validate();
-    // A patch uses the releases its host was built with, never newer ones.
+    // A patch uses the releases its host was built with, never newer ones,
+    // but for a tools release the index replaces.
     final store = ArtifactStore(
       cache,
       Uri.parse(args['artifacts-url'] as String),
       Uri.parse(args['index-url'] as String),
       Downloads(offline: offline),
-    )..select(builtWith(resolved));
+    );
+    await store.selectBuilt(builtWith(resolved), sdk.version);
     // The Android engine serves only SO rebuilds; an iOS patch needs none.
     final engine = platform == 'android'
         ? await store.obtain('engine', sdk)

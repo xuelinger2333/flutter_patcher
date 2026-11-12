@@ -535,6 +535,51 @@ class ArtifactStore {
     }
   }
 
+  /// Selects the releases [built], which a host of Flutter [version] was
+  /// built with: what a patch of it uses. A tools release the index names a
+  /// replacement for (`replaced_by`) gives way to it: tools only compile, and
+  /// a replacement is published as compatible with what the replaced release
+  /// built, so a fix reaches hosts already shipped. An engine is part of the
+  /// host and is never replaced.
+  Future<void> selectBuilt(
+    Iterable<ArtifactRelease> built,
+    String version,
+  ) async {
+    select(built);
+    final tools = _selected['tools'];
+    if (tools == null) return;
+    final Map<String, dynamic> index;
+    try {
+      index = await _index();
+    } on Failure {
+      return; // No index, as offline: the release the host recorded.
+    }
+    final entry = (index['flutter'] as Map)[version];
+    final releases = entry is Map ? entry['releases'] as Map : const {};
+    var tag = tools.tag;
+    final seen = {tag};
+    while (true) {
+      final current = releases[tag];
+      final next = current is Map ? current['replaced_by'] : null;
+      if (next is! String) break;
+      final row = releases[next];
+      require(
+        seen.add(next) && row is Map && row['kind'] == 'tools',
+        'ENGINE_MANIFEST_INVALID',
+        'Invalid artifact index:  is replaced by .',
+      );
+      tag = next;
+    }
+    if (tag != tools.tag) {
+      select([
+        ArtifactRelease(
+          tag,
+          (releases[tag] as Map)['manifest_sha256'] as String,
+        ),
+      ]);
+    }
+  }
+
   /// Selects the index's current releases for Flutter [version]: what a new
   /// host is built with.
   Future<void> selectCurrent(String version) async {

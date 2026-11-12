@@ -439,6 +439,47 @@ void main() {
         expect(local.downloads.requests, 0);
       },
     );
+    test(
+      'a patch uses its host\'s releases, but for tools the index replaces',
+      () async {
+        const old = 'tools-3.47.2-00000000', older = 'tools-3.47.2-11111111';
+        final built = [
+          ArtifactRelease(engineTag, digest(fixture.engine)),
+          ArtifactRelease(older, 'f' * 64),
+        ];
+        final releases = index['flutter']['3.47.2']['releases'] as Map;
+        Future<Map<String, String>> selected() async {
+          await store.selectBuilt(built, sdk.version);
+          return {for (final r in store.selected.values) r.kind: r.tag};
+        }
+
+        expect(await selected(), {'engine': engineTag, 'tools': older});
+        releases[older] = {
+          'kind': 'tools',
+          'manifest_sha256': 'f' * 64,
+          'replaced_by': old,
+        };
+        releases[old] = {
+          'kind': 'tools',
+          'manifest_sha256': 'e' * 64,
+          'replaced_by': toolsTag(),
+        };
+        // An engine is part of the host: nothing replaces it.
+        (releases[engineTag] as Map)['replaced_by'] = 'engine-3.47.2-22222222';
+        expect(await selected(), {'engine': engineTag, 'tools': toolsTag()});
+        await store.obtain('tools', sdk);
+        (releases[old] as Map)['replaced_by'] = 'tools-3.47.2-33333333';
+        await expectLater(
+          selected(),
+          throwsA(failure('ENGINE_MANIFEST_INVALID')),
+        );
+        (releases[old] as Map)['replaced_by'] = older;
+        await expectLater(
+          selected(),
+          throwsA(failure('ENGINE_MANIFEST_INVALID')),
+        );
+      },
+    );
     test('a baseline\'s releases need no index', () async {
       store.select([ArtifactRelease(toolsTag(), digest(fixture.tools))]);
       await store.obtain('tools', sdk);
