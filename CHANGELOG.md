@@ -53,7 +53,7 @@ Docs: [patch](doc/cli.md#patch)
   and patches are built with the Flutter feature flags `windowing` and
   `accessibility_evaluations` off.
 - To keep the previous behavior: not possible in 1.1.1. Hosts built with
-  1.1.0 have no recorded inputs, and their patches are compiled as in 1.1.0.
+  1.1.0 keep being patched with flutter_patcher 1.1.0.
 
 Docs: [patch](doc/cli.md#patch)
 
@@ -81,15 +81,17 @@ Docs: [isAvailable](doc/api-reference.md#isavailable)
   the Flutter framework, such as `kReleaseMode` and `appFlavor`, were not
   affected, and neither were SO patches.
 - Now: a bytecode patch is compiled with its host's defines. The fix is in
-  newly published compiler tools, which 1.1.1 also uses to patch hosts built
-  with 1.1.0.
+  newly published compiler tools, which hosts built with 1.1.1 use; hosts
+  built with 1.1.0 keep being patched with 1.1.0, without this fix.
 
 ### Other changes in 1.1.1
 
 **Changed** · CLI · 2026-11-12 · flutter_patcher 1.1.1
 
-- The baseline of a host built with 1.1.1 is read only by 1.1.1 or newer;
-  hosts built with 1.1.0 keep being patched with 1.1.1.
+- Hosts shipped with 1.1.0 keep being patched with flutter_patcher 1.1.0: in
+  that release's code, `pubspec.yaml` keeps depending on
+  `flutter_patcher: 1.1.0`. The plugin is part of the host, so a patch made
+  after upgrading the dependency fails with `PATCH_NATIVE_CHANGE`.
 
 ## 1.1.0
 

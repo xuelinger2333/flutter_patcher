@@ -209,7 +209,7 @@ dart run flutter_patcher patch android --dart-define=API_URL=https://api2.exampl
 | `--flavor <name>` | The release's flavor | `default` |
 | `--withdraw` | Writes a withdrawal file: devices that apply it delete their patch and run the installed version from the next cold start. It cannot be combined with `--target`, `--assets` or defines (`USAGE_ERROR`) | Off |
 | `--assets <key>` | Overrides only these asset keys; repeatable | Every changed asset |
-| `--target <file>` | Entry file; it must be the one `build` used | The host's entry file; `lib/main.dart` for a host built before 1.1.1 |
+| `--target <file>` | Entry file; it must be the one `build` used | The host's entry file |
 | `--dart-define <KEY=VALUE>`, `-D` | A define this patch changes or adds; repeatable | The host's defines |
 | `--dart-define-from-file <file>` | The same, from a JSON or `.env` file | The host's defines |
 | `--out <dir>` | Output directory; it must not exist | `.dart_tool/flutter_patcher/patches/<timestamp>/` |

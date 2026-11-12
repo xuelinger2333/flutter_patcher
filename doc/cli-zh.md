@@ -209,7 +209,7 @@ dart run flutter_patcher patch android --dart-define=API_URL=https://api2.exampl
 | `--flavor <name>` | 该版本的 flavor | `default` |
 | `--withdraw` | 写出撤回文件：应用它的设备删除自己的补丁，从下次冷启动起运行安装包自带的版本。不能与 `--target`、`--assets` 或编译期变量同时使用（`USAGE_ERROR`） | 关闭 |
 | `--assets <key>` | 只覆盖这些资源 key；可重复 | 所有改动过的资源 |
-| `--target <file>` | 入口文件；必须与 `build` 使用的相同 | 宿主的入口文件；用 1.1.1 之前的版本构建的宿主为 `lib/main.dart` |
+| `--target <file>` | 入口文件；必须与 `build` 使用的相同 | 宿主的入口文件 |
 | `--dart-define <KEY=VALUE>`、`-D` | 本补丁修改或新增的编译期变量；可重复 | 宿主构建时的变量 |
 | `--dart-define-from-file <file>` | 同上，从 JSON 或 `.env` 文件读取 | 宿主构建时的变量 |
 | `--out <dir>` | 输出目录；必须不存在 | `.dart_tool/flutter_patcher/patches/<timestamp>/` |

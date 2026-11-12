@@ -43,8 +43,7 @@
   策略的补丁都用它们编译。`patch` 不需要 `--target`；传入的 `--target` 与宿主不同，或宿主构建时
   `pubspec.yaml` 中没有 `version` 而现在有，报 `PATCH_BUILD_INPUTS_MISMATCH`。宿主和补丁都在关闭
   Flutter 功能开关 `windowing` 和 `accessibility_evaluations` 的情况下构建。
-- 要保持之前的行为：1.1.1 中没有办法。用 1.1.0 构建的宿主没有保存这些输入，它们的补丁按 1.1.0 的方式
-  编译。
+- 要保持之前的行为：1.1.1 中没有办法。用 1.1.0 构建的宿主继续用 flutter_patcher 1.1.0 打补丁。
 
 文档：[patch](doc/cli-zh.md#patch)
 
@@ -68,14 +67,15 @@
   `bool.fromEnvironment` 和 `int.fromEnvironment` 得到默认值，包括 `dart.vm.product` 和
   `FLUTTER_APP_FLAVOR`。通过 Flutter 框架读取的常量（如 `kReleaseMode`、`appFlavor`）不受影响。SO 策略
   不受影响。
-- 现在：字节码补丁用宿主的变量编译。修复在新发布的编译工具中，1.1.1 为用 1.1.0 构建的宿主打补丁时也
-  使用它。
+- 现在：字节码补丁用宿主的变量编译。修复在新发布的编译工具中，用 1.1.1 构建的宿主使用它；用 1.1.0
+  构建的宿主继续用 1.1.0 打补丁，不包含这项修复。
 
 ### 1.1.1 中的其他变更
 
 **变更** · CLI · 2026-11-12 · flutter_patcher 1.1.1
 
-- 用 1.1.1 构建的宿主，其基线只能由 1.1.1 或更新版本读取；用 1.1.0 构建的宿主可以继续用 1.1.1 打补丁。
+- 已用 1.1.0 上线的宿主继续用 flutter_patcher 1.1.0 打补丁：在该版本的代码中，`pubspec.yaml` 保持依赖
+  `flutter_patcher: 1.1.0`。插件是宿主的一部分，升级依赖之后为它打补丁会报 `PATCH_NATIVE_CHANGE`。
 
 ## 1.1.0
 
