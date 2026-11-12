@@ -123,6 +123,8 @@ def remove_symlinks(*roots):
 def prepare(args, repo, out):
     dart, cli = dart_binary(args.flutter_sdk), repo / 'bin/flutter_patcher.dart'
     common = ['--flutter-sdk', args.flutter_sdk]
+    if args.index_url:  # Releases not published yet, served from this computer.
+        common += ['--index-url', args.index_url, '--artifacts-url', args.artifacts_url]
     ios = args.platform == 'ios'
 
     def patcher(name, *argv):
@@ -481,6 +483,8 @@ def main():
     parser.add_argument('--flutter-sdk', type=Path, required=True)
     parser.add_argument('--serial', help='adb serial; on iOS optional, a devicectl identifier or UDID')
     parser.add_argument('--java-home', default=os.environ.get('JAVA_HOME'))
+    parser.add_argument('--index-url', help='An artifact index other than the published one')
+    parser.add_argument('--artifacts-url', help='With --index-url: where its releases are')
     parser.add_argument('--out', type=Path)
     parser.add_argument('--resume-built', action='store_true',
                         help='Reuse a completed build/patch/publish in --out; rerun device steps only')
