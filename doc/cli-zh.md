@@ -190,7 +190,7 @@ dart run flutter_patcher build android -- --android-project-arg=store=play
 - 以下变量由 `build` 按 `flutter build` 的方式设置，并保存在基线中：`FLUTTER_APP_FLAVOR`、`FLUTTER_BUILD_NAME`、`FLUTTER_BUILD_NUMBER`、`FLUTTER_VERSION`、`FLUTTER_CHANNEL`、`FLUTTER_GIT_URL`、`FLUTTER_FRAMEWORK_REVISION`、`FLUTTER_ENGINE_REVISION`、`FLUTTER_DART_VERSION`、`FLUTTER_ENABLED_FEATURE_FLAGS`。传入以这些名字或 `dart.` 开头的变量会报 `BUILD_CONFIG_INVALID`。
 - `FLUTTER_BUILD_NAME` 是 `pubspec.yaml` 中 `version` 的 `+` 之前的部分，`FLUTTER_BUILD_NUMBER` 是构建号，`FLUTTER_APP_FLAVOR` 是 `--flavor`。
 - 宿主和它的补丁都在关闭 Flutter 功能开关 `windowing` 和 `accessibility_evaluations` 的情况下构建，与 `flutter config` 中的设置无关。
-- `--` 之后只接受这些选项，其他选项报 `BUILD_CONFIG_INVALID`：`--android-project-arg <key=value>`（`-P`）、`--android-project-cache-dir <dir>`、`--[no-]android-gradle-daemon`、`--[no-]android-skip-build-dependency-validation`、`--performance-measurement-file <file>`、`--ignore-deprecation`、`--[no-]fatal-warnings`、`--verbose`（`-v`）。它们保存在基线中，SO 策略的补丁重新构建时也使用它们。
+- `--` 之后只接受这些选项，其他选项报 `BUILD_CONFIG_INVALID`：`--android-project-arg <key=value>`（`-P`）、`--android-project-cache-dir <dir>`、`--[no-]android-gradle-daemon`、`--[no-]android-skip-build-dependency-validation`、`--performance-measurement-file <file>`、`--ignore-deprecation`、`--[no-]fatal-warnings`、`--verbose`（`-v`）。`build ios` 只接受其中的 `--performance-measurement-file`、`--[no-]fatal-warnings` 和 `--verbose`，因为 `flutter build ipa` 没有其他几个。它们保存在基线中，SO 策略的补丁重新构建时也使用它们。
 
 ## patch
 

@@ -152,8 +152,29 @@ void main() {
         '--performance-measurement-file=perf.json',
         '-v',
       ];
-      expect(checkFlutterArgs(args, _code), args);
-      expect(checkFlutterArgs(const [], _code), isEmpty);
+      expect(checkFlutterArgs(args, _code, platform: 'android'), args);
+      expect(checkFlutterArgs(const [], _code, platform: 'android'), isEmpty);
+    });
+
+    test('passes on for iOS only what flutter build ipa has', () {
+      const args = [
+        '--fatal-warnings',
+        '--performance-measurement-file=perf.json',
+        '-v',
+      ];
+      expect(checkFlutterArgs(args, _code, platform: 'ios'), args);
+      for (final arg in [
+        '-Pkey=value',
+        '--android-project-arg=a=b',
+        '--no-android-gradle-daemon',
+        '--ignore-deprecation',
+      ]) {
+        expect(
+          () => checkFlutterArgs([arg], _code, platform: 'ios'),
+          _fails(_code, 'Android build option'),
+          reason: arg,
+        );
+      }
     });
 
     test('rejects every other option, and says what to use', () {
@@ -179,21 +200,27 @@ void main() {
         'stray',
       ]) {
         expect(
-          () => checkFlutterArgs([arg], _code),
+          () => checkFlutterArgs([arg], _code, platform: 'android'),
           _fails(_code),
           reason: arg,
         );
       }
       expect(
-        () => checkFlutterArgs(['--flavor', 'paid'], _code),
+        () =>
+            checkFlutterArgs(['--flavor', 'paid'], _code, platform: 'android'),
         _fails(_code, 'use --flavor before --'),
       );
       expect(
-        () => checkFlutterArgs(['--build-number=7'], _code),
+        () =>
+            checkFlutterArgs(['--build-number=7'], _code, platform: 'android'),
         _fails(_code, '--version-code'),
       );
       expect(
-        () => checkFlutterArgs(['--dart-define=A=secret'], _code),
+        () => checkFlutterArgs(
+          ['--dart-define=A=secret'],
+          _code,
+          platform: 'android',
+        ),
         throwsA(
           isA<Failure>().having(
             (f) => f.message,
@@ -205,9 +232,16 @@ void main() {
           ),
         ),
       );
-      expect(() => checkFlutterArgs(['-P'], _code), _fails(_code, 'value'));
       expect(
-        () => checkFlutterArgs(['--ignore-deprecation=true'], _code),
+        () => checkFlutterArgs(['-P'], _code, platform: 'android'),
+        _fails(_code, 'value'),
+      );
+      expect(
+        () => checkFlutterArgs(
+          ['--ignore-deprecation=true'],
+          _code,
+          platform: 'android',
+        ),
         _fails(_code, 'no value'),
       );
     });

@@ -15,6 +15,10 @@ You have apps built with flutter_patcher 1.0.0 in the store and are moving the p
 | CLI | Removed: `trust`, `publish --production` and `--request` (delete the file from the store instead), `keys import --rotate`, and the key roles `root` and `publisher` |
 | Version shown | `currentVersion` returns the file's sequence (`seq`) |
 
+## From 1.1.0 to 1.1.1
+
+Apps shipped with 1.1.0 keep being patched with flutter_patcher 1.1.0: in that release's code, `pubspec.yaml` keeps depending on `flutter_patcher: 1.1.0`. The plugin is part of the host, so a patch made after upgrading the dependency fails with `PATCH_NATIVE_CHANGE`. The project, keys and store need no change, and the next `build` makes a 1.1.1 host.
+
 ## Related
 
 - [Production Deployment Guide](production-playbook.md): build the release with 1.1 and deliver patches.

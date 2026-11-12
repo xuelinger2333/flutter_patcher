@@ -62,6 +62,16 @@ const _flutterOptions = {
   '-v': false,
 };
 
+/// Those of [_flutterOptions] that `flutter build ipa` has too; the others
+/// are Android's.
+const _iosOptions = {
+  '--performance-measurement-file',
+  '--fatal-warnings',
+  '--no-fatal-warnings',
+  '--verbose',
+  '-v',
+};
+
 /// What to use instead of a `flutter build` option that is not passed on.
 const _ownOptions = {
   '--target': 'use --target before --',
@@ -174,8 +184,14 @@ Map<String, String> _envFile(String text, String path, String code) {
   return result;
 }
 
-/// Checks the `flutter build` options a build was given after `--`.
-List<String> checkFlutterArgs(List<String> args, String code) {
+/// Checks the `flutter build` options a build for [platform] was given
+/// after `--`.
+List<String> checkFlutterArgs(
+  List<String> args,
+  String code, {
+  required String platform,
+}) {
+  final ios = platform == 'ios';
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
     final joined = arg.startsWith('-P') && arg.length > 2;
@@ -192,6 +208,12 @@ List<String> checkFlutterArgs(List<String> args, String code) {
       '$name cannot be passed after --: ${_ownOptions[name] ?? 'flutter_patcher sets it '
               'itself, or it would change what a patch must reproduce'}. '
       'Options passed on: ${_flutterOptions.keys.join(', ')}.',
+    );
+    _reject(
+      !ios || _iosOptions.contains(name),
+      code,
+      '$name is an Android build option. Options passed on for iOS: '
+      '${_iosOptions.join(', ')}.',
     );
     if (!takesValue!) {
       _reject(at < 0, code, '$name takes no value.');

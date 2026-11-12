@@ -15,6 +15,10 @@
 | CLI | 已删除：`trust`、`publish --production` 与 `--request`（改为直接从存储中删除文件）、`keys import --rotate`，以及密钥角色 `root` 与 `publisher` |
 | 显示的版本 | `currentVersion` 返回文件的序号（`seq`） |
 
+## 从 1.1.0 升级到 1.1.1
+
+已用 1.1.0 上线的 App 继续用 flutter_patcher 1.1.0 打补丁：在该版本的代码中，`pubspec.yaml` 保持依赖 `flutter_patcher: 1.1.0`。插件是宿主的一部分，升级依赖之后为它打补丁会报 `PATCH_NATIVE_CHANGE`。项目、密钥和存储无需改动，下一次 `build` 生成 1.1.1 宿主。
+
 ## 相关
 
 - [生产部署](production-playbook-zh.md)：用 1.1 构建上线版本并下发补丁。

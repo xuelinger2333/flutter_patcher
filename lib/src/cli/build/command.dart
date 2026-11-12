@@ -31,6 +31,7 @@ Future<int> buildCommand(ArgResults args) async {
     final flutterArgs = checkFlutterArgs(
       args.rest.skip(1).toList(),
       'BUILD_CONFIG_INVALID',
+      platform: platform,
     );
     final defines = await readDefines(
       args.multiOption('dart-define-from-file'),
