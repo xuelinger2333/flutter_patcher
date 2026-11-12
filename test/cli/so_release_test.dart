@@ -8,10 +8,19 @@ import 'package:flutter_patcher/src/cli/baseline/archive.dart';
 import 'package:flutter_patcher/src/cli/baseline/manifest.dart';
 import 'package:flutter_patcher/src/cli/baseline/repository.dart';
 import 'package:flutter_patcher/src/cli/baseline/split.dart';
+import 'package:flutter_patcher/src/cli/build/defines.dart';
 import 'package:flutter_patcher/src/cli/build/host_policy.dart';
 
 import 'baseline_test.dart' as base;
 import 'release_fixture.dart';
+
+const _inputs = {
+  'schema': 1,
+  'target': 'lib/main_paid.dart',
+  'dart_defines': {'API': 'prod'},
+  'builtin_defines': {'FLUTTER_BUILD_NUMBER': '42'},
+  'flutter_args': ['-Pk=v'],
+};
 
 void main() {
   final f = ReleaseFixture();
@@ -94,6 +103,30 @@ void main() {
       await expectLater(saveSo(), fails('BASELINE_RELEASE_CONFLICT'));
     },
   );
+
+  test('a patch reads the build inputs its SO host recorded', () async {
+    await saveSo(receipt: {'build_inputs': _inputs});
+    final fresh = BaselineRepository(p.join(f.temp.path, 'fresh'), f.store);
+    final host = BuildInputs.read(
+      (await fresh.resolve('prod', '42')).receipt,
+      flavor: 'prod',
+      target: 'lib/main.dart',
+    );
+    expect(host.recorded, isTrue);
+    expect(host.toJson(), _inputs);
+    await expectLater(
+      saveSo(
+        receipt: {
+          'build_inputs': {
+            ..._inputs,
+            'dart_defines': {'API': 'staging'},
+          },
+        },
+      ),
+      fails('BASELINE_RELEASE_CONFLICT'),
+    );
+    await expectLater(saveSo(), fails('BASELINE_RELEASE_CONFLICT'));
+  });
 
   test('policy strategy, key and identity must match the SO release', () async {
     await expectLater(

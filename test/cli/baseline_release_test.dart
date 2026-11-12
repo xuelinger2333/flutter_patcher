@@ -7,9 +7,18 @@ import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/baseline/archive.dart';
 import 'package:flutter_patcher/src/cli/baseline/repository.dart';
 import 'package:flutter_patcher/src/cli/baseline/store.dart';
+import 'package:flutter_patcher/src/cli/build/defines.dart';
 
 import 'baseline_test.dart' as base;
 import 'release_fixture.dart';
+
+const _inputs = {
+  'schema': 1,
+  'target': 'lib/main_paid.dart',
+  'dart_defines': {'API': 'prod'},
+  'builtin_defines': {'FLUTTER_BUILD_NUMBER': '42'},
+  'flutter_args': ['-Pk=v'],
+};
 
 void main() {
   final f = ReleaseFixture();
@@ -66,6 +75,43 @@ void main() {
         expect(attestation['build_host'], {'os': 'linux', 'arch': 'x64'});
       },
     );
+
+    test('a patch reads the build inputs its host recorded', () async {
+      await base.writeReceipt(input, overrides: {'build_inputs': _inputs});
+      await save('42');
+      final fresh = BaselineRepository(p.join(temp.path, 'fresh'), store);
+      final host = BuildInputs.read(
+        (await fresh.resolve('prod', '42')).receipt,
+        flavor: 'prod',
+        target: 'lib/main.dart',
+      );
+      expect(host.recorded, isTrue);
+      expect(host.toJson(), _inputs);
+      // Other inputs are another release: its patches would inherit them.
+      await base.writeReceipt(
+        input,
+        overrides: {
+          'build_inputs': {
+            ..._inputs,
+            'dart_defines': {'API': 'staging'},
+          },
+        },
+      );
+      await expectLater(save('42'), fails('BASELINE_RELEASE_CONFLICT'));
+    });
+
+    test('a host built before build inputs were recorded has none', () async {
+      await save('42');
+      final resolved = await repository.resolve('prod', '42');
+      expect(resolved.receipt.containsKey('build_inputs'), isFalse);
+      final host = BuildInputs.read(
+        resolved.receipt,
+        flavor: 'prod',
+        target: 'lib/main.dart',
+      );
+      expect(host.recorded, isFalse);
+      expect(host.compileDefines['FLUTTER_APP_FLAVOR'], 'prod');
+    });
 
     test('a native-only new versionCode shares one compile object', () async {
       final first = await save('42');

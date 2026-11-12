@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
+import 'package:flutter_patcher/src/cli/build/defines.dart';
 import 'package:flutter_patcher/src/cli/build/host_policy.dart';
 import 'package:flutter_patcher/src/cli/build/ios.dart';
 import 'package:flutter_patcher/src/cli/build/pipeline.dart';
@@ -50,6 +51,98 @@ void main() {
       );
     },
   );
+
+  test('flutter build ipa gets the inputs the host records', () async {
+    final project = temp;
+    late List<String> args;
+    late Map<String, String>? environment;
+    Future<String> run(
+      String executable,
+      List<String> given, {
+      String? cwd,
+      Map<String, String>? env,
+    }) async {
+      args = given;
+      environment = env;
+      await File(p.join(project.path, 'build/ios/ipa/app.ipa'))
+          .create(recursive: true);
+      return '';
+    }
+
+    final request = BuildRequest(
+      project: project.path,
+      output: p.join(project.path, 'out'),
+      publicKey: base.testPublicKey,
+      hostPolicy: policy('ios-arm64'),
+      flavor: 'paid',
+      versionCode: '45',
+      exportMethod: 'ad-hoc',
+    );
+    final inputs = BuildInputs.of(
+      target: 'lib/main_paid.dart',
+      defines: const {'API': 'a b&c'},
+      flutterArgs: const [],
+      sdk: const {'FLUTTER_VERSION': '3.47.9'},
+      flavor: 'paid',
+      buildName: '1.2.3',
+      buildNumber: '45',
+    );
+    await assembleIpa(
+      run,
+      'flutter',
+      project.path,
+      request,
+      inputs.target,
+      const ['--no-codesign'],
+      inputs,
+    );
+    final defines = p.join(
+      project.path,
+      '.dart_tool',
+      'flutter_patcher_defines.json',
+    );
+    expect(args, [
+      '--suppress-analytics',
+      'build',
+      'ipa',
+      '--release',
+      '--target',
+      'lib/main_paid.dart',
+      '--flavor',
+      'paid',
+      '--build-number',
+      '45',
+      '--build-name',
+      '1.2.3',
+      '--dart-define-from-file=$defines',
+      '--export-method',
+      'ad-hoc',
+      '--no-codesign',
+    ]);
+    expect(jsonDecode(File(defines).readAsStringSync()), {'API': 'a b&c'});
+    expect(environment, inputs.flutterEnvironment);
+
+    // A host built before its inputs were recorded: as it was built then.
+    await assembleIpa(
+      run,
+      'flutter',
+      project.path,
+      request,
+      'lib/main.dart',
+      const [],
+      BuildInputs.read(const {}, flavor: 'paid', target: 'lib/main.dart'),
+    );
+    expect(args.sublist(4), [
+      '--target',
+      'lib/main.dart',
+      '--flavor',
+      'paid',
+      '--build-number',
+      '45',
+      '--export-method',
+      'ad-hoc',
+    ]);
+  });
 
   test('LC_UUID identifies a re-signed engine', () {
     final header = ByteData(32 + 16 + 24);
