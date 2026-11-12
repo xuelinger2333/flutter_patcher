@@ -19,7 +19,7 @@
 ## 第 1 步：添加依赖
 
 ```bash
-flutter pub add flutter_patcher
+flutter pub add flutter_patcher:1.1.1
 dart run flutter_patcher init
 dart run flutter_patcher doctor
 ```

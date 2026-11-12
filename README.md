@@ -51,7 +51,7 @@ Changes to native code or to the Flutter version still need a store release.
 1. Add the dependency, initialize, and check for a patch:
 
    ```bash
-   flutter pub add flutter_patcher
+   flutter pub add flutter_patcher:1.1.1
    dart run flutter_patcher init   # Creates flutter_patcher.yaml and the patch key, signing off
    ```
 

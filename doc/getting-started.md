@@ -19,7 +19,7 @@ Everything here runs on your computer and a phone connected over USB, so you nee
 ## Step 1: Add the dependency
 
 ```bash
-flutter pub add flutter_patcher
+flutter pub add flutter_patcher:1.1.1
 dart run flutter_patcher init
 dart run flutter_patcher doctor
 ```

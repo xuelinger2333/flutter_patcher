@@ -60,7 +60,7 @@ dart run flutter_patcher <command> [options]
 以下命令均在项目根目录运行。
 
 ```bash
-# 为项目做一次性准备，在 flutter pub add flutter_patcher 之后运行
+# 为项目做一次性准备，在 flutter pub add flutter_patcher:1.1.1 之后运行
 dart run flutter_patcher init
 
 # 通过 USB 在 Android 手机上验证改动
@@ -93,7 +93,7 @@ dart run flutter_patcher patch ios --baseline-store s3://my-bucket/baselines
 
 ## init
 
-为 flutter_patcher 准备项目。在 `flutter pub add flutter_patcher` 之后，在 App 的根目录运行一次。
+为 flutter_patcher 准备项目。在 `flutter pub add flutter_patcher:1.1.1` 之后，在 App 的根目录运行一次。
 
 ```bash
 dart run flutter_patcher init

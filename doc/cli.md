@@ -60,7 +60,7 @@ On Windows the cache path may be at most 80 characters, because deeper build tre
 Run each in the project root.
 
 ```bash
-# Set up a project once, after flutter pub add flutter_patcher
+# Set up a project once, after flutter pub add flutter_patcher:1.1.1
 dart run flutter_patcher init
 
 # Try a change on an Android phone over USB
@@ -93,7 +93,7 @@ What to check after each, and how to set up hosting, is in the [Production Deplo
 
 ## init
 
-Prepares a project for flutter_patcher. Run it once in the app's root, after `flutter pub add flutter_patcher`.
+Prepares a project for flutter_patcher. Run it once in the app's root, after `flutter pub add flutter_patcher:1.1.1`.
 
 ```bash
 dart run flutter_patcher init

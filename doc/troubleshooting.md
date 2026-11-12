@@ -316,7 +316,7 @@ To see how the device judges a file, pass its first 146 bytes to `FlutterPatcher
 |---|---|---|
 | `BUILD_CONFIG_INVALID` | No `+` build number in `pubspec.yaml`, no single application id, an invalid `--host-policy` file, a `--flavor` or `--version-code` that differs from that policy, a define or an option after `--` that is not accepted, or an output directory that exists | Correct what `message` names, for example `version: 1.0.0+1`, `--application-id`, a new `--out` |
 | `BUILD_PROJECT_INVALID` | The project layout is not supported, for example symbolic links in source packages | Change the project as `message` says |
-| `BUILD_BOOTSTRAP_UNAVAILABLE` | The project does not depend on `flutter_patcher` | Run `flutter pub add flutter_patcher` |
+| `BUILD_BOOTSTRAP_UNAVAILABLE` | The project does not depend on `flutter_patcher` | Run `flutter pub add flutter_patcher:1.1.1` |
 | `BUILD_INPUT_CHANGED` | A source file changed while the build ran | Build again without editing files meanwhile |
 | `BUILD_STEP_FAILED` | A Flutter build step failed | Read the end of the log and the log directory in `message` |
 | `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | The built app fails validation, for example its application id or build number differs from the host policy | On iOS, check code signing and `--export-method`; with `--host-policy`, check `application_id` and `version_code` |

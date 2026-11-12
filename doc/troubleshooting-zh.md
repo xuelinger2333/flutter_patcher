@@ -316,7 +316,7 @@ WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every p
 |---|---|---|
 | `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有 `+` 构建号、application id 不唯一、`--host-policy` 文件无效、`--flavor` 或 `--version-code` 与该策略不一致、编译期变量或 `--` 之后的选项不被接受，或输出目录已存在 | 按 `message` 指出的内容修正，例如 `version: 1.0.0+1`、`--application-id`、新的 `--out` |
 | `BUILD_PROJECT_INVALID` | 不支持的项目结构，例如源码包中有符号链接 | 按 `message` 的说明调整项目 |
-| `BUILD_BOOTSTRAP_UNAVAILABLE` | 项目没有依赖 `flutter_patcher` | 运行 `flutter pub add flutter_patcher` |
+| `BUILD_BOOTSTRAP_UNAVAILABLE` | 项目没有依赖 `flutter_patcher` | 运行 `flutter pub add flutter_patcher:1.1.1` |
 | `BUILD_INPUT_CHANGED` | 构建过程中源文件发生了变化 | 重新构建，期间不要修改文件 |
 | `BUILD_STEP_FAILED` | 某个 Flutter 构建步骤失败 | 阅读 `message` 中的日志末尾和日志目录 |
 | `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | 构建出的 App 未通过校验，例如 application id 或构建号与宿主策略不同 | iOS 上检查代码签名和 `--export-method`；使用 `--host-policy` 时检查 `application_id` 和 `version_code` |

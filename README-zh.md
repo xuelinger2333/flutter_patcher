@@ -51,7 +51,7 @@ flutter_patcher 是一个带命令行工具的 Flutter 插件：
 1. 添加依赖，初始化，并检查补丁：
 
    ```bash
-   flutter pub add flutter_patcher
+   flutter pub add flutter_patcher:1.1.1
    dart run flutter_patcher init   # 初始化配置文件
    ```
 

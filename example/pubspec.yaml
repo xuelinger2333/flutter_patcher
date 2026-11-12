@@ -13,7 +13,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_patcher:
-    # This repository's plugin; an app depends on flutter_patcher: ^1.0.0.
+    # This repository's plugin; an app depends on flutter_patcher: 1.1.1.
     path: ../
 
 dev_dependencies:
