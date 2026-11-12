@@ -14,6 +14,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';
 
 const revision = 'original';
+// Defines: one the host is built with, one only a patch adds, and one of
+// those flutter build adds by itself.
+const fixtureEnv = String.fromEnvironment('FIXTURE_ENV', defaultValue: 'unset');
+const fixtureAdded = String.fromEnvironment(
+  'FIXTURE_ADDED',
+  defaultValue: 'unset',
+);
+const buildName = String.fromEnvironment('FLUTTER_BUILD_NAME');
 // A crash patch throws before its first frame; crash protection must recover.
 // (exit() is not a crash: Android records it as a deliberate self exit.)
 const crash = false;
@@ -69,6 +77,10 @@ Future<Object?> handle(String path, Map body, String asset) async {
         'asset': asset,
         'version': await FlutterPatcher.currentVersion,
         'diagnostic': (await FlutterPatcher.lastBootDiagnostic)?.status.name,
+        'env': fixtureEnv,
+        'added': fixtureAdded,
+        'build_name': buildName,
+        'available': await FlutterPatcher.isAvailable,
       };
     case '/check':
       final check = await FlutterPatcher.checkUpdate(

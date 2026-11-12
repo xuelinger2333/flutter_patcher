@@ -437,6 +437,8 @@ class BaselineRepository {
         'engine_capabilities',
       ])
         k: receipt[k],
+      if (receipt.containsKey('build_inputs'))
+        'build_inputs': receipt['build_inputs'],
       'build_id': buildId,
     };
     await File(p.join(dir, 'release_receipt.json'))
