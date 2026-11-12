@@ -139,7 +139,7 @@ final patchRules = <PatchRule>[
     (f) => [
       for (final e in f.defineReaders.entries)
         if (e.value.isEmpty)
-          'No Dart source reads the define  with fromEnvironment or '
+          'No Dart source reads the define ${e.key} with fromEnvironment or '
               'hasEnvironment, so it would change nothing; check its name.',
     ],
   ),

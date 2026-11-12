@@ -471,7 +471,15 @@ void main() {
         (releases[old] as Map)['replaced_by'] = 'tools-3.47.2-33333333';
         await expectLater(
           selected(),
-          throwsA(failure('ENGINE_MANIFEST_INVALID')),
+          throwsA(
+            isA<Failure>()
+                .having((e) => e.code, 'code', 'ENGINE_MANIFEST_INVALID')
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('$old is replaced by tools-3.47.2-33333333'),
+                ),
+          ),
         );
         (releases[old] as Map)['replaced_by'] = older;
         await expectLater(

@@ -566,7 +566,7 @@ class ArtifactStore {
       require(
         seen.add(next) && row is Map && row['kind'] == 'tools',
         'ENGINE_MANIFEST_INVALID',
-        'Invalid artifact index:  is replaced by .',
+        'Invalid artifact index: $tag is replaced by $next.',
       );
       tag = next;
     }

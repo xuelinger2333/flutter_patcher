@@ -140,6 +140,30 @@ void main() {
       final so = facts('so')..report = f.report;
       PatchRules().check(PatchStage.compile, so);
     });
+    test(
+      'a define no source reads is rejected by name, for both strategies',
+      () {
+        for (final strategy in ['bytecode', 'so']) {
+          final f = facts(strategy)
+            ..defineReaders = {
+              'API': ['package:app/main.dart'],
+              'APl': [],
+            };
+          expect(
+            () => PatchRules().check(PatchStage.inputs, f),
+            throwsA(
+              isA<Failure>()
+                  .having((e) => e.code, 'code', 'PATCH_DEFINE_UNREAD')
+                  .having((e) => e.message, 'message', contains('define APl ')),
+            ),
+          );
+          f.defineReaders = {
+            'API': ['package:app/main.dart'],
+          };
+          PatchRules().check(PatchStage.inputs, f);
+        }
+      },
+    );
     test('native changes reject before pinned packages', () {
       final f = facts()
         ..changedPlugins.add('camera')
