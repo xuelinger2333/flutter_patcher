@@ -165,7 +165,6 @@ class BuildPipeline {
           'inspect-build',
           'compile-baseline',
           'extract-surface',
-          '--scan',
           'merge-interface',
           '--out-details',
         ].every(usage.contains),
@@ -195,8 +194,8 @@ class BuildPipeline {
       ], cwd: project);
       final packages = p.join(project, '.dart_tool/package_config.json');
       final config = await readObject(packages);
-      // Selective patches may reuse application libraries as well as dependencies.
-      // Retain calls between those libraries in the host interface.
+      // A whole-tier patch carries every free package, so the host interface
+      // covers what they use, not only what the application itself does.
       final pins = await computePackagePins(packages, package);
       final plugins = (config['packages'] as List).where(
         (r) => r['name'] == 'flutter_patcher',
@@ -292,9 +291,11 @@ class BuildPipeline {
         '--dill',
         analysis,
         '--own',
-        'dynamic_modules',
-        '--scan',
-        ([package, ...pins.free]..sort()).join(','),
+        package,
+        if (pins.free.isNotEmpty && usage.contains('--scan')) ...[
+          '--scan',
+          (pins.free.toList()..sort()).join(','),
+        ],
         '--out-iface',
         refs,
         '--out-trim-iface',

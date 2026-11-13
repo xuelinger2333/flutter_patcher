@@ -160,6 +160,76 @@ void main() {
   });
 
   test(
+    'package fallback carries sources while excluding pinned packages',
+    () async {
+      await file(
+        'package:app/main.dart',
+        "import 'changed.dart'; void main() {}",
+      );
+      await file('package:app/changed.dart', "import 'package:dep/api.dart';");
+      await file('package:app/unused.dart', 'void unused() {}');
+      await file('package:dep/api.dart', "import 'package:host/api.dart';");
+      await file('package:dep/unused.dart', 'void unused() {}');
+      await file('package:host/api.dart', 'void nativeApi() {}');
+      Future<Set<String>> fallback(Set<String> packages) => selectPatchSources(
+        config: config,
+        packages: {'app', 'dep'},
+        changed: ['package:app/changed.dart'],
+        baselineSources: sources.keys.toSet(),
+        entry: 'package:app/main.dart',
+        carryPackages: packages,
+      );
+      expect(await fallback({'app'}), {
+        'package:app/main.dart',
+        'package:app/changed.dart',
+        'package:app/unused.dart',
+      });
+      expect(await fallback({'app', 'dep', 'host'}), {
+        'package:app/main.dart',
+        'package:app/changed.dart',
+        'package:app/unused.dart',
+        'package:dep/api.dart',
+        'package:dep/unused.dart',
+      });
+    },
+  );
+
+  test(
+    'reported part call sites include owner imports and export cycles',
+    () async {
+      await file('package:app/main.dart', "import 'view.dart'; void main() {}");
+      await file(
+        'package:app/view.dart',
+        "import 'package:dep/api.dart'; part 'src/body.dart';",
+      );
+      await file('package:app/src/body.dart', "part of '../view.dart';");
+      await file('package:dep/api.dart', "export 'src/value.dart';");
+      await file(
+        'package:dep/src/value.dart',
+        "export '../api.dart'; String firstUse() => 'new';",
+      );
+      await file('package:dep/unused.dart', 'void unused() {}');
+      expect(
+        await selectPatchSources(
+          config: config,
+          packages: {'app', 'dep'},
+          changed: ['package:app/src/body.dart'],
+          baselineSources: sources.keys.toSet(),
+          entry: 'package:app/main.dart',
+          includeImportsOf: {'package:app/src/body.dart'},
+        ),
+        {
+          'package:app/main.dart',
+          'package:app/view.dart',
+          'package:app/src/body.dart',
+          'package:dep/api.dart',
+          'package:dep/src/value.dart',
+        },
+      );
+    },
+  );
+
+  test(
     'define changes select readers and callers while reusing other libraries',
     () async {
       await file(

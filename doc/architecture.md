@@ -52,7 +52,7 @@ A Flutter release app compiles your Dart code to machine code. flutter_patcher c
 
 | | Bytecode (default) | SO |
 |---|---|---|
-| A patch contains | Changed libraries and required callers/parts compiled to bytecode; unchanged libraries reuse host code | A whole recompiled `libapp.so` |
+| A patch contains | Selected libraries and required callers/parts compiled to bytecode, with package fallbacks when host reuse fails | A whole recompiled `libapp.so` |
 | How it runs | An interpreter in the engine runs all the code the patch carries; Flutter, plugins and the packages the patch does not carry still run as the app's machine code | At startup, Flutter loads the patch's `libapp.so` instead of the app's |
 | Platforms | Android, iOS | Android only |
 | Patch size | Small: your app's code, without Flutter and plugins | Large: about the size of `libapp.so` |
@@ -65,9 +65,11 @@ iOS hosts use bytecode because iOS does not allow loading downloaded machine cod
 - **lean** carries selected application libraries;
 - **whole** also carries selected libraries from pure-Dart dependencies.
 
-Source hashes and define readers seed selection. Callers, export barrels and parts are included when they must refer to a changed library; newly reached libraries absent from the host are included too. Unchanged imports keep their original host URIs. `selected_sources` and `carried_packages` describe the selection in `patch.json`.
+Source hashes and define readers seed selection. Callers, export barrels and parts are included when they must refer to a changed library; newly reached libraries absent from the host are included too. Other imports initially keep their original host URIs.
 
-This works at library granularity, not individual functions or changed lines. Import cycles can still expand the selection substantially. A rejected module is not retried with every free package. Hosts missing the interface needed to reuse their own libraries need rebuilding with this version. The host interface retains application references as well as dependency references, which can increase the retained host surface. Existing interface/allocation checks still apply.
+The released host can supply only APIs retained in its interface. If a patch first calls an existing function, constructor or getter that the host did not retain, the CLI uses the reported call sites to include their imports and re-exported libraries, then retries. Allocation diagnostics can identify an owning library directly. These expansions are conservative and can include other libraries visible at the same call site. After at most three expansions, or when diagnostics cannot guide them, compilation falls back to carrying the application package and then all free dependencies, as the package-based compiler does. Native and pinned packages always stay in the host; interface, allocation, inherited-member and FFI checks still apply to every attempt.
+
+Selection works at library granularity, not individual functions or changed lines. Barrel imports and cycles commonly expand the selection substantially, and fallbacks can carry the whole application and its free dependencies. More carried code means larger patches and more interpreted code at runtime. Host interface generation keeps its existing scope; this optimization does not retain all application-internal calls or require rebuilding an otherwise compatible shipped host. `selected_sources`, `carried_packages` and `selection` (`libraries`, `application` or `whole`) record the final scope in `patch.json`; compiler reports record each attempt.
 
 A resource-only patch reuses host main and emits only its generated module entry. Resource and font collection is independent of source selection.
 

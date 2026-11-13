@@ -22,7 +22,7 @@ No. A patch runs from the next cold start, because the running process keeps the
 
 ### Does a patch contain the whole app?
 
-A bytecode patch carries changed libraries, their required callers and parts, and changed assets. Unchanged libraries, Flutter and plugins stay in the app. Cyclic imports can still bring in many unchanged callers. An SO patch carries the whole recompiled `libapp.so`, several megabytes. A patch file is at most 320 MiB, and the built-in downloader must finish within 2 minutes. See [Two patch strategies](architecture.md#two-patch-strategies).
+A bytecode patch starts with changed libraries, their required callers and parts, and changed assets. It reuses unchanged libraries where the released host's interface permits it. Missing APIs expand the selection; if needed, the compiler falls back to carrying the application package and all free Dart dependencies. Barrel imports and cycles can also bring in many unchanged libraries. Flutter and native plugins stay in the app. An SO patch carries the whole recompiled `libapp.so`, several megabytes. A patch file is at most 320 MiB, and the built-in downloader must finish within 2 minutes. See [Two patch strategies](architecture.md#two-patch-strategies).
 
 ### Does the bytecode strategy slow the app down?
 

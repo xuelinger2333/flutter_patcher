@@ -19,18 +19,21 @@ typedef _Module = ({
 });
 
 /// A bytecode host's patch: a dynamic module of the changed code, linked
-/// against the host. Only changed libraries and their required callers/parts
-/// are remapped; unchanged libraries retain their host identities.
+/// against the host. Reuse unchanged libraries where the released interface
+/// permits it, expanding to libraries or packages when checks reject reuse.
 class BytecodeProducer implements CodeProducer {
   BytecodeProducer(this.run);
   final PatchRun run;
   late final String usage;
   late final Map<String, dynamic> compileReceipt;
   late Set<String> own;
+  late Set<String> applicationPackages;
   Set<String>? freePackages;
   late Set<String> selected;
   late Set<String> baselineSources;
   late String tier;
+  String selection = 'libraries';
+  int _generation = 0;
 
   PatchPipeline get _p => run.pipeline;
   String get _baseline => run.resolved.compileRoot;
@@ -77,6 +80,7 @@ class BytecodeProducer implements CodeProducer {
     );
     final roots = await packageRoots(run.config);
     own = {app, ...roots.keys.where((k) => !oldRoots.containsKey(k))};
+    applicationPackages = {...own};
     final hashes =
         (await readObject(p.join(_baseline, 'source_hashes.json')))['files']
             as Map;
@@ -207,10 +211,12 @@ class BytecodeProducer implements CodeProducer {
     tier = own.any((name) => name != app) ? 'whole' : 'lean';
   }
 
-  final Map<String, _Module> _modules = {};
-  Future<_Module> _module(String tier) async {
-    if (_modules[tier] case final ready?) return ready;
-    final dir = p.join(run.work, tier == 'lean' ? 'module' : 'module-whole');
+  _Module? _ready;
+  Future<_Module> _module() async {
+    if (_ready case final ready?) return ready;
+    // Every expanded selection has its own package config and source tree.
+    // A cache keyed by tier would reuse stale sources within the same tier.
+    final dir = p.join(run.work, 'module-$_generation');
     final remap = await remapSources(
       run.config,
       dir,
@@ -223,7 +229,7 @@ class BytecodeProducer implements CodeProducer {
       'PATCH_SOURCE_INVALID',
       'Application uses reserved __patch_entry.dart',
     );
-    return _modules[tier] = (
+    return _ready = (
       remap: remap,
       names: Map<String, String>.from(remap['names'] as Map),
       dir: dir,
@@ -232,8 +238,8 @@ class BytecodeProducer implements CodeProducer {
 
   Future<Map<String, dynamic>> _compile(bool emit) async {
     final req = run.req, work = run.work;
-    run.phase = '$tier-${emit ? 'emit' : 'check'}';
-    final m = await _module(tier);
+    run.phase = '$tier-$_generation-${emit ? 'emit' : 'check'}';
+    final m = await _module();
     final names = m.names;
     await File(p.join(m.dir, run.app, '__patch_entry.dart')).writeAsString(
       patchEntry(
@@ -290,7 +296,7 @@ class BytecodeProducer implements CodeProducer {
             name,
       ],
       'out': p.join(work, 'module.bc'),
-      if (!emit) 'kernel_out': p.join(work, '$tier-analysis.dill'),
+      if (!emit) 'kernel_out': p.join(work, '${run.phase}-analysis.dill'),
     });
     final result = await _p.commands.runResult(_p.sdk.dart, [
       _p.tool,
@@ -308,6 +314,8 @@ class BytecodeProducer implements CodeProducer {
     final report = await readObject(output);
     // The host's icon list only feeds font subsetting; reports keep its size.
     run.reports.add({
+      'selection': selection,
+      'selected_source_count': selected.length,
       for (final entry in report.entries)
         if (entry.key != 'host_icons') entry.key: entry.value,
       if (report['host_icons'] case final List icons)
@@ -323,11 +331,113 @@ class BytecodeProducer implements CodeProducer {
     return report;
   }
 
+  Future<bool> _expand({
+    Iterable<String> libraries = const [],
+    Set<String> packages = const {},
+    Set<String> includeImportsOf = const {},
+  }) async {
+    final expanded = await selectPatchSources(
+      config: run.config,
+      packages: freePackages ?? applicationPackages,
+      changed: [...selected, ...libraries],
+      baselineSources: baselineSources,
+      entry: 'package:${run.app}/${run.target.substring(4)}',
+      carryPackages: packages,
+      includeImportsOf: includeImportsOf,
+    );
+    if (expanded.length == selected.length && expanded.containsAll(selected)) {
+      return false;
+    }
+    selected = expanded;
+    own = {
+      run.app,
+      for (final uri in selected) Uri.parse(uri).pathSegments.first,
+    };
+    tier = own.any((name) => name != run.app) ? 'whole' : 'lean';
+    _generation++;
+    _ready = null;
+    return true;
+  }
+
+  Future<bool> _expandMissingLibraries(Map<String, dynamic> report) async {
+    final checks = report['checks'] as Map? ?? const {};
+    final callers = <String>{};
+    for (final row in checks['interface'] as List? ?? const []) {
+      if (row is! Map ||
+          !'${row['code']}'.contains('DynamicInterface') ||
+          row['file'] is! String) {
+        continue;
+      }
+      final uri = Uri.tryParse(row['file'] as String);
+      if (uri == null) continue;
+      String? relative;
+      if (uri.scheme == 'file' && p.isWithin(_ready!.dir, uri.toFilePath())) {
+        relative = p
+            .relative(uri.toFilePath(), from: _ready!.dir)
+            .replaceAll('\\', '/');
+      } else if (uri.scheme == virtualScheme &&
+          uri.pathSegments.firstOrNull == p.basename(_ready!.dir)) {
+        relative = uri.pathSegments.skip(1).join('/');
+      } else if (uri.scheme == 'package') {
+        final original = {
+          for (final entry in _ready!.names.entries) entry.value: entry.key,
+        }[uri.pathSegments.firstOrNull];
+        if (original != null) {
+          callers.add(
+            Uri(
+              scheme: 'package',
+              path: '$original/${uri.pathSegments.skip(1).join('/')}',
+            ).toString(),
+          );
+        }
+      }
+      if (relative != null) {
+        callers.add(Uri(scheme: 'package', path: relative).toString());
+      }
+    }
+    final allowed = freePackages ?? applicationPackages;
+    final libraries =
+        <String>{
+          // Allocation diagnostics identify the owning library directly.
+          for (final row in checks['allocation'] as List? ?? const [])
+            if (row is Map && row['library'] is String)
+              row['library'] as String,
+        }.where((library) {
+          final uri = Uri.parse(library);
+          return uri.scheme == 'package' &&
+              uri.pathSegments.isNotEmpty &&
+              allowed.contains(uri.pathSegments.first);
+        });
+    if (libraries.isEmpty && callers.isEmpty) return false;
+    return _expand(libraries: libraries, includeImportsOf: callers);
+  }
+
+  Future<Map<String, dynamic>> _retry(Map<String, dynamic> outcome) async {
+    // Bound the extra compiles. A chain of missing APIs can otherwise cost
+    // one compile per library; package fallbacks preserve upstream behavior.
+    for (var i = 0; i < 3 && outcome['status'] != 'compiled'; i++) {
+      if (!await _expandMissingLibraries(outcome)) break;
+      outcome = await _compile(true);
+    }
+    if (outcome['status'] != 'compiled' &&
+        await _expand(packages: applicationPackages)) {
+      selection = 'application';
+      outcome = await _compile(true);
+    }
+    if (outcome['status'] != 'compiled' &&
+        freePackages != null &&
+        await _expand(packages: freePackages!)) {
+      selection = 'whole';
+      outcome = await _compile(true);
+    }
+    return outcome;
+  }
+
   @override
   Future<PatchCode> produce() async {
     final req = run.req, work = run.work, sdk = _p.sdk;
     // Before the bundle build: it shadows hook packages in this config.
-    await _module(tier);
+    await _module();
     run.phase = 'resources';
     final bundle = p.join(work, 'flutter_assets');
     final options = await run.inputs.flutterOptions(run.project, bundle: true);
@@ -364,7 +474,9 @@ class BytecodeProducer implements CodeProducer {
       await compiling.then<void>((_) {}, onError: (_) {});
       rethrow;
     }
-    final outcome = await compiling;
+    // Retries run after bundling restores the original package config from
+    // its temporary no-hooks view, so new remaps use the real source roots.
+    final outcome = await _retry(await compiling);
     run.facts
       ..tier = tier
       ..report = outcome;
@@ -382,7 +494,8 @@ class BytecodeProducer implements CodeProducer {
       metadata: {'tier': tier},
       report: {
         'tier': tier,
-        'selected_sources': selected.toList(),
+        'selection': selection,
+        'selected_sources': selected.toList()..sort(),
         'carried_packages': own.toList()..sort(),
       },
     );

@@ -350,12 +350,18 @@ Future<Map<String, Object?>> remapSources(
 /// identities. Unchanged dependencies stay in the host; parts share their
 /// owner's identity and are always copied together. A newly reached library
 /// absent from the host must also be supplied by the module.
+/// [carryPackages] seeds every source in those packages for compatibility
+/// fallbacks; callers and parts still close across all allowed packages.
+/// [includeImportsOf] carries imports and re-exported libraries visible at
+/// compiler-reported call sites, without guessing the missing member's owner.
 Future<Set<String>> selectPatchSources({
   required String config,
   required Set<String> packages,
   required Iterable<String> changed,
   required Set<String> baselineSources,
   required String entry,
+  Set<String> carryPackages = const {},
+  Set<String> includeImportsOf = const {},
 }) async {
   final roots = await packageRoots(config);
   final compiled = baselineSources
@@ -363,6 +369,7 @@ Future<Set<String>> selectPatchSources({
       .toSet();
   final dependencies = <String, Set<String>>{};
   final parts = <String, Set<String>>{};
+  final exports = <String, Set<String>>{};
   for (final name in packages.toList()..sort()) {
     final root = roots[name] as Uri?;
     if (root == null) continue;
@@ -390,14 +397,35 @@ Future<Set<String>> selectPatchSources({
         rewriteUri: (value, kind) {
           final target = uri.resolve(value).toString();
           if (kind == 'part') parts.putIfAbsent(key, () => {}).add(target);
+          if (kind == 'export') exports.putIfAbsent(key, () => {}).add(target);
           if (kind != 'part of') dependencies[key]!.add(target);
           return null;
         },
       );
     }
   }
+  final sites = includeImportsOf
+      .map((uri) => Uri.parse(uri).toString())
+      .toSet();
+  final owners = {
+    ...sites,
+    for (final row in parts.entries)
+      if (row.value.any(sites.contains)) row.key,
+  };
+  final references = <String>{};
+  final pending = [for (final site in owners) ...?dependencies[site]];
+  while (pending.isNotEmpty) {
+    final library = pending.removeLast();
+    if (!dependencies.containsKey(library) || !references.add(library)) {
+      continue;
+    }
+    pending.addAll(exports[library] ?? const {});
+  }
   final selected = <String>{
     Uri.parse(entry).toString(),
+    ...references,
+    for (final uri in dependencies.keys)
+      if (carryPackages.contains(Uri.parse(uri).pathSegments.first)) uri,
     for (final uri in changed)
       if (uri.startsWith('package:') &&
           (packages.contains(Uri.parse(uri).pathSegments.first) ||
