@@ -22,11 +22,11 @@ No. A patch runs from the next cold start, because the running process keeps the
 
 ### Does a patch contain the whole app?
 
-No. A bytecode patch carries your app's own packages, the pure-Dart dependencies when one of them changed, and the changed assets; Flutter and plugins stay in the app. An SO patch carries the whole recompiled `libapp.so`, several megabytes. A patch file is at most 320 MiB, and the built-in downloader must finish within 2 minutes. See [Two patch strategies](architecture.md#two-patch-strategies).
+A bytecode patch carries changed libraries, their required callers and parts, and changed assets. Unchanged libraries, Flutter and plugins stay in the app. Cyclic imports can still bring in many unchanged callers. An SO patch carries the whole recompiled `libapp.so`, several megabytes. A patch file is at most 320 MiB, and the built-in downloader must finish within 2 minutes. See [Two patch strategies](architecture.md#two-patch-strategies).
 
 ### Does the bytecode strategy slow the app down?
 
-Yes, while a patch runs: the patch carries all of your app's own code and an interpreter runs it, which is slower than machine code, so compute-heavy code in your app runs noticeably slower. Flutter and plugins still run as machine code, and without a patch the app runs as a normal release build. On Android, `--strategy so` runs patches at full speed with larger patch files. See [Two patch strategies](architecture.md#two-patch-strategies).
+Yes, while a patch runs: an interpreter runs the application libraries carried by the patch, which is slower than machine code, so compute-heavy code in your app runs noticeably slower. Flutter and plugins still run as machine code, and without a patch the app runs as a normal release build. On Android, `--strategy so` runs patches at full speed with larger patch files. See [Two patch strategies](architecture.md#two-patch-strategies).
 
 ### Can an app built with plain `flutter build` receive patches?
 

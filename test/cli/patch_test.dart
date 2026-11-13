@@ -17,6 +17,32 @@ import 'package:flutter_patcher/src/cli/publish/seal.dart';
 import 'package:flutter_patcher/src/cli/sdk/package_inputs.dart';
 
 void main() {
+  test('annotations and conditional values are not directive URIs', () {
+    const source = '''
+#!/usr/bin/env dart
+@Deprecated('old')
+library;
+@Deprecated /* comment */ ('old')
+import 'stub.dart' if (dart.library.io == 'true') 'changed.dart';
+@Annotation<int>.named('metadata')
+export 'shared.dart';
+const text = 'changed.dart';
+''';
+    final seen = <String>[];
+    final rewritten = rewriteImports(
+      source,
+      const {},
+      rewriteUri: (uri, _) {
+        seen.add(uri);
+        return 'package:app/$uri';
+      },
+    );
+    expect(seen, ['stub.dart', 'changed.dart', 'shared.dart']);
+    expect(rewritten, contains("dart.library.io == 'true'"));
+    expect(rewritten, contains("@Deprecated('old')"));
+    expect(rewritten, contains("'package:app/changed.dart'"));
+    expect(rewritten, contains("const text = 'changed.dart'"));
+  });
   test('nested comments and runtime interpolation are not rewritten', () {
     const source =
         '/* outer /* nested */ import "package:app/comment.dart"; */\n'
@@ -70,9 +96,13 @@ void main() {
             },
         ],
       });
-      final output = await remapSources(config, p.join(root, 'module'), {
-        'app',
-      }, 3);
+      final output = await remapSources(
+        config,
+        p.join(root, 'module'),
+        {'app'},
+        3,
+        {'package:app/main.dart', 'package:app/a.dart'},
+      );
       expect((output['names'] as Map)['app'], 'patch.3.app');
       expect(
         await File(p.join(root, 'module/app/main.dart')).readAsString(),

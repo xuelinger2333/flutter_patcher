@@ -12,7 +12,7 @@ enum PatchStage {
   /// Sources and dependencies compared with the release.
   inputs,
 
-  /// One compiled module (a bytecode patch may compile twice).
+  /// The compiled module.
   compile,
 
   /// The code the patch ships.
@@ -195,7 +195,9 @@ final patchRules = <PatchRule>[
     (f) => [
       if (f.report?['status'] != 'compiled')
         '${f.tier == 'lean' ? 'Lean' : 'Whole'}-tier checks failed: '
-            '${checkSummary(f.report ?? const {})}; evidence: ${f.evidence}',
+            '${checkSummary(f.report ?? const {})}; evidence: ${f.evidence}. '
+            'If the host interface lacks an unchanged library, rebuild the '
+            'host with this flutter_patcher to enable library reuse.',
     ],
     strategies: const {'bytecode'},
   ),

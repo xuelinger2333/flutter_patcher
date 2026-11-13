@@ -52,7 +52,7 @@ A Flutter release app compiles your Dart code to machine code. flutter_patcher c
 
 | | Bytecode (default) | SO |
 |---|---|---|
-| A patch contains | Your app's own packages compiled to bytecode, the code they use; with the whole tier, also the pure-Dart dependencies | A whole recompiled `libapp.so` |
+| A patch contains | Changed libraries and required callers/parts compiled to bytecode; unchanged libraries reuse host code | A whole recompiled `libapp.so` |
 | How it runs | An interpreter in the engine runs all the code the patch carries; Flutter, plugins and the packages the patch does not carry still run as the app's machine code | At startup, Flutter loads the patch's `libapp.so` instead of the app's |
 | Platforms | Android, iOS | Android only |
 | Patch size | Small: your app's code, without Flutter and plugins | Large: about the size of `libapp.so` |
@@ -62,8 +62,14 @@ iOS hosts use bytecode because iOS does not allow loading downloaded machine cod
 
 `patch` chooses between two tiers of bytecode patch:
 
-- **lean** carries your app's own packages and is tried first;
-- **whole** also carries the pure-Dart dependencies, and is used when one of them changed or lean cannot carry the change.
+- **lean** carries selected application libraries;
+- **whole** also carries selected libraries from pure-Dart dependencies.
+
+Source hashes and define readers seed selection. Callers, export barrels and parts are included when they must refer to a changed library; newly reached libraries absent from the host are included too. Unchanged imports keep their original host URIs. `selected_sources` and `carried_packages` describe the selection in `patch.json`.
+
+This works at library granularity, not individual functions or changed lines. Import cycles can still expand the selection substantially. A rejected module is not retried with every free package. Hosts missing the interface needed to reuse their own libraries need rebuilding with this version. The host interface retains application references as well as dependency references, which can increase the retained host surface. Existing interface/allocation checks still apply.
+
+A resource-only patch reuses host main and emits only its generated module entry. Resource and font collection is independent of source selection.
 
 ## Baselines: what a patch is compared with
 
@@ -153,7 +159,7 @@ failed start    past the threshold, returns to the app's built-in version
 | Native code, native plugins, build scripts | ❌ | A patch carries only Dart code and assets |
 | Dependencies with native capabilities | ❌ | They are tied to native code and change only with a new release |
 | Packages that depend on those (bytecode) | ❌ | They stay in the host with the package they depend on |
-| FFI calls in a package the patch carries (bytecode) | ❌ | The patch carries the whole package, and the interpreter cannot make FFI calls; keep FFI calls in a package the host keeps, such as a plugin |
+| FFI calls in a package the patch carries (bytecode) | ❌ | The interpreter cannot make FFI calls; keep FFI calls in a package the host keeps, such as a plugin |
 | `IconData` built at run time (bytecode) | ❌ | A patch's icon font keeps only the constant icons it uses |
 | Flutter SDK version | ❌ | A patch is built with the same Flutter version as its host |
 

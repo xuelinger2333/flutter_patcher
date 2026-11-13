@@ -19,17 +19,18 @@ typedef _Module = ({
 });
 
 /// A bytecode host's patch: a dynamic module of the changed code, linked
-/// against the host. The lean tier carries the application's own packages;
-/// the whole tier also every free dependency.
+/// against the host. Only changed libraries and their required callers/parts
+/// are remapped; unchanged libraries retain their host identities.
 class BytecodeProducer implements CodeProducer {
   BytecodeProducer(this.run);
   final PatchRun run;
   late final String usage;
   late final Map<String, dynamic> compileReceipt;
   late Set<String> own;
-  Set<String>? wholeOwn;
+  Set<String>? freePackages;
+  late Set<String> selected;
+  late Set<String> baselineSources;
   late String tier;
-  bool dependencyChanged = false;
 
   PatchPipeline get _p => run.pipeline;
   String get _baseline => run.resolved.compileRoot;
@@ -156,7 +157,7 @@ class BytecodeProducer implements CodeProducer {
       }
     }
     trace('source changes');
-    // The whole tier renames every free package into the module as well.
+    // Only free packages may supply selected libraries.
     // The packages pinned at the host build (native capability and all it
     // reaches) always stay the host's, so changing one needs a release.
     final pinned = compileReceipt['pinned_packages'];
@@ -184,16 +185,26 @@ class BytecodeProducer implements CodeProducer {
       facts.newlyPinned.addAll(
         now.pinned.keys.where((n) => !pinned.containsKey(n)).toList()..sort(),
       );
-      wholeOwn = {...own, ...now.free.where((n) => !pinned.containsKey(n))};
+      freePackages = {...own, ...now.free.where((n) => !pinned.containsKey(n))};
     }
     require(
-      !dependencyChanged || wholeOwn != null,
+      !dependencyChanged || freePackages != null,
       'PATCH_BASELINE_INCOMPATIBLE',
       'This host predates pinned-package records; rebuild it to patch '
           'dependency changes',
     );
-    this.dependencyChanged = dependencyChanged;
-    tier = dependencyChanged ? 'whole' : 'lean';
+    baselineSources = hashes.keys.cast<String>().toSet();
+    selected = !facts.codeChanged
+        ? <String>{}
+        : await selectPatchSources(
+            config: run.config,
+            packages: freePackages ?? own,
+            changed: changed,
+            baselineSources: baselineSources,
+            entry: 'package:$app/${run.target.substring(4)}',
+          );
+    own = {app, for (final uri in selected) Uri.parse(uri).pathSegments.first};
+    tier = own.any((name) => name != app) ? 'whole' : 'lean';
   }
 
   final Map<String, _Module> _modules = {};
@@ -203,8 +214,9 @@ class BytecodeProducer implements CodeProducer {
     final remap = await remapSources(
       run.config,
       dir,
-      tier == 'lean' ? own : wholeOwn!,
+      own,
       run.req.moduleId,
+      selected,
     );
     require(
       !await File(p.join(dir, run.app, '__patch_entry.dart')).exists(),
@@ -225,7 +237,7 @@ class BytecodeProducer implements CodeProducer {
     final names = m.names;
     await File(p.join(m.dir, run.app, '__patch_entry.dart')).writeAsString(
       patchEntry(
-        names[run.app]!,
+        selected.isEmpty ? run.app : names[run.app]!,
         run.target.substring(4),
         req.moduleId,
         run.resolved.fingerprint,
@@ -267,7 +279,16 @@ class BytecodeProducer implements CodeProducer {
       ),
       'allocated': p.join(_baseline, 'allocate_finalized.json'),
       'own': names.values.toList(),
-      'original_own': (tier == 'lean' ? own : wholeOwn!).toList(),
+      // Only exclude a host package from the compiler's package-wide checks
+      // when every baseline source in that package is replaced. Otherwise
+      // its unchanged libraries are genuine host dependencies.
+      'original_own': [
+        for (final name in own)
+          if (baselineSources
+              .where((uri) => uri.startsWith('package:$name/'))
+              .every((uri) => selected.contains(Uri.parse(uri).toString())))
+            name,
+      ],
       'out': p.join(work, 'module.bc'),
       if (!emit) 'kernel_out': p.join(work, '$tier-analysis.dill'),
     });
@@ -343,13 +364,7 @@ class BytecodeProducer implements CodeProducer {
       await compiling.then<void>((_) {}, onError: (_) {});
       rethrow;
     }
-    var outcome = await compiling;
-    // Lean rejected: the whole tier carries the free packages the module
-    // used through the host interface, and may pass.
-    if (outcome['status'] != 'compiled' && tier == 'lean' && wholeOwn != null) {
-      tier = 'whole';
-      outcome = await _compile(true);
-    }
+    final outcome = await compiling;
     run.facts
       ..tier = tier
       ..report = outcome;
@@ -367,14 +382,8 @@ class BytecodeProducer implements CodeProducer {
       metadata: {'tier': tier},
       report: {
         'tier': tier,
-        if (tier == 'whole')
-          'upgrade': {
-            'dependency_changed': dependencyChanged,
-            'carried_packages': (wholeOwn!.toList()..sort()),
-            'message':
-                'Dependencies other than those pinned to the host run '
-                'in the module interpreter.',
-          },
+        'selected_sources': selected.toList(),
+        'carried_packages': own.toList()..sort(),
       },
     );
   }

@@ -10,12 +10,143 @@ String rewriteImports(
   String source,
   Map<String, String> names, {
   Map<String, String> relativeUriRewrites = const {},
+  String? Function(String uri, String directive)? rewriteUri,
 }) {
   var directive = false, previous = 0;
+  var directiveKind = '';
+  var directiveDepth = 0;
   final out = StringBuffer();
-  var i = 0;
+  var i = source.startsWith('#!') ? source.indexOf('\n') : 0;
+  if (i < 0) return source;
   bool identifier(String c) => RegExp(r'[A-Za-z_0-9$]').hasMatch(c);
+  void whitespace() {
+    while (i < source.length) {
+      if (' \t\r\n'.contains(source[i])) {
+        i++;
+      } else if (source.startsWith('//', i)) {
+        final end = source.indexOf('\n', i);
+        i = end < 0 ? source.length : end;
+      } else if (source.startsWith('/*', i)) {
+        var depth = 1;
+        i += 2;
+        while (i < source.length && depth > 0) {
+          if (source.startsWith('/*', i)) {
+            depth++;
+            i += 2;
+          } else if (source.startsWith('*/', i)) {
+            depth--;
+            i += 2;
+          } else {
+            i++;
+          }
+        }
+        require(
+          depth == 0,
+          'PATCH_SOURCE_INVALID',
+          'Unterminated directive comment',
+        );
+      } else {
+        break;
+      }
+    }
+  }
+
+  void balanced(String open, String close) {
+    var depth = 0;
+    do {
+      final raw =
+          source[i] == 'r' &&
+          i + 1 < source.length &&
+          ["'", '"'].contains(source[i + 1]);
+      if (raw) i++;
+      if (["'", '"'].contains(source[i])) {
+        final quote = source.startsWith(source[i] * 3, i)
+            ? source[i] * 3
+            : source[i];
+        i += quote.length;
+        while (i < source.length && !source.startsWith(quote, i)) {
+          if (!raw && source[i] == '\\') {
+            i += 2;
+          } else if (!raw && source.startsWith(r'${', i)) {
+            i++;
+            balanced('{', '}');
+          } else {
+            i++;
+          }
+        }
+        require(
+          i < source.length,
+          'PATCH_SOURCE_INVALID',
+          'Unterminated annotation string',
+        );
+        i += quote.length;
+        continue;
+      }
+      if (source.startsWith('//', i)) {
+        final end = source.indexOf('\n', i);
+        i = end < 0 ? source.length : end;
+        continue;
+      }
+      if (source.startsWith('/*', i)) {
+        var comments = 1;
+        i += 2;
+        while (i < source.length && comments > 0) {
+          if (source.startsWith('/*', i)) {
+            comments++;
+            i += 2;
+          } else if (source.startsWith('*/', i)) {
+            comments--;
+            i += 2;
+          } else {
+            i++;
+          }
+        }
+        continue;
+      }
+      if (source[i] == open) depth++;
+      if (source[i] == close) depth--;
+      i++;
+    } while (i < source.length && depth > 0);
+    require(
+      depth == 0,
+      'PATCH_SOURCE_INVALID',
+      'Unterminated directive annotation',
+    );
+  }
+
+  void annotation() {
+    i++; // @
+    whitespace();
+    while (i < source.length) {
+      while (i < source.length && identifier(source[i])) {
+        i++;
+      }
+      whitespace();
+      if (i >= source.length || source[i] != '.') break;
+      i++;
+      whitespace();
+    }
+    // Metadata may have type arguments and nested constant expressions.
+    for (final delimiters in [('<', '>'), ('(', ')')]) {
+      if (i >= source.length || source[i] != delimiters.$1) continue;
+      balanced(delimiters.$1, delimiters.$2);
+      whitespace();
+      if (delimiters.$1 == '<' && i < source.length && source[i] == '.') {
+        i++;
+        whitespace();
+        while (i < source.length && identifier(source[i])) {
+          i++;
+        }
+        whitespace();
+      }
+    }
+  }
+
   while (i < source.length) {
+    if (source[i] == '@' && !directive) {
+      annotation();
+      continue;
+    }
     if (source.startsWith('//', i)) {
       final end = source.indexOf('\n', i);
       i = end < 0 ? source.length : end;
@@ -52,6 +183,9 @@ String rewriteImports(
         final word = source.substring(start, i);
         if (['import', 'export', 'part', 'library'].contains(word)) {
           directive = true;
+          directiveKind = word;
+        } else if (directive && directiveKind == 'part' && word == 'of') {
+          directiveKind = 'part of';
         } else if (!directive) {
           // Directives precede declarations. Do not lex interpolation or
           // runtime expressions in the body of the library.
@@ -59,6 +193,8 @@ String rewriteImports(
         }
       } else {
         if (source[i] == ';') directive = false;
+        if (directive && source[i] == '(') directiveDepth++;
+        if (directive && source[i] == ')') directiveDepth--;
         i++;
       }
       continue;
@@ -105,7 +241,7 @@ String rewriteImports(
       i = nextRaw ? j + 1 : j;
       parts.add(readLiteral(nextRaw));
     }
-    if (!directive) continue;
+    if (!directive || directiveDepth != 0) continue;
     final content = parts.join();
     require(
       !content.contains('\\') && !content.contains(r'$'),
@@ -113,7 +249,9 @@ String rewriteImports(
       'Escaped/interpolated directive URIs are unsupported',
     );
     final uri = Uri.tryParse(content);
-    String? replacement = relativeUriRewrites[content];
+    String? replacement =
+        rewriteUri?.call(content, directiveKind) ??
+        relativeUriRewrites[content];
     if (replacement == null &&
         uri?.scheme == 'package' &&
         uri!.pathSegments.isNotEmpty &&
@@ -149,6 +287,7 @@ Future<Map<String, Object?>> remapSources(
   String destination,
   Set<String> own,
   int seq,
+  Set<String> selected,
 ) async {
   final data = await readObject(config);
   final roots = await packageRoots(config);
@@ -158,30 +297,42 @@ Future<Map<String, Object?>> remapSources(
     final row = Map<String, dynamic>.from(raw as Map),
         name = row['name'] as String;
     final source = Directory.fromUri(roots[name] as Uri);
-    if (!own.contains(name)) {
-      row['rootUri'] = source.uri.toString();
-      row['packageUri'] = '';
-      rows.add(row);
-      continue;
-    }
+    // Keep the original URI available: unchanged libraries link to the host.
+    rows.add({...row, 'rootUri': source.uri.toString(), 'packageUri': ''});
+    if (!own.contains(name)) continue;
     final target = p.join(destination, name);
     await Directory(target).create(recursive: true);
     await for (final entity in source.list(
       recursive: true,
       followLinks: false,
     )) {
-      final output = p.join(target, p.relative(entity.path, from: source.path));
       if (entity is Link) {
         throw Failure('PATCH_SOURCE_INVALID', 'Symlink in module sources');
       }
-      if (entity is! File) continue;
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      final relative = p
+          .relative(entity.path, from: source.path)
+          .replaceAll('\\', '/');
+      final identity = Uri.parse('package:$name/$relative');
+      if (!selected.contains(identity.toString())) continue;
+      final output = p.join(target, relative);
       await File(output).parent.create(recursive: true);
-      if (entity.path.endsWith('.dart')) {
-        await File(output)
-            .writeAsString(rewriteImports(await entity.readAsString(), names));
-      } else {
-        await entity.copy(output);
-      }
+      await File(output).writeAsString(
+        rewriteImports(
+          await entity.readAsString(),
+          const {},
+          rewriteUri: (value, _) {
+            final uri = identity.resolve(value);
+            if (uri.scheme != 'package') return null;
+            if (!selected.contains(uri.toString())) return uri.toString();
+            final package = uri.pathSegments.first;
+            return uri.toString().replaceFirst(
+              'package:$package/',
+              'package:${names[package]}/',
+            );
+          },
+        ),
+      );
     }
     rows.add({
       ...row,
@@ -193,6 +344,99 @@ Future<Map<String, Object?>> remapSources(
   final result = p.join(destination, 'package_config.json');
   await writeObject(result, {'configVersion': 2, 'packages': rows});
   return {'packages': result, 'names': names};
+}
+
+/// Select changed libraries and the libraries that must refer to their new
+/// identities. Unchanged dependencies stay in the host; parts share their
+/// owner's identity and are always copied together. A newly reached library
+/// absent from the host must also be supplied by the module.
+Future<Set<String>> selectPatchSources({
+  required String config,
+  required Set<String> packages,
+  required Iterable<String> changed,
+  required Set<String> baselineSources,
+  required String entry,
+}) async {
+  final roots = await packageRoots(config);
+  final compiled = baselineSources
+      .map((uri) => Uri.parse(uri).toString())
+      .toSet();
+  final dependencies = <String, Set<String>>{};
+  final parts = <String, Set<String>>{};
+  for (final name in packages.toList()..sort()) {
+    final root = roots[name] as Uri?;
+    if (root == null) continue;
+    final directory = Directory.fromUri(root);
+    if (!await directory.exists()) continue;
+    await for (final file in directory.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      require(
+        file is! Link,
+        'PATCH_SOURCE_INVALID',
+        'Symlink in module sources',
+      );
+      if (file is! File || !file.path.endsWith('.dart')) continue;
+      final relative = p
+          .relative(file.path, from: directory.path)
+          .replaceAll('\\', '/');
+      final uri = Uri.parse('package:$name/$relative');
+      final key = uri.toString();
+      dependencies[key] = {};
+      rewriteImports(
+        await file.readAsString(),
+        const {},
+        rewriteUri: (value, kind) {
+          final target = uri.resolve(value).toString();
+          if (kind == 'part') parts.putIfAbsent(key, () => {}).add(target);
+          if (kind != 'part of') dependencies[key]!.add(target);
+          return null;
+        },
+      );
+    }
+  }
+  final selected = <String>{
+    Uri.parse(entry).toString(),
+    for (final uri in changed)
+      if (uri.startsWith('package:') &&
+          (packages.contains(Uri.parse(uri).pathSegments.first) ||
+              !roots.containsKey(Uri.parse(uri).pathSegments.first)))
+        Uri.parse(uri).toString(),
+  };
+  var added = true;
+  while (added) {
+    added = false;
+    for (final row in dependencies.entries) {
+      // Recompile callers, including export barrels, so they cannot keep
+      // calling the old host library. This also closes cycles.
+      if (compiled.contains(row.key) &&
+          row.value.any(selected.contains) &&
+          selected.add(row.key)) {
+        added = true;
+      }
+      if (!selected.contains(row.key)) continue;
+      for (final target in row.value) {
+        if (dependencies.containsKey(target) &&
+            (!compiled.contains(target) ||
+                (parts[row.key]?.contains(target) ?? false)) &&
+            selected.add(target)) {
+          added = true;
+        }
+      }
+    }
+  }
+  for (final source in selected) {
+    for (final target in dependencies[source] ?? const <String>{}) {
+      require(
+        !selected.contains(target) || dependencies.containsKey(target),
+        'PATCH_SOURCE_INVALID',
+        '$source still references deleted source $target; remove or update the directive',
+      );
+    }
+  }
+  return (selected.intersection(dependencies.keys.toSet()).toList()..sort())
+      .toSet();
 }
 
 String patchEntry(
