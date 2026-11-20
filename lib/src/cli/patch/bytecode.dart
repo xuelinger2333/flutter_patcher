@@ -359,10 +359,13 @@ class BytecodeProducer implements CodeProducer {
       file: p.join(work, 'module.bc'),
       bundle: bundle,
 
+      // A host with whole icon fonts gets whole ones, carried only when
+      // they changed.
       fonts: (payload) => payload.collectFonts(
         outcome['fonts'] as List? ?? [],
         hostIcons: outcome['host_icons'] as List?,
         hostFiles: hostFiles ?? const {},
+        wholeFamilies: !run.inputs.treeShakeIcons,
       ),
       metadata: {'tier': tier},
       report: {

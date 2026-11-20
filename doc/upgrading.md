@@ -19,6 +19,10 @@ You have apps built with flutter_patcher 1.0.0 in the store and are moving the p
 
 Apps shipped with 1.1.0 keep being patched with flutter_patcher 1.1.0: in that release's code, `pubspec.yaml` keeps depending on `flutter_patcher: 1.1.0`. The plugin is part of the host, so a patch made after upgrading the dependency fails with `PATCH_NATIVE_CHANGE`. The project, keys and store need no change, and the next `build` makes a 1.1.1 host.
 
+## From 1.1.1 to 1.1.2
+
+Apps shipped with 1.1.1 keep being patched with flutter_patcher 1.1.1, for the same reason: their `pubspec.yaml` keeps depending on `flutter_patcher: 1.1.1`, or a patch fails with `PATCH_NATIVE_CHANGE`. The next `build` makes a 1.1.2 host, which has native code for `arm64-v8a` only: devices of other ABIs cannot install it.
+
 ## Related
 
 - [Production Deployment Guide](production-playbook.md): build the release with 1.1 and deliver patches.

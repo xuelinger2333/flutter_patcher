@@ -71,10 +71,13 @@ Builds the app you release to the store, a host, and saves its baseline to the b
 
 ```bash
 dart run flutter_patcher build android
+dart run flutter_patcher build appbundle # Android App Bundle (.aab), as Google Play takes
 dart run flutter_patcher build ios       # Apple Silicon Mac only
 dart run flutter_patcher build android --dart-define=API_URL=https://api.example.com
-dart run flutter_patcher build android -- --android-project-arg=store=play
+dart run flutter_patcher build android --android-project-arg=store=play
 ```
+
+`build android` makes an APK and `build appbundle` an Android App Bundle. They take the same options and make the same host, so `patch android` patches either. Either package carries native code for `arm64-v8a` only, the one ABI a host runs on, so devices of other ABIs cannot install it.
 
 **Common options**
 
@@ -96,15 +99,16 @@ dart run flutter_patcher build android -- --android-project-arg=store=play
 | `--target <file>` | Entry file | `lib/main.dart` |
 | `--out <dir>` | Output directory; it must not exist, so that a build never overwrites another | `.dart_tool/flutter_patcher/releases/<timestamp>/` |
 | `--export-method <method>` | iOS only, passed to `flutter build ipa`: `app-store`, `ad-hoc`, `development` or `enterprise` | `app-store` |
+| `--no-tree-shake-icons` | The host carries its icon fonts whole, so its code may build `IconData` at run time; see [Icon fonts](#icon-fonts) | Icon fonts keep only the constant icons in the code |
 | `--host-policy <file>` | A host policy you wrote; see [Custom Host Policy](advanced.md#custom-host-policy) | Derived from the project |
-| `-- <options>` | Options after `--` are passed to `flutter build`; only [those listed below](#defines-and-flutter-build-options) | None |
+| `flutter build` options | Only [those listed below](#defines-and-flutter-build-options), written as for `flutter build` | None |
 
-**Output**: the output directory holds `app-release.apk` or `app-release.ipa` and the full report, `build.json`. stdout holds one JSON line:
+**Output**: the output directory holds `app-release.apk`, `app-release.aab` or `app-release.ipa` and the full report, `build.json`. stdout holds one JSON line:
 
 | Field | Value |
 |---|---|
 | `command`, `status` | `build`, `build_archived` |
-| `app` | Path of the APK or IPA to submit to the store |
+| `app` | Path of the APK, App Bundle or IPA to submit to the store |
 | `application_id`, `version_code`, `strategy` | The host's identity |
 | `signed` | `true` when the host accepts only files signed with the project's patch key |
 | `fingerprint` | The fingerprint of this host build |
@@ -122,7 +126,7 @@ dart run flutter_patcher build android -- --android-project-arg=store=play
 | Code | When | Fix |
 |---|---|---|
 | `BASELINE_RELEASE_CONFLICT` | The same flavor and build number was built before with different content | Raise the build number, because a release has one baseline; identical content reuses the existing baseline |
-| `BUILD_CONFIG_INVALID` | No build number in `pubspec.yaml`, no single application id, an invalid option, a define or an option after `--` that is not accepted, or `--out` exists | Correct what `message` names |
+| `BUILD_CONFIG_INVALID` | No build number in `pubspec.yaml`, no single application id, an invalid option, a define or a `flutter build` option that is not accepted, or `--out` exists | Correct what `message` names |
 | `HOST_UNSUPPORTED` | `build ios` on a computer other than a Mac | Build on an Apple Silicon Mac |
 
 ### Defines and `flutter build` options
@@ -132,9 +136,9 @@ Daily development keeps using `flutter run` and `flutter build`. When you build 
 - Names and values are kept in the baseline as plain text, and every patch of the host is compiled with them. How a patch changes them is in [Defines in a patch](#defines-in-a-patch).
 - `build` sets these defines itself, as `flutter build` does, and keeps them in the baseline: `FLUTTER_APP_FLAVOR` (`--flavor`), `FLUTTER_BUILD_NAME` (`version` before `+`), `FLUTTER_BUILD_NUMBER` (the build number), `FLUTTER_VERSION`, `FLUTTER_CHANNEL`, `FLUTTER_GIT_URL`, `FLUTTER_FRAMEWORK_REVISION`, `FLUTTER_ENGINE_REVISION`, `FLUTTER_DART_VERSION`, `FLUTTER_ENABLED_FEATURE_FLAGS`. Passing one of these names, or a define starting with `dart.`, fails with `BUILD_CONFIG_INVALID`.
 - A host and its patches are built with the Flutter feature flags `windowing` and `accessibility_evaluations` off, whatever `flutter config` says.
-- Only these options are accepted after `--`; any other fails with `BUILD_CONFIG_INVALID`. They are kept in the baseline, and an SO patch is rebuilt with them too.
+- `build` takes only these `flutter build` options; any other `flutter build` option fails with `BUILD_CONFIG_INVALID`. They are kept in the baseline, and an SO patch is rebuilt with them too.
 
-| Option | `build android` | `build ios` |
+| Option | `build android`, `build appbundle` | `build ios` |
 |---|---|---|
 | `--android-project-arg <key=value>` (`-P`) | ✓ | |
 | `--android-project-cache-dir <dir>` | ✓ | |
@@ -147,6 +151,15 @@ Daily development keeps using `flutter run` and `flutter build`. When you build 
 
 `flutter build ipa` does not support the first five, so `build ios` accepts only the last three.
 
+### Icon fonts
+
+`flutter build` subsets icon fonts by default, keeping only the glyphs of the constant `IconData` in the code (such as `Icons.home`). When code points are known only at run time (menu icons sent by a server, for example), Flutter cannot subset, and the build fails with `This application cannot tree shake icons fonts`.
+
+Build such a host with `build --no-tree-shake-icons`:
+
+- The host carries its icon fonts whole, so it is larger: the whole MaterialIcons is about 1.6 MB, and a custom icon font is whole too.
+- The setting is kept in the baseline and every patch of the host follows it; `patch` has no such option. Patch code may build `IconData` at run time too. A patch carries a whole new font only when the font file itself changed.
+- Changing the setting takes a new host.
 ## patch
 
 Compares the current source with a released host's baseline and writes the host's patch file. With `--withdraw` it writes the host's withdrawal file instead and compiles nothing.
@@ -165,7 +178,7 @@ dart run flutter_patcher patch android --dart-define=API_URL=https://api2.exampl
 - Build number: the build number of `version` in `pubspec.yaml` by default; set it with `--version-code`.
 - Flavor: `default` by default; set it with `--flavor`.
 
-These keep the host's values and cannot be changed by `patch`, so it has no options for them and takes no `--`: the strategy, the channel, the patch key, the `FLUTTER_*` defines `build` sets itself, and the `flutter build` options. For example, after you change `version` in `pubspec.yaml`, `FLUTTER_BUILD_NAME` in the patch stays the same.
+These keep the host's values and cannot be changed by `patch`, so it has no options for them: the strategy, the channel, the patch key, the `FLUTTER_*` defines `build` sets itself, whether icon fonts are subset, and the `flutter build` options. For example, after you change `version` in `pubspec.yaml`, `FLUTTER_BUILD_NAME` in the patch stays the same.
 
 **Options**
 
@@ -367,7 +380,7 @@ By default it checks only the toolchain. Each of these options adds a check:
 | `--project <dir>` | Where the project's private key comes from; on a Mac, also that `CFBundleVersion` in `ios/Runner/Info.plist` is `$(FLUTTER_BUILD_NUMBER)` or a positive integer |
 | `--baseline-store <uri>` | That the baseline store is reachable. Write access is checked by `build` |
 | `--version-code <n>`, `--flavor <name>` | With `--baseline-store`: that this release's baseline is complete |
-| `--apk <file>` | That the APK's engine matches the selected Flutter version |
+| `--apk <file>` | That the engine in the APK or App Bundle (`.aab`) matches the selected Flutter version |
 | `--json` | Changes no check: prints one JSON report instead of the checklist |
 
 **Output**: stdout holds one line per check, `[passed|warning|not_run|failed] <id>: <message>`, then `Toolchain ready. …` or `Doctor failed.`. With `--json`, stdout holds one JSON object:

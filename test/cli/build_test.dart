@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
+import 'package:flutter_patcher/src/cli/build/pipeline.dart';
 import 'package:flutter_patcher/src/cli/build/workspace.dart';
 import 'package:flutter_patcher/src/cli/build/bootstrap.dart';
 import 'package:flutter_patcher/src/cli/baseline/manifest.dart';
@@ -108,6 +110,86 @@ void main() {
       await File(p.join(root, 'dep/pubspec.yaml'))
           .writeAsString('name: changed\n');
       await expectLater(work.verifyOriginals(), throwsA(isA<Failure>()));
+    },
+  );
+  test('every Android build runs flutter_patcher\'s init script', () async {
+    final home = (await Directory.systemTemp.createTemp('build-gradle-')).path;
+    addTearDown(() => Directory(home).delete(recursive: true));
+    final script = File(p.join(home, 'init.d', 'flutter_patcher.gradle'));
+    await installInitScript(home);
+    expect(await script.readAsString(), initScript);
+    expect(initScript, contains("abiFilters.add('arm64-v8a')"));
+    expect(initScript, contains("getenv('FLUTTER_PATCHER_ENGINE_SYMBOLS')"));
+    expect(
+      initScript,
+      contains("'com.android.tools.build.debugsymbols/arm64-v8a'"),
+    );
+    // An older flutter_patcher's script gives way to this one's.
+    await script.writeAsString('// stale');
+    await installInitScript(home);
+    expect(await script.readAsString(), initScript);
+    expect(await script.parent.list().length, 1);
+  });
+  test('a build that cannot subset icon fonts says where, and what to use', () {
+    const output = '''
+Running Gradle task 'assembleRelease'...
+This application cannot tree shake icons fonts. It has non-constant instances of IconData at the following locations:
+  - lib/main.dart:12:20
+  - dependencies/2/lib/a.dart:203:19
+  - lib/b.dart:1
+  - lib/c.dart:2
+Target aot_android_asset_bundle failed
+BUILD FAILED in 1m 27s
+''';
+    final failure = dynamicIconFailure(output, evidence: 'work')!;
+    expect(failure.code, 'BUILD_STEP_FAILED');
+    expect(
+      failure.message,
+      allOf(
+        contains(
+          'lib/main.dart:12:20, dependencies/2/lib/a.dart:203:19, '
+          'lib/b.dart:1 and 1 more',
+        ),
+        contains('--no-tree-shake-icons'),
+        contains('Evidence: work'),
+      ),
+    );
+    expect(dynamicIconFailure('BUILD FAILED', evidence: 'work'), isNull);
+    // flutter_tools names the project copy's files by URI.
+    final copy = p.join(Directory.systemTemp.path, 'copy');
+    final uri = p.toUri(p.join(copy, 'lib', 'main.dart'));
+    expect(
+      dynamicIconFailure(
+        'cannot tree shake icons fonts. At:\n - $uri:12:20\n',
+        evidence: 'work',
+        project: copy,
+      )!.message,
+      contains('(lib/main.dart:12:20)'),
+    );
+  });
+  test(
+    'an app bundle\'s engine symbols are the engine jar\'s library',
+    () async {
+      final root = (await Directory.systemTemp.createTemp('build-symbols-'))
+          .path;
+      addTearDown(() => Directory(root).delete(recursive: true));
+      final library = utf8.encode('stripped libflutter.so');
+      final jar = File(p.join(root, 'engine.jar'));
+      await jar.writeAsBytes(
+        ZipEncoder().encodeBytes(
+          Archive()..addFile(
+            ArchiveFile.bytes('lib/arm64-v8a/libflutter.so', library),
+          ),
+        ),
+      );
+      final path = await writeEngineSymbols(jar.path, p.join(root, 'out'));
+      expect(p.basename(path), 'libflutter.so.sym');
+      expect(await File(path).readAsBytes(), library);
+      await jar.writeAsBytes(ZipEncoder().encodeBytes(Archive()));
+      await expectLater(
+        writeEngineSymbols(jar.path, p.join(root, 'out')),
+        throwsA(isA<Failure>()),
+      );
     },
   );
   test(

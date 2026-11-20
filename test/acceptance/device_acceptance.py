@@ -9,6 +9,12 @@ Android SDK and an unlocked API 28+ arm64 device.
 `--remote HOST` prepares on an SSH build host (e.g. the Linux builder) from a
 snapshot of this working tree, fetches the outputs and verifies locally.
 
+`--package appbundle` builds the host with `build appbundle` and installs it
+as Google Play would, through `--bundletool <bundletool-all.jar>`.
+
+`--no-tree-shake-icons` builds the host with it, and the fixture shows an
+IconData built at run time; every boot must have the whole MaterialIcons font.
+
 `--platform ios` (macOS with Xcode; bytecode hosts) builds with automatic
 signing for `--team` and drives the app through `iproxy` (Homebrew
 libimobiledevice) and `xcrun devicectl`. The patch files go to the app over
@@ -45,6 +51,7 @@ PACKAGE = 'com.example.device_fixture'
 CONTROL = 'http://127.0.0.1:8767'
 ORIGIN = 'https://localhost:8443'
 ABI = {'android': 'arm64-v8a', 'ios': 'ios-arm64'}
+ICON_FONT = 'fonts/MaterialIcons-Regular.otf'
 
 
 def tool(directory, name):
@@ -101,14 +108,28 @@ def create_app(args, repo, out, ca):
     write(app / 'pubspec.yaml', json.dumps(dict(
         name='device_fixture', version='1.0.0+1', environment={'sdk': '>=3.8.0 <4.0.0'},
         dependencies={'flutter': {'sdk': 'flutter'}, 'flutter_patcher': {'path': repo.as_posix()}},
-        flutter={'assets': ['assets/msg.txt']})))
+        flutter={'assets': ['assets/msg.txt'], 'uses-material-design': args.no_tree_shake_icons})))
     write(app / 'assets/msg.txt', 'asset-original')
     source = (repo / 'test/acceptance/app/device_fixture.dart').read_text(encoding='utf-8')
     source = source.replace('__TEST_CA__', ca.read_text().strip() if ca else '')
+    if args.no_tree_shake_icons:  # A code point known only at run time, as from a server.
+        source = replace_once(source, "child: Text('revision: $revision\\n$asset')",
+                              "child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(IconData("
+                              "int.parse('e88a', radix: 16), fontFamily: 'MaterialIcons'), size: 96), "
+                              "Text('revision: $revision\\n$asset')])")
+        source = replace_once(source, "'available': await FlutterPatcher.isAvailable,",
+                              "'available': await FlutterPatcher.isAvailable,\n"
+                              f"        'icon_font': (await rootBundle.load('{ICON_FONT}')).lengthInBytes,")
     write(app / 'lib/main.dart', source)
     normalize_line_endings(app)
     call([flutter_launcher(args.flutter_sdk), 'pub', 'get'], app, out / 'pub.log')
     return app, source
+
+
+def replace_once(text, old, new):
+    if text.count(old) != 1:
+        raise RuntimeError('The fixture changed; not found once: ' + old)
+    return text.replace(old, new)
 
 
 def remove_symlinks(*roots):
@@ -161,8 +182,10 @@ def prepare(args, repo, out):
     (out / 'store').mkdir()
     # A development export installs on the team's registered devices; build ipa
     # lets automatic signing create or renew the profile.
-    patcher('build', 'build', args.platform, *common, '--project', app, '--channel', 'device',
+    target = 'appbundle' if args.package == 'appbundle' else args.platform
+    patcher('build', 'build', target, *common, '--project', app, '--channel', 'device',
             '--strategy', args.strategy, '--version-code', '1',
+            *(['--no-tree-shake-icons'] if args.no_tree_shake_icons else []),
             *(['--export-method', 'development'] if ios else []), '--out', out / 'release',
             '--dart-define=FIXTURE_ENV=release &1')
     built = json.loads((out / 'release/build.json').read_text())
@@ -209,9 +232,10 @@ def remote_prepare(args, repo, out):
     subprocess.run(['scp', '-q', str(out / 'source.tar.gz'), f'{args.remote}:{root}/'], check=True)
     print(f'STAGE remote-prepare {args.remote}:{root}', flush=True)
     prepare = shlex.join(['python3', 'source/test/acceptance/device_acceptance.py', '--prepare-only',
-                          '--strategy', args.strategy, '--signing', args.signing,
+                          '--strategy', args.strategy, '--signing', args.signing, '--package', args.package,
+                          *(['--no-tree-shake-icons'] if args.no_tree_shake_icons else []),
                           '--flutter-sdk', args.remote_flutter, '--out', 'out'])
-    # The key and the baseline store stay on the builder; verify needs only the APK, origin and TLS.
+    # The key and the baseline store stay on the builder; verify needs only the app, origin and TLS.
     ssh(f'cd {shlex.quote(root)} && tar -xzf source.tar.gz && ANDROID_HOME={shlex.quote(args.remote_android)} '
         f'{prepare} > prepare.log 2>&1; code=$?; tar --exclude=./app --exclude=./store --exclude=./keys.json '
         f'-czf outputs.tar.gz prepare.log -C out .; exit $code')
@@ -225,8 +249,11 @@ class AndroidDevice:
 
     def __init__(self, args, out):
         sdk = os.environ.get('ANDROID_HOME')
-        self.adb = [tool(sdk and Path(sdk) / 'platform-tools', 'adb'), '-s', args.serial]
-        self.out = out
+        self.adb_tool = tool(sdk and Path(sdk) / 'platform-tools', 'adb')
+        self.adb = [self.adb_tool, '-s', args.serial]
+        self.serial, self.out = args.serial, out
+        self.java = tool(args.java_home and Path(args.java_home) / 'bin', 'java')
+        self.bundletool = args.bundletool
         self.server = subprocess.Popen([dart_binary(args.flutter_sdk), Path(__file__).parent / 'tls_server.dart',
                                         out / 'srv', out / 'tls/tls.p12', (out / 'tls/password.txt').read_text()],
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -252,9 +279,22 @@ class AndroidDevice:
         self.run('uninstall', PACKAGE)
 
     def install(self):
-        installed = self.run('install', '-r', self.out / 'release/app-release.apk', timeout=600)  # On-device approval.
-        if 'Success' not in installed.stdout:
-            raise RuntimeError('Install failed: ' + installed.stdout + installed.stderr)
+        bundle = self.out / 'release/app-release.aab'
+        if bundle.exists():  # As Google Play would: the device's split APKs, signed with the debug key.
+            apks = self.out / 'release/app-release.apks'
+            apks.unlink(missing_ok=True)
+            bundletool = [self.java, '-jar', self.bundletool]
+            call([*bundletool, 'build-apks', '--bundle', bundle, '--output', apks, '--connected-device',
+                  '--device-id', self.serial, '--adb', self.adb_tool], self.out, self.out / 'bundletool.log')
+            installed = subprocess.run([*map(str, bundletool), 'install-apks', '--apks', str(apks), '--device-id',
+                                        self.serial, '--adb', str(self.adb_tool)], capture_output=True,
+                                       encoding='utf-8', errors='replace', timeout=600)  # On-device approval.
+            if installed.returncode:
+                raise RuntimeError('Install failed: ' + installed.stdout + installed.stderr)
+        else:
+            installed = self.run('install', '-r', self.out / 'release/app-release.apk', timeout=600)  # On-device approval.
+            if 'Success' not in installed.stdout:
+                raise RuntimeError('Install failed: ' + installed.stdout + installed.stderr)
         self.run('logcat', '-c')
 
     def launch(self):
@@ -410,6 +450,9 @@ def verify(args, out):
         asset = 'asset-patched' if args.strategy == 'so' else 'asset-original'
         # A patch that gives no define has its host's, and its host's build name.
         host = dict(env='release &1', added='unset', build_name='1.0.0', available=True)
+        if args.no_tree_shake_icons:  # Patches add no font: the host's whole one stays.
+            font = args.flutter_sdk / 'bin/cache/artifacts/material_fonts/materialicons-regular.otf'
+            host['icon_font'] = font.stat().st_size
         original = dict(revision='original', asset='asset-original', version=None, diagnostic='noPatch', **host)
         patched = dict(revision='patched', asset=asset, version='1', diagnostic='patched', **host)
         name = (out / 'file-name.txt').read_text().strip()
@@ -480,6 +523,11 @@ def main():
     parser.add_argument('--platform', choices=['android', 'ios'], default='android')
     parser.add_argument('--strategy', choices=['so', 'bytecode'], help='Required on Android; iOS is bytecode')
     parser.add_argument('--signing', choices=['signed', 'unsigned'], default='signed')
+    parser.add_argument('--package', choices=['apk', 'appbundle'], default='apk',
+                        help='Android: what the host is built as; an App Bundle installs through bundletool')
+    parser.add_argument('--bundletool', type=Path, help='bundletool-all.jar, for --package appbundle on a device')
+    parser.add_argument('--no-tree-shake-icons', action='store_true',
+                        help='Build the host with it; the fixture builds an IconData at run time')
     parser.add_argument('--flutter-sdk', type=Path, required=True)
     parser.add_argument('--serial', help='adb serial; on iOS optional, a devicectl identifier or UDID')
     parser.add_argument('--java-home', default=os.environ.get('JAVA_HOME'))
@@ -501,9 +549,13 @@ def main():
             parser.error('the following arguments are required: --strategy')
         if not args.prepare_only and not args.serial:
             parser.error('--serial is required unless --prepare-only')
+        if args.package == 'appbundle' and not args.prepare_only and not args.bundletool:
+            parser.error('--bundletool is required to install --package appbundle')
     else:
         if args.strategy == 'so':
             parser.error('iOS hosts are bytecode hosts')
+        if args.package == 'appbundle':
+            parser.error('--package appbundle is for Android')
         args.strategy = 'bytecode'
         if args.remote:
             parser.error('--remote is for Android; prepare iOS on the Mac itself')
@@ -514,7 +566,8 @@ def main():
         ios_environment()
     repo = Path(__file__).resolve().parents[2]
     out = (args.out or repo / '.dart_tool/flutter_patcher/device' /
-           f'{"ios-" if args.platform == "ios" else ""}{args.strategy}-{args.signing}-'
+           f'{"ios-" if args.platform == "ios" else ""}{"aab-" if args.package == "appbundle" else ""}'
+           f'{args.strategy}-{args.signing}-'
            f'{datetime.now():%Y%m%d-%H%M%S}').resolve()
     if args.resume_built:
         if not (out / 'srv/file5.fptc').exists():
@@ -526,7 +579,8 @@ def main():
             print(f'PREPARED {out}')
             return
     steps, failed = verify(args, out)
-    result = dict(status='failed' if failed else 'passed', platform=args.platform, strategy=args.strategy,
+    result = dict(status='failed' if failed else 'passed', platform=args.platform, package=args.package,
+                  strategy=args.strategy,
                   signing=args.signing, serial=args.serial,
                   steps=steps, failed=failed)
     write(out / 'result.json', json.dumps(result, indent=2))

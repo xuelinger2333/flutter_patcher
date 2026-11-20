@@ -314,12 +314,12 @@ To see how the device judges a file, pass its first 146 bytes to `FlutterPatcher
 
 | Code | When it appears | Fix |
 |---|---|---|
-| `BUILD_CONFIG_INVALID` | No `+` build number in `pubspec.yaml`, no single application id, an invalid `--host-policy` file, a `--flavor` or `--version-code` that differs from that policy, a define or an option after `--` that is not accepted, or an output directory that exists | Correct what `message` names, for example `version: 1.0.0+1`, `--application-id`, a new `--out` |
+| `BUILD_CONFIG_INVALID` | No `+` build number in `pubspec.yaml`, no single application id, an invalid `--host-policy` file, a `--flavor` or `--version-code` that differs from that policy, a define or a `flutter build` option that is not accepted, or an output directory that exists | Correct what `message` names, for example `version: 1.0.0+1`, `--application-id`, a new `--out` |
 | `BUILD_PROJECT_INVALID` | The project layout is not supported, for example symbolic links in source packages | Change the project as `message` says |
-| `BUILD_BOOTSTRAP_UNAVAILABLE` | The project does not depend on `flutter_patcher` | Run `flutter pub add flutter_patcher:1.1.1` |
+| `BUILD_BOOTSTRAP_UNAVAILABLE` | The project does not depend on `flutter_patcher` | Run `flutter pub add flutter_patcher:1.1.2` |
 | `BUILD_INPUT_CHANGED` | A source file changed while the build ran | Build again without editing files meanwhile |
-| `BUILD_STEP_FAILED` | A Flutter build step failed | Read the end of the log and the log directory in `message` |
-| `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | The built app fails validation, for example its application id or build number differs from the host policy | On iOS, check code signing and `--export-method`; with `--host-policy`, check `application_id` and `version_code` |
+| `BUILD_STEP_FAILED` | A Flutter build step failed | Read the end of the log and the log directory in `message`; when the log says `cannot tree shake icons fonts`, see [Icon fonts](cli.md#icon-fonts) |
+| `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | The built app fails validation, for example its application id or build number differs from the host policy, or it has native code for an ABI other than `arm64-v8a` | On iOS, check code signing and `--export-method`; with `--host-policy`, check `application_id` and `version_code`; for another ABI, remove the Gradle setting that adds the files `message` names |
 | `BASELINE_RELEASE_CONFLICT` | This build number has a baseline with different content | See [`BASELINE_RELEASE_CONFLICT`](#baseline_release_conflict) |
 | `BASELINE_CONTENT_CONFLICT` | Identical source produced different build output | Open an issue |
 | `BUILD_FAILED` | An unexpected error | Read `message` |
@@ -347,7 +347,7 @@ Why each is refused is in [What can be patched](architecture.md#what-can-be-patc
 | `PATCH_PINNED_PACKAGE_CHANGED` | A package that must stay at its baseline version, because it has native code or native code depends on it, changed version | Pin it to the baseline version under `dependency_overrides`, as `message` shows |
 | `PATCH_FFI_UNSUPPORTED` | Code the patch carries calls native functions through `dart:ffi`; the patch carries the whole package, not only the changed lines | Move the FFI calls into a package the host keeps, such as a plugin, or ship a store release |
 | `PATCH_UNSAFE` | The bytecode compatibility check failed | Read the violations in `message` |
-| `PATCH_DYNAMIC_ICON` | Code builds a non-`const` `IconData` at run time | Use `const IconData(...)` or `Icons.*` |
+| `PATCH_DYNAMIC_ICON` | The host subsets its icon fonts, and code builds a non-`const` `IconData` at run time | Use `const IconData(...)` or `Icons.*`; when code points are known only at run time, build a new host with `build --no-tree-shake-icons`, see [Icon fonts](cli.md#icon-fonts) |
 | `PATCH_ASSET_DELETE_UNSUPPORTED` | An asset of the app was deleted | Restore the asset, or ship a store release |
 | `PATCH_ENGINE_UNSUPPORTED` | The host's engine cannot install patch assets | Build and ship a new host |
 | `PATCH_NO_CHANGES` | Nothing differs from the baseline | Save your edits; check the release you target |

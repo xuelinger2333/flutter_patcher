@@ -90,10 +90,11 @@ trust:
 ## 4. 构建并提交商店版本
 
 ```bash
-dart run flutter_patcher build android   # build ios 需在 Apple Silicon Mac 上运行
+dart run flutter_patcher build android     # APK
+dart run flutter_patcher build appbundle   # App Bundle，用于 Google Play
 ```
 
-把输出目录中的 `app-release.apk`（或 `app-release.ipa`）提交到商店。
+把输出目录中的 `app-release.apk` 或 `app-release.aab` 提交到商店。`build ios` 在 Apple Silicon Mac 上生成 `app-release.ipa`。
 
 **验证**：`build` 输出 `"status":"build_archived"`，并且不再出现 `BASELINE_STORE_LOCAL` 和 `UNSIGNED` 两条警告。
 

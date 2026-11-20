@@ -297,11 +297,11 @@ void main() {
   test('APK check uses inner SO hash, never the jar hash', () async {
     final apk = File(p.join(temp.path, 'test.apk'));
     await apk.writeAsBytes(fixture.bytes['libflutter-arm64_v8a-release.jar']!);
-    await verifyApk(apk.path, fixture.engine);
+    await verifyAndroidEngine(apk.path, fixture.engine);
     final wrong = copy(fixture.engine);
     wrong['files'][0]['contents'][0]['sha256'] = wrong['files'][0]['sha256'];
     await expectLater(
-      verifyApk(apk.path, wrong),
+      verifyAndroidEngine(apk.path, wrong),
       throwsA(failure('ENGINE_INJECTION_FAILED')),
     );
   });

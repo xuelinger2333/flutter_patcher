@@ -339,8 +339,9 @@ class PatchResources {
   /// already loaded by the host and is not carried.
   ///
   /// With [wholeFamilies] (an SO patch, whose bundle was built with its own
-  /// code and already subsets the icon font to it) every font file whose
-  /// bytes differ from the host's ships as built.
+  /// code and already subsets the icon font to it, or a patch of a host whose
+  /// icon fonts are whole) every font file whose bytes differ from the
+  /// host's ships as built.
   Future<void> collectFonts(
     List<dynamic> icons, {
     List<dynamic>? hostIcons,

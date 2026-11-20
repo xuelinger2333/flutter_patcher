@@ -32,6 +32,8 @@ void main() {
       ['doctor', '--unknown'],
       ['doctor', 'unexpected'],
       ['nonsense'],
+      ['build'],
+      ['build', 'web'],
     ]) {
       final result = await cli(arguments);
       expect(result.exitCode, 2);

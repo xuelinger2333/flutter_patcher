@@ -314,12 +314,12 @@ WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every p
 
 | 错误码 | 出现条件 | 处理方法 |
 |---|---|---|
-| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有 `+` 构建号、application id 不唯一、`--host-policy` 文件无效、`--flavor` 或 `--version-code` 与该策略不一致、编译期变量或 `--` 之后的选项不被接受，或输出目录已存在 | 按 `message` 指出的内容修正，例如 `version: 1.0.0+1`、`--application-id`、新的 `--out` |
+| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有 `+` 构建号、application id 不唯一、`--host-policy` 文件无效、`--flavor` 或 `--version-code` 与该策略不一致、编译期变量或 `flutter build` 选项不被接受，或输出目录已存在 | 按 `message` 指出的内容修正，例如 `version: 1.0.0+1`、`--application-id`、新的 `--out` |
 | `BUILD_PROJECT_INVALID` | 不支持的项目结构，例如源码包中有符号链接 | 按 `message` 的说明调整项目 |
-| `BUILD_BOOTSTRAP_UNAVAILABLE` | 项目没有依赖 `flutter_patcher` | 运行 `flutter pub add flutter_patcher:1.1.1` |
+| `BUILD_BOOTSTRAP_UNAVAILABLE` | 项目没有依赖 `flutter_patcher` | 运行 `flutter pub add flutter_patcher:1.1.2` |
 | `BUILD_INPUT_CHANGED` | 构建过程中源文件发生了变化 | 重新构建，期间不要修改文件 |
-| `BUILD_STEP_FAILED` | 某个 Flutter 构建步骤失败 | 阅读 `message` 中的日志末尾和日志目录 |
-| `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | 构建出的 App 未通过校验，例如 application id 或构建号与宿主策略不同 | iOS 上检查代码签名和 `--export-method`；使用 `--host-policy` 时检查 `application_id` 和 `version_code` |
+| `BUILD_STEP_FAILED` | 某个 Flutter 构建步骤失败 | 阅读 `message` 中的日志末尾和日志目录；日志含 `cannot tree shake icons fonts` 时，见[图标字体](cli-zh.md#图标字体) |
+| `BUILD_APK_INVALID`<br>`BUILD_IPA_INVALID`<br>`ENGINE_INJECTION_FAILED` | 构建出的 App 未通过校验，例如 application id 或构建号与宿主策略不同，或含有 `arm64-v8a` 以外架构的原生代码 | iOS 上检查代码签名和 `--export-method`；使用 `--host-policy` 时检查 `application_id` 和 `version_code`；含其他架构时，去掉加入 `message` 所列文件的 Gradle 设置 |
 | `BASELINE_RELEASE_CONFLICT` | 这个构建号已有内容不同的基线 | 见 [`BASELINE_RELEASE_CONFLICT`](#baseline_release_conflict) |
 | `BASELINE_CONTENT_CONFLICT` | 相同的源码产生了不同的构建输出 | 提交 issue |
 | `BUILD_FAILED` | 意外错误 | 阅读 `message` |
@@ -347,7 +347,7 @@ WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every p
 | `PATCH_PINNED_PACKAGE_CHANGED` | 某个必须保持基线版本的包（它含有原生代码，或被原生代码依赖）改了版本 | 按 `message` 的提示，在 `dependency_overrides` 中把它固定回基线版本 |
 | `PATCH_FFI_UNSUPPORTED` | 补丁携带的代码通过 `dart:ffi` 调用原生函数；补丁携带的是整个包，而不只是改动的那几行 | 把 FFI 调用移到保留在宿主中的包里（例如插件），或发布商店版本 |
 | `PATCH_UNSAFE` | 字节码兼容性检查未通过 | 阅读 `message` 中列出的违规项 |
-| `PATCH_DYNAMIC_ICON` | 代码在运行时构造非 `const` 的 `IconData` | 使用 `const IconData(...)` 或 `Icons.*` |
+| `PATCH_DYNAMIC_ICON` | 宿主裁剪了图标字体，代码在运行时构造非 `const` 的 `IconData` | 使用 `const IconData(...)` 或 `Icons.*`；码点只能在运行时确定时，用 `build --no-tree-shake-icons` 构建新宿主，见[图标字体](cli-zh.md#图标字体) |
 | `PATCH_ASSET_DELETE_UNSUPPORTED` | 删除了 App 的某个资源 | 恢复该资源，或发布商店版本 |
 | `PATCH_ENGINE_UNSUPPORTED` | 宿主的引擎不能安装补丁资源 | 构建并发布新的宿主 |
 | `PATCH_NO_CHANGES` | 与基线相比没有任何改动 | 保存你的修改；确认目标版本 |

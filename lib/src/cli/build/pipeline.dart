@@ -8,6 +8,7 @@ import 'package:yaml/yaml.dart';
 
 import '../core.dart';
 import '../run_work.dart';
+import '../sdk/android.dart';
 import '../sdk/artifacts.dart';
 import '../sdk/environment.dart';
 import '../sdk/package_inputs.dart';
@@ -25,6 +26,43 @@ import 'virtual_paths.dart';
 
 import 'dart:convert';
 
+/// The failure of a `flutter build` whose [output] says it cannot subset
+/// icon fonts, naming the first places that build IconData at run time,
+/// relative to the [project] it ran in; null for any other output.
+Failure? dynamicIconFailure(
+  String output, {
+  required String evidence,
+  String? project,
+}) {
+  String site(String line) {
+    final match = RegExp(r'^(file:\S+?)((?::\d+)*)$').firstMatch(line);
+    if (project == null || match == null) return line;
+    final path = p.fromUri(Uri.parse(match[1]!));
+    return p.isWithin(project, path)
+        ? '${p.posix.joinAll(p.split(p.relative(path, from: project)))}'
+              '${match[2]}'
+        : line;
+  }
+
+  final lines = output.split('\n').map((line) => line.trim()).toList();
+  final at = lines.indexWhere(
+    (line) => line.contains('cannot tree shake icons fonts'),
+  );
+  if (at < 0) return null;
+  final sites = [
+    for (final line in lines.skip(at + 1).takeWhile((l) => l.startsWith('- ')))
+      site(line.substring(2)),
+  ];
+  return Failure(
+    'BUILD_STEP_FAILED',
+    'flutter build cannot subset the icon fonts: code builds IconData at run '
+        'time${sites.isEmpty ? '' : ' (${sites.take(3).join(', ')}'
+                  '${sites.length > 3 ? ' and ${sites.length - 3} more' : ''})'}. '
+        'Use constant IconData, or build the host with --no-tree-shake-icons; '
+        'its patches follow it. Evidence: $evidence',
+  );
+}
+
 class BuildRequest {
   final String project, output, publicKey;
   final String target;
@@ -37,6 +75,12 @@ class BuildRequest {
   /// The user's defines, and `flutter build` options passed on to it.
   final Map<String, String> defines;
   final List<String> flutterArgs;
+
+  /// False with `--no-tree-shake-icons` ([BuildInputs.treeShakeIcons]).
+  final bool treeShakeIcons;
+
+  /// What an Android host is packaged as; the host is the same either way.
+  final AndroidPackage package;
 
   /// `android` or `ios`, from the host policy's ABI.
   String get platform => platformOfAbi[hostPolicy.fields['abi']]!;
@@ -53,6 +97,8 @@ class BuildRequest {
     this.url,
     this.defines = const {},
     this.flutterArgs = const [],
+    this.treeShakeIcons = true,
+    this.package = AndroidPackage.apk,
   });
   Future<void> validate() async {
     require(
@@ -108,6 +154,10 @@ class BuildPipeline {
   /// The artifact releases this host is built with; its release records
   /// them, so every patch of it uses the same ones.
   final Map<String, ArtifactRelease> releases;
+
+  /// The engine release's jar, for the engine symbols an app bundle carries
+  /// ([writeEngineSymbols]).
+  final String? engineJar;
   BuildPipeline(
     this.commands,
     this.sdk,
@@ -117,8 +167,9 @@ class BuildPipeline {
     this.aapt,
     this.engine,
     this.baselines,
-    this.releases,
-  ) : environment = EnvironmentBuilder(cache, commands);
+    this.releases, {
+    this.engineJar,
+  }) : environment = EnvironmentBuilder(cache, commands);
 
   /// Release receipt fields naming what the host was built with.
   Map<String, Object?> get _built => {
@@ -135,6 +186,7 @@ class BuildPipeline {
         target: request.target,
         defines: request.defines,
         flutterArgs: request.flutterArgs,
+        treeShakeIcons: request.treeShakeIcons,
         sdk: await sdkDefines(managed),
         flavor: request.flavor,
         buildName: await buildName(project),
@@ -392,7 +444,7 @@ class BuildPipeline {
         ),
       );
       final ios = request.platform == 'ios';
-      phase = ios ? 'ipa' : 'apk';
+      phase = ios ? 'ipa' : request.package.command;
       final trace = p.join(work, 'precompiler-trace.json'),
           hostDump = p.join(work, 'host_compiler_interface.json');
       final extra = [
@@ -409,8 +461,8 @@ class BuildPipeline {
               extra,
               inputs,
             )
-          : await assembleApk(run, project, request, target, extra, inputs);
-      phase = ios ? 'verify-ipa' : 'verify-apk';
+          : await assembleAndroid(run, project, request, target, extra, inputs);
+      phase = ios ? 'verify-ipa' : 'verify-${request.package.command}';
       final apkInfo = ios
           ? _bind(
               await verifyBuildIpa(
@@ -423,7 +475,7 @@ class BuildPipeline {
               ),
               request,
             )
-          : await verifyApk(apk, baseline, request, hostTrust);
+          : await verifyPackage(apk, baseline, request, hostTrust);
       await call([
         'inspect-build',
         if (virtual != null) ...virtual.compilerArgs,
@@ -500,7 +552,7 @@ class BuildPipeline {
         request,
         apk,
         report,
-        ios ? 'app-release.ipa' : 'app-release.apk',
+        ios ? 'app-release.ipa' : 'app-release.${request.package.extension}',
       );
       await RunWork.finish(work);
       return {...report, 'output': p.absolute(request.output)};
@@ -585,8 +637,8 @@ class BuildPipeline {
           modules: false,
         ),
       );
-      phase = 'apk';
-      final apk = await assembleApk(
+      phase = request.package.command;
+      final apk = await assembleAndroid(
         run,
         project,
         request,
@@ -594,8 +646,8 @@ class BuildPipeline {
         const [],
         inputs,
       );
-      phase = 'verify-apk';
-      final apkInfo = await verifyApk(apk, release, request, hostTrust);
+      phase = 'verify-${request.package.command}';
+      final apkInfo = await verifyPackage(apk, release, request, hostTrust);
       final virtual = await VirtualPackages.write(packages, [
         p.absolute(work),
         p.absolute(cache),
@@ -634,7 +686,12 @@ class BuildPipeline {
         'baseline': archived,
         'device_verified': false,
       };
-      await _writeOutput(request, apk, report, 'app-release.apk');
+      await _writeOutput(
+        request,
+        apk,
+        report,
+        'app-release.${request.package.extension}',
+      );
       await RunWork.finish(work);
       return {...report, 'output': p.absolute(request.output)};
     } catch (error) {
@@ -665,7 +722,12 @@ class BuildPipeline {
         logPath: p.join(work, '${index++}-${phase()}.log'),
       );
       if (result.exitCode != 0) {
-        throw stepFailure('BUILD_STEP_FAILED', phase(), result, work);
+        final icons = dynamicIconFailure(
+          '${result.stdout}\n${result.stderr}',
+          evidence: work,
+          project: cwd,
+        );
+        throw icons ?? stepFailure('BUILD_STEP_FAILED', phase(), result, work);
       }
       return result.stdout;
     };
@@ -710,8 +772,9 @@ class BuildPipeline {
     return trust;
   }
 
-  /// `flutter build apk` with the managed engine mirror; returns the APK path.
-  Future<String> assembleApk(
+  /// `flutter build apk` or `flutter build appbundle`, as [request] is
+  /// packaged, with the managed engine mirror; returns the package path.
+  Future<String> assembleAndroid(
     StepRunner run,
     String project,
     BuildRequest request,
@@ -722,6 +785,13 @@ class BuildPipeline {
     final gradle = p.join(cache, 'gradle');
     await Directory(gradle).create(recursive: true);
     await retireFlutterGradleCache(gradle);
+    await installInitScript(gradle);
+    final symbols = request.package == AndroidPackage.appbundle
+        ? await writeEngineSymbols(
+            engineJar!,
+            p.join(gradle, 'flutter_patcher'),
+          )
+        : null;
     final mirror = p.join(
       cache,
       'mirrors',
@@ -733,7 +803,7 @@ class BuildPipeline {
       [
         '--suppress-analytics',
         'build',
-        'apk',
+        request.package.command,
         '--release',
         // Not --no-pub: only the pub step regenerates the native plugin
         // registrants for release, which leaves out dev_dependency plugins
@@ -742,6 +812,10 @@ class BuildPipeline {
         // ran, so this check resolves nothing.
         '--target-platform',
         'android-arm64',
+        // Deferred components would split libapp.so; a host has one, as an
+        // APK does.
+        if (request.package == AndroidPackage.appbundle)
+          '--no-deferred-components',
         '--target',
         target,
         if (request.flavor != null) ...['--flavor', request.flavor!],
@@ -757,23 +831,22 @@ class BuildPipeline {
         ...inputs.flutterEnvironment,
         'FLUTTER_STORAGE_BASE_URL': Uri.directory(mirror).toString(),
         'GRADLE_USER_HOME': gradle,
+        'FLUTTER_PATCHER_ENGINE_SYMBOLS': ?symbols,
       },
     );
-    return p.join(
-      project,
-      'build/app/outputs/flutter-apk/app-${request.flavor == null ? '' : '${request.flavor}-'}release.apk',
-    );
+    return request.package.output(project, request.flavor);
   }
 
-  /// Verifies the APK, extracts libapp.so into [dir] and binds it to the request.
-  Future<Map<String, dynamic>> verifyApk(
+  /// Verifies the package, extracts libapp.so into [dir] and binds it to
+  /// the request.
+  Future<Map<String, dynamic>> verifyPackage(
     String apk,
     String dir,
     BuildRequest request,
     String? hostTrust,
   ) async {
     return _bind(
-      await verifyBuildApk(
+      await verifyBuildPackage(
         apk,
         dir,
         aapt,
@@ -797,7 +870,8 @@ class BuildPipeline {
               request.hostPolicy.fields['application_id'] &&
           apkInfo['version_code'] == request.hostPolicy.fields['version_code'],
       code,
-      'Actual ${ios ? 'app' : 'APK'} differs from immutable host policy.',
+      'Actual ${ios ? 'app' : request.package.noun} differs from immutable '
+      'host policy.',
     );
     if (request.versionCode != null) {
       require(

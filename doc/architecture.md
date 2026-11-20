@@ -154,7 +154,7 @@ failed start    past the threshold, returns to the app's built-in version
 | Dependencies with native capabilities | ❌ | They are tied to native code and change only with a new release |
 | Packages that depend on those (bytecode) | ❌ | They stay in the host with the package they depend on |
 | FFI calls in a package the patch carries (bytecode) | ❌ | The patch carries the whole package, and the interpreter cannot make FFI calls; keep FFI calls in a package the host keeps, such as a plugin |
-| `IconData` built at run time (bytecode) | ❌ | A patch's icon font keeps only the constant icons it uses |
+| `IconData` built at run time (bytecode) | ❌ | A patch's icon font keeps only the constant icons it uses; a host built with `build --no-tree-shake-icons` has no such limit, see [Icon fonts](cli.md#icon-fonts) |
 | Flutter SDK version | ❌ | A patch is built with the same Flutter version as its host |
 
 `patch` checks these limits and fails with an error code when a change breaks one. In the following cases it builds the patch but warns, because part of the change does not take effect:

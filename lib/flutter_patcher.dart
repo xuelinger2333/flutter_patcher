@@ -18,7 +18,8 @@ export 'src/patch_info.dart';
 /// Flutter hot-update entrypoint for Android and iOS.
 ///
 /// `flutter_patcher` installs patch files on hosts built with
-/// `flutter_patcher build android|ios`, and loads them on the next cold start.
+/// `flutter_patcher build android|appbundle|ios`, and loads them on the next
+/// cold start.
 /// SO and bytecode hosts share this API; iOS hosts are bytecode only.
 ///
 /// Main APIs:
@@ -76,7 +77,7 @@ class FlutterPatcher {
     if (await _hostStrategy() == null) {
       throw PatcherException(
         'This app was not built with flutter_patcher; '
-        'build it with dart run flutter_patcher build android|ios',
+        'build it with dart run flutter_patcher build android|appbundle|ios',
       );
     }
   }

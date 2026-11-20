@@ -14,6 +14,7 @@ import 'baseline/repository.dart';
 import 'baseline/split.dart';
 import 'baseline/store.dart';
 import 'build/command.dart';
+import 'build/defines.dart' show forwardedOptions, unknownBuildOption;
 import 'build/ios.dart' show iosExportMethods;
 import 'init_command.dart';
 import 'patch_command.dart';
@@ -78,7 +79,7 @@ ArgParser environmentOptions() => ArgParser()
   )
   ..addOption(
     'apk',
-    help: 'Optional existing APK whose engine should be checked.',
+    help: 'Optional existing APK or app bundle (.aab) whose engine should be checked.',
   );
 
 /// The define options of `flutter build`, which build and patch take too.
@@ -144,7 +145,7 @@ ArgParser parser() {
       help: 'Application source directory; builds use an isolated copy.',
     )
     ..addOption('target', defaultsTo: 'lib/main.dart')
-    ..addOption('out', help: 'New APK/IPA and report output directory.')
+    ..addOption('out', help: 'New APK, AAB or IPA and report output directory.')
     ..addOption(
       'export-method',
       allowed: iosExportMethods,
@@ -154,6 +155,15 @@ ArgParser parser() {
     build,
     'A compile-time constant, as for flutter build; a patch may change it.',
   );
+  build.addFlag(
+    'tree-shake-icons',
+    defaultsTo: true,
+    help:
+        'With --no-tree-shake-icons the host carries its icon fonts whole, '
+        'so its code may build IconData at run time (code points from a '
+        'server); the host is larger. Its patches follow it.',
+  );
+  forwardedOptions(build);
   final doctor = environmentOptions()
     ..addOption(
       'project',
@@ -187,11 +197,31 @@ ArgParser parser() {
     ..addCommand('interface', interfaces);
 }
 
+/// [arguments] parsed by [parser]. A `--` is no argument: build takes
+/// every option it passes on to `flutter build` itself. An option build does
+/// not take fails with why ([unknownBuildOption]).
+ArgResults parseArguments(ArgParser parser, List<String> arguments) {
+  try {
+    return parser.parse([
+      for (final argument in arguments)
+        if (argument != '--') argument,
+    ]);
+  } on ArgParserException catch (error) {
+    final name = error.argumentName;
+    if (error.commands.firstOrNull == 'build' &&
+        name != null &&
+        error.message.startsWith('Could not find an option')) {
+      throw Failure('BUILD_CONFIG_INVALID', unknownBuildOption(name));
+    }
+    rethrow;
+  }
+}
+
 Future<int> runCli(List<String> arguments) async {
   final args = parser();
   ArgResults parsed;
   try {
-    parsed = args.parse(arguments);
+    parsed = parseArguments(args, arguments);
     require(
       parsed.rest.isEmpty,
       'USAGE_ERROR',
@@ -203,7 +233,7 @@ Future<int> runCli(List<String> arguments) async {
     }
     if (parsed['help'] == true || parsed.command == null) {
       stdout.writeln(
-        'flutter_patcher init [--project <dir>]\nflutter_patcher keys export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|ios [options]\nflutter_patcher patch android|ios [--withdraw] [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--seq <n>] [--yes] [options]\nflutter_patcher serve [--port <port>] [--project <dir>]\n\n${args.commands['doctor']!.usage}',
+        'flutter_patcher init [--project <dir>]\nflutter_patcher keys export|import|status [options]\nflutter_patcher doctor [options]\nflutter_patcher interface [options]\nflutter_patcher baseline [options]\nflutter_patcher build android|appbundle|ios [options]\nflutter_patcher patch android|ios [--withdraw] [options]\nflutter_patcher publish [--patch <dir>] [--withdraw] [--seq <n>] [--yes] [options]\nflutter_patcher serve [--port <port>] [--project <dir>]\n\n${args.commands['doctor']!.usage}',
       );
       return 0;
     }
@@ -656,13 +686,15 @@ Future<int> doctor(ArgResults args, {bool generateInterface = false}) async {
     if (apk == null) {
       pending(
         'apk_engine',
-        'No APK supplied; pass --apk to check the engine inside a build.',
+        'No APK or app bundle supplied; pass --apk to check the engine inside a '
+            'build.',
       );
     } else {
       await check(
         'apk_engine',
-        () => verifyApk(apk, engine),
-        'APK arm64 engine hash matches the selected engine manifest',
+        () => verifyAndroidEngine(apk, engine),
+        'The APK or app bundle arm64 engine hash matches the selected engine '
+            'manifest',
       );
     }
     pending(

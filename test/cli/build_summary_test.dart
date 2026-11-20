@@ -52,6 +52,15 @@ void main() {
     expect(jsonEncode(summary).length, lessThan(600));
   });
 
+  test('names an app bundle as it names an APK', () async {
+    await File(p.join(output.path, 'app-release.apk')).delete();
+    File(p.join(output.path, 'app-release.aab')).writeAsStringSync('aab');
+    expect(
+      (await buildSummary(output.path, report, policy('-')))['app'],
+      p.join(output.path, 'app-release.aab'),
+    );
+  });
+
   test('says whether the host accepts only signed files', () async {
     final key = base64Encode(List.filled(32, 1));
     expect(

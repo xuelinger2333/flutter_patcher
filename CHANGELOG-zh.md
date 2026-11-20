@@ -2,6 +2,55 @@
 
 [English](CHANGELOG.md) | **简体中文**
 
+## 1.1.2
+
+1.1.2 可以把宿主构建成 Android App Bundle，即 Google Play 收的包格式；宿主代码也可以在运行时构造 `IconData`。
+
+### `build appbundle`
+
+**新增** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+
+- `build appbundle` 用 `flutter build appbundle` 构建 Android App Bundle（`app-release.aab`）。它接受
+  `build android` 的全部选项，生成的是同一个宿主：策略、宿主策略和所有补丁都与 APK 相同，都用
+  `patch android` 打补丁。
+- `flutter build appbundle` 要求 App Bundle 里有 `libflutter.so.sym`。flutter_patcher 的引擎发布不带符号表，
+  这个文件放的是已裁剪的引擎库本身，只有导出符号，所以 Google Play 的原生崩溃报告里，引擎内部的调用栈没有函数名。
+- `doctor --apk` 也接受 `.aab`。
+
+文档：[build](doc/cli-zh.md#build)
+
+### 宿主只含 arm64-v8a 的原生代码
+
+**变更** · CLI、Android · 2026-11-20 · flutter_patcher 1.1.2
+
+- Flutter 的 Gradle 插件会给宿主加上 Flutter 支持的全部架构，所以插件的原生库（包括本插件的
+  `libpatcher_boot.so`）会被打进 `armeabi-v7a` 和 `x86_64` 目录，而引擎只有 `arm64-v8a`。这些架构的设备
+  能安装，启动即崩溃。现在 `build` 只打包 `arm64-v8a`；包里有其他架构的原生代码时报
+  `BUILD_APK_INVALID`。
+- `libpatcher_boot.so` 按 16 KB 内存页对齐，满足 Google Play 对 64 位原生代码的要求。
+
+文档：[从 1.1.1 升级到 1.1.2](doc/upgrading-zh.md#从-111-升级到-112)
+
+### `build --no-tree-shake-icons`
+
+**新增** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+
+- 用 `--no-tree-shake-icons` 构建的宿主带整份图标字体，代码可以在运行时构造 `IconData`，例如码点由服务端下发。
+  `flutter build` 裁剪图标字体时，遇到这种代码会构建失败。宿主因此变大，完整的 MaterialIcons 约 1.6 MB。
+- 设置保存在基线中，该宿主的每个补丁都沿用：补丁代码也可以在运行时构造 `IconData`，只在字体文件改变时携带字体。
+  flutter_patcher 1.1.1 不能给这种宿主打补丁。
+
+文档：[图标字体](doc/cli-zh.md#图标字体)
+
+### `flutter build` 选项不再需要 `--`
+
+**变更** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+
+- `build` 转给 `flutter build` 的选项（例如 `--android-project-arg`）和其他选项一样直接写，`build --help` 会列出它们。
+  `--` 会被忽略，所以为 1.1.1 写的命令照常可用。
+
+文档：[编译期变量和 `flutter build` 选项](doc/cli-zh.md#编译期变量和-flutter-build-选项)
+
 ## 1.1.1
 
 1.1.1 让 `build` 和 `patch` 接受编译期变量（`--dart-define`）。日常开发仍然使用 `flutter run` 和

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 import '../core.dart';
+import 'android.dart';
 import 'artifacts.dart';
 import 'host.dart';
 
@@ -740,11 +741,17 @@ Future<void> embeddingPom(
   await File(receipt).writeAsString('${await hashFile(path)}\n');
 }
 
-Future<Archive> verifyApk(String apk, Map<String, dynamic> engine) async {
+/// Checks that the Android package at [path] carries the engine [engine]
+/// names; returns its files by their APK paths ([readAndroidPackage]).
+Future<Archive> verifyAndroidEngine(
+  String path,
+  Map<String, dynamic> engine,
+) async {
+  final package = AndroidPackage.of(path);
   require(
-    await File(apk).exists(),
+    await File(path).exists(),
     'ENGINE_INJECTION_FAILED',
-    'APK does not exist: $apk',
+    '${package.noun} does not exist: $path',
   );
   final expected =
       ((engine['files'] as List).singleWhere(
@@ -752,7 +759,7 @@ Future<Archive> verifyApk(String apk, Map<String, dynamic> engine) async {
               )['contents']
               as List)
           .single;
-  final archive = ZipDecoder().decodeBytes(await File(apk).readAsBytes());
+  final archive = await readAndroidPackage(path);
   final entries = archive.files
       .where((entry) => entry.name == 'lib/arm64-v8a/libflutter.so')
       .toList();
@@ -761,7 +768,8 @@ Future<Archive> verifyApk(String apk, Map<String, dynamic> engine) async {
         entries.single.content.length == expected['size'] &&
         sha256.convert(entries.single.content).toString() == expected['sha256'],
     'ENGINE_INJECTION_FAILED',
-    'APK arm64 libflutter.so differs from the engine manifest.',
+    'The ${package.noun}\'s arm64 libflutter.so differs from the engine '
+        'manifest.',
   );
   return archive;
 }

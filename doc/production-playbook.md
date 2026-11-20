@@ -90,10 +90,11 @@ Every app built afterwards accepts only files signed with this key, and `build` 
 ## 4. Build and Ship the Store Release
 
 ```bash
-dart run flutter_patcher build android   # build ios runs on an Apple Silicon Mac
+dart run flutter_patcher build android     # an APK
+dart run flutter_patcher build appbundle   # an App Bundle, for Google Play
 ```
 
-Submit `app-release.apk` (or `app-release.ipa`) from the output directory to the store.
+Submit `app-release.apk` or `app-release.aab` from the output directory to the store. `build ios` makes `app-release.ipa` on an Apple Silicon Mac.
 
 **Check**: `build` prints `"status":"build_archived"` and neither the `BASELINE_STORE_LOCAL` nor the `UNSIGNED` warning.
 

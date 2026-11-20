@@ -226,6 +226,8 @@ void main() {
         () => PatchRules().check(PatchStage.code, f),
         rejects('PATCH_DYNAMIC_ICON'),
       );
+      // A host with whole icon fonts lets its code build IconData at run time.
+      PatchRules().check(PatchStage.code, f..hostIconsWhole = true);
       expect(
         () => PatchRules().check(PatchStage.result, facts('so')),
         rejects('PATCH_NO_CHANGES'),

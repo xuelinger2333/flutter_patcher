@@ -71,10 +71,13 @@ dart run flutter_patcher init
 
 ```bash
 dart run flutter_patcher build android
+dart run flutter_patcher build appbundle # Android App Bundle（.aab），Google Play 收的格式
 dart run flutter_patcher build ios       # 只能在 Apple Silicon Mac 上运行
 dart run flutter_patcher build android --dart-define=API_URL=https://api.example.com
-dart run flutter_patcher build android -- --android-project-arg=store=play
+dart run flutter_patcher build android --android-project-arg=store=play
 ```
+
+`build android` 生成 APK，`build appbundle` 生成 Android App Bundle。两者选项相同，生成的是同一个宿主，所以都用 `patch android` 打补丁。两种包都只含 `arm64-v8a` 的原生代码，这是宿主唯一支持的架构，其他架构的设备装不了。
 
 **常用选项**
 
@@ -96,15 +99,16 @@ dart run flutter_patcher build android -- --android-project-arg=store=play
 | `--target <file>` | 入口文件 | `lib/main.dart` |
 | `--out <dir>` | 输出目录；必须不存在，这样一次构建不会覆盖另一次 | `.dart_tool/flutter_patcher/releases/<timestamp>/` |
 | `--export-method <method>` | 仅 iOS，传给 `flutter build ipa`：`app-store`、`ad-hoc`、`development` 或 `enterprise` | `app-store` |
+| `--no-tree-shake-icons` | 宿主带整份图标字体，代码可以在运行时构造 `IconData`；见[图标字体](#图标字体) | 图标字体只保留代码中的常量图标 |
 | `--host-policy <file>` | 自己写的宿主策略；见[自定义宿主策略](advanced-zh.md#自定义宿主策略) | 根据项目生成 |
-| `-- <options>` | `--` 之后的选项传给 `flutter build`；只接受[下面列出的选项](#编译期变量和-flutter-build-选项) | 无 |
+| `flutter build` 选项 | 只接受[下面列出的选项](#编译期变量和-flutter-build-选项)，写法与 `flutter build` 相同 | 无 |
 
-**输出**：输出目录中有 `app-release.apk` 或 `app-release.ipa`，以及完整报告 `build.json`。stdout 输出一行 JSON：
+**输出**：输出目录中有 `app-release.apk`、`app-release.aab` 或 `app-release.ipa`，以及完整报告 `build.json`。stdout 输出一行 JSON：
 
 | 字段 | 值 |
 |---|---|
 | `command`、`status` | `build`、`build_archived` |
-| `app` | 要提交到商店的 APK 或 IPA 的路径 |
+| `app` | 要提交到商店的 APK、App Bundle 或 IPA 的路径 |
 | `application_id`、`version_code`、`strategy` | 宿主的身份 |
 | `signed` | 宿主只接受用项目补丁密钥签名的文件时为 `true` |
 | `fingerprint` | 这个宿主构建的指纹 |
@@ -122,7 +126,7 @@ dart run flutter_patcher build android -- --android-project-arg=store=play
 | 代码 | 出现条件 | 消除方法 |
 |---|---|---|
 | `BASELINE_RELEASE_CONFLICT` | 相同的 flavor 和构建号之前构建过，且内容不同 | 提升构建号，因为一个版本只有一份基线；内容相同时沿用已有基线 |
-| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有构建号、application id 不唯一、选项无效、编译期变量或 `--` 之后的选项不被接受，或 `--out` 已存在 | 按 `message` 指出的内容修正 |
+| `BUILD_CONFIG_INVALID` | `pubspec.yaml` 中没有构建号、application id 不唯一、选项无效、编译期变量或 `flutter build` 选项不被接受，或 `--out` 已存在 | 按 `message` 指出的内容修正 |
 | `HOST_UNSUPPORTED` | 在 Mac 以外的电脑上运行 `build ios` | 在 Apple Silicon Mac 上构建 |
 
 ### 编译期变量和 `flutter build` 选项
@@ -132,9 +136,9 @@ dart run flutter_patcher build android -- --android-project-arg=store=play
 - 变量名和值以明文保存在基线中，该宿主的每个补丁都用它们编译。补丁中如何修改它们，见[补丁中的编译期变量](#补丁中的编译期变量)。
 - `build` 按 `flutter build` 的方式自己设置以下变量，并保存在基线中：`FLUTTER_APP_FLAVOR`（`--flavor`）、`FLUTTER_BUILD_NAME`（`version` 的 `+` 之前的部分）、`FLUTTER_BUILD_NUMBER`（构建号）、`FLUTTER_VERSION`、`FLUTTER_CHANNEL`、`FLUTTER_GIT_URL`、`FLUTTER_FRAMEWORK_REVISION`、`FLUTTER_ENGINE_REVISION`、`FLUTTER_DART_VERSION`、`FLUTTER_ENABLED_FEATURE_FLAGS`。传入这些名字或以 `dart.` 开头的变量会报 `BUILD_CONFIG_INVALID`。
 - 宿主和它的补丁都在关闭 Flutter 功能开关 `windowing` 和 `accessibility_evaluations` 的情况下构建，与 `flutter config` 中的设置无关。
-- `--` 之后只接受以下选项，其他选项报 `BUILD_CONFIG_INVALID`。它们保存在基线中，SO 策略的补丁重新构建时也使用它们。
+- `build` 只接受以下 `flutter build` 选项，其他 `flutter build` 选项报 `BUILD_CONFIG_INVALID`。它们保存在基线中，SO 策略的补丁重新构建时也使用它们。
 
-| 选项 | `build android` | `build ios` |
+| 选项 | `build android`、`build appbundle` | `build ios` |
 |---|---|---|
 | `--android-project-arg <key=value>`（`-P`） | ✓ | |
 | `--android-project-cache-dir <dir>` | ✓ | |
@@ -146,6 +150,16 @@ dart run flutter_patcher build android -- --android-project-arg=store=play
 | `--verbose`（`-v`） | ✓ | ✓ |
 
 `flutter build ipa` 不支持前五个选项，所以 `build ios` 只接受后三个。
+
+### 图标字体
+
+`flutter build` 默认裁剪图标字体，只保留代码中常量 `IconData`（如 `Icons.home`）用到的字形。码点在运行时才确定时（例如菜单图标由服务端下发），Flutter 无法裁剪，构建失败并输出 `This application cannot tree shake icons fonts`。
+
+这时用 `build --no-tree-shake-icons` 构建宿主：
+
+- 宿主带整份图标字体，所以变大，例如完整的 MaterialIcons 约 1.6 MB；自定义图标字体也是整份。
+- 设置保存在基线中，该宿主的每个补丁都沿用，`patch` 没有这个选项。补丁代码也可以在运行时构造 `IconData`。补丁只在字体文件本身改变时携带整份新字体。
+- 要改变这个设置，需要构建新宿主。
 
 ## patch
 
@@ -165,7 +179,7 @@ dart run flutter_patcher patch android --dart-define=API_URL=https://api2.exampl
 - 构建号：默认为 `pubspec.yaml` 中 `version` 的构建号；用 `--version-code` 指定。
 - flavor：默认为 `default`；用 `--flavor` 指定。
 
-以下内容沿用宿主构建时的值，`patch` 不能更改，所以没有对应的选项，也不接受 `--`：策略、渠道、补丁密钥、`build` 自动设置的 `FLUTTER_*` 变量，以及 `flutter build` 选项。例如修改 `pubspec.yaml` 的 `version` 后，补丁中的 `FLUTTER_BUILD_NAME` 不变。
+以下内容沿用宿主构建时的值，`patch` 不能更改，所以没有对应的选项：策略、渠道、补丁密钥、`build` 自动设置的 `FLUTTER_*` 变量、图标字体是否裁剪，以及 `flutter build` 选项。例如修改 `pubspec.yaml` 的 `version` 后，补丁中的 `FLUTTER_BUILD_NAME` 不变。
 
 **选项**
 
@@ -367,7 +381,7 @@ dart run flutter_patcher doctor --project . --baseline-store s3://my-bucket/base
 | `--project <dir>` | 项目的私钥来源；在 Mac 上还检查 `ios/Runner/Info.plist` 中的 `CFBundleVersion` 是否为 `$(FLUTTER_BUILD_NUMBER)` 或正整数 |
 | `--baseline-store <uri>` | 基线存储是否可访问。写入权限由 `build` 检查 |
 | `--version-code <n>`、`--flavor <name>` | 与 `--baseline-store` 一起使用：该版本的基线是否完整 |
-| `--apk <file>` | 该 APK 中的引擎是否与所选 Flutter 版本一致 |
+| `--apk <file>` | 该 APK 或 App Bundle（`.aab`）中的引擎是否与所选 Flutter 版本一致 |
 | `--json` | 不改变检查内容：输出一份 JSON 报告，而不是检查清单 |
 
 **输出**：stdout 每项检查输出一行 `[passed|warning|not_run|failed] <id>: <message>`，最后是 `Toolchain ready. …` 或 `Doctor failed.`。加 `--json` 时输出一个 JSON 对象：

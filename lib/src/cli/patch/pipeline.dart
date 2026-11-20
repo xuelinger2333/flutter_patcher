@@ -311,6 +311,7 @@ class PatchPipeline {
         flavor: req.flavor,
         target: req.target ?? 'lib/main.dart',
       );
+      current.facts.hostIconsWhole = !host.treeShakeIcons;
       current.patch = await host.patched(
         project: req.project,
         sdk: host.recorded ? await sdkDefines(managed) : const {},

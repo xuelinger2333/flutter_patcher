@@ -20,16 +20,25 @@ import '../project.dart';
 Future<int> buildCommand(ArgResults args) async {
   RandomAccessFile? lock;
   try {
-    require(
-      args.rest.isNotEmpty &&
-          const ['android', 'ios'].contains(args.rest.first),
-      'USAGE_ERROR',
-      'Use build android or build ios.',
-    );
-    final platform = args.rest.first;
+    // The target names the platform and, for Android, the package; an APK
+    // and an app bundle are the same host.
+    final (platform, package) = switch (args.rest.firstOrNull) {
+      'android' => ('android', AndroidPackage.apk),
+      'appbundle' => ('android', AndroidPackage.appbundle),
+      'ios' => ('ios', AndroidPackage.apk),
+      _ => throw Failure(
+        'USAGE_ERROR',
+        'Use build android, build appbundle or build ios.',
+      ),
+    };
     // What the build was given is checked before anything slow starts.
-    final flutterArgs = checkFlutterArgs(
-      args.rest.skip(1).toList(),
+    require(
+      args.rest.length == 1,
+      'BUILD_CONFIG_INVALID',
+      'Unexpected argument: ${args.rest.skip(1).firstOrNull}.',
+    );
+    final flutterArgs = forwardedArgs(
+      args,
       'BUILD_CONFIG_INVALID',
       platform: platform,
     );
@@ -91,11 +100,14 @@ Future<int> buildCommand(ArgResults args) async {
       url: config.url,
       defines: defines,
       flutterArgs: flutterArgs,
+      treeShakeIcons: args.flag('tree-shake-icons'),
+      package: package,
     );
     require(
       request.platform == platform,
       'BUILD_CONFIG_INVALID',
-      'The host policy ABI is for ${request.platform}; use build ${request.platform}.',
+      'The host policy ABI is for ${request.platform}; use build '
+          '${request.platform == 'ios' ? 'ios' : 'android or build appbundle'}.',
     );
     // Apple ships the iOS toolchain (Xcode, codesign) for macOS only.
     require(
@@ -166,6 +178,9 @@ Future<int> buildCommand(ArgResults args) async {
       sdk,
     );
     await artifacts.obtain('tools', sdk);
+    final engineJar = package == AndroidPackage.appbundle
+        ? artifacts.file(sdk, 'engine', 'libflutter-arm64_v8a-release.jar')
+        : null;
     final environment = EnvironmentBuilder(cache, commands, offline: offline);
     final managed = await (platform == 'ios'
         ? environment.prepare(sdk, artifacts, ios: engine)
@@ -180,6 +195,7 @@ Future<int> buildCommand(ArgResults args) async {
       engine,
       BaselineRepository(p.join(cache, 'baselines'), baselineStore),
       artifacts.selected,
+      engineJar: engineJar,
     );
     final result = request.hostPolicy.fields['strategy'] == 'so'
         ? await pipeline.buildSo(request)
@@ -226,7 +242,7 @@ Future<Map<String, Object?>> buildSummary(
       .list()
       .map((e) => e.path)
       .firstWhere(
-        (path) => path.endsWith('.apk') || path.endsWith('.ipa'),
+        (path) => ['.apk', '.aab', '.ipa'].any(path.endsWith),
         orElse: () => '',
       );
   return {

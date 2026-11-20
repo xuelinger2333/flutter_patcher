@@ -94,7 +94,7 @@ class LibappProducer implements CodeProducer {
         modules: false,
       ),
     );
-    final apk = await builder.assembleApk(
+    final apk = await builder.assembleAndroid(
       step,
       run.project,
       request,
@@ -103,7 +103,7 @@ class LibappProducer implements CodeProducer {
       run.inputs,
     );
     run.phase = 'verify-apk';
-    final info = await builder.verifyApk(apk, host, request, trust);
+    final info = await builder.verifyPackage(apk, host, request, trust);
     if (info['libapp_sha256'] != receipt['libapp_sha256']) {
       run.facts.changed.add('libapp.so');
     }

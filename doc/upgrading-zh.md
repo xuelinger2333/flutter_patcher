@@ -19,6 +19,10 @@
 
 已用 1.1.0 上线的 App 继续用 flutter_patcher 1.1.0 打补丁：在该版本的代码中，`pubspec.yaml` 保持依赖 `flutter_patcher: 1.1.0`。插件是宿主的一部分，升级依赖之后为它打补丁会报 `PATCH_NATIVE_CHANGE`。项目、密钥和存储无需改动，下一次 `build` 生成 1.1.1 宿主。
 
+## 从 1.1.1 升级到 1.1.2
+
+已用 1.1.1 上线的 App 继续用 flutter_patcher 1.1.1 打补丁，原因相同：在该版本的代码中，`pubspec.yaml` 保持依赖 `flutter_patcher: 1.1.1`，否则补丁报 `PATCH_NATIVE_CHANGE`。下一次 `build` 生成 1.1.2 宿主，它只含 `arm64-v8a` 的原生代码，其他架构的设备装不了。
+
 ## 相关
 
 - [生产部署](production-playbook-zh.md)：用 1.1 构建上线版本并下发补丁。

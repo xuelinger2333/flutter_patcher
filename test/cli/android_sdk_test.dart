@@ -106,4 +106,60 @@ void main() {
     await File(p.join(temp.path, 'bin', 'java.exe')).create(recursive: true);
     checkJavaHome(host, environment: {'JAVA_HOME': temp.path});
   });
+
+  group('AndroidPackage', () {
+    late String project;
+    setUp(() async {
+      project = (await Directory.systemTemp.createTemp('android-out-')).path;
+    });
+    tearDown(() => Directory(project).delete(recursive: true));
+    String outputs(String rest) =>
+        p.join(project, 'build', 'app', 'outputs', rest);
+    Future<void> touch(String rest) async {
+      await File(outputs(rest)).create(recursive: true);
+    }
+
+    test('is chosen by the file extension', () {
+      expect(
+        AndroidPackage.of('out/app-release.aab'),
+        AndroidPackage.appbundle,
+      );
+      expect(AndroidPackage.of('out/app-release.apk'), AndroidPackage.apk);
+    });
+
+    test(
+      'an APK is where flutter_tools names it, its flavor lower-cased',
+      () async {
+        expect(
+          await AndroidPackage.apk.output(project, null),
+          outputs(p.join('flutter-apk', 'app-release.apk')),
+        );
+        expect(
+          await AndroidPackage.apk.output(project, 'Paid_Store'),
+          outputs(p.join('flutter-apk', 'app-paid_store-release.apk')),
+        );
+      },
+    );
+
+    test('an app bundle is the one in its variant directory', () async {
+      await touch('bundle/release/app-release.aab');
+      await touch('bundle/paid_StoreRelease/app-paid_Store-release.aab');
+      expect(
+        await AndroidPackage.appbundle.output(project, null),
+        outputs(p.join('bundle', 'release', 'app-release.aab')),
+      );
+      expect(
+        await AndroidPackage.appbundle.output(project, 'paid_Store'),
+        outputs(
+          p.join('bundle', 'paid_StoreRelease', 'app-paid_Store-release.aab'),
+        ),
+      );
+      await expectLater(
+        AndroidPackage.appbundle.output(project, 'free'),
+        throwsA(
+          isA<Failure>().having((e) => e.code, 'code', 'BUILD_APK_INVALID'),
+        ),
+      );
+    });
+  });
 }

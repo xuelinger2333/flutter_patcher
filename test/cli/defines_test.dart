@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:args/args.dart';
 import 'package:flutter_patcher/src/cli/build/defines.dart';
+import 'package:flutter_patcher/src/cli/cli.dart';
 import 'package:flutter_patcher/src/cli/core.dart';
 import 'package:flutter_patcher/src/cli/patch/sources.dart';
 import 'package:path/path.dart' as p;
@@ -136,33 +138,77 @@ void main() {
     });
   });
 
-  group('checkFlutterArgs', () {
+  group('build options', () {
+    ArgResults build(List<String> args) =>
+        parseArguments(parser(), ['build', ...args]).command!;
+    List<String> forwarded(List<String> args, {String platform = 'android'}) =>
+        forwardedArgs(build(['android', ...args]), _code, platform: platform);
+
     test('passes on the options that reach only the native build', () {
-      const args = [
-        '-Pkey=value',
-        '-P',
-        'other=value',
-        '--android-project-arg=a=b',
-        '--android-project-cache-dir',
-        'cache',
-        '--no-android-gradle-daemon',
-        '--android-skip-build-dependency-validation',
-        '--ignore-deprecation',
-        '--fatal-warnings',
-        '--performance-measurement-file=perf.json',
-        '-v',
-      ];
-      expect(checkFlutterArgs(args, _code, platform: 'android'), args);
-      expect(checkFlutterArgs(const [], _code, platform: 'android'), isEmpty);
+      expect(
+        forwarded([
+          '-Pkey=value',
+          '-P',
+          'other=value',
+          '--android-project-arg=a=b',
+          '--android-project-cache-dir',
+          'cache',
+          '--no-android-gradle-daemon',
+          '--android-skip-build-dependency-validation',
+          '--ignore-deprecation',
+          '--fatal-warnings',
+          '--performance-measurement-file=perf.json',
+          '-v',
+        ]),
+        [
+          '--android-project-arg=key=value',
+          '--android-project-arg=other=value',
+          '--android-project-arg=a=b',
+          '--android-project-cache-dir=cache',
+          '--no-android-gradle-daemon',
+          '--android-skip-build-dependency-validation',
+          '--ignore-deprecation',
+          '--performance-measurement-file=perf.json',
+          '--fatal-warnings',
+          '--verbose',
+        ],
+      );
+      expect(forwarded(const []), isEmpty);
+    });
+
+    test('a -- is no argument, wherever it is', () {
+      expect(forwarded(['--', '-Pk=v', '--verbose']), [
+        '--android-project-arg=k=v',
+        '--verbose',
+      ]);
+      final args = build([
+        '--',
+        'android',
+        '--strategy',
+        'so',
+        '--',
+        '--no-tree-shake-icons',
+        '--',
+      ]);
+      expect(args.rest, ['android']);
+      expect(args['strategy'], 'so');
+      expect(args.flag('tree-shake-icons'), isFalse);
+      expect(build(['android']).flag('tree-shake-icons'), isTrue);
     });
 
     test('passes on for iOS only what flutter build ipa has', () {
-      const args = [
-        '--fatal-warnings',
-        '--performance-measurement-file=perf.json',
-        '-v',
-      ];
-      expect(checkFlutterArgs(args, _code, platform: 'ios'), args);
+      expect(
+        forwarded([
+          '--fatal-warnings',
+          '--performance-measurement-file=perf.json',
+          '-v',
+        ], platform: 'ios'),
+        [
+          '--performance-measurement-file=perf.json',
+          '--fatal-warnings',
+          '--verbose',
+        ],
+      );
       for (final arg in [
         '-Pkey=value',
         '--android-project-arg=a=b',
@@ -170,7 +216,7 @@ void main() {
         '--ignore-deprecation',
       ]) {
         expect(
-          () => checkFlutterArgs([arg], _code, platform: 'ios'),
+          () => forwarded([arg], platform: 'ios'),
           _fails(_code, 'Android build option'),
           reason: arg,
         );
@@ -187,7 +233,6 @@ void main() {
         '--no-pub',
         '--obfuscate',
         '--split-debug-info=symbols',
-        '--no-tree-shake-icons',
         '--enable-experiment=x',
         '--track-widget-creation',
         '--extra-front-end-options=--x',
@@ -197,56 +242,33 @@ void main() {
         '--no-codesign',
         '--export-options-plist=x.plist',
         '--local-engine=x',
-        'stray',
       ]) {
         expect(
-          () => checkFlutterArgs([arg], _code, platform: 'android'),
-          _fails(_code),
+          () => build(['android', arg]),
+          _fails(_code, 'not a build option: of the flutter build options'),
           reason: arg,
         );
       }
       expect(
-        () =>
-            checkFlutterArgs(['--flavor', 'paid'], _code, platform: 'android'),
-        _fails(_code, 'use --flavor before --'),
+        () => build(['android', '-t', 'x']),
+        _fails(_code, 'use --target'),
       );
       expect(
-        () =>
-            checkFlutterArgs(['--build-number=7'], _code, platform: 'android'),
-        _fails(_code, '--version-code'),
+        () => build(['android', '--build-number=7']),
+        _fails(_code, 'use --version-code'),
       );
+      expect(() => build(['android', '-P']), throwsA(isA<FormatException>()));
       expect(
-        () => checkFlutterArgs(
-          ['--dart-define=A=secret'],
-          _code,
-          platform: 'android',
-        ),
-        throwsA(
-          isA<Failure>().having(
-            (f) => f.message,
-            'message',
-            allOf(
-              contains('--dart-define before --'),
-              isNot(contains('secret')),
-            ),
-          ),
-        ),
+        () => build(['android', '--ignore-deprecation=true']),
+        throwsA(isA<FormatException>()),
       );
+      // Other commands keep the parser's own message.
       expect(
-        () => checkFlutterArgs(['-P'], _code, platform: 'android'),
-        _fails(_code, 'value'),
-      );
-      expect(
-        () => checkFlutterArgs(
-          ['--ignore-deprecation=true'],
-          _code,
-          platform: 'android',
-        ),
-        _fails(_code, 'no value'),
+        () => parseArguments(parser(), ['patch', 'android', '--obfuscate']),
+        throwsA(isA<FormatException>()),
       );
     });
   });
-
   group('buildName', () {
     Future<String?> of(String pubspec) {
       file('pubspec.yaml', pubspec);
@@ -371,6 +393,9 @@ void main() {
       );
       expect(read.toJson(), host().toJson());
       expect(read.recorded, isTrue);
+      expect(read.treeShakeIcons, isTrue);
+      expect(host().toJson()['schema'], 1);
+      expect(host().toJson().containsKey('tree_shake_icons'), isFalse);
       expect(
         () => BuildInputs.read(
           {
@@ -378,6 +403,54 @@ void main() {
           },
           flavor: 'paid',
           target: 'lib/x.dart',
+        ),
+        _fails('PATCH_BASELINE_INCOMPATIBLE'),
+      );
+    });
+
+    test('a host with whole icon fonts is schema 2, and its patches '
+        'build with them whole', () async {
+      final whole = BuildInputs(
+        target: 'lib/main.dart',
+        defines: const {},
+        builtins: const {'FLUTTER_BUILD_NUMBER': '45'},
+        flutterArgs: const ['--verbose'],
+        treeShakeIcons: false,
+      );
+      final recorded = jsonDecode(jsonEncode(whole.toJson())) as Map;
+      expect(recorded['schema'], 2);
+      expect(recorded['tree_shake_icons'], false);
+      final read = BuildInputs.read(
+        {'build_inputs': recorded},
+        flavor: 'default',
+        target: 'lib/main.dart',
+      );
+      expect(read.treeShakeIcons, isFalse);
+      expect(await read.flutterOptions(dir.path), [
+        '--build-number',
+        '45',
+        '--no-tree-shake-icons',
+        '--verbose',
+      ]);
+      expect(await read.flutterOptions(dir.path, bundle: true), [
+        '--build-number',
+        '45',
+      ]);
+      file('pubspec.yaml', 'name: a\n');
+      final patch = await read.patched(
+        project: dir.path,
+        sdk: const {},
+        overrides: const {},
+      );
+      expect(patch.inputs.treeShakeIcons, isFalse);
+      // Schema 2 means whole icon fonts, and nothing else yet.
+      expect(
+        () => BuildInputs.read(
+          {
+            'build_inputs': {...recorded, 'tree_shake_icons': true},
+          },
+          flavor: 'default',
+          target: 'lib/main.dart',
         ),
         _fails('PATCH_BASELINE_INCOMPATIBLE'),
       );

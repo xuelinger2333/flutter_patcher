@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -44,46 +45,113 @@ const _reservedDefines = {
   'dart.': 'the compiler sets it',
 };
 
-/// `flutter build` options a build may pass after `--`: those that reach
-/// only the native build. True when the option takes a value.
-const _flutterOptions = {
-  '--android-project-arg': true,
-  '-P': true,
-  '--android-project-cache-dir': true,
-  '--performance-measurement-file': true,
-  '--android-gradle-daemon': false,
-  '--no-android-gradle-daemon': false,
-  '--android-skip-build-dependency-validation': false,
-  '--no-android-skip-build-dependency-validation': false,
-  '--ignore-deprecation': false,
-  '--fatal-warnings': false,
-  '--no-fatal-warnings': false,
-  '--verbose': false,
-  '-v': false,
+/// The `flutter build` options that reach only the native build: build
+/// takes them and passes them on ([forwardedArgs]), so they are recorded and
+/// every patch's `flutter build` gets them too.
+void forwardedOptions(ArgParser parser) => parser
+  ..addSeparator('Passed on to flutter build:')
+  ..addMultiOption(
+    'android-project-arg',
+    abbr: 'P',
+    splitCommas: false,
+    valueHelp: 'KEY=VALUE',
+    help: 'A Gradle project property (Android).',
+  )
+  ..addOption(
+    'android-project-cache-dir',
+    help: 'The Gradle project cache directory (Android).',
+  )
+  ..addFlag(
+    'android-gradle-daemon',
+    defaultsTo: null,
+    help: 'Whether Gradle runs as a daemon (Android).',
+  )
+  ..addFlag(
+    'android-skip-build-dependency-validation',
+    defaultsTo: null,
+    help:
+        'Whether to skip the Gradle, AGP and Kotlin version checks (Android).',
+  )
+  ..addFlag(
+    'ignore-deprecation',
+    negatable: false,
+    help: 'Ignore deprecation warnings of the native build (Android).',
+  )
+  ..addOption(
+    'performance-measurement-file',
+    help: 'Where flutter build writes its build timings.',
+  )
+  ..addFlag(
+    'fatal-warnings',
+    defaultsTo: null,
+    help: 'Whether warnings fail the build.',
+  )
+  ..addFlag(
+    'verbose',
+    abbr: 'v',
+    negatable: false,
+    help: 'Verbose flutter build output.',
+  );
+
+/// Those of [forwardedOptions], in the order passed on.
+const _forwarded = [
+  'android-project-arg',
+  'android-project-cache-dir',
+  'android-gradle-daemon',
+  'android-skip-build-dependency-validation',
+  'ignore-deprecation',
+  'performance-measurement-file',
+  'fatal-warnings',
+  'verbose',
+];
+
+/// Those of [_forwarded] that `flutter build ipa` has too; the others are
+/// Android's.
+const _iosForwarded = {
+  'performance-measurement-file',
+  'fatal-warnings',
+  'verbose',
 };
 
-/// Those of [_flutterOptions] that `flutter build ipa` has too; the others
-/// are Android's.
-const _iosOptions = {
-  '--performance-measurement-file',
-  '--fatal-warnings',
-  '--no-fatal-warnings',
-  '--verbose',
-  '-v',
-};
+/// The [forwardedOptions] [args] has, as `flutter build` options, for a
+/// build for [platform].
+List<String> forwardedArgs(
+  ArgResults args,
+  String code, {
+  required String platform,
+}) {
+  final result = <String>[];
+  for (final name in _forwarded.where(args.wasParsed)) {
+    _reject(
+      platform != 'ios' || _iosForwarded.contains(name),
+      code,
+      '--$name is an Android build option. Options passed on for iOS: '
+      '${_iosForwarded.map((n) => '--$n').join(', ')}.',
+    );
+    result.addAll(switch (args[name]) {
+      final List values => [for (final v in values) '--$name=$v'],
+      final String value => ['--$name=$value'],
+      final bool on => [on ? '--$name' : '--no-$name'],
+      _ => const <String>[],
+    });
+  }
+  return result;
+}
 
-/// What to use instead of a `flutter build` option that is not passed on.
+/// What to use instead of a `flutter build` option build does not take.
 const _ownOptions = {
-  '--target': 'use --target before --',
-  '-t': 'use --target before --',
-  '--flavor': 'use --flavor before --',
-  '--build-number': 'use --version-code before --',
+  '-t': 'use --target',
+  '--build-number': 'use --version-code',
   '--build-name': 'it is the version in pubspec.yaml',
-  '--dart-define': 'use --dart-define before --',
-  '-D': 'use --dart-define before --',
-  '--dart-define-from-file': 'use --dart-define-from-file before --',
-  '--export-method': 'use --export-method before --',
 };
+
+/// Why build does not take the option [name]: what to use instead, or why
+/// it is not passed on to `flutter build`.
+String unknownBuildOption(String name) =>
+    '$name is not a build option: ${_ownOptions[name] ?? 'of the flutter '
+            'build options, build takes those that reach only the native build '
+            '(build --help lists them); flutter_patcher sets the others itself, '
+            'or a patch could not reproduce them'}.';
 
 /// The one way `build` and `patch` report an input outside what they take:
 /// [code] is the command's `*_CONFIG_INVALID`. Messages name keys, options
@@ -184,46 +252,6 @@ Map<String, String> _envFile(String text, String path, String code) {
   return result;
 }
 
-/// Checks the `flutter build` options a build for [platform] was given
-/// after `--`.
-List<String> checkFlutterArgs(
-  List<String> args,
-  String code, {
-  required String platform,
-}) {
-  final ios = platform == 'ios';
-  for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
-    final joined = arg.startsWith('-P') && arg.length > 2;
-    final at = arg.indexOf('=');
-    final name = joined
-        ? '-P'
-        : at < 0
-        ? arg
-        : arg.substring(0, at);
-    final takesValue = _flutterOptions[name];
-    _reject(
-      takesValue != null,
-      code,
-      '$name cannot be passed after --: ${_ownOptions[name] ?? 'flutter_patcher sets it '
-              'itself, or it would change what a patch must reproduce'}. '
-      'Options passed on: ${_flutterOptions.keys.join(', ')}.',
-    );
-    _reject(
-      !ios || _iosOptions.contains(name),
-      code,
-      '$name is an Android build option. Options passed on for iOS: '
-      '${_iosOptions.join(', ')}.',
-    );
-    if (!takesValue!) {
-      _reject(at < 0, code, '$name takes no value.');
-    } else if (!joined && at < 0) {
-      _reject(++i < args.length, code, '$name needs a value.');
-    }
-  }
-  return args;
-}
-
 /// The build name flutter_tools reads from [project]'s pubspec: its version
 /// before `+`, or null when it has none or one that is not a version.
 Future<String?> buildName(String project) async {
@@ -264,6 +292,7 @@ class BuildInputs {
     required this.defines,
     required this.builtins,
     this.flutterArgs = const [],
+    this.treeShakeIcons = true,
     this.recorded = true,
   });
 
@@ -273,6 +302,7 @@ class BuildInputs {
     required this.target,
     required this.defines,
     required this.flutterArgs,
+    this.treeShakeIcons = true,
     required Map<String, String> sdk,
     required String? flavor,
     required String? buildName,
@@ -303,8 +333,12 @@ class BuildInputs {
         recorded: false,
       );
     }
+    // Schema 2 is a host with its icon fonts whole; flutter_patcher 1.1.1
+    // and older read schema 1 only, so they refuse it instead of subsetting
+    // its fonts.
+    final schema = recorded['schema'];
     require(
-      recorded['schema'] == 1,
+      schema == 1 || (schema == 2 && recorded['tree_shake_icons'] == false),
       'PATCH_BASELINE_INCOMPATIBLE',
       'This host was built by a newer flutter_patcher; update flutter_patcher.',
     );
@@ -313,6 +347,7 @@ class BuildInputs {
       defines: Map<String, String>.from(recorded['dart_defines'] as Map),
       builtins: Map<String, String>.from(recorded['builtin_defines'] as Map),
       flutterArgs: List<String>.from(recorded['flutter_args'] as List),
+      treeShakeIcons: schema == 1,
     );
   }
 
@@ -325,15 +360,21 @@ class BuildInputs {
   /// `flutter build` options passed on to it.
   final List<String> flutterArgs;
 
+  /// False when the host carries its icon fonts whole
+  /// (`--no-tree-shake-icons`): its code may build IconData at run time, and
+  /// a patch neither subsets nor checks icons.
+  final bool treeShakeIcons;
+
   /// False for a host built before build inputs were recorded.
   final bool recorded;
 
   Map<String, Object?> toJson() => {
-    'schema': 1,
+    'schema': treeShakeIcons ? 1 : 2,
     'target': target,
     'dart_defines': defines,
     'builtin_defines': builtins,
     'flutter_args': flutterArgs,
+    if (!treeShakeIcons) 'tree_shake_icons': false,
   };
 
   /// The defines of every kernel flutter_patcher compiles itself.
@@ -364,6 +405,8 @@ class BuildInputs {
         name,
       ],
       if (defines.isNotEmpty) '--dart-define-from-file=$file',
+      // build bundle never subsets fonts, and rejects the option.
+      if (!bundle && !treeShakeIcons) '--no-tree-shake-icons',
       if (!bundle) ...flutterArgs,
     ];
   }
@@ -419,6 +462,7 @@ class BuildInputs {
         defines: {...defines, ...overrides},
         builtins: builtins,
         flutterArgs: flutterArgs,
+        treeShakeIcons: treeShakeIcons,
         recorded: recorded,
       ),
       changed: [

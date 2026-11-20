@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -204,4 +205,75 @@ Future<void> retireFlutterGradleCache(String home) async {
       await Directory(path).renameRetry(temporaryName('$path.retired'));
     }
   }
+}
+
+/// The Gradle init script of every build that uses [installInitScript]'s
+/// Gradle home.
+///
+/// The Flutter Gradle plugin gives the app all of Flutter's ABIs whatever
+/// `--target-platform` says, so a plugin's native libraries (this one's
+/// included) would land beside an engine built for arm64-v8a only, and
+/// devices of the other ABIs would install the app and crash. `finalizeDsl`
+/// runs after the plugin and the app's own build file.
+///
+/// An app bundle gets engine symbols (`FLUTTER_PATCHER_ENGINE_SYMBOLS`,
+/// [writeEngineSymbols]) where AGP puts the symbols it extracts: AGP cannot
+/// extract them from the engine release's stripped libflutter.so, and
+/// `flutter build appbundle` fails without them.
+const initScript = '''
+// Written by flutter_patcher: a host carries arm64-v8a native code only, and
+// an app bundle engine symbols.
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin('com.android.application') {
+        def components = project.extensions.getByName('androidComponents')
+        components.finalizeDsl { android ->
+            android.defaultConfig.ndk.abiFilters.clear()
+            android.defaultConfig.ndk.abiFilters.add('arm64-v8a')
+            android.productFlavors.each { it.ndk.abiFilters.clear() }
+            android.buildTypes.each { it.ndk.abiFilters.clear() }
+        }
+        def symbols = System.getenv('FLUTTER_PATCHER_ENGINE_SYMBOLS')
+        if (symbols != null) {
+            components.onVariants(components.selector().all()) { variant ->
+                variant.bundleConfig.addMetadataFile(
+                    'com.android.tools.build.debugsymbols/arm64-v8a',
+                    project.layout.file(project.provider { new File(symbols) }))
+            }
+        }
+    }
+}
+''';
+
+/// Writes `libflutter.so.sym` into [directory] and returns its path.
+/// `flutter build appbundle` only checks that an app bundle has a file of that
+/// name; the engine release ships no symbol table, so the stripped
+/// libflutter.so of the engine [jar] stands in: it is the bundle's own
+/// library, with the same build ID, and only its exported symbols.
+Future<String> writeEngineSymbols(String jar, String directory) async {
+  final path = p.join(directory, 'libflutter.so.sym');
+  await rejectLinks(path);
+  final library = ZipDecoder()
+      .decodeBytes(await File(jar).readAsBytes())
+      .findFile('lib/arm64-v8a/libflutter.so');
+  require(
+    library != null,
+    'ENGINE_INJECTION_FAILED',
+    'The engine jar has no arm64 libflutter.so: $jar',
+  );
+  await Directory(directory).create(recursive: true);
+  await File(path).writeAsBytes(library!.content);
+  return path;
+}
+
+/// Puts [initScript] into the Gradle home [home].
+Future<void> installInitScript(String home) async {
+  final file = File(p.join(home, 'init.d', 'flutter_patcher.gradle'));
+  await rejectLinks(file.path);
+  if (await file.exists() && await file.readAsString() == initScript) {
+    return;
+  }
+  await file.parent.create(recursive: true);
+  final staging = File(temporaryName(file.path));
+  await staging.writeAsString(initScript, flush: true);
+  await staging.renameRetry(file.path);
 }

@@ -8,7 +8,9 @@ python test/acceptance/device_acceptance.py --strategy so --signing signed --flu
 
 Needs Python 3.12+, a JDK, the Android SDK and an unlocked API 28+ arm64
 device; runs on Windows, Linux or macOS. Use `--strategy bytecode` for a
-bytecode host and `--signing unsigned` for a host without a patch key. Each run
+bytecode host and `--signing unsigned` for a host without a patch key. Use
+`--package appbundle --bundletool <bundletool-all.jar>` for a host built as an
+App Bundle, installed as Google Play would. Each run
 creates a fresh patch key (signed), a TLS certificate trusted only by the
 fixture app, builds the host, makes three patches (a good one, one that throws
 before its first frame, and a later good one), publishes them, a withdrawal

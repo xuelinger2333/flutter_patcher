@@ -9,3 +9,6 @@ target_compile_options(patcher_boot PRIVATE -Wall -Wextra -Werror -fvisibility=h
 target_compile_options(patcher_boot PRIVATE
   "-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=src"
   "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
+# Google Play requires 64-bit native code aligned for 16 KB pages; NDK 27
+# aligns for 4 KB by default.
+target_link_options(patcher_boot PRIVATE "-Wl,-z,max-page-size=16384")

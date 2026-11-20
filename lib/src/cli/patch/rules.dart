@@ -57,6 +57,9 @@ class PatchFacts {
   /// `lean` or `whole` (bytecode).
   String? tier;
 
+  /// The host carries its icon fonts whole (`--no-tree-shake-icons`).
+  bool hostIconsWhole = false;
+
   /// What the host's engine offers (its release's capabilities).
   List<String> engineCapabilities = const [];
 
@@ -199,13 +202,16 @@ final patchRules = <PatchRule>[
     ],
     strategies: const {'bytecode'},
   ),
-  // A patch's icon font is subset to the constant IconData it uses.
+  // A patch's icon font is subset to the constant IconData it uses, unless
+  // the host carries its icon fonts whole.
   PatchRule(
     'PATCH_DYNAMIC_ICON',
     PatchStage.code,
     (f) => [
-      if ((f.report?['dynamic_fonts'] as List? ?? const []).isNotEmpty)
-        'Non-constant IconData cannot be subset safely',
+      if (!f.hostIconsWhole &&
+          (f.report?['dynamic_fonts'] as List? ?? const []).isNotEmpty)
+        'Non-constant IconData cannot be subset safely; for IconData built '
+            'at run time, release a new host built with --no-tree-shake-icons',
     ],
     strategies: const {'bytecode'},
   ),

@@ -1,5 +1,65 @@
 > Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
 
+## 1.1.2
+
+1.1.2 builds a host as an Android App Bundle, the package Google Play takes, and a host whose code builds `IconData` at run time.
+
+### `build appbundle`
+
+**Added** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+
+- `build appbundle` builds an Android App Bundle (`app-release.aab`) with
+  `flutter build appbundle`. It takes the options of `build android` and
+  makes the same host: the strategy, the host policy and every patch are
+  the same as for an APK, and `patch android` patches either.
+- `flutter build appbundle` requires `libflutter.so.sym` in an App Bundle.
+  flutter_patcher's engine releases carry no symbol table, so the file holds
+  the stripped engine library itself, with its exported symbols only: Google
+  Play's native crash reports show no function names inside the engine.
+- `doctor --apk` also takes an `.aab`.
+
+Docs: [build](doc/cli.md#build)
+
+### A host carries native code for arm64-v8a only
+
+**Changed** · CLI, Android · 2026-11-20 · flutter_patcher 1.1.2
+
+- The Flutter Gradle plugin gave a host every ABI Flutter has, so the
+  native libraries of plugins (this one's `libpatcher_boot.so` included)
+  were packaged for `armeabi-v7a` and `x86_64` beside an engine built for
+  `arm64-v8a` only. Devices of those ABIs installed the app and it crashed
+  at start. `build` now packages `arm64-v8a` only, and fails with
+  `BUILD_APK_INVALID` when native code for another ABI is in the package.
+- `libpatcher_boot.so` is aligned for 16 KB memory pages, as Google Play
+  requires of 64-bit native code.
+
+Docs: [From 1.1.1 to 1.1.2](doc/upgrading.md#from-111-to-112)
+
+### `build --no-tree-shake-icons`
+
+**Added** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+
+- A host built with `--no-tree-shake-icons` carries its icon fonts whole, so
+  its code may build `IconData` at run time, as when a server sends the code
+  points. `flutter build` fails on such code when it subsets icon fonts. The
+  host is larger: the whole MaterialIcons is about 1.6 MB.
+- The setting is kept in the baseline, and every patch of the host follows
+  it: a patch may build `IconData` at run time too, and carries a font only
+  when the font file changed. flutter_patcher 1.1.1 cannot patch such a host.
+
+Docs: [Icon fonts](doc/cli.md#icon-fonts)
+
+### `flutter build` options without `--`
+
+**Changed** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+
+- The `flutter build` options `build` passes on, such as
+  `--android-project-arg`, are written like its other options, and
+  `build --help` lists them. A `--` is ignored, so commands written for 1.1.1
+  work as before.
+
+Docs: [Defines and `flutter build` options](doc/cli.md#defines-and-flutter-build-options)
+
 ## 1.1.1
 
 1.1.1 lets `build` and `patch` take defines (`--dart-define`). Daily
