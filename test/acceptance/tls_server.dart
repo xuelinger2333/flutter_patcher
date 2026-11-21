@@ -36,7 +36,12 @@ Future<void> _respond(HttpRequest request, Uri root) async {
     }
     await request.response.close();
   } on Object catch (error) {
-    print('${request.method} ${request.uri.path} client left: $error');
+    // The first line only: an HttpException's message carries the data.
+    final text = '$error'.split('\n').first;
+    print(
+      '${request.method} ${request.uri.path} client left: '
+      '${text.length > 200 ? text.substring(0, 200) : text}',
+    );
     return;
   }
   print('${request.method} ${request.uri.path} ${request.response.statusCode}');

@@ -443,6 +443,15 @@ class BuildPipeline {
           request.publicKey,
         ),
       );
+      phase = 'runtime-dependency';
+      await addRuntimeDependency(
+        project,
+        (arguments) => run(sdk.host.flutterLauncher(managed), [
+          '--suppress-analytics',
+          'pub',
+          ...arguments,
+        ], cwd: project),
+      );
       final ios = request.platform == 'ios';
       phase = ios ? 'ipa' : request.package.command;
       final trace = p.join(work, 'precompiler-trace.json'),
@@ -809,7 +818,8 @@ class BuildPipeline {
         // registrants for release, which leaves out dev_dependency plugins
         // (e.g. integration_test); a stale debug registrant references them
         // and the release compile fails. pub get --enforce-lockfile already
-        // ran, so this check resolves nothing.
+        // ran (and a bytecode host's addRuntimeDependency), so this check
+        // resolves nothing.
         '--target-platform',
         'android-arm64',
         // Deferred components would split libapp.so; a host has one, as an

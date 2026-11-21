@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
 
 import '../core.dart';
 
@@ -57,4 +59,37 @@ Future<String> writeBootstrapEntry(String project, String source) async {
   await File(target).parent.create(recursive: true);
   await File(target).writeAsString(source);
   return target;
+}
+
+/// The `pub add` descriptor of the runtime package, relative to the build
+/// copy. YAML, not JSON: a double quote does not survive Windows' flutter.bat.
+const runtimeDependency =
+    'dynamic_modules:{path: .dart_tool/flutter_patcher/runtime}';
+
+/// Makes the runtime package of [installRuntimePackage] a dependency of the
+/// build copy [project], which `flutter build` then keeps: its pub step
+/// re-resolves a package_config naming a package the lockfile does not (Dart
+/// 3.14), and that drops a package only the config has. [pub] runs pub in
+/// [project]. Run after the build inputs are recorded: this edits the copy's
+/// pubspec, which patches never see. Every other locked package stays.
+Future<void> addRuntimeDependency(
+  String project,
+  Future<void> Function(List<String> arguments) pub,
+) async {
+  Future<String> locked() async {
+    final lock = loadYaml(
+      await File(p.join(project, 'pubspec.lock')).readAsString(),
+    ) as Map;
+    return jsonEncode(
+      Map.of(lock['packages'] as Map? ?? const {})..remove('dynamic_modules'),
+    );
+  }
+
+  final before = await locked();
+  await pub(['add', '--offline', runtimeDependency]);
+  require(
+    await locked() == before,
+    'BUILD_STEP_FAILED',
+    'Adding the patch runtime package changed other locked packages.',
+  );
 }

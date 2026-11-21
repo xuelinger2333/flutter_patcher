@@ -2,7 +2,22 @@
 
 ## 1.1.2
 
-1.1.2 builds a host as an Android App Bundle, the package Google Play takes, and a host whose code builds `IconData` at run time.
+1.1.2 supports Flutter 3.50.0, builds a host as an Android App Bundle, the package Google Play takes, and a host whose code builds `IconData` at run time.
+
+### Flutter 3.50.0
+
+**Added** · CLI, engine, tools · 2026-11-20 · flutter_patcher 1.1.2
+
+- Flutter 3.50.0 (Dart 3.14) is supported on Android and iOS, beside
+  3.47.0 to 3.47.9. A host moves to it with a new store release, as to any
+  Flutter version.
+- A bytecode host's build adds the patch runtime package to its build copy's
+  `pubspec.yaml` and lockfile, after the build inputs are recorded: from
+  Dart 3.14 on, the pub step of `flutter build` dropped it when only the
+  package configuration named it. Your project is not changed, and `build`
+  fails with `BUILD_STEP_FAILED` if any other locked package would change.
+
+Docs: [Requirements](README.md#requirements)
 
 ### `build appbundle`
 
@@ -59,6 +74,22 @@ Docs: [Icon fonts](doc/cli.md#icon-fonts)
   work as before.
 
 Docs: [Defines and `flutter build` options](doc/cli.md#defines-and-flutter-build-options)
+
+### A bytecode patch of a Riverpod 3 app failed at start
+
+**Fixed** · tools · 2026-11-21 · flutter_patcher 1.1.2
+
+- Before: a patch of an app whose code holds Riverpod 3 generated providers
+  (`.g.dart`) failed at start with `NoSuchMethodError: ... has no instance
+  method '_addListener'`, and the device went back to the installed version.
+  Riverpod calls private members of its own base classes on the app's
+  providers, and a host listed no private member for a patch's classes.
+- Now: a host lists the private members its packages call on the app's
+  classes, and `libapp.so` grows by a few percent. `patch` fails with
+  `PATCH_UNSAFE`, before the device does, when a patch's class inherits a host member, private
+  or not, that its host does not list.
+- The fix is in newly published compiler tools. Hosts built before them stay
+  as they are: a Riverpod 3 app needs a host rebuilt and released.
 
 ## 1.1.1
 

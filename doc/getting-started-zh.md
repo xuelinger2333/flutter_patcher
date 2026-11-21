@@ -11,7 +11,7 @@
 | 需要 | 检查方法 |
 |---|---|
 | Linux x64、Windows x64 或 Apple Silicon Mac，已安装 Git | `git --version` |
-| Flutter 3.47.0 到 3.47.9，在 `PATH` 中 | `flutter --version` |
+| Flutter 3.47.0 到 3.47.9 或 3.50.0，在 `PATH` 中 | `flutter --version` |
 | 一台 Android 9 或更新版本、`arm64-v8a` 的手机，已开启 USB 调试 | `adb devices` 列出这台手机 |
 | 一个 Flutter 项目，`pubspec.yaml` 的 `version` 带构建号，例如 `1.0.0+1` | `flutter create` 新建的项目默认如此 |
 | 首次运行时能访问 GitHub | 引擎和工具从这里下载一次 |

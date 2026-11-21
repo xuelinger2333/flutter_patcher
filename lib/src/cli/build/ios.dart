@@ -83,7 +83,8 @@ Future<String> assembleIpa(
       // registrants for release, which leaves out dev_dependency plugins
       // (e.g. integration_test); a stale debug registrant references them
       // and the release compile fails. pub get --enforce-lockfile already
-      // ran, so this check resolves nothing.
+      // ran (and a bytecode host's addRuntimeDependency), so this check
+      // resolves nothing.
       '--target',
       target,
       if (request.flavor != null) ...['--flavor', request.flavor!],

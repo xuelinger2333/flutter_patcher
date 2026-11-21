@@ -281,7 +281,7 @@ WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every p
 | `FLUTTER_VERSION_INVALID` | 读不到 Flutter 版本 | 运行 `flutter --version` 检查 SDK |
 | `SDK_NOT_READY` | 所选的 Flutter SDK 未初始化，或缓存不完整 | 运行一次 `flutter doctor` 后重试 |
 | `SDK_PREPARE_FAILED` | flutter_patcher 用于构建的 Flutter SDK 副本无法准备 | 检查网络和磁盘空间后重试 |
-| `ENGINE_ARTIFACT_MISSING` | 这个 Flutter 版本没有对应的 flutter_patcher 引擎，或无法下载 | 使用 Flutter 3.47.0 到 3.47.9；检查网络 |
+| `ENGINE_ARTIFACT_MISSING` | 这个 Flutter 版本没有对应的 flutter_patcher 引擎，或无法下载 | 使用 Flutter 3.47.0 到 3.47.9 或 3.50.0；检查网络 |
 | `ENGINE_ARTIFACT_MISMATCH`<br>`ARTIFACT_HASH_MISMATCH`<br>`ARTIFACT_INVALID`<br>`ENGINE_MANIFEST_INVALID`<br>`TOOLS_ARTIFACT_MISSING`<br>`TOOLS_VERSION_UNSUPPORTED`<br>`YAML_CACHE_INVALID`<br>`YAML_GENERATION_FAILED`<br>`EMBEDDING_POM_UNAVAILABLE` | 下载的引擎或工具文件不完整，或校验和不符 | 检查网络后重试；损坏的缓存条目会被隔离并重新下载 |
 | `CACHE_INVALID` | 命令使用的某个路径（缓存、项目、存储、密钥、输出或 receipt）是符号链接，或经过符号链接 | 使用真实路径 |
 | `HOST_UNSUPPORTED` | 该命令不能在这个操作系统或 CPU 上运行 | 见 [`HOST_UNSUPPORTED`](#host_unsupported) |

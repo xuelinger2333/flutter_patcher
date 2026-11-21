@@ -222,7 +222,7 @@ void main() {
       expect(
         call,
         contains(
-          '--extra-selectors-allowed-in-dynamic-calls=-,+,*,get:index,relativeError,absoluteError',
+          '--extra-selectors-allowed-in-dynamic-calls=-,+,get:index,relativeError,absoluteError',
         ),
       );
     },

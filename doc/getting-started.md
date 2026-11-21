@@ -11,7 +11,7 @@ Everything here runs on your computer and a phone connected over USB, so you nee
 | You need | How to check |
 |---|---|
 | Linux x64, Windows x64 or an Apple Silicon Mac, with Git | `git --version` |
-| Flutter 3.47.0 to 3.47.9 on your `PATH` | `flutter --version` |
+| Flutter 3.47.0 to 3.47.9, or 3.50.0, on your `PATH` | `flutter --version` |
 | An `arm64-v8a` Android phone on Android 9 or later, with USB debugging on | `adb devices` lists it |
 | A Flutter project whose `pubspec.yaml` `version` has a build number, such as `1.0.0+1` | Projects from `flutter create` do |
 | Access to GitHub on the first run | The engine and tools download from there once |

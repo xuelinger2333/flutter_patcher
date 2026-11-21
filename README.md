@@ -24,6 +24,7 @@ Changes to native code or to the Flutter version still need a store release.
 | Flutter | Android | iOS |
 |---|:---:|:---:|
 | 3.47.0 – 3.47.9 | ✅ | ✅ |
+| 3.50.0 | ✅ | ✅ |
 
 | For | You need |
 |---|---|

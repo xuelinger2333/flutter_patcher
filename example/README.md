@@ -6,7 +6,7 @@ You have this repository checked out and want to see a patch run before integrat
 
 You need:
 
-- Flutter 3.47.0 to 3.47.9 (`dart run flutter_patcher doctor` checks it);
+- Flutter 3.47.0 to 3.47.9, or 3.50.0 (`dart run flutter_patcher doctor` checks it);
 - an `arm64-v8a` phone on Android 9 or later, connected over USB with USB debugging on.
 
 ## Android over USB

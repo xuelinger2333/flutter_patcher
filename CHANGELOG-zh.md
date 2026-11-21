@@ -4,7 +4,16 @@
 
 ## 1.1.2
 
-1.1.2 可以把宿主构建成 Android App Bundle，即 Google Play 收的包格式；宿主代码也可以在运行时构造 `IconData`。
+1.1.2 支持 Flutter 3.50.0；可以把宿主构建成 Android App Bundle，即 Google Play 收的包格式；宿主代码也可以在运行时构造 `IconData`。
+
+### Flutter 3.50.0
+
+**新增** · CLI、引擎、工具 · 2026-11-20 · flutter_patcher 1.1.2
+
+- 支持 Flutter 3.50.0（Dart 3.14），Android 和 iOS 均可，3.47.0 到 3.47.9 继续支持。宿主换用这个版本需要重新发布到应用商店，换用任何 Flutter 版本都是如此。
+- 构建 bytecode 宿主时，在记录完构建输入之后，把补丁运行时包加进构建副本的 `pubspec.yaml` 和 lockfile。从 Dart 3.14 起，`flutter build` 的 pub 步骤会丢掉只写在包配置里的这个包。你的项目不会被改动；如果其他已锁定的包会因此变化，`build` 以 `BUILD_STEP_FAILED` 失败。
+
+文档：[环境要求](README-zh.md#环境要求)
 
 ### `build appbundle`
 
@@ -50,6 +59,17 @@
   `--` 会被忽略，所以为 1.1.1 写的命令照常可用。
 
 文档：[编译期变量和 `flutter build` 选项](doc/cli-zh.md#编译期变量和-flutter-build-选项)
+
+### Riverpod 3 应用的字节码补丁启动即失败
+
+**修复** · 工具 · 2026-11-21 · flutter_patcher 1.1.2
+
+- 之前：如果应用代码里有 Riverpod 3 生成的 provider（`.g.dart`），补丁启动时报
+  `NoSuchMethodError: ... has no instance method '_addListener'`，设备退回已安装的版本。Riverpod
+  会在应用的 provider 上调用其基类的私有成员，而宿主没有为补丁中的类列出任何私有成员。
+- 现在：宿主会列出各个包在应用的类上调用的私有成员，`libapp.so` 因此增大几个百分点。补丁中的类继承了宿主未列出的
+  宿主成员时（私有成员也算），`patch` 改为以 `PATCH_UNSAFE` 失败。
+- 修复在新发布的编译工具中。在此之前构建的宿主不会改变：Riverpod 3 应用需要重新构建并发布宿主。
 
 ## 1.1.1
 

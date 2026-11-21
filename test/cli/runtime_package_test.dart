@@ -44,4 +44,60 @@ void main() {
       expect(source, isNot(contains('ensureInitialized')));
     },
   );
+
+  group('addRuntimeDependency', () {
+    const lock = """
+packages:
+  path:
+    dependency: transitive
+    description:
+      name: path
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.9.1"
+sdks:
+  dart: ">=3.8.0 <4.0.0"
+""";
+    late Directory project;
+    setUp(() async {
+      project = await Directory.systemTemp.createTemp('runtime-dependency-');
+      await File(p.join(project.path, 'pubspec.lock')).writeAsString(lock);
+    });
+    tearDown(() => project.delete(recursive: true));
+
+    test('adds the runtime package by a path pub reads, offline', () async {
+      List<String>? ran;
+      await addRuntimeDependency(project.path, (arguments) async {
+        ran = arguments;
+        await File(p.join(project.path, 'pubspec.lock')).writeAsString(
+          lock
+              .replaceFirst(
+                'packages:\n',
+                'packages:\n  dynamic_modules:\n    dependency: "direct main"\n'
+                    '    description:\n      path: ".dart_tool/flutter_patcher/runtime"\n'
+                    '      relative: true\n    source: path\n    version: "1.0.0"\n',
+              )
+              .replaceFirst('">=3.8.0', '">=3.10.0'),
+        );
+      });
+      expect(ran, [
+        'add',
+        '--offline',
+        'dynamic_modules:{path: .dart_tool/flutter_patcher/runtime}',
+      ]);
+      expect(ran!.last, isNot(contains('"')));
+    });
+
+    test('fails when pub changes another locked package', () async {
+      await expectLater(
+        addRuntimeDependency(project.path, (_) async {
+          await File(p.join(project.path, 'pubspec.lock'))
+              .writeAsString(lock.replaceFirst('1.9.1', '1.9.2'));
+        }),
+        throwsA(
+          isA<Failure>().having((f) => f.code, 'code', 'BUILD_STEP_FAILED'),
+        ),
+      );
+    });
+  });
 }

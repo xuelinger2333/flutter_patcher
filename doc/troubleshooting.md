@@ -281,7 +281,7 @@ To see how the device judges a file, pass its first 146 bytes to `FlutterPatcher
 | `FLUTTER_VERSION_INVALID` | The Flutter version cannot be read | Run `flutter --version` to check the SDK |
 | `SDK_NOT_READY` | The selected Flutter SDK is not initialized, or its cache is incomplete | Run `flutter doctor` once, then retry |
 | `SDK_PREPARE_FAILED` | The Flutter SDK copy flutter_patcher builds with cannot be prepared | Check the network and disk space, then retry |
-| `ENGINE_ARTIFACT_MISSING` | No flutter_patcher engine exists for this Flutter version, or it cannot be downloaded | Use Flutter 3.47.0 to 3.47.9; check the network |
+| `ENGINE_ARTIFACT_MISSING` | No flutter_patcher engine exists for this Flutter version, or it cannot be downloaded | Use Flutter 3.47.0 to 3.47.9, or 3.50.0; check the network |
 | `ENGINE_ARTIFACT_MISMATCH`<br>`ARTIFACT_HASH_MISMATCH`<br>`ARTIFACT_INVALID`<br>`ENGINE_MANIFEST_INVALID`<br>`TOOLS_ARTIFACT_MISSING`<br>`TOOLS_VERSION_UNSUPPORTED`<br>`YAML_CACHE_INVALID`<br>`YAML_GENERATION_FAILED`<br>`EMBEDDING_POM_UNAVAILABLE` | A downloaded engine or tool file is incomplete or fails its checksum | Check the network and retry; a damaged cache entry is set aside and downloaded again |
 | `CACHE_INVALID` | A path the command uses (cache, project, store, keys, output or receipt) is or passes through a symbolic link | Use the real path |
 | `HOST_UNSUPPORTED` | The command does not run on this OS or CPU | See [`HOST_UNSUPPORTED`](#host_unsupported) |

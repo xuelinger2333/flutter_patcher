@@ -10,7 +10,6 @@ import '../sdk/environment.dart';
 const wholeSelectors = [
   '-',
   '+',
-  '*',
   'get:index',
   'relativeError',
   'absoluteError',

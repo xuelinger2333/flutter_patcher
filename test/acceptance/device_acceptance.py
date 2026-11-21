@@ -40,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -234,6 +235,9 @@ def remote_prepare(args, repo, out):
     prepare = shlex.join(['python3', 'source/test/acceptance/device_acceptance.py', '--prepare-only',
                           '--strategy', args.strategy, '--signing', args.signing, '--package', args.package,
                           *(['--no-tree-shake-icons'] if args.no_tree_shake_icons else []),
+                          # A URL on the builder's loopback, served there.
+                          *(['--index-url', args.index_url, '--artifacts-url', args.artifacts_url]
+                            if args.index_url else []),
                           '--flutter-sdk', args.remote_flutter, '--out', 'out'])
     # The key and the baseline store stay on the builder; verify needs only the app, origin and TLS.
     ssh(f'cd {shlex.quote(root)} && tar -xzf source.tar.gz && ANDROID_HOME={shlex.quote(args.remote_android)} '
@@ -257,6 +261,7 @@ class AndroidDevice:
         self.server = subprocess.Popen([dart_binary(args.flutter_sdk), Path(__file__).parent / 'tls_server.dart',
                                         out / 'srv', out / 'tls/tls.p12', (out / 'tls/password.txt').read_text()],
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.server_log = []
 
     def run(self, *a, timeout=180):
         return subprocess.run([*map(str, self.adb), *a], capture_output=True, encoding='utf-8',
@@ -271,6 +276,8 @@ class AndroidDevice:
     def start(self):
         if self.server.stdout.readline().strip() != 'READY':
             raise RuntimeError('TLS server did not start')
+        # Read as it comes: a full pipe would block the server's next print and request.
+        threading.Thread(target=lambda: self.server_log.extend(self.server.stdout), daemon=True).start()
         self.run('reverse', 'tcp:8443', 'tcp:8443')
         self.run('forward', 'tcp:8767', 'tcp:8767')
         return ORIGIN
@@ -304,7 +311,8 @@ class AndroidDevice:
 
     def close(self):
         self.server.kill()
-        (self.out / 'tls-server.log').write_text(self.server.stdout.read() or '')
+        self.server.wait(10)
+        (self.out / 'tls-server.log').write_text(''.join(self.server_log))
         try:  # Best effort: a disconnected device must not hide the real failure.
             (self.out / 'logcat.txt').write_text(self.run('logcat', '-d', '-v', 'threadtime').stdout, encoding='utf-8')
         except subprocess.TimeoutExpired:
