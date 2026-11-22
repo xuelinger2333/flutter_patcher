@@ -2,15 +2,15 @@
 
 ## 1.1.2
 
-1.1.2 supports Flutter 3.50.0, builds a host as an Android App Bundle, the package Google Play takes, and a host whose code builds `IconData` at run time.
+1.1.2 supports Flutter 3.50.0 and 3.50.1, builds a host as an Android App Bundle, the package Google Play takes, and a host whose code builds `IconData` at run time.
 
-### Flutter 3.50.0
+### Flutter 3.50.0 and 3.50.1
 
 **Added** · CLI, engine, tools · 2026-11-20 · flutter_patcher 1.1.2
 
-- Flutter 3.50.0 (Dart 3.14) is supported on Android and iOS, beside
-  3.47.0 to 3.47.9. A host moves to it with a new store release, as to any
-  Flutter version.
+- Flutter 3.50.0 and 3.50.1 (Dart 3.14) are supported on Android and iOS,
+  beside 3.47.0 to 3.47.9. A host moves to them with a new store release, as
+  to any Flutter version.
 - A bytecode host's build adds the patch runtime package to its build copy's
   `pubspec.yaml` and lockfile, after the build inputs are recorded: from
   Dart 3.14 on, the pub step of `flutter build` dropped it when only the

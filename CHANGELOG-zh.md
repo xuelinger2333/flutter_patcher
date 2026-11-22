@@ -4,13 +4,13 @@
 
 ## 1.1.2
 
-1.1.2 支持 Flutter 3.50.0；可以把宿主构建成 Android App Bundle，即 Google Play 收的包格式；宿主代码也可以在运行时构造 `IconData`。
+1.1.2 支持 Flutter 3.50.0 和 3.50.1；可以把宿主构建成 Android App Bundle，即 Google Play 收的包格式；宿主代码也可以在运行时构造 `IconData`。
 
-### Flutter 3.50.0
+### Flutter 3.50.0 和 3.50.1
 
 **新增** · CLI、引擎、工具 · 2026-11-20 · flutter_patcher 1.1.2
 
-- 支持 Flutter 3.50.0（Dart 3.14），Android 和 iOS 均可，3.47.0 到 3.47.9 继续支持。宿主换用这个版本需要重新发布到应用商店，换用任何 Flutter 版本都是如此。
+- 支持 Flutter 3.50.0 和 3.50.1（Dart 3.14），Android 和 iOS 均可，3.47.0 到 3.47.9 继续支持。宿主换用这两个版本需要重新发布到应用商店，换用任何 Flutter 版本都是如此。
 - 构建 bytecode 宿主时，在记录完构建输入之后，把补丁运行时包加进构建副本的 `pubspec.yaml` 和 lockfile。从 Dart 3.14 起，`flutter build` 的 pub 步骤会丢掉只写在包配置里的这个包。你的项目不会被改动；如果其他已锁定的包会因此变化，`build` 以 `BUILD_STEP_FAILED` 失败。
 
 文档：[环境要求](README-zh.md#环境要求)
