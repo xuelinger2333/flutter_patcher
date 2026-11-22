@@ -8,7 +8,7 @@
 
 ### Flutter 3.50.0 和 3.50.1
 
-**新增** · CLI、引擎、工具 · 2026-11-20 · flutter_patcher 1.1.2
+**新增** · CLI、引擎、工具 · 2026-11-22 · flutter_patcher 1.1.2
 
 - 支持 Flutter 3.50.0 和 3.50.1（Dart 3.14），Android 和 iOS 均可，3.47.0 到 3.47.9 继续支持。宿主换用这两个版本需要重新发布到应用商店，换用任何 Flutter 版本都是如此。
 - 构建 bytecode 宿主时，在记录完构建输入之后，把补丁运行时包加进构建副本的 `pubspec.yaml` 和 lockfile。从 Dart 3.14 起，`flutter build` 的 pub 步骤会丢掉只写在包配置里的这个包。你的项目不会被改动；如果其他已锁定的包会因此变化，`build` 以 `BUILD_STEP_FAILED` 失败。
@@ -17,7 +17,7 @@
 
 ### `build appbundle`
 
-**新增** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+**新增** · CLI · 2026-11-22 · flutter_patcher 1.1.2
 
 - `build appbundle` 用 `flutter build appbundle` 构建 Android App Bundle（`app-release.aab`）。它接受
   `build android` 的全部选项，生成的是同一个宿主：策略、宿主策略和所有补丁都与 APK 相同，都用
@@ -30,7 +30,7 @@
 
 ### 宿主只含 arm64-v8a 的原生代码
 
-**变更** · CLI、Android · 2026-11-20 · flutter_patcher 1.1.2
+**变更** · CLI、Android · 2026-11-22 · flutter_patcher 1.1.2
 
 - Flutter 的 Gradle 插件会给宿主加上 Flutter 支持的全部架构，所以插件的原生库（包括本插件的
   `libpatcher_boot.so`）会被打进 `armeabi-v7a` 和 `x86_64` 目录，而引擎只有 `arm64-v8a`。这些架构的设备
@@ -42,7 +42,7 @@
 
 ### `build --no-tree-shake-icons`
 
-**新增** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+**新增** · CLI · 2026-11-22 · flutter_patcher 1.1.2
 
 - 用 `--no-tree-shake-icons` 构建的宿主带整份图标字体，代码可以在运行时构造 `IconData`，例如码点由服务端下发。
   `flutter build` 裁剪图标字体时，遇到这种代码会构建失败。宿主因此变大，完整的 MaterialIcons 约 1.6 MB。
@@ -53,7 +53,7 @@
 
 ### `flutter build` 选项不再需要 `--`
 
-**变更** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+**变更** · CLI · 2026-11-22 · flutter_patcher 1.1.2
 
 - `build` 转给 `flutter build` 的选项（例如 `--android-project-arg`）和其他选项一样直接写，`build --help` 会列出它们。
   `--` 会被忽略，所以为 1.1.1 写的命令照常可用。
@@ -62,7 +62,7 @@
 
 ### Riverpod 3 应用的字节码补丁启动即失败
 
-**修复** · 工具 · 2026-11-21 · flutter_patcher 1.1.2
+**修复** · 工具 · 2026-11-22 · flutter_patcher 1.1.2
 
 - 之前：如果应用代码里有 Riverpod 3 生成的 provider（`.g.dart`），补丁启动时报
   `NoSuchMethodError: ... has no instance method '_addListener'`，设备退回已安装的版本。Riverpod

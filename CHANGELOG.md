@@ -6,7 +6,7 @@
 
 ### Flutter 3.50.0 and 3.50.1
 
-**Added** · CLI, engine, tools · 2026-11-20 · flutter_patcher 1.1.2
+**Added** · CLI, engine, tools · 2026-11-22 · flutter_patcher 1.1.2
 
 - Flutter 3.50.0 and 3.50.1 (Dart 3.14) are supported on Android and iOS,
   beside 3.47.0 to 3.47.9. A host moves to them with a new store release, as
@@ -21,7 +21,7 @@ Docs: [Requirements](README.md#requirements)
 
 ### `build appbundle`
 
-**Added** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+**Added** · CLI · 2026-11-22 · flutter_patcher 1.1.2
 
 - `build appbundle` builds an Android App Bundle (`app-release.aab`) with
   `flutter build appbundle`. It takes the options of `build android` and
@@ -37,7 +37,7 @@ Docs: [build](doc/cli.md#build)
 
 ### A host carries native code for arm64-v8a only
 
-**Changed** · CLI, Android · 2026-11-20 · flutter_patcher 1.1.2
+**Changed** · CLI, Android · 2026-11-22 · flutter_patcher 1.1.2
 
 - The Flutter Gradle plugin gave a host every ABI Flutter has, so the
   native libraries of plugins (this one's `libpatcher_boot.so` included)
@@ -52,7 +52,7 @@ Docs: [From 1.1.1 to 1.1.2](doc/upgrading.md#from-111-to-112)
 
 ### `build --no-tree-shake-icons`
 
-**Added** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+**Added** · CLI · 2026-11-22 · flutter_patcher 1.1.2
 
 - A host built with `--no-tree-shake-icons` carries its icon fonts whole, so
   its code may build `IconData` at run time, as when a server sends the code
@@ -66,7 +66,7 @@ Docs: [Icon fonts](doc/cli.md#icon-fonts)
 
 ### `flutter build` options without `--`
 
-**Changed** · CLI · 2026-11-20 · flutter_patcher 1.1.2
+**Changed** · CLI · 2026-11-22 · flutter_patcher 1.1.2
 
 - The `flutter build` options `build` passes on, such as
   `--android-project-arg`, are written like its other options, and
@@ -77,7 +77,7 @@ Docs: [Defines and `flutter build` options](doc/cli.md#defines-and-flutter-build
 
 ### A bytecode patch of a Riverpod 3 app failed at start
 
-**Fixed** · tools · 2026-11-21 · flutter_patcher 1.1.2
+**Fixed** · tools · 2026-11-22 · flutter_patcher 1.1.2
 
 - Before: a patch of an app whose code holds Riverpod 3 generated providers
   (`.g.dart`) failed at start with `NoSuchMethodError: ... has no instance
