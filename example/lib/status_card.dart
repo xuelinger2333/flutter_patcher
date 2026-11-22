@@ -1,3 +1,6 @@
+// Flutter 3.50 moves Material to package:material_ui; the example also
+// supports 3.47, which has no material_ui.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_patcher/flutter_patcher.dart';
 

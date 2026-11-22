@@ -9,33 +9,54 @@ permissions:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: false
+env:
+  # The Android SDK jars Robolectric 4.14.1 (android/build.gradle) runs the JVM
+  # tests on: 14 for Flutter 3.47, 15 for Flutter 3.50. "<version> <sha256>" each.
+  ROBOLECTRIC_JARS: >-
+    14-robolectric-10818077-i7 3fdac2d463f431c6b8d83b9d0ca739e795de75fffedee648c6761bd4bd864701
+    15-robolectric-12650502-i7 33c2d7cc4186d4605269d5d411fa1818972c5b30a9f70bfbbd3d430b076af52f
 jobs:
   versions:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.versions.outputs.matrix }}
     steps:
+      # The supported versions are those on the artifacts repository's main branch,
+      # so a version added there is tested here without a change to this repository.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: xuelinger2333/flutter_patcher_artifacts
-          ref: ${{ vars.ARTIFACTS_COMMIT }}
+          ref: main
           persist-credentials: false
       - id: versions
-        env:
-          ARTIFACTS_COMMIT: ${{ vars.ARTIFACTS_COMMIT }}
         run: |
           python3 - <<'PY'
-          import json, os, re, subprocess
+          import json, os, re
           from pathlib import Path
-          pin = os.environ['ARTIFACTS_COMMIT']
-          assert re.fullmatch('[0-9a-f]{40}', pin), 'Set ARTIFACTS_COMMIT to the reviewed source commit'
-          assert subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() == pin
           versions = [v.strip() for v in Path('supported_versions.txt').read_text().splitlines() if v.strip() and not v.startswith('#')]
           assert versions and len(versions) == len(set(versions))
           assert all(re.fullmatch(r'\d+\.\d+\.\d+', v) for v in versions)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write('matrix=' + json.dumps({'version': versions}) + '\n')
           PY
+      # Robolectric's Android jars are fetched once here and cached; the version jobs
+      # read it from the cache, so they do not each download it from Maven Central.
+      - id: robolectric
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/robolectric
+          key: robolectric ${{ env.ROBOLECTRIC_JARS }}
+      - if: steps.robolectric.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/robolectric"
+          set -- $ROBOLECTRIC_JARS
+          while [ $# -gt 0 ]; do
+            jar="android-all-instrumented-$1.jar"
+            curl -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o "$RUNNER_TEMP/robolectric/$jar" \
+              "https://repo1.maven.org/maven2/org/robolectric/android-all-instrumented/$1/$jar"
+            echo "$2  $RUNNER_TEMP/robolectric/$jar" | sha256sum -c -
+            shift 2
+          done
   fast:
     needs: versions
     runs-on: ubuntu-latest
@@ -59,7 +80,15 @@ jobs:
           "$RUNNER_TEMP/ci-tests/bin/pip" install -r test/acceptance/test-requirements.txt
           export PATH="$RUNNER_TEMP/ci-tests/bin:$PATH"
           python3 test/acceptance/linux_tests.py --repo "$PWD" --dart "$(command -v dart)" --out "$PWD/.dart_tool/flutter_patcher/ci-fast"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/robolectric
+          key: robolectric ${{ env.ROBOLECTRIC_JARS }}
+          fail-on-cache-miss: true
       - name: Native JVM regression
         # Robolectric 4.14 cannot read the classes of Java 25, the runner's default JDK.
+        # Offline, it reads its Android jars from the cache instead of Maven Central.
+        env:
+          JAVA_TOOL_OPTIONS: -Drobolectric.offline=true -Drobolectric.dependency.dir=${{ runner.temp }}/robolectric
         run: JAVA_HOME="$JAVA_HOME_21_X64" python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
       - run: echo 'Fast tests only; run test/acceptance/device_acceptance.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"
