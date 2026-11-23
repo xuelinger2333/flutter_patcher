@@ -120,5 +120,16 @@ jobs:
               }
           }
           EOF
-          JAVA_HOME="$JAVA_HOME_21_X64" python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
+          # Maven Central still answers 429 at random to some of the jobs' other requests;
+          # only then is the step run again, with what Gradle fetched already cached.
+          out="$PWD/.dart_tool/flutter_patcher/ci-native"
+          for attempt in 1 2 3; do
+            rm -rf "$out"
+            if JAVA_HOME="$JAVA_HOME_21_X64" python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$out" 2>&1 | tee "$RUNNER_TEMP/native.log"; then
+              exit 0
+            fi
+            grep -q 'status code 429' "$RUNNER_TEMP/native.log" || exit 1
+            sleep $((attempt * 60))
+          done
+          exit 1
       - run: echo 'Fast tests only; run test/acceptance/device_acceptance.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"
