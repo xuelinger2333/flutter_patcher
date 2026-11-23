@@ -85,10 +85,20 @@ jobs:
           path: ${{ runner.temp }}/robolectric
           key: robolectric ${{ env.ROBOLECTRIC_JARS }}
           fail-on-cache-miss: true
+      # Fourteen jobs fetching Gradle's dependencies at once get 429 from Maven
+      # Central; the cache makes a run fetch them once per version.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle ${{ matrix.version }} ${{ hashFiles('android/build.gradle', 'android/settings.gradle') }}
+          restore-keys: gradle ${{ matrix.version }}
       - name: Native JVM regression
         # Robolectric 4.14 cannot read the classes of Java 25, the runner's default JDK.
         # Offline, it reads its Android jars from the cache instead of Maven Central.
+        # Gradle retries a 429 six times, from 5 s apart, instead of three from 1 s.
         env:
-          JAVA_TOOL_OPTIONS: -Drobolectric.offline=true -Drobolectric.dependency.dir=${{ runner.temp }}/robolectric
+          JAVA_TOOL_OPTIONS: -Drobolectric.offline=true -Drobolectric.dependency.dir=${{ runner.temp }}/robolectric -Dorg.gradle.internal.repository.max.retries=6 -Dorg.gradle.internal.repository.initial.backoff=5000
         run: JAVA_HOME="$JAVA_HOME_21_X64" python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
       - run: echo 'Fast tests only; run test/acceptance/device_acceptance.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"
