@@ -15,6 +15,11 @@ env:
   ROBOLECTRIC_JARS: >-
     14-robolectric-10818077-i7 3fdac2d463f431c6b8d83b9d0ca739e795de75fffedee648c6761bd4bd864701
     15-robolectric-12650502-i7 33c2d7cc4186d4605269d5d411fa1818972c5b30a9f70bfbbd3d430b076af52f
+  # Robolectric's native runtime, 158 MB, which Maven Central rate-limits most.
+  # "<path under maven2/> <sha256>" each.
+  ROBOLECTRIC_MAVEN: >-
+    org/robolectric/nativeruntime-dist-compat/1.0.16/nativeruntime-dist-compat-1.0.16.jar 2f4e879b00eed634d0e43353ecff80db4d5ce24b3b213d1e6053cb21b0ced10f
+    org/robolectric/nativeruntime-dist-compat/1.0.16/nativeruntime-dist-compat-1.0.16.pom 053dc5be36c03495d157186588b73952f4098cb9890f75cbd6ee26e36fd83d04
 jobs:
   versions:
     runs-on: ubuntu-latest
@@ -39,13 +44,14 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write('matrix=' + json.dumps({'version': versions}) + '\n')
           PY
-      # Robolectric's Android jars are fetched once here and cached; the version jobs
-      # read it from the cache, so they do not each download it from Maven Central.
+      # Robolectric's Android jars and native runtime are fetched once here and cached;
+      # the version jobs read them from the cache, so they do not each download them
+      # from Maven Central.
       - id: robolectric
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/robolectric
-          key: robolectric ${{ env.ROBOLECTRIC_JARS }}
+          key: robolectric ${{ env.ROBOLECTRIC_JARS }} ${{ env.ROBOLECTRIC_MAVEN }}
       - if: steps.robolectric.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/robolectric"
@@ -55,6 +61,14 @@ jobs:
             curl -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o "$RUNNER_TEMP/robolectric/$jar" \
               "https://repo1.maven.org/maven2/org/robolectric/android-all-instrumented/$1/$jar"
             echo "$2  $RUNNER_TEMP/robolectric/$jar" | sha256sum -c -
+            shift 2
+          done
+          set -- $ROBOLECTRIC_MAVEN
+          while [ $# -gt 0 ]; do
+            mkdir -p "$(dirname "$RUNNER_TEMP/robolectric/m2/$1")"
+            curl -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o "$RUNNER_TEMP/robolectric/m2/$1" \
+              "https://repo1.maven.org/maven2/$1"
+            echo "$2  $RUNNER_TEMP/robolectric/m2/$1" | sha256sum -c -
             shift 2
           done
   fast:
@@ -83,22 +97,28 @@ jobs:
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/robolectric
-          key: robolectric ${{ env.ROBOLECTRIC_JARS }}
+          key: robolectric ${{ env.ROBOLECTRIC_JARS }} ${{ env.ROBOLECTRIC_MAVEN }}
           fail-on-cache-miss: true
-      # Fourteen jobs fetching Gradle's dependencies at once get 429 from Maven
-      # Central; the cache makes a run fetch them once per version.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            ~/.gradle/caches/modules-2
-            ~/.gradle/wrapper
-          key: gradle ${{ matrix.version }} ${{ hashFiles('android/build.gradle', 'android/settings.gradle') }}
-          restore-keys: gradle ${{ matrix.version }}
       - name: Native JVM regression
         # Robolectric 4.14 cannot read the classes of Java 25, the runner's default JDK.
         # Offline, it reads its Android jars from the cache instead of Maven Central.
-        # Gradle retries a 429 six times, from 5 s apart, instead of three from 1 s.
+        # The init script has Gradle read the native runtime from the cache too; only the
+        # plugin's project, as Flutter's own included build refuses project repositories.
         env:
-          JAVA_TOOL_OPTIONS: -Drobolectric.offline=true -Drobolectric.dependency.dir=${{ runner.temp }}/robolectric -Dorg.gradle.internal.repository.max.retries=6 -Dorg.gradle.internal.repository.initial.backoff=5000
-        run: JAVA_HOME="$JAVA_HOME_21_X64" python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
+          JAVA_TOOL_OPTIONS: -Drobolectric.offline=true -Drobolectric.dependency.dir=${{ runner.temp }}/robolectric
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/robolectric.gradle <<EOF
+          allprojects {
+              if (name == 'flutter_patcher') {
+                  repositories {
+                      exclusiveContent {
+                          forRepository { maven { url = uri('$RUNNER_TEMP/robolectric/m2') } }
+                          filter { includeModule('org.robolectric', 'nativeruntime-dist-compat') }
+                      }
+                  }
+              }
+          }
+          EOF
+          JAVA_HOME="$JAVA_HOME_21_X64" python3 test/acceptance/native_tests.py --repo "$PWD" --flutter "$(command -v flutter)" --out "$PWD/.dart_tool/flutter_patcher/ci-native"
       - run: echo 'Fast tests only; run test/acceptance/device_acceptance.py for device acceptance.' >> "$GITHUB_STEP_SUMMARY"
