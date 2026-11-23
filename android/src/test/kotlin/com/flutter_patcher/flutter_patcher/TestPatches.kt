@@ -44,6 +44,8 @@ internal object TestPatches {
                     path to code, "assets/a" to asset, "fonts/f.otf" to font)) {
                     z.putNextEntry(ZipEntry(name).apply {
                         method = ZipEntry.STORED
+                        // A fixed time: equal arguments make equal bytes.
+                        time = 315532800000L
                         size = bytes.size.toLong()
                         compressedSize = size
                         crc = CRC32().apply { update(bytes) }.value
