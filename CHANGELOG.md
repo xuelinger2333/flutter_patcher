@@ -1,5 +1,35 @@
 > Chinese version: [CHANGELOG-zh.md](CHANGELOG-zh.md)
 
+## 1.1.3
+
+### A bytecode patch that read a static field of a host package aborted the app
+
+**Fixed** · tools · 2026-11-26 · flutter_patcher 1.1.3
+
+- Before: a patch whose code read a static field of a package the host
+  keeps (a plugin and what it depends on, or any dependency in a lean
+  patch) could abort the app. Where the field's initializer depends on the
+  build (`kDebugMode ? Observer() : null`, `Platform.isIOS ? 1 : 2`), the
+  app aborted at start with `Unable to find function get:<field>` and the
+  device went back to the installed version. Where it names a constant
+  (`static final limit = kLimit;`), the app aborted when the patched code
+  first read the field.
+- Now: a patch reads the field the way its host holds it. Hosts already
+  released need no new build: `patch` compiles with the new tools.
+- `patch` fails with `PATCH_UNSAFE` when patched code assigns a
+  `static late final` field of such a package, which a host cannot take
+  from a patch. Before, the app aborted at start.
+
+### `patch` failed where a dependency has no `lib/`
+
+**Fixed** · CLI · 2026-11-26 · flutter_patcher 1.1.3
+
+- Before: a bytecode patch that carries its dependencies (a changed
+  dependency, or code that the smaller patch cannot hold) failed with
+  `PATCH_FAILED: Directory listing failed` when a dependency has no `lib/`
+  directory, as `cupertino_icons` has none.
+- Now: such a package is carried as it is, with no code.
+
 ## 1.1.2
 
 1.1.2 supports Flutter 3.50.0 and 3.50.1, builds a host as an Android App Bundle, the package Google Play takes, and a host whose code builds `IconData` at run time.

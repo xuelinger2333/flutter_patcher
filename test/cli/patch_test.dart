@@ -84,6 +84,29 @@ void main() {
       );
     },
   );
+  test(
+    'a package without lib/ is carried as an empty module package',
+    () async {
+      final root = (await Directory.systemTemp.createTemp('patch-remap-')).path;
+      await Directory(p.join(root, 'icons/assets')).create(recursive: true);
+      final config = p.join(root, 'config.json');
+      await writeObject(config, {
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'icons',
+            'rootUri': Directory(p.join(root, 'icons')).uri.toString(),
+            'packageUri': 'lib/',
+          },
+        ],
+      });
+      final output = await remapSources(config, p.join(root, 'module'), {
+        'icons',
+      }, 3);
+      expect((output['names'] as Map)['icons'], 'patch.3.icons');
+      expect(await Directory(p.join(root, 'module/icons')).exists(), isTrue);
+    },
+  );
   test('native package provenance sees changes outside Dart sources', () async {
     final root = (await Directory.systemTemp.createTemp('patch-native-')).path;
     await File(

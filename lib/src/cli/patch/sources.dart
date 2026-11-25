@@ -166,10 +166,11 @@ Future<Map<String, Object?>> remapSources(
     }
     final target = p.join(destination, name);
     await Directory(target).create(recursive: true);
-    await for (final entity in source.list(
-      recursive: true,
-      followLinks: false,
-    )) {
+    // A package of assets alone, such as cupertino_icons, has no lib/.
+    final entities = await source.exists()
+        ? source.list(recursive: true, followLinks: false)
+        : const Stream<FileSystemEntity>.empty();
+    await for (final entity in entities) {
       final output = p.join(target, p.relative(entity.path, from: source.path));
       if (entity is Link) {
         throw Failure('PATCH_SOURCE_INVALID', 'Symlink in module sources');

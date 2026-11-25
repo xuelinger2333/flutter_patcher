@@ -2,6 +2,27 @@
 
 [English](CHANGELOG.md) | **简体中文**
 
+## 1.1.3
+
+### 字节码补丁读取宿主包的 static 字段导致应用崩溃
+
+**修复** · 工具 · 2026-11-26 · flutter_patcher 1.1.3
+
+- 之前：补丁代码读取留在宿主里的包（插件及其依赖；lean 补丁下的任何依赖）的 static 字段时，应用可能崩溃。字段初始值取决于构建环境时
+  （`kDebugMode ? Observer() : null`、`Platform.isIOS ? 1 : 2`），应用启动即崩溃，报
+  `Unable to find function get:<字段名>`，设备退回已安装的版本。字段初始值引用常量时（`static final limit = kLimit;`），
+  补丁代码第一次读到该字段时崩溃。
+- 现在：补丁按宿主实际保存字段的方式读取。已发布的宿主不需要重新构建：`patch` 会用新的工具编译。
+- 补丁代码给这类包的 `static late final` 字段赋值时，`patch` 以 `PATCH_UNSAFE` 失败，因为宿主无法接受来自补丁的这种赋值。之前是应用启动即崩溃。
+
+### 依赖没有 `lib/` 目录时 `patch` 失败
+
+**修复** · CLI · 2026-11-26 · flutter_patcher 1.1.3
+
+- 之前：需要携带依赖的字节码补丁（依赖有改动，或较小的补丁装不下相关代码），只要有一个依赖没有 `lib/` 目录（例如
+  `cupertino_icons`），就以 `PATCH_FAILED: Directory listing failed` 失败。
+- 现在：这类包原样携带，不含代码。
+
 ## 1.1.2
 
 1.1.2 支持 Flutter 3.50.0 和 3.50.1；可以把宿主构建成 Android App Bundle，即 Google Play 收的包格式；宿主代码也可以在运行时构造 `IconData`。
