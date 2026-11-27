@@ -51,6 +51,12 @@ class PatchFacts {
   /// Changed pinned packages: name -> why pinned, and the release's version.
   final Map<String, ({String why, Object? version})> changedPinned = {};
 
+  /// Pure-Dart dependencies whose version drifted from the release's:
+  /// name -> (release version, current version). These are carried by the
+  /// whole tier; when that tier fails, the drift is the root cause behind
+  /// compiler messages about missing files.
+  final Map<String, ({String released, String current})> dependencyDrift = {};
+
   /// The tools report of the module just compiled, or of the final one.
   Map<String, dynamic>? report;
 
@@ -197,8 +203,18 @@ final patchRules = <PatchRule>[
     PatchStage.code,
     (f) => [
       if (f.report?['status'] != 'compiled')
-        '${f.tier == 'lean' ? 'Lean' : 'Whole'}-tier checks failed: '
-            '${checkSummary(f.report ?? const {})}; evidence: ${f.evidence}',
+        [
+          if (f.tier == 'whole' && f.dependencyDrift.isNotEmpty)
+            'Dependency versions changed since the release, so the patch '
+                'uses the whole tier: '
+                '${f.dependencyDrift.entries.map((e) => e.value.released == e.value.current ? '${e.key} pubspec changed' : '${e.key} ${e.value.released} -> ${e.value.current}').join(', ')}. '
+                'A compiler error naming a missing dependency file means the '
+                'host and the new version no longer match: pin the dependency '
+                'to the release version under dependency_overrides, or ship a '
+                'new host release.',
+          '${f.tier == 'lean' ? 'Lean' : 'Whole'}-tier checks failed: '
+              '${checkSummary(f.report ?? const {})}; evidence: ${f.evidence}',
+        ].join(' '),
     ],
     strategies: const {'bytecode'},
   ),

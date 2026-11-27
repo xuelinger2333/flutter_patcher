@@ -346,7 +346,7 @@ WARNING: BASELINE_STORE_LOCAL: this host's baseline is kept only in …; every p
 | `PATCH_NATIVE_CHANGE` | 原生代码、原生插件或构建钩子有改动，或新增了原生依赖。使用与宿主不同版本的 flutter_patcher 也算这类改动 | 还原原生改动，或发布商店版本；用构建宿主时的 flutter_patcher 版本打补丁。没有改动原生代码时，见[所有文件都显示有改动](#所有文件都显示有改动) |
 | `PATCH_PINNED_PACKAGE_CHANGED` | 某个必须保持基线版本的包（它含有原生代码，或被原生代码依赖）改了版本 | 按 `message` 的提示，在 `dependency_overrides` 中把它固定回基线版本 |
 | `PATCH_FFI_UNSUPPORTED` | 补丁携带的代码通过 `dart:ffi` 调用原生函数；补丁携带的是整个包，而不只是改动的那几行 | 把 FFI 调用移到保留在宿主中的包里（例如插件），或发布商店版本 |
-| `PATCH_UNSAFE` | 字节码兼容性检查未通过 | 阅读 `message` 中列出的违规项 |
+| `PATCH_UNSAFE` | 字节码兼容性检查未通过 | 阅读 `message` 中列出的违规项。若其中指出依赖版本发生变化，那么「依赖文件缺失」只是漂移的症状，不是源文件丢了：用 `dependency_overrides` 把依赖固定回宿主版本，或发布新宿主 |
 | `PATCH_DYNAMIC_ICON` | 宿主裁剪了图标字体，代码在运行时构造非 `const` 的 `IconData` | 使用 `const IconData(...)` 或 `Icons.*`；码点只能在运行时确定时，用 `build --no-tree-shake-icons` 构建新宿主，见[图标字体](cli-zh.md#图标字体) |
 | `PATCH_ASSET_DELETE_UNSUPPORTED` | 删除了 App 的某个资源 | 恢复该资源，或发布商店版本 |
 | `PATCH_ENGINE_UNSUPPORTED` | 宿主的引擎不能安装补丁资源 | 构建并发布新的宿主 |
