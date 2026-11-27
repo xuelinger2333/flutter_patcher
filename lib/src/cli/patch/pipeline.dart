@@ -140,6 +140,10 @@ bool compareInputs(
     }
     any = true;
     facts.changed.add('dependency:$name');
+    facts.dependencyDrift[name] = (
+      released: '${before?['version']}',
+      current: '${now?['version']}',
+    );
   }
   return any;
 }
